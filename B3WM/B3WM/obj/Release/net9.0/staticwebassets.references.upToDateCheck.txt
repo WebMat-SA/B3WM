@@ -1,2 +1,0 @@
-C:\Users\Mateus-Casa\source\repos\B3WM\B3WM\B3WM.Client\obj\Release\net9.0\staticwebassets.build.json
-C:\Users\Mateus-Casa\source\repos\B3WM\B3WM\B3WM.Client\obj\Release\net9.0\staticwebassets.build.json
