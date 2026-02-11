@@ -1,0 +1,92 @@
+﻿@using B3WM.Shared.Entity
+@using System.Timers
+
+@page "/times-and-trades"
+
+<MudStack AlignItems="AlignItems.Center" Justify="Justify.FlexEnd" Class="px-5 pt-3" Row>
+    <B3WM.Client.Components.HubClient OnNewTicks="@OnNewTick" />
+</MudStack>
+
+<hr />
+
+<MudStack Style="flex:1; min-height:0;">
+    <!-- MudPaper stretches to fill the available vertical space; remove internal scrolling -->
+    <MudPaper Style="position:relative; right:0; top:0; flex:1; height:100%; max-width:40vw; overflow:visible;">
+        <!-- Turn off Virtualize and FixedHeader so the table body expands instead of creating its own scroll -->
+        <MudTable Items="_ticks" Dense="true" Elevation="0" Virtualize="false" FixedHeader="false" Style="height:100%;">
+            <HeaderContent>
+                <MudTh Style="text-align:center">Hora</MudTh>
+                <MudTh Style="text-align:right">Qtd</MudTh>
+                <MudTh Style="text-align:right">Compra</MudTh>
+                <MudTh Style="text-align:center">Valor</MudTh>
+                <MudTh Style="text-align:left">Venda</MudTh>
+            </HeaderContent>
+
+            <RowTemplate Context="t">
+                @{
+                    var color = GetColor(t);
+                }
+                <MudTd>
+                    <MudText Typo="Typo.caption" Color="@color">@t.Time.ToString("HH:mm:ss")</MudText>
+                </MudTd>
+                <MudTd Style="text-align:right">
+                    <MudText Typo="Typo.caption" Color="@color">@t.Volume</MudText>
+
+                </MudTd>
+                <MudTd Style="text-align:right">
+                    <MudText Typo="Typo.caption" Color="@color">@t.Buyer</MudText>
+
+                </MudTd>
+                <MudTd Style="text-align:center">
+                    <MudText Typo="Typo.caption" Color="@color">@t.Value.ToString("F3")</MudText>
+                </MudTd>
+                <MudTd Style="text-align:left">
+                    <MudText Typo="Typo.caption" Color="@color">@t.Seller</MudText>
+
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+</MudStack>
+
+@code {
+    private readonly List<Ticks2> _ticks = new List<Ticks2>();
+    private const int MaxBuffer = 25; // keep this many ticks in memory
+
+    private System.Timers.Timer _timer;
+
+    override protected void OnInitialized()
+    {
+        _timer = new();
+        _timer.Interval = 1000;
+        _timer.Elapsed += async (object? sender, ElapsedEventArgs e) =>
+        {
+            //_currentCount++;
+            await InvokeAsync(StateHasChanged);
+        };
+        _timer.Enabled = true;
+    }
+
+    public void OnNewTick(IEnumerable<Ticks2> ticks)
+    {
+        foreach (var tick in ticks) Console.WriteLine(tick.ToString());
+
+        // insert newest at the beginning
+        _ticks.InsertRange(0, ticks);
+
+        // trim buffer
+        if (_ticks.Count > MaxBuffer)
+            _ticks.RemoveRange(MaxBuffer, _ticks.Count - MaxBuffer);
+
+    }
+
+    private Color GetColor(Ticks2 t)
+    {
+        return t.Starter switch
+        {
+            Ticks2.ActionType.Buy => Color.Success,
+            Ticks2.ActionType.Sale => Color.Error,
+            _ => Color.Default
+        };
+    }
+}

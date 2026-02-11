@@ -1,0 +1,61 @@
+﻿<Window x:Class="ExtractorTryd.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ExtractorTryd"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="450" Width="1205">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Original Tryd button kept -->
+        <Button Content="Times and Trades" HorizontalAlignment="Left" VerticalAlignment="Center" Width="365" Click="TimesAndTrades_Click"/>
+        <Button Content="C" HorizontalAlignment="Right" Grid.Column="0" Margin="0,0,0,0" VerticalAlignment="Center" Width="15" Click="Clear_TnT_Click"/>
+
+
+        <!-- Messages list -->
+        <ListBox x:Name="MessagesListBox" Grid.Row="2" Margin="0,0,0,0" HorizontalAlignment="Left" Width="385" />
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusTextBlock" Grid.Row="1" HorizontalAlignment="Left" Margin="0,10,0,0" Width="385" />
+        <TextBlock x:Name="StatusTextBlockData" Grid.Row="1" Grid.Column="0" Margin="185,5,0,5" HorizontalAlignment="Right" Width="100" TextAlignment="Right" />
+
+
+
+        <!-- Original Tryd button kept -->
+        <Button Content="Book" Grid.Column="1" VerticalAlignment="Center" Click="Book_Click" Margin="0,0,20,0" HorizontalAlignment="Right" Width="365"/>
+        <Button Content="C" HorizontalAlignment="Right" Grid.Column="1" Margin="0,0,0,0" VerticalAlignment="Center" Width="15" Click="Clear_Book_Click"/>
+
+        <!-- Messages list -->
+        <ListBox x:Name="MessagesListBoxBk" Grid.Row="2" Grid.Column="1" Margin="0,0,0,0" HorizontalAlignment="Right" Width="385" />
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusTextBlockBk" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" Margin="0,10,0,0" Width="400" />
+        <TextBlock x:Name="StatusTextBlockDataBk" Grid.Row="1" Grid.Column="1" Margin="185,5,0,5" HorizontalAlignment="Right" Width="100" TextAlignment="Right" />
+
+
+
+        <!-- Original Tryd button kept -->
+        <Button Content="Time and Trade S" Grid.Column="2" VerticalAlignment="Center" Click="TntS_Click" Margin="0,0,20,0" HorizontalAlignment="Right" Width="365"/>
+        <Button Content="C" HorizontalAlignment="Right" Grid.Column="2" Margin="0,0,0,0" VerticalAlignment="Center" Width="15" Click="Clear_TntS_Click"/>
+
+        <!-- Messages list -->
+        <ListBox x:Name="MessagesListBoxTntS" Grid.Row="2" Grid.Column="2" Margin="0,0,0,0" HorizontalAlignment="Right" Width="385" />
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusTextBlockTntS" Grid.Row="1" Grid.Column="2" HorizontalAlignment="Left" Margin="0,10,0,0" Width="400" />
+        <TextBlock x:Name="StatusTextBlockDataTntS" Grid.Row="1" Grid.Column="2" Margin="185,5,0,5" HorizontalAlignment="Right" Width="100" TextAlignment="Right" />
+
+
+    </Grid>
+</Window>

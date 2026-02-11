@@ -1,0 +1,13 @@
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\bin\Debug\net9.0\B3WM.Shared.deps.json
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\bin\Debug\net9.0\B3WM.Shared.dll
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\bin\Debug\net9.0\B3WM.Shared.pdb
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.csproj.AssemblyReference.cache
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.AssemblyInfoInputs.cache
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.AssemblyInfo.cs
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.csproj.CoreCompileInputs.cache
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.sourcelink.json
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.dll
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\refint\B3WM.Shared.dll
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\B3WM.Shared.pdb
+C:\Users\Mateus-Casa\source\repos\B3WM\B3WM.Shared\obj\Debug\net9.0\ref\B3WM.Shared.dll

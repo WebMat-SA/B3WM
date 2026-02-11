@@ -1,0 +1,124 @@
+﻿@using B3WM.Shared.Entity
+@using Microsoft.AspNetCore.SignalR.Client
+@using System.Text
+@using System.Collections.Concurrent
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+@code {
+    private HubConnection? hubConnection;
+
+    [Parameter]
+    public EventCallback<IEnumerable<Bars>> OnCandleSeriesChange { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<IEnumerable<BookItem>> OnBookChange { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<IEnumerable<Ticks2>> OnNewTicks { get; set; } = default!;
+
+    [Parameter]
+    public int BubbleThreshold { get; set; } = 125;
+
+    [Parameter]
+    public EventCallback<(double price, Ticks2.Agents? agent, decimal amount, DateTime time)> OnNewBubble { get; set; } = default!;
+
+    // Queue holding the incoming queues (respect arrival order)
+    ConcurrentQueue<Ticks2> QueueToExecute = new ConcurrentQueue<Ticks2>();
+
+    // Flag to ensure only one processor runs at a time
+    private int _isProcessing = 0;
+
+    private int _counter { get; set; } = 0;
+
+    // create in OnInitializedAsync to avoid using instance method in field initializer
+    private QueueHelper? dataHelper;
+
+    public bool IsConnected =>
+        hubConnection?.State == HubConnectionState.Connected;
+
+    private Ticks2.Agents? LastActor { get; set; } = null;
+    private decimal AmountActor { get; set; } = 0m;
+    private Ticks2.ActionType? LastSide { get; set; } = null;
+    private double LastPrice { get; set; } = 0;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
+            .Build();
+
+        hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
+        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
+        hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
+
+        // initialize QueueHelper here (instance methods safe to reference)
+        dataHelper = new QueueHelper(NewBubble, BubbleThreshold);
+
+        await hubConnection.StartAsync();
+    }
+
+    private async void OnReceiveBook(byte[] data)
+    {
+        if (OnBookChange.HasDelegate) await OnBookChange.InvokeAsync(new DataHelper(data).Book());
+
+        StateHasChanged();
+
+    }
+
+    private void OnReceiveTNT(byte[] data)
+    {
+        //debug de velocidade e confirmação de dados
+        _counter++;
+
+        // UI update - keep lightweight here
+        InvokeAsync(StateHasChanged);
+
+        //converte a lista para ticks2
+        var newQueue = new DataHelper(data).TimesAndTrades();
+
+        // Notify subscribers about the new tick in the same order we dequeue it
+        if (OnNewTicks.HasDelegate)
+            OnNewTicks.InvokeAsync(newQueue);
+
+    }
+
+    private void OnReceiveTNTSimple(byte[] data)
+    {
+        _ = Enqueue(data);
+    }
+
+    private async Task Enqueue(byte[] data)
+    {
+        if (dataHelper is null)
+        {
+            // fallback: create helper if for some reason it's not initialized yet
+            dataHelper = new QueueHelper(NewBubble, BubbleThreshold);
+        }
+
+        _ = dataHelper.Enqueue(data);
+    }
+
+    public void NewBubble((double price, Ticks2.Agents? agent, decimal amount, DateTime time) data)
+    {
+        if (OnNewBubble.HasDelegate) 
+            OnNewBubble.InvokeAsync(data);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+
+        dataHelper?.Dispose();
+    }
+}
+
+<MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
+    <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@_counter" OnClick="() => _counter = 0">
+        <MudIcon Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" @onclick="() => _counter = 0" />
+    </MudBadge>
+</MudTooltip>

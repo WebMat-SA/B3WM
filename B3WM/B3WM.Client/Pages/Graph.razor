@@ -1,0 +1,268 @@
+﻿@page "/graph"
+
+@using Vizor.ECharts
+
+<MudButton Variant="Variant.Filled" OnClick="GenerateChart">
+    Gerar gráfico
+</MudButton>
+
+<Vizor.ECharts.EChart @ref="EChart"
+                      Renderer="ChartRenderer.Canvas"
+                      Options="ChartOptions"
+                      Width="auto"
+                      Height="600px" />
+
+@code {
+
+    private EChart? EChart;
+
+    // ⚠️ FULLY QUALIFIED → sem conflito com MudBlazor
+    private Vizor.ECharts.ChartOptions ChartOptions = new Vizor.ECharts.ChartOptions
+    {
+        DarkMode = true,
+        Grid = new Grid
+        {
+            Left = "10",
+            Right = "50",
+            Bottom = "15",
+            Top = "10",
+            ContainLabel = true
+        }
+    };
+
+    // =========================
+    // RAW DATA (JS → C#)
+    // =========================
+    private readonly List<object[]> RawData = new()
+    {
+        new object[] { "2013/1/24", 2320.26m, 2320.26m, 2287.3m, 2362.94m },
+        new object[] { "2013/1/25", 2300m, 2291.3m, 2288.26m, 2308.38m },
+        new object[] { "2013/1/28", 2295.35m, 2346.5m, 2295.35m, 2346.92m },
+        new object[] { "2013/1/29", 2347.22m, 2358.98m, 2337.35m, 2363.8m },
+        new object[] { "2013/1/30", 2360.75m, 2382.48m, 2347.89m, 2383.76m },
+        new object[] { "2013/1/31", 2383.43m, 2385.42m, 2371.23m, 2391.82m },
+        new object[] { "2013/2/1", 2377.41m, 2419.02m, 2369.57m, 2421.15m },
+        new object[] { "2013/2/4", 2425.92m, 2428.15m, 2417.58m, 2440.38m },
+        new object[] { "2013/2/5", 2411m, 2433.13m, 2403.3m, 2437.42m },
+        new object[] { "2013/2/6", 2432.68m, 2434.48m, 2427.7m, 2441.73m },
+        new object[] { "2013/2/7", 2430.69m, 2418.53m, 2394.22m, 2433.89m },
+        new object[] { "2013/2/8", 2416.62m, 2432.4m, 2414.4m, 2443.03m },
+        new object[] { "2013/2/18", 2441.91m, 2421.56m, 2415.43m, 2444.8m },
+        new object[] { "2013/2/19", 2420.26m, 2382.91m, 2373.53m, 2427.07m },
+        new object[] { "2013/2/20", 2383.49m, 2397.18m, 2370.61m, 2397.94m },
+        new object[] { "2013/2/21", 2378.82m, 2325.95m, 2309.17m, 2378.82m },
+        new object[] { "2013/2/22", 2322.94m, 2314.16m, 2308.76m, 2330.88m },
+        new object[] { "2013/2/25", 2320.62m, 2325.82m, 2315.01m, 2338.78m },
+        new object[] { "2013/2/26", 2313.74m, 2293.34m, 2289.89m, 2340.71m },
+        new object[] { "2013/2/27", 2297.77m, 2313.22m, 2292.03m, 2324.63m },
+        new object[] { "2013/2/28", 2322.32m, 2365.59m, 2308.92m, 2366.16m },
+        new object[] { "2013/3/1", 2364.54m, 2359.51m, 2330.86m, 2369.65m },
+        new object[] { "2013/3/4", 2332.08m, 2273.4m, 2259.25m, 2333.54m },
+        new object[] { "2013/3/5", 2274.81m, 2326.31m, 2270.1m, 2328.14m },
+        new object[] { "2013/3/6", 2333.61m, 2347.18m, 2321.6m, 2351.44m },
+        new object[] { "2013/3/7", 2340.44m, 2324.29m, 2304.27m, 2352.02m },
+        new object[] { "2013/3/8", 2326.42m, 2318.61m, 2314.59m, 2333.67m },
+        new object[] { "2013/3/11", 2314.68m, 2310.59m, 2296.58m, 2320.96m },
+        new object[] { "2013/3/12", 2309.16m, 2286.6m, 2264.83m, 2333.29m },
+        new object[] { "2013/3/13", 2282.17m, 2263.97m, 2253.25m, 2286.33m },
+        new object[] { "2013/3/14", 2255.77m, 2270.28m, 2253.31m, 2276.22m },
+        new object[] { "2013/3/15", 2269.31m, 2278.4m, 2250m, 2312.08m },
+        new object[] { "2013/3/18", 2267.29m, 2240.02m, 2239.21m, 2276.05m },
+        new object[] { "2013/3/19", 2244.26m, 2257.43m, 2232.02m, 2261.31m },
+        new object[] { "2013/3/20", 2257.74m, 2317.37m, 2257.42m, 2317.86m },
+        new object[] { "2013/3/21", 2318.21m, 2324.24m, 2311.6m, 2330.81m },
+        new object[] { "2013/3/22", 2321.4m, 2328.28m, 2314.97m, 2332m }
+    };
+
+    // =========================
+    // RAW DATA (JS → C#)
+    // =========================
+    private readonly List<object[]> RawDataBubble = new()
+    {
+        new object[] { "2013/1/24", 2320.26m, 20m  },
+        new object[] { "2013/1/25", 2291.3m , 50.5m  },
+        new object[] { "2013/1/28", 2295.35m, 25m  },
+        new object[] { "2013/1/29", 2347.22m, 20m  },
+        new object[] { "2013/1/30", 2360.75m, 50.5m  },
+        new object[] { "2013/1/31", 2383.43m, 25m  },
+        new object[] { "2013/2/1", 2377.41m , 20m  },
+        new object[] { "2013/2/4", 2425.92m , 50.5m  },
+        new object[] { "2013/2/5", 2411m    , 25m  },
+        new object[] { "2013/2/6", 2432.68m , 20m  },
+        new object[] { "2013/2/7", 2430.69m , 50.5m  },
+        new object[] { "2013/2/8", 2416.62m , 25m  },
+        new object[] { "2013/2/18", 2441.91m, 20m  },
+        new object[] { "2013/2/19", 2420.26m, 50.5m  },
+        new object[] { "2013/2/20", 2383.49m, 25m  },
+        new object[] { "2013/2/21", 2378.82m, 20m  },
+        new object[] { "2013/2/22", 2322.94m, 50.5m  },
+        new object[] { "2013/2/25", 2320.62m, 25m  },
+        new object[] { "2013/2/26", 2313.74m, 20m  },
+        new object[] { "2013/2/27", 2297.77m, 50.5m  },
+        new object[] { "2013/2/28", 2322.32m, 25m  },
+        new object[] { "2013/3/1", 2364.54m , 20m  },
+        new object[] { "2013/3/4", 2332.08m , 50.5m  },
+        new object[] { "2013/3/5", 2274.81m , 25m  },
+        new object[] { "2013/3/6", 2333.61m , 20m  },
+        new object[] { "2013/3/7", 2340.44m , 50.5m  },
+        new object[] { "2013/3/8", 2326.42m , 25m  },
+        new object[] { "2013/3/11", 2314.68m, 20m  },
+        new object[] { "2013/3/12", 2309.16m, 50.5m  },
+        new object[] { "2013/3/13", 2282.17m, 25m  },
+        new object[] { "2013/3/14", 2255.77m, 20m  },
+        new object[] { "2013/3/15", 2269.31m, 50.5m  },
+        new object[] { "2013/3/18", 2267.29m, 25m  },
+        new object[] { "2013/3/19", 2244.26m, 20m  },
+        new object[] { "2013/3/20", 2257.74m, 50.5m  },
+        new object[] { "2013/3/21", 2318.21m, 25m  },
+        new object[] { "2013/3/22", 2321.4m , 4m  },
+        
+        new object[] { "2013/3/114",2314.68m, 2m  },
+        new object[] { "2013/3/125",2309.16m, 25.5m  },
+        new object[] { "2013/3/138",2282.17m, 2m  },
+        new object[] { "2013/3/149",2255.77m, 10m  },
+        new object[] { "2013/3/150",2269.31m, 25m  },
+        new object[] { "2013/3/181",2267.29m, 33m  },
+        new object[] { "2013/3/19", 2244.26m, 12m  },
+        new object[] { "2013/3/20", 2257.74m, 60m  },
+        new object[] { "2013/3/21", 2318.21m, 12m  },
+        new object[] { "2013/3/19", 2321.4m , 78m  },
+        new object[] { "2013/3/20", 2257.74m, 5.5m  },
+        new object[] { "2013/3/21", 2318.21m, 5m  },
+        new object[] { "2013/3/22", 2321.4m , 133m  },
+    };
+
+    // =========================
+    // GERAR GRÁFICO
+    // =========================
+    private async Task GenerateChart()
+    {
+        if (EChart is null)
+            return;
+
+        var categoryData = new List<string>();
+        var values = new List<object[]>();
+
+        foreach (var row in RawData)
+        {
+            categoryData.Add(row[0].ToString()!);
+            values.Add(new object[]
+            {
+                row[1], // open
+                row[2], // close
+                row[3], // low
+                row[4]  // high
+            });
+        }
+
+        ChartOptions.Tooltip = new Tooltip
+        {
+            Trigger = TooltipTrigger.Axis,
+            AxisPointer = new AxisPointer
+            {
+                Type = AxisPointerType.Cross
+            }
+        };
+
+        // Update legend to include both scatter series
+        ChartOptions.Legend = new Legend
+        {
+            Data = new List<string> { "Candle", "Aggressive Short", "Aggressive Long" },
+            Top = "20"
+        };
+
+        ChartOptions.XAxis = new XAxis
+        {
+            Type = AxisType.Category,
+            Data = categoryData,
+            BoundaryGap = false,
+            Min = "dataMin",
+            Max = "dataMax"
+        };
+
+        ChartOptions.YAxis = new YAxis
+        {
+            Scale = true,
+            SplitArea = new SplitArea
+            {
+                Show = true
+            }
+        };
+
+        // ⚠️ IDataZoom (não DataZoom)
+        ChartOptions.DataZoom = new List<IDataZoom>
+        {
+            new InsideDataZoom
+            {
+                Start = 50,
+                End = 100
+            },
+            new SliderDataZoom
+            {
+                Top = "90%",
+                Start = 50,
+                End = 100
+            }
+        };
+
+        // Prepare bubble scatter data split in half
+        var bubbleData = RawDataBubble.Select(e => new object[] { e[0], e[1], e[2] }).ToList();
+        var mid = bubbleData.Count / 2;
+        var dataRed = bubbleData.Take(mid).ToList();
+        var dataBlue = bubbleData.Skip(mid).ToList();
+
+        var symbolSizeFunction = new NumberArrayOrFunction(
+            new JavascriptFunction(
+            @"function (value) {
+                        return value[2] * 2;
+                    }")
+        );
+
+        ChartOptions.Series = new List<ISeries>
+        {
+            new CandlestickSeries
+            {
+                Name = "日K",
+                Data = values,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#ffffff",
+                    Color0 = "#000000",
+                    BorderColor = "#000000",
+                    BorderColor0 = "#ffffff"
+                }
+            },
+
+            new ScatterSeries
+            {
+                Name = "Aggressive Red",
+                Data = dataRed,
+                SymbolSize = symbolSizeFunction,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#ff0000",
+                    Opacity = 0.3,
+                    BorderColor = "#ff0000",
+                    BorderWidth = 1,
+                }
+            },
+
+            new ScatterSeries
+            {
+                Name = "Aggressive Blue",
+                Data = dataBlue,
+                SymbolSize = symbolSizeFunction,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#0000ff",
+                    Opacity = 0.3,
+                    BorderColor = "#0000ff",
+                    BorderWidth = 1,
+
+                }
+            }
+        };
+
+        await EChart.UpdateAsync();
+    }
+}

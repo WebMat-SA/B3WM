@@ -1,0 +1,35 @@
+﻿@using B3WM.Shared.Entity
+@using Vizor.ECharts;
+
+@page "/"
+
+<PageTitle>B³ WM</PageTitle>
+
+
+<MudStack AlignItems="AlignItems.Center" Justify="Justify.FlexEnd" Class="px-5 pt-3" Row>
+    <B3WM.Client.Components.HubClient OnBookChange="@BookChange" BubbleThreshold="125" OnNewBubble="@NewBubble" OnNewTicks="NewTick" />
+</MudStack>
+
+<hr />
+
+@code {
+
+    public void BookChange(IEnumerable<B3WM.Shared.Entity.BookItem> bookItems)
+    {
+        //Console.WriteLine("Book changed");
+    }
+
+    public void NewBubble((double price, Ticks2.Agents? agent, decimal amount, DateTime time) data)
+    {
+        Console.WriteLine($"NewBubble: {data.price.ToString("000000")} : {data.amount} : {data.time.ToString("HH:mm:ss")}");
+    }
+
+    public void NewTick(IEnumerable<Ticks2> ticks)
+    {
+        foreach(var item in ticks)
+        {
+            //Console.WriteLine(item.ToString());
+        }
+    }
+
+}

@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "dgSpecHash": "1d+Il+b7XT4=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Mateus-Casa\\source\\repos\\B3WM\\B3WM.Shared\\B3WM.Shared.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.entityframeworkcore\\9.0.12\\microsoft.entityframeworkcore.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.entityframeworkcore.abstractions\\9.0.12\\microsoft.entityframeworkcore.abstractions.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.entityframeworkcore.analyzers\\9.0.12\\microsoft.entityframeworkcore.analyzers.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.caching.abstractions\\9.0.12\\microsoft.extensions.caching.abstractions.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.caching.memory\\9.0.12\\microsoft.extensions.caching.memory.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.dependencyinjection\\9.0.12\\microsoft.extensions.dependencyinjection.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.12\\microsoft.extensions.dependencyinjection.abstractions.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.logging\\9.0.12\\microsoft.extensions.logging.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.12\\microsoft.extensions.logging.abstractions.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.options\\9.0.12\\microsoft.extensions.options.9.0.12.nupkg.sha512",
+    "C:\\Users\\Mateus-Casa\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.12\\microsoft.extensions.primitives.9.0.12.nupkg.sha512"
+  ],
+  "logs": []
+}

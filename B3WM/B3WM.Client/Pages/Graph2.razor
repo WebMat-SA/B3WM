@@ -1,0 +1,120 @@
+﻿@page "/graph2"
+@using Vizor.ECharts
+
+<MudButton Variant="Variant.Filled" OnClick="GenerateChart">
+    Gerar Scatter
+</MudButton>
+
+<Vizor.ECharts.EChart @ref="EChart"
+                      Renderer="ChartRenderer.Canvas"
+                      Options="ChartOptions"
+                      Width="auto"
+                      Height="600px" />
+
+@code {
+
+    private EChart? EChart;
+
+    private Vizor.ECharts.ChartOptions ChartOptions = new()
+    {
+        Grid = new Grid
+        {
+            Left = "10",
+            Right = "10",
+            Bottom = "15",
+            Top = "10",
+            ContainLabel = true
+        }
+    };
+
+    // =========================
+    // DADOS
+    // [GDP, LifeExpectancy, Population, Country, Year]
+    // =========================
+    private readonly List<object[]> RawData = new()
+    {
+        new object[] { 28604, 77, 17096869, "Australia", 1990 },
+        new object[] { 31163, 77.4, 27662440, "Canada", 1990 },
+        new object[] { 1516, 68, 1154605773, "China", 1990 },
+        new object[] { 29550, 79.1, 122249285, "Japan", 1990 },
+        new object[] { 37062, 75.4, 252847810, "United States", 1990 },
+
+        new object[] { 44056, 81.8, 23968973, "Australia", 2015 },
+        new object[] { 43294, 81.7, 35939927, "Canada", 2015 },
+        new object[] { 13334, 76.9, 1376048943, "China", 2015 },
+        new object[] { 36162, 83.5, 126573481, "Japan", 2015 },
+        new object[] { 53354, 79.1, 321773631, "United States", 2015 }
+    };
+
+    private async Task GenerateChart()
+    {
+        if (EChart is null)
+            return;
+
+        var data1990 = RawData.Where(d => (int)d[4] == 1990).ToList();
+        var data2015 = RawData.Where(d => (int)d[4] == 2015).ToList();
+
+        ChartOptions.Title = new Title
+        {
+            Text = "1990 and 2015 per capita life expectancy and GDP",
+            Left = "center"
+        };
+
+        ChartOptions.Legend = new Legend
+        {
+            Data = new List<string> { "1990", "2015" },
+            Bottom = "5%"
+        };
+
+        ChartOptions.Tooltip = new Tooltip
+        {
+            Trigger = TooltipTrigger.Axis,
+            AxisPointer = new AxisPointer
+            {
+                Type = AxisPointerType.Cross
+            }
+        };
+
+        ChartOptions.XAxis = new XAxis
+        {
+            Type = AxisType.Value,
+        };
+
+        ChartOptions.YAxis = new YAxis
+        {
+            Type = AxisType.Value,
+            
+        };
+
+        ChartOptions.Series = new List<ISeries>
+        {
+            new ScatterSeries
+            {
+                Name = "1990",
+                Data = data1990.Select(d => new object[]
+                {
+                    d[0], // GDP
+                    d[1], // Life expectancy
+                    d[2], // Population
+                    d[3]  // Country
+                }).ToList(),
+                SymbolSize = 15
+            },
+
+            new ScatterSeries
+            {
+                Name = "2015",
+                Data = data2015.Select(d => new object[]
+                {
+                    d[0],
+                    d[1],
+                    d[2],
+                    d[3]
+                }).ToList(),
+                SymbolSize = 20
+            }
+        };
+
+        await EChart.UpdateAsync();
+    }
+}

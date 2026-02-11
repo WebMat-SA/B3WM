@@ -1,0 +1,41 @@
+﻿@inherits LayoutComponentBase;
+@inject IAccountService AccountService;
+
+<MudThemeProvider IsDarkMode=true />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Dense>
+        <MudMenu Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
+            <MudMenuItem Href="/">Home</MudMenuItem>
+            <MudMenuItem Href="/times-and-trades">Times and Trades</MudMenuItem>
+        </MudMenu>
+    </MudAppBar>
+    <MudDrawer Open="openDrawer">
+
+    </MudDrawer>
+    <MudMainContent>
+        @* <CascadingValue Value="AccountService"> *@
+            @Body
+        @* </CascadingValue> *@
+    </MudMainContent>
+</MudLayout>
+
+
+@code{
+    public bool openDrawer { get; set; } = false;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            //AccountService.UpdateScreen += StateHasChanged;
+            OAccountService Observer = new OAccountService(AccountService);
+            Observer.ActionNext += (() => InvokeAsync(() => StateHasChanged()));
+        }
+
+        base.OnAfterRender(firstRender);
+    }
+}
