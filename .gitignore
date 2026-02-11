@@ -6,3 +6,9 @@
 /packages
 [Bb]in/
 [Oo]bj/
+*.suo
+*.user
+_ReSharper.*
+bin
+obj
+packages
