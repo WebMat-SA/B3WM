@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "B3WM.Client",
   "resources": {
-    "hash": "sha256-hsQQaTC1IEHbEx9qE7ay82w1DIe57pwiLs7/rgWBCYo=",
+    "hash": "sha256-vVFvzaTT6ArLbaT2hK+rH94c1IUiZMIh60N4kgaXVDA=",
     "fingerprinting": {
       "Blazored.SessionStorage.34xr2ein7y.wasm": "Blazored.SessionStorage.wasm",
       "Microsoft.AspNetCore.Authorization.j0mj4vhukl.wasm": "Microsoft.AspNetCore.Authorization.wasm",
@@ -218,11 +218,11 @@
       "icudt_CJK.tjcz0u77k5.dat": "icudt_CJK.dat",
       "icudt_EFIGS.tptq2av103.dat": "icudt_EFIGS.dat",
       "icudt_no_CJK.lfu7j35m59.dat": "icudt_no_CJK.dat",
-      "B3WM.Shared.ja5agtn70f.wasm": "B3WM.Shared.wasm",
+      "B3WM.Shared.gzq78ypiby.wasm": "B3WM.Shared.wasm",
       "Vizor.ECharts.yb2gmxqqz0.wasm": "Vizor.ECharts.wasm",
-      "B3WM.Shared.pzjbf8g73t.pdb": "B3WM.Shared.pdb",
-      "B3WM.Client.dt797vst5z.wasm": "B3WM.Client.wasm",
-      "B3WM.Client.yfd9jixzfl.pdb": "B3WM.Client.pdb"
+      "B3WM.Shared.nhpldwjtyk.pdb": "B3WM.Shared.pdb",
+      "B3WM.Client.d3s42vrjy6.wasm": "B3WM.Client.wasm",
+      "B3WM.Client.v3stln995n.pdb": "B3WM.Client.pdb"
     },
     "jsModuleNative": {
       "dotnet.native.xidrk0eo52.js": "sha256-OfGprhDb4vgzxzOBj9RRMcRnAdSZR0hH5g5LHA0MzIE="
@@ -449,13 +449,13 @@
       "WindowsBase.300iq62cmr.wasm": "sha256-gyJyeSLAns1YIwrPLmw2VAbNeQgpzgW5xIJovvySzEc=",
       "mscorlib.560m239brp.wasm": "sha256-XShGzkyhqE1Qwz15C0W5EDSl0wiqbw4NUP1UtzupbE4=",
       "netstandard.yg21u65s4h.wasm": "sha256-PjcsgKDGCmf1+ahJpjBZtaqHugXi6ZJaAVAkX0OzhaI=",
-      "B3WM.Shared.ja5agtn70f.wasm": "sha256-Sw0gDv5Hoz0RshSIYiZwruEl4mFBH21SRc21ZWYAGIc=",
+      "B3WM.Shared.gzq78ypiby.wasm": "sha256-XGSYBz8oSg9MYI1q96HvjXCqyKDSLIobDxEqPqx/BG8=",
       "Vizor.ECharts.yb2gmxqqz0.wasm": "sha256-Mnbkg9Nwou79pQgX4ik8insDbm0dBVa04cjBqvOOkUs=",
-      "B3WM.Client.dt797vst5z.wasm": "sha256-Ly0YEKhq7WaYlBN7IeSCdw6rqg8+qI/ewen7ZWTC9z8="
+      "B3WM.Client.d3s42vrjy6.wasm": "sha256-OfWPHCENajVteh9H+Etbf/nRo+2VYb0Ogx2cLGhgYSA="
     },
     "pdb": {
-      "B3WM.Shared.pzjbf8g73t.pdb": "sha256-C3fWzuBL327A+dCGmtO0YUwjIPIfIaszuAiZgN+BrZA=",
-      "B3WM.Client.yfd9jixzfl.pdb": "sha256-sgh8kU9iz7roch87cbp0/hrutpLDVMbnzsrhJNykRtg="
+      "B3WM.Shared.nhpldwjtyk.pdb": "sha256-tW6hQGx4RNbORADtzR/WCn0lI1hn1UqiWsvllYgbt2U=",
+      "B3WM.Client.v3stln995n.pdb": "sha256-dQvTL+lz22qQMSOQBioy40TrGuxOqUzsJU54sIgAWHg="
     }
   },
   "cacheBootResources": true,
