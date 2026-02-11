@@ -32,7 +32,9 @@
     private int _counter { get; set; } = 0;
 
     // create in OnInitializedAsync to avoid using instance method in field initializer
-    private QueueHelper? dataHelper;
+    private BubbleHelper? bubbleHelper;
+
+    private BubbleHelper? candleHelper;
 
     public bool IsConnected =>
         hubConnection?.State == HubConnectionState.Connected;
@@ -53,8 +55,8 @@
         //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
         hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
-        // initialize QueueHelper here (instance methods safe to reference)
-        dataHelper = new QueueHelper(NewBubble, BubbleThreshold);
+        // initialize BubbleHelper here (instance methods safe to reference)
+        bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
 
         await hubConnection.StartAsync();
     }
@@ -91,13 +93,23 @@
 
     private async Task Enqueue(byte[] data)
     {
-        if (dataHelper is null)
+        if (bubbleHelper is null)
         {
             // fallback: create helper if for some reason it's not initialized yet
-            dataHelper = new QueueHelper(NewBubble, BubbleThreshold);
+            bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
         }
 
-        _ = dataHelper.Enqueue(data);
+        _ = bubbleHelper.Enqueue(data);
+
+
+        if (candleHelper is null)
+        {
+            // fallback: create helper if for some reason it's not initialized yet
+            candleHelper = new QueueHelper();
+        }
+
+        _ = candleHelper.Enqueue(data);
+
     }
 
     public void NewBubble((double price, Ticks2.Agents? agent, decimal amount, DateTime time) data)
@@ -113,7 +125,7 @@
             await hubConnection.DisposeAsync();
         }
 
-        dataHelper?.Dispose();
+        bubbleHelper?.Dispose();
     }
 }
 
