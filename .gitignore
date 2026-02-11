@@ -4,3 +4,5 @@
 
 /.vs
 /packages
+[Bb]in/
+[Oo]bj/
