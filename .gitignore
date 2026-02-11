@@ -4,6 +4,8 @@
 
 /.vs
 /packages
+**/bin/
+**/obj/
 [Bb]in/
 [Oo]bj/
 *.suo
@@ -12,3 +14,4 @@ _ReSharper.*
 bin
 obj
 packages
+
