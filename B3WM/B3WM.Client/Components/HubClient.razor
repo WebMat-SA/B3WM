@@ -26,15 +26,12 @@
     // Queue holding the incoming queues (respect arrival order)
     ConcurrentQueue<Ticks2> QueueToExecute = new ConcurrentQueue<Ticks2>();
 
-    // Flag to ensure only one processor runs at a time
-    private int _isProcessing = 0;
-
     private int _counter { get; set; } = 0;
 
     // create in OnInitializedAsync to avoid using instance method in field initializer
     private BubbleHelper? bubbleHelper;
 
-    private BubbleHelper? candleHelper;
+    private CandleHelper? candleHelper;
 
     public bool IsConnected =>
         hubConnection?.State == HubConnectionState.Connected;
@@ -105,7 +102,7 @@
         if (candleHelper is null)
         {
             // fallback: create helper if for some reason it's not initialized yet
-            candleHelper = new QueueHelper();
+            candleHelper = new CandleHelper(NewBars);
         }
 
         _ = candleHelper.Enqueue(data);
@@ -116,6 +113,12 @@
     {
         if (OnNewBubble.HasDelegate) 
             OnNewBubble.InvokeAsync(data);
+    }
+
+    public void NewBars(IEnumerable<Bars> bars)
+    {
+        if (OnCandleSeriesChange.HasDelegate)
+            OnCandleSeriesChange.InvokeAsync(bars);
     }
 
     public async ValueTask DisposeAsync()

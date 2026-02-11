@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "B3WM.Client",
   "resources": {
-    "hash": "sha256-SiKtSwvymmn1vepzZiEF7hBqEltESljPVqk3wY0XD1s=",
+    "hash": "sha256-r//xIgsReWVdpBQTz13g9IUaPWFQPQlAUU3ec6BXnG8=",
     "fingerprinting": {
       "Blazored.SessionStorage.34xr2ein7y.wasm": "Blazored.SessionStorage.wasm",
       "Microsoft.AspNetCore.Authorization.j0mj4vhukl.wasm": "Microsoft.AspNetCore.Authorization.wasm",
@@ -218,11 +218,11 @@
       "icudt_CJK.tjcz0u77k5.dat": "icudt_CJK.dat",
       "icudt_EFIGS.tptq2av103.dat": "icudt_EFIGS.dat",
       "icudt_no_CJK.lfu7j35m59.dat": "icudt_no_CJK.dat",
-      "B3WM.Shared.bgfvuj4n9z.wasm": "B3WM.Shared.wasm",
+      "B3WM.Shared.ja5agtn70f.wasm": "B3WM.Shared.wasm",
       "Vizor.ECharts.yb2gmxqqz0.wasm": "Vizor.ECharts.wasm",
-      "B3WM.Shared.w9zzcc1ojc.pdb": "B3WM.Shared.pdb",
-      "B3WM.Client.14gakxatsi.wasm": "B3WM.Client.wasm",
-      "B3WM.Client.1jtcy87f70.pdb": "B3WM.Client.pdb"
+      "B3WM.Shared.pzjbf8g73t.pdb": "B3WM.Shared.pdb",
+      "B3WM.Client.4u62g4s7x5.wasm": "B3WM.Client.wasm",
+      "B3WM.Client.00u64amhpg.pdb": "B3WM.Client.pdb"
     },
     "jsModuleNative": {
       "dotnet.native.xidrk0eo52.js": "sha256-OfGprhDb4vgzxzOBj9RRMcRnAdSZR0hH5g5LHA0MzIE="
@@ -449,20 +449,20 @@
       "WindowsBase.300iq62cmr.wasm": "sha256-gyJyeSLAns1YIwrPLmw2VAbNeQgpzgW5xIJovvySzEc=",
       "mscorlib.560m239brp.wasm": "sha256-XShGzkyhqE1Qwz15C0W5EDSl0wiqbw4NUP1UtzupbE4=",
       "netstandard.yg21u65s4h.wasm": "sha256-PjcsgKDGCmf1+ahJpjBZtaqHugXi6ZJaAVAkX0OzhaI=",
-      "B3WM.Shared.bgfvuj4n9z.wasm": "sha256-+2l6BRsYdPh8152CYcjhXbbiS3jdWaAazLZmBFE/LKM=",
+      "B3WM.Shared.ja5agtn70f.wasm": "sha256-Sw0gDv5Hoz0RshSIYiZwruEl4mFBH21SRc21ZWYAGIc=",
       "Vizor.ECharts.yb2gmxqqz0.wasm": "sha256-Mnbkg9Nwou79pQgX4ik8insDbm0dBVa04cjBqvOOkUs=",
-      "B3WM.Client.14gakxatsi.wasm": "sha256-EQhvw6/UOMkHjvFYNgDRb6ZKAUCLKpkaYbK5r3NzKX4="
+      "B3WM.Client.4u62g4s7x5.wasm": "sha256-HK8EFX+CFFIyfrVDAXHUybBDONQ13YZvirZdj7raQj8="
     },
     "pdb": {
-      "B3WM.Shared.w9zzcc1ojc.pdb": "sha256-VOkEJqwsvwtK0rG5YyAfzLYxhnKwF6lZDRY/sO+leXE=",
-      "B3WM.Client.1jtcy87f70.pdb": "sha256-gy2kWO4cNqzK+aHrAE8pC+q4/XyhOhQtiiu37DVseJQ="
+      "B3WM.Shared.pzjbf8g73t.pdb": "sha256-C3fWzuBL327A+dCGmtO0YUwjIPIfIaszuAiZgN+BrZA=",
+      "B3WM.Client.00u64amhpg.pdb": "sha256-oJYTkbvQg8KmutsnHENoGpVKpUMZ3toihoAcNzhSmAs="
     }
   },
   "cacheBootResources": true,
   "debugLevel": -1,
   "appsettings": [
-    "../appsettings.json",
-    "../appsettings.Development.json"
+    "../appsettings.Development.json",
+    "../appsettings.json"
   ],
   "globalizationMode": "sharded",
   "extensions": {

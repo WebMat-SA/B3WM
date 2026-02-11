@@ -62,7 +62,7 @@ namespace B3WM.Client.Services
                                     Console.WriteLine(t.ToString());
 
                                     //fazer logica aqui de agrupamento dos ticks em candles de 5 minutos, e chamar OnNewBars com os candles formados
-
+                                    OnNewBars?.Invoke(new List<Bars>()); //chamar com os candles formados
 
                                 }
                                 catch (Exception ex)
