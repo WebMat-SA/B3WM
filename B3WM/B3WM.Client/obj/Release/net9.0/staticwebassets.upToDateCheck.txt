@@ -1,4 +1,0 @@
-C:\Users\Mateus-Casa\source\repos\B3WM\B3WM\B3WM.Client\wwwroot\appsettings.json
-C:\Users\Mateus-Casa\source\repos\B3WM\B3WM\B3WM.Client\wwwroot\appsettings.Development.json
-wwwroot\appsettings.Development.json
-wwwroot\appsettings.json
