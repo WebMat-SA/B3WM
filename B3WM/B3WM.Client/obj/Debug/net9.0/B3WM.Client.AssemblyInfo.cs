@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("B3WM.Client")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6590c902a982678c9c75749f1e7676a726c78162")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e36fb07c8323a1cd6beae61d267893b261b10be1")]
 [assembly: System.Reflection.AssemblyProductAttribute("B3WM.Client")]
 [assembly: System.Reflection.AssemblyTitleAttribute("B3WM.Client")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

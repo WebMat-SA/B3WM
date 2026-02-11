@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "B3WM.Client",
   "resources": {
-    "hash": "sha256-r//xIgsReWVdpBQTz13g9IUaPWFQPQlAUU3ec6BXnG8=",
+    "hash": "sha256-hsQQaTC1IEHbEx9qE7ay82w1DIe57pwiLs7/rgWBCYo=",
     "fingerprinting": {
       "Blazored.SessionStorage.34xr2ein7y.wasm": "Blazored.SessionStorage.wasm",
       "Microsoft.AspNetCore.Authorization.j0mj4vhukl.wasm": "Microsoft.AspNetCore.Authorization.wasm",
@@ -221,8 +221,8 @@
       "B3WM.Shared.ja5agtn70f.wasm": "B3WM.Shared.wasm",
       "Vizor.ECharts.yb2gmxqqz0.wasm": "Vizor.ECharts.wasm",
       "B3WM.Shared.pzjbf8g73t.pdb": "B3WM.Shared.pdb",
-      "B3WM.Client.4u62g4s7x5.wasm": "B3WM.Client.wasm",
-      "B3WM.Client.00u64amhpg.pdb": "B3WM.Client.pdb"
+      "B3WM.Client.dt797vst5z.wasm": "B3WM.Client.wasm",
+      "B3WM.Client.yfd9jixzfl.pdb": "B3WM.Client.pdb"
     },
     "jsModuleNative": {
       "dotnet.native.xidrk0eo52.js": "sha256-OfGprhDb4vgzxzOBj9RRMcRnAdSZR0hH5g5LHA0MzIE="
@@ -451,11 +451,11 @@
       "netstandard.yg21u65s4h.wasm": "sha256-PjcsgKDGCmf1+ahJpjBZtaqHugXi6ZJaAVAkX0OzhaI=",
       "B3WM.Shared.ja5agtn70f.wasm": "sha256-Sw0gDv5Hoz0RshSIYiZwruEl4mFBH21SRc21ZWYAGIc=",
       "Vizor.ECharts.yb2gmxqqz0.wasm": "sha256-Mnbkg9Nwou79pQgX4ik8insDbm0dBVa04cjBqvOOkUs=",
-      "B3WM.Client.4u62g4s7x5.wasm": "sha256-HK8EFX+CFFIyfrVDAXHUybBDONQ13YZvirZdj7raQj8="
+      "B3WM.Client.dt797vst5z.wasm": "sha256-Ly0YEKhq7WaYlBN7IeSCdw6rqg8+qI/ewen7ZWTC9z8="
     },
     "pdb": {
       "B3WM.Shared.pzjbf8g73t.pdb": "sha256-C3fWzuBL327A+dCGmtO0YUwjIPIfIaszuAiZgN+BrZA=",
-      "B3WM.Client.00u64amhpg.pdb": "sha256-oJYTkbvQg8KmutsnHENoGpVKpUMZ3toihoAcNzhSmAs="
+      "B3WM.Client.yfd9jixzfl.pdb": "sha256-sgh8kU9iz7roch87cbp0/hrutpLDVMbnzsrhJNykRtg="
     }
   },
   "cacheBootResources": true,
