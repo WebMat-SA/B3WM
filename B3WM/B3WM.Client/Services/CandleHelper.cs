@@ -1,24 +1,36 @@
 ﻿using B3WM.Shared.Entity;
+using B3WM.Shared.Extensions;
 using System.Collections.Concurrent;
 
 namespace B3WM.Client.Services
 {
-    public class CandleHelper
+    public class CandleHelper : IDisposable
     {
-        private readonly Action<IEnumerable<Bars>>? OnNewBars;
+        private readonly Action<IEnumerable<Bars>>? OnClosedBars;
+        private readonly Action<Bars>? OnCurrentBarUpdated;
+
         private readonly int TimeFrameMinutes;
+        private readonly int _throttleMs;
+        private long _lastDispatch;
 
-        private ConcurrentQueue<byte[]> queue { get; set; } = new ConcurrentQueue<byte[]>();
-
-        // 0 = not processing, 1 = processing
+        private ConcurrentQueue<byte[]> queue = new();
         private int _isProcessing = 0;
+        private readonly CancellationTokenSource _cts = new();
 
-        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private readonly object _lock = new();
+        private Bars? _currentBar;
 
-        public CandleHelper(Action<IEnumerable<Bars>> _OnNewBars, int _TimeFrameMinutes = 5)
+        public CandleHelper(
+            Action<IEnumerable<Bars>> onClosedBars,
+            Action<Bars>? onCurrentBarUpdated = null,
+            int timeFrameMinutes = 5,
+            int throttleMs = 200)
         {
-            OnNewBars = _OnNewBars;
-            TimeFrameMinutes = _TimeFrameMinutes;
+            OnClosedBars = onClosedBars;
+            OnCurrentBarUpdated = onCurrentBarUpdated;
+            TimeFrameMinutes = timeFrameMinutes;
+            _throttleMs = throttleMs;
+            _lastDispatch = Environment.TickCount64;
         }
 
         public Task Enqueue(byte[] data)
@@ -27,10 +39,8 @@ namespace B3WM.Client.Services
 
             queue.Enqueue(data);
 
-            // If not already processing, start a background task to process the queue
             if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
             {
-                // fire-and-forget the processor
                 _ = Task.Run(ProcessQueueAsync, _cts.Token);
             }
 
@@ -45,77 +55,139 @@ namespace B3WM.Client.Services
 
                 while (!token.IsCancellationRequested)
                 {
-                    // Dequeue and process all available items
                     while (queue.TryDequeue(out var item))
                     {
-                        try
+                        var helper = new DataHelper(item);
+                        var ticks = helper.TimesAndTrades();
+
+                        foreach (var t in ticks)
                         {
-                            if (item == null) continue;
-
-                            var helper = new DataHelper(item);
-                            var ticks = helper.TimesAndTrades("NEG!");
-
-                            foreach (var t in ticks)
-                            {
-                                try
-                                {
-                                    Console.WriteLine(t.ToString());
-
-                                    //fazer logica aqui de agrupamento dos ticks em candles de 5 minutos, e chamar OnNewBars com os candles formados
-                                    OnNewBars?.Invoke(new List<Bars>()); //chamar com os candles formados
-
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine("QueueHelper processing item failed: " + ex.Message);
-                                }
-
-                                // yield to avoid starving the thread (kept as before)
-                                await Task.Yield();
-                            }
+                            ProcessTick(t);
+                            await Task.Yield();
                         }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine("QueueHelper processing item failed: " + ex.Message);
-                        }
-
-                        // yield to avoid starving the thread
-                        await Task.Yield();
                     }
 
-                    // no more items - set processing flag to 0 and exit unless new items arrived
                     Interlocked.Exchange(ref _isProcessing, 0);
 
-                    // if new items were added after we emptied the queue, attempt to take ownership and continue
-                    if (!queue.IsEmpty && Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-                    {
-                        continue; // loop again to process remaining items
-                    }
+                    if (!queue.IsEmpty &&
+                        Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
+                        continue;
 
-                    break; // nothing more to do
+                    break;
                 }
             }
-            catch (OperationCanceledException)
-            {
-                // expected on dispose
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("QueueHelper background processor failed: " + ex.Message);
-            }
+            catch { }
             finally
             {
                 Interlocked.Exchange(ref _isProcessing, 0);
             }
         }
 
+        private void ProcessTick(Ticks2 t)
+        {
+            var tickTime = t.Time;
+            var tickPrice = t.Value;
+            var tickVolume = t.Volume;
+
+            var candleStart = tickTime.GetCandleStart(TimeFrameMinutes);
+
+            Bars? closedBar = null;
+
+            lock (_lock)
+            {
+                if (_currentBar == null)
+                {
+                    _currentBar = CreateNewBar(candleStart, tickPrice, tickVolume);
+                    return;
+                }
+
+                if (_currentBar.Date != candleStart)
+                {
+                    closedBar = _currentBar;
+                    _currentBar = CreateNewBar(candleStart, tickPrice, tickVolume);
+                }
+                else
+                {
+                    UpdateBar(_currentBar, tickPrice, tickVolume);
+                }
+            }
+
+            // 🔥 Evento de barra fechada (imediato)
+            if (closedBar != null)
+            {
+                OnClosedBars?.Invoke(new List<Bars> { closedBar });
+            }
+
+            // 🔥 Atualização da barra atual (throttled)
+            TryDispatchCurrentBar();
+        }
+
+        private void TryDispatchCurrentBar()
+        {
+            if (OnCurrentBarUpdated == null)
+                return;
+
+            var now = Environment.TickCount64;
+
+            if (now - _lastDispatch < _throttleMs)
+                return;
+
+            _lastDispatch = now;
+
+            Bars? snapshot;
+
+            lock (_lock)
+            {
+                if (_currentBar == null)
+                    return;
+
+                snapshot = CloneBar(_currentBar);
+            }
+
+            OnCurrentBarUpdated?.Invoke(snapshot);
+        }
+
+        private Bars CloneBar(Bars bar)
+        {
+            return new Bars
+            {
+                Date = bar.Date,
+                Open = bar.Open,
+                High = bar.High,
+                Low = bar.Low,
+                Close = bar.Close,
+                Volume = bar.Volume,
+                TickVolume = bar.TickVolume,
+                TypeTime = bar.TypeTime,
+                CustomerID = bar.CustomerID
+            };
+        }
+
+        private Bars CreateNewBar(DateTime start, double price, long volume)
+        {
+            return new Bars
+            {
+                Date = start,
+                Open = price,
+                High = price,
+                Low = price,
+                Close = price,
+                Volume = volume
+            };
+        }
+
+        private void UpdateBar(Bars bar, double price, long volume)
+        {
+            if (price > bar.High) bar.High = price;
+            if (price < bar.Low) bar.Low = price;
+
+            bar.Close = price;
+            bar.Volume += volume;
+        }
+
         public void Dispose()
         {
-            try
-            {
-                _cts.Cancel();
-            }
-            catch { }
+            try { _cts.Cancel(); } catch { }
         }
     }
 }

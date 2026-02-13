@@ -9,7 +9,7 @@
 
 <hr />
 
-<MudStack Style="flex:1; min-height:0;">
+<MudStack Justify=Justify.Center Style="flex:1; min-height:0;">
     <!-- MudPaper stretches to fill the available vertical space; remove internal scrolling -->
     <MudPaper Style="position:relative; right:0; top:0; flex:1; height:100%; max-width:40vw; overflow:visible;">
         <!-- Turn off Virtualize and FixedHeader so the table body expands instead of creating its own scroll -->
@@ -53,7 +53,7 @@
     private readonly List<Ticks2> _ticks = new List<Ticks2>();
     private const int MaxBuffer = 25; // keep this many ticks in memory
 
-    private System.Timers.Timer _timer;
+    private System.Timers.Timer? _timer;
 
     override protected void OnInitialized()
     {

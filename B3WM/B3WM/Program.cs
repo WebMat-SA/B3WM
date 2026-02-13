@@ -1,4 +1,5 @@
 using B3WM.Client.Pages;
+using B3WM.Client.Services;
 using B3WM.Components;
 using B3WM.Services;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -49,11 +50,6 @@ namespace B3WM
                 opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
                     ["application/octet-stream"]);
             });
-
-
-
-
-
 
             var app = builder.Build();
 

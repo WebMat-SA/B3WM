@@ -1,0 +1,276 @@
+﻿@using B3WM.Shared.Entity
+@using B3WM.Shared.Extensions
+@using Vizor.ECharts
+@inject LocalStorageAccessor localStorage
+@page "/map-flow"
+
+@code {
+    public int TimeFrame { get; set; } = 2;
+    public int ThresholdBubble { get; set; } = 500;
+
+    private Vizor.ECharts.EChart? EChart;
+
+    private IList<Bars> Bars { get; set; } = new List<Bars>();
+    private Bars CurrentBar { get; set; } = new Bars();
+    private IList<Bars> RawDataBar 
+    { 
+        get
+        {
+            var _Bars = Bars.ToList();
+            _Bars.Add(CurrentBar);
+            return _Bars.OrderBy(q => q.Date).ToList();
+        }
+    }
+
+    private IList<Bubble> Bubbles { get; set; } = new List<Bubble>();
+    private IList<Bubble> RawDataBubbleBlue => Bubbles.Where(q=>q.ActionType == Ticks2.ActionType.Buy).OrderBy(q => q.Time).ToList();
+    private IList<Bubble> RawDataBubbleRed => Bubbles.Where(q=>q.ActionType == Ticks2.ActionType.Sale).OrderBy(q => q.Time).ToList();
+
+    private Vizor.ECharts.ChartOptions ChartOptions = new()
+    {
+        Grid = new Vizor.ECharts.Grid
+        {
+            Left = "10",
+            Right = "10",
+            Bottom = "15%",
+            Top = "10",
+            ContainLabel = true
+        },
+        DataZoom = new List<Vizor.ECharts.IDataZoom>
+        {
+            new Vizor.ECharts.InsideDataZoom(),
+            new Vizor.ECharts.SliderDataZoom { Top = "88%"}
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var storedBars = await localStorage.GetItemAsync<List<Bars>>($"bars_{TimeFrame}");
+        if (storedBars != null)
+            Bars = storedBars.Where(q=> q.Date >= DateTime.Today.Date).ToList();
+
+        var storedBubble = await localStorage.GetItemAsync<List<Bubble>>($"bubbles_{ThresholdBubble}");
+        if (storedBubble != null)
+            Bubbles = storedBubble;
+
+        if (EChart != null) await EChart.UpdateAsync(true);
+    }
+
+    // 🔥 Série completa (histórico)
+    public async void NewBar(IEnumerable<Bars> bars)
+    {
+        foreach (var bar in bars)
+            Bars.Add(bar);
+
+        await localStorage.SetItemAsync($"bars_{TimeFrame}", Bars);
+
+        if (EChart != null) await EChart.UpdateAsync(true);
+    }
+
+    // 🔥 Atualização da barra atual (500ms)
+    public async void NewCurrentBar(Bars bar)
+    {
+        CurrentBar = bar;
+
+        if (EChart != null) await EChart.UpdateAsync(true);
+    }
+
+    public async void NewBubble(Bubble data)
+    {
+        Bubbles.Add(data);
+        await localStorage.SetItemAsync($"bubbles_{ThresholdBubble}", Bubbles);
+
+        if (EChart != null) await EChart.UpdateAsync(true);
+    }
+
+    public async void VolumeUpdate(IEnumerable<VolumeLevel> volumes)
+    {
+        foreach (var volume in volumes)
+            Console.WriteLine(volume.Price + ": " + volume.Delta);
+    }
+
+    private void GenerateChart()
+    {
+        if (EChart is null)
+            return;
+
+        var categoryData = new List<string>();
+        var values = new List<object[]>();
+
+        foreach (var row in RawDataBar)
+        {
+            categoryData.Add(row.Date.ToString("HH:mm")!);
+            values.Add(new object[]
+            {
+                row.Open, // open
+                row.Close, // close
+                row.Low, // low
+                row.High  // high
+            });
+        }
+
+        ChartOptions.Tooltip = new Tooltip
+        {
+            Trigger = TooltipTrigger.Axis,
+            AxisPointer = new AxisPointer
+            {
+                Type = AxisPointerType.Cross
+            }
+        };
+
+        // Update legend to include both scatter series
+        ChartOptions.Legend = new Legend
+        {
+            Data = new List<string> { "Candle", "Aggressive Short", "Aggressive Long" },
+            Top = "20"
+        };
+
+        ChartOptions.XAxis = new XAxis
+        {
+            Type = AxisType.Category,
+            Data = categoryData,
+            BoundaryGap = new BoundaryGap("150%", "150%"),
+            Min = 0,
+            Max = values.Count * 1.25
+        };
+
+        ChartOptions.YAxis = new YAxis
+        {
+            Scale = true,
+            SplitArea = new SplitArea
+            {
+                Show = true
+            }
+        };
+
+        var symbolSizeFunction = new NumberArrayOrFunction(
+            new JavascriptFunction(
+                $@"function (value) {{
+                        return value[2] * {BubbleSize.ToString(System.Globalization.CultureInfo.InvariantCulture)};
+                   }}"
+            )
+        );
+
+        ChartOptions.Series = new List<ISeries>
+        {
+            new CandlestickSeries
+            {
+                Name = "WINFUT",
+                Data = values,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#ffffff",
+                    Color0 = "#000000",
+                    BorderColor = "#000000",
+                    BorderColor0 = "#ffffff"
+                }
+            },
+
+            new ScatterSeries
+            {
+                Name = "Aggressive Red",
+                Data = RawDataBubbleRed.Select(e => new object[] { e.Time.GetCandleStart(TimeFrame).ToString("HH:mm"), e.Price, e.Amount, e.Agent.Description() }).ToList(),
+                SymbolSize = symbolSizeFunction,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#ff0000",
+                    Opacity = 0.3,
+                    BorderColor = "#ff0000",
+                    BorderWidth = 1,
+                },
+                Tooltip = new Tooltip()
+                {
+                    Trigger = TooltipTrigger.Item,
+                    Formatter = new StringOrFunction(
+                        new JavascriptFunction(
+                            @"function (params) {
+                                return 'Time: ' + params.value[0] + '<br/>' +
+                                        'Price: ' + params.value[1] + '<br/>' +
+                                        'Amount: ' + params.value[2] + '<br/>' +
+                                        'Agent: ' + params.value[3] + '<br/>';
+                            }")
+                    )
+                }
+            },
+
+            new ScatterSeries
+            {
+                Name = "Aggressive Blue",
+                Data = RawDataBubbleBlue.Select(e => new object[] { e.Time.GetCandleStart(TimeFrame).ToString("HH:mm"), e.Price, e.Amount, e.Agent.Description() }).ToList(),
+                SymbolSize = symbolSizeFunction,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#0000ff",
+                    Opacity = 0.3,
+                    BorderColor = "#0000ff",
+                    BorderWidth = 1,
+
+                },
+                Tooltip = new Tooltip()
+                {
+                    Trigger = TooltipTrigger.Item,
+                    Formatter = new StringOrFunction(
+                        new JavascriptFunction(
+                            @"function (params) {
+                                return 'Time: ' + params.value[0] + '<br/>' +
+                                        'Price: ' + params.value[1] + '<br/>' +
+                                        'Amount: ' + params.value[2] + '<br/>' +
+                                        'Agent: ' + params.value[3] + '<br/>';
+                            }")
+                    )
+                }
+            }
+        };
+
+        //await EChart.UpdateAsync();
+    }
+
+
+    public bool openDrawer { get; set; } = false;
+    public double BubbleSize { get; set; } = 0.015;
+
+}
+
+<MudStack AlignItems="AlignItems.Center"
+          Justify="Justify.SpaceBetween"
+          Class="px-5 pt-3"
+          Row>
+
+    <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer"></MudIconButton>
+
+    <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar"
+                                      OnCurrentBarChange="NewCurrentBar"
+                                      OnVolumeUpdate = "VolumeUpdate"
+                                      TimeFrame="TimeFrame"
+                                      BubbleThreshold="ThresholdBubble"
+                                      OnNewBubble="@NewBubble" />
+
+</MudStack>
+
+<MudDrawerContainer Class="mud-height-full" Style="height:calc(100vh - 220px);">
+    <MudDrawer Open="openDrawer" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent">
+        <MudPaper Class="p-4">
+            <MudText Typo="Typo.h6">Bubbles (Aggressors)</MudText>
+            <MudSlider @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">@($"Aggressive ({ThresholdBubble.ToString()})")</MudSlider>
+            <MudSlider @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=0.10 T=@double Variant="Variant.Filled">@($"Size ({BubbleSize.ToString("0.000")})")</MudSlider>
+        </MudPaper>
+        <MudPaper Class="p-4 mt-2">
+            <MudText Typo="Typo.h6">TimeFrame (Min)</MudText>
+            <MudToggleGroup T=int @bind-Value=TimeFrame Delimiters Size="Size.Small" Outlined>
+                <MudToggleItem Value="1">1</MudToggleItem>
+                <MudToggleItem Value="2">2</MudToggleItem>
+                <MudToggleItem Value="5">5</MudToggleItem>
+                <MudToggleItem Value="15">15</MudToggleItem>
+                <MudToggleItem Value="30">30</MudToggleItem>
+                <MudToggleItem Value="60">60</MudToggleItem>
+            </MudToggleGroup>
+        </MudPaper>
+    </MudDrawer>
+    <Vizor.ECharts.EChart @ref="EChart"
+                          Renderer="Vizor.ECharts.ChartRenderer.Canvas"
+                          Options="ChartOptions"
+                          Width="auto"
+                          Height="800px"
+                          DataLoader="GenerateChart" />
+
+</MudDrawerContainer>

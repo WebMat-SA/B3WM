@@ -206,7 +206,7 @@
         };
 
         // Prepare bubble scatter data split in half
-        var bubbleData = RawDataBubble.Select(e => new object[] { e[0], e[1], e[2] }).ToList();
+        var bubbleData = RawDataBubble;
         var mid = bubbleData.Count / 2;
         var dataRed = bubbleData.Take(mid).ToList();
         var dataBlue = bubbleData.Skip(mid).ToList();

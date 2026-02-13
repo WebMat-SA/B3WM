@@ -11,6 +11,7 @@ namespace B3WM.Client
         {
             var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
+            builder.Services.AddScoped<LocalStorageAccessor>();
             builder.Services.AddTransient(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
             builder.Services.AddBlazoredSessionStorage();
             builder.Services.AddScoped<IAccountService, AccountService>();

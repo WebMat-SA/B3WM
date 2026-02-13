@@ -11,21 +11,16 @@
         <MudMenu Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
             <MudMenuItem Href="/">Home</MudMenuItem>
             <MudMenuItem Href="/times-and-trades">Times and Trades</MudMenuItem>
+            <MudMenuItem Href="/map-flow">MapFlow</MudMenuItem>
         </MudMenu>
     </MudAppBar>
-    <MudDrawer Open="openDrawer">
-
-    </MudDrawer>
     <MudMainContent>
-        @* <CascadingValue Value="AccountService"> *@
-            @Body
-        @* </CascadingValue> *@
+        @Body
     </MudMainContent>
 </MudLayout>
 
 
 @code{
-    public bool openDrawer { get; set; } = false;
 
     protected override void OnAfterRender(bool firstRender)
     {

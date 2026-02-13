@@ -27,7 +27,7 @@
 
   <ItemGroup>
     <None Update="Vizor.ECharts.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 

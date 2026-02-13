@@ -153,6 +153,8 @@ namespace B3WM.Shared.Entity
             BB_Recursos = 713	,
             [Display(Description = "ICAP DO BRASIL CTVM LTDA")]
             Icap = 735	,
+            [Display(Description = "LEV DTVM LTDA")]
+            LEV_DTVM = 746,
             [Display(Description = "BB BANCO DE INVESTIMENTO S/A")]
             BB = 820	,
             [Display(Description = "ADVALOR DTVM LTDA")]

@@ -21,8 +21,10 @@ namespace B3WM.Client.Services
             this.data = data;
         }
 
-        public ICollection<Ticks2> TimesAndTrades(string prefix = "NEGS!")
+        public ICollection<Ticks2> TimesAndTrades(bool isSimpleTrade = false)
         {
+            string prefix = isSimpleTrade ? "NEG!" : "NEGS!";
+
             ICollection<Ticks2> TicksQueue = new Collection<Ticks2>();
 
             string textData = Encoding.UTF8.GetString(data);
@@ -62,7 +64,7 @@ namespace B3WM.Client.Services
                             if (!DateTime.TryParseExact(times[i], "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime time))
                                 continue;
 
-                            if (!double.TryParse(values[i], NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
+                            if (!double.TryParse(values[i], NumberStyles.Any, CultureInfo.CurrentCulture, out double value))
                                 continue;
 
                             if (!int.TryParse(volumes[i], out int volume))
@@ -167,7 +169,7 @@ namespace B3WM.Client.Services
 
                                 if (content == "Aber.")
                                     bi.Value = -1.0d;
-                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.InvariantCulture, out double val2))
+                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val2))
                                     bi.Value = val2;
                                 else
                                     continue;
@@ -182,7 +184,7 @@ namespace B3WM.Client.Services
 
                                 if (content == "Aber.")
                                     bi.Value = -1.0d;
-                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.InvariantCulture, out double val3))
+                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val3))
                                     bi.Value = val3;
                                 else
                                     continue;

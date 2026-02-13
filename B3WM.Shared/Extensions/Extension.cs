@@ -76,6 +76,21 @@ namespace B3WM.Shared.Extensions
             list[indexB] = tmp;
             return list;
         }
+
+        public static DateTime GetCandleStart(this DateTime time, int TimeFrameMinutes)
+        {
+            try
+            {
+
+                var minutes = (time.Minute / TimeFrameMinutes) * TimeFrameMinutes;
+                return new DateTime(time.Year, time.Month, time.Day, time.Hour, minutes, 0);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error in GetCandleStart: " + e.Message);
+                return time;
+            }
+        }
     }
 
     public static class HexadecimalEncoding

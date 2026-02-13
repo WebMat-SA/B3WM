@@ -2,11 +2,20 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text
 @using System.Collections.Concurrent
+@using System.Timers
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 @code {
     private HubConnection? hubConnection;
+
+    private int _counter { get; set; } = 0;
+
+    private BubbleHelper? bubbleHelper;
+
+    private CandleHelper? candleHelper;
+
+    private VolumeHelper? volumeHelper;
 
     [Parameter]
     public EventCallback<IEnumerable<Bars>> OnCandleSeriesChange { get; set; } = default!;
@@ -18,48 +27,44 @@
     public EventCallback<IEnumerable<Ticks2>> OnNewTicks { get; set; } = default!;
 
     [Parameter]
+    public EventCallback<IEnumerable<VolumeLevel>> OnVolumeUpdate { get; set; } = default!;
+
+    [Parameter]
     public int BubbleThreshold { get; set; } = 125;
 
     [Parameter]
-    public EventCallback<(double price, Ticks2.Agents? agent, decimal amount, DateTime time)> OnNewBubble { get; set; } = default!;
+    public EventCallback<Bubble> OnNewBubble { get; set; } = default!;
 
-    // Queue holding the incoming queues (respect arrival order)
-    ConcurrentQueue<Ticks2> QueueToExecute = new ConcurrentQueue<Ticks2>();
+    [Parameter]
+    public EventCallback<Bars> OnCurrentBarChange { get; set; } = default!;
 
-    private int _counter { get; set; } = 0;
+    [Parameter]
+    public int TimeFrame { get; set; } = 5;
 
-    // create in OnInitializedAsync to avoid using instance method in field initializer
-    private BubbleHelper? bubbleHelper;
-
-    private CandleHelper? candleHelper;
 
     public bool IsConnected =>
         hubConnection?.State == HubConnectionState.Connected;
-
-    private Ticks2.Agents? LastActor { get; set; } = null;
-    private decimal AmountActor { get; set; } = 0m;
-    private Ticks2.ActionType? LastSide { get; set; } = null;
-    private double LastPrice { get; set; } = 0;
-
 
     protected override async Task OnInitializedAsync()
     {
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
+            .WithAutomaticReconnect()
             .Build();
 
         hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
         //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
         hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
-        // initialize BubbleHelper here (instance methods safe to reference)
-        bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
-
         await hubConnection.StartAsync();
     }
 
     private async void OnReceiveBook(byte[] data)
     {
+
+        //debug de velocidade e confirmação de dados
+        _counter++;
+
         if (OnBookChange.HasDelegate) await OnBookChange.InvokeAsync(new DataHelper(data).Book());
 
         StateHasChanged();
@@ -81,11 +86,15 @@
         if (OnNewTicks.HasDelegate)
             OnNewTicks.InvokeAsync(newQueue);
 
+        _ = Enqueue(data);
     }
 
     private void OnReceiveTNTSimple(byte[] data)
     {
-        _ = Enqueue(data);
+        //debug de velocidade e confirmação de dados
+        _counter++;
+
+        StateHasChanged();
     }
 
     private async Task Enqueue(byte[] data)
@@ -102,14 +111,23 @@
         if (candleHelper is null)
         {
             // fallback: create helper if for some reason it's not initialized yet
-            candleHelper = new CandleHelper(NewBars);
+            candleHelper = new CandleHelper(NewBars, CurrentBarChange, TimeFrame);
         }
 
         _ = candleHelper.Enqueue(data);
 
+
+        if (volumeHelper is null)
+        {
+            // fallback: create helper if for some reason it's not initialized yet
+            volumeHelper = new VolumeHelper(UpdateVolume);
+        }
+
+        _ = volumeHelper.Enqueue(data);
+
     }
 
-    public void NewBubble((double price, Ticks2.Agents? agent, decimal amount, DateTime time) data)
+    public void NewBubble(Bubble data)
     {
         if (OnNewBubble.HasDelegate) 
             OnNewBubble.InvokeAsync(data);
@@ -121,6 +139,17 @@
             OnCandleSeriesChange.InvokeAsync(bars);
     }
 
+    public void CurrentBarChange(Bars bar)
+    {
+        if (OnCurrentBarChange.HasDelegate)
+            OnCurrentBarChange.InvokeAsync(bar);
+    }
+
+    public void UpdateVolume(IEnumerable<VolumeLevel> levels)
+    {
+        if (OnVolumeUpdate.HasDelegate)
+            OnVolumeUpdate.InvokeAsync(levels);
+    }
     public async ValueTask DisposeAsync()
     {
         if (hubConnection is not null)
@@ -130,6 +159,7 @@
 
         bubbleHelper?.Dispose();
     }
+
 }
 
 <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
