@@ -1,12 +1,45 @@
 ﻿@using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
+@using System.Linq
 @using Vizor.ECharts
 @inject LocalStorageAccessor localStorage
+@inherits Components.PersistentComponentBase
 @page "/map-flow"
 
 @code {
+    protected override string PersistenceKey => $"{nameof(MapFlow)}_state";
+    protected override bool ContinuousSave => true;
+
+    [PersistState]
     public int TimeFrame { get; set; } = 2;
+    [PersistState]
     public int ThresholdBubble { get; set; } = 500;
+    [PersistState]
+    public double BubbleSize { get; set; } = 0.015;
+    [PersistState]
+    public double BubbleOpacity { get; set; } = 0.3;
+    [PersistState]
+    public bool BubbleVisible { get; set; } = true;
+
+    [PersistState]
+    public double ProfileSizeH { get; set; } = 0.015;
+    [PersistState]
+    public double ProfileSizeV { get; set; } = 0.015;
+    [PersistState]
+    public double ProfileOpacity { get; set; } = 0.3;
+    [PersistState]
+    public bool ProfileVisible { get; set; } = true;
+
+    [PersistState]
+    public double DeltaSizeH { get; set; } = 0.015;
+    [PersistState]
+    public double DeltaSizeV { get; set; } = 0.015;
+    [PersistState]
+    public double DeltaOpacity { get; set; } = 0.3;
+    [PersistState]
+    public bool DeltaVisible { get; set; } = true;
+
+    public bool openDrawer { get; set; } = false;
 
     private Vizor.ECharts.EChart? EChart;
 
@@ -23,28 +56,19 @@
     }
 
     private IList<Bubble> Bubbles { get; set; } = new List<Bubble>();
-    private IList<Bubble> RawDataBubbleBlue => Bubbles.Where(q=>q.ActionType == Ticks2.ActionType.Buy).OrderBy(q => q.Time).ToList();
-    private IList<Bubble> RawDataBubbleRed => Bubbles.Where(q=>q.ActionType == Ticks2.ActionType.Sale).OrderBy(q => q.Time).ToList();
+    private IList<Bubble> RawDataBubbleBlue => Bubbles.Where(q=>q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains(q.Agent)).OrderBy(q => q.Time).ToList();
+    private IList<Bubble> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains(q.Agent)).OrderBy(q => q.Time).ToList();
 
-    private Vizor.ECharts.ChartOptions ChartOptions = new()
-    {
-        Grid = new Vizor.ECharts.Grid
-        {
-            Left = "10",
-            Right = "10",
-            Bottom = "15%",
-            Top = "10",
-            ContainLabel = true
-        },
-        DataZoom = new List<Vizor.ECharts.IDataZoom>
-        {
-            new Vizor.ECharts.InsideDataZoom(),
-            new Vizor.ECharts.SliderDataZoom { Top = "88%"}
-        }
-    };
+    private IList<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
+
+    [PersistState]
+    private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
+    private IList<Ticks2.Agents?> AllBubbleAgents => Bubbles.Select(q => q.Agent).Distinct().ToList();
 
     protected override async Task OnInitializedAsync()
     {
+        await base.OnInitializedAsync();
+
         var storedBars = await localStorage.GetItemAsync<List<Bars>>($"bars_{TimeFrame}");
         if (storedBars != null)
             Bars = storedBars.Where(q=> q.Date >= DateTime.Today.Date).ToList();
@@ -56,7 +80,6 @@
         if (EChart != null) await EChart.UpdateAsync(true);
     }
 
-    // 🔥 Série completa (histórico)
     public async void NewBar(IEnumerable<Bars> bars)
     {
         foreach (var bar in bars)
@@ -67,7 +90,6 @@
         if (EChart != null) await EChart.UpdateAsync(true);
     }
 
-    // 🔥 Atualização da barra atual (500ms)
     public async void NewCurrentBar(Bars bar)
     {
         CurrentBar = bar;
@@ -77,6 +99,9 @@
 
     public async void NewBubble(Bubble data)
     {
+        if (!AllBubbleAgents.Contains(data.Agent))
+            SelectedAgents = SelectedAgents.Append(data.Agent).ToList();
+
         Bubbles.Add(data);
         await localStorage.SetItemAsync($"bubbles_{ThresholdBubble}", Bubbles);
 
@@ -85,149 +110,292 @@
 
     public async void VolumeUpdate(IEnumerable<VolumeLevel> volumes)
     {
-        foreach (var volume in volumes)
-            Console.WriteLine(volume.Price + ": " + volume.Delta);
+        VolumeLevels = volumes.ToList();
     }
+
+    public void SelectAllAgents()
+    {
+        if (SelectedAgents.Count() == AllBubbleAgents.Count())
+            SelectedAgents = new List<Ticks2.Agents?>();
+        else
+            SelectedAgents = AllBubbleAgents.ToList();
+    }
+
+    private void ToggleAgent(Ticks2.Agents? agent)
+    {
+        var list = SelectedAgents.ToList();
+        if (list.Contains(agent))
+            list.Remove(agent);
+        else
+            list.Add(agent);
+
+        SelectedAgents = list;
+        StateHasChanged();
+    }
+
+    private Vizor.ECharts.ChartOptions ChartOptions = new()
+    {
+        Grid = new Vizor.ECharts.Grid
+        {
+            Left = "10",
+            Right = "10",
+            Bottom = "15%",
+            Top = "10",
+            ContainLabel = true
+        },
+        // Ajuste do DataZoom para não afetar o eixo de volume (XAxisIndex 1)
+        DataZoom = new List<Vizor.ECharts.IDataZoom>
+        {
+            // --- ZOOM HORIZONTAL (Tempo) ---
+            new Vizor.ECharts.InsideDataZoom { XAxisIndex = new [] { 0.0 } },
+            new Vizor.ECharts.SliderDataZoom { XAxisIndex = new[] { 0.0 }, Top = "92%" },
+
+            // --- ZOOM VERTICAL (Preço) ---
+            // Inside permite usar o Scroll do mouse sobre o gráfico para dar zoom no preço
+            new Vizor.ECharts.InsideDataZoom { YAxisIndex = new[] { 0.0, 1.0 } },
+            // Slider adiciona aquela barra lateral para controle preciso (opcional)
+            new Vizor.ECharts.SliderDataZoom { YAxisIndex = new[] { 0.0, 1.0 }, Left = "1%" }
+        },
+
+        Tooltip = new Tooltip
+        {
+            // Mudamos para Item para que ele Priorize o objeto sob o mouse,
+            // mas ainda consiga mostrar informações do eixo se configurado.
+            Trigger = TooltipTrigger.Item,
+            AxisPointer = new AxisPointer
+            {
+                Type = AxisPointerType.Cross,
+                Label = new Label { Show = true } // Mostra o valor no balão do eixo
+            },
+            Formatter = new JavascriptFunction(@"
+                function (params) {
+                    if (!params) return '';
+
+                    // 1. LÓGICA PARA BOLHAS (Aggressive)
+                    if (params.seriesName && params.seriesName.includes('Aggressive')) {
+                        var time = params.data[0];
+                        var price = params.data[1];
+                        var amount = params.data[2];
+                        var agent = params.data[3];
+                        var color = params.seriesName.includes('Blue') ? '#4488ff' : '#ff4444';
+
+                        return `<div style='border-bottom: 1px solid #ccc; margin-bottom: 5px;'>
+                                    <b style='color:${color}'>${agent}</b>
+                                </div>
+                                Qtd: <b>${amount}</b><br/>
+                                Preço: <b>${price}</b><br/>
+                                Hora: ${time}`;
+                    }
+
+                    // 2. LÓGICA PARA CANDLES
+                    if (params.seriesName === 'Candle') {
+                        var d = params.data; // values = [open, close, low, high]
+                        var color = d[2] >= d[1] ? '#00fa9a' : '#ff4500';
+
+                        // params.name contém o valor do eixo X (HH:mm)
+                        return `<b>${params.name}</b><br/>
+                                Abertura: ${d[1]}<br/>
+                                Fechamento: ${d[2]}<br/>
+                                Máxima: ${d[4]}<br/>
+                                Mínima: ${d[3]}`;
+                    }
+
+                    return '';
+                }
+            ")
+        }
+    };
+
 
     private void GenerateChart()
     {
-        if (EChart is null)
-            return;
+        if (EChart is null) return;
 
-        var categoryData = new List<string>();
-        var values = new List<object[]>();
+        // 1. CÁLCULO DE LIMITES GLOBAIS
+        var allPrices = RawDataBar.SelectMany(b => new[] { (double)b.High, (double)b.Low })
+                            .Concat(VolumeLevels.Select(v => (double)v.Price)).ToList();
 
-        foreach (var row in RawDataBar)
+        if (!allPrices.Any()) return;
+
+        double actualMin = allPrices.Min();
+        double actualMax = allPrices.Max();
+        double range = actualMax - actualMin;
+
+        // Aumentamos para 10% de padding (5% no topo, 5% no fundo)
+        // Isso evita que candles ou barras customizadas encostem na borda da grid
+        double paddingFactor = 0.25;
+        double minPrice = actualMin - (range * paddingFactor);
+        double maxPrice = actualMax + (range * paddingFactor);
+
+        // 2. CONFIGURAÇÃO DO STEP (Para as barras custom não ficarem coladas)
+        double priceStep = 1.0;
+        if (VolumeLevels.Count >= 2)
         {
-            categoryData.Add(row.Date.ToString("HH:mm")!);
-            values.Add(new object[]
-            {
-                row.Open, // open
-                row.Close, // close
-                row.Low, // low
-                row.High  // high
-            });
+            priceStep = Math.Abs(VolumeLevels[1].Price - VolumeLevels[0].Price);
         }
 
-        ChartOptions.Tooltip = new Tooltip
+        var categoryData = RawDataBar.Select(row => row.Date.ToString("dd/MM HH:mm")).ToList();
+        var values = RawDataBar.Select(row => new object[] { row.Open, row.Close, row.Low, row.High }).ToList();
+        var maxVolume = VolumeLevels.Any() ? (double)VolumeLevels.Max(v => v.Total) : 0;
+
+        // Cálculo do maior delta absoluto para escala do eixo esquerdo
+        var maxDelta = VolumeLevels.Any() ? (double)VolumeLevels.Max(v => Math.Abs(v.Delta)) : 0;
+
+        // 1. CONFIGURAÇÃO DOS EIXOS X
+        ChartOptions.XAxisList = new List<XAxis>
         {
-            Trigger = TooltipTrigger.Axis,
-            AxisPointer = new AxisPointer
+            new XAxis 
+            { 
+                Type = AxisType.Category, 
+                Data = categoryData, BoundaryGap = true, 
+                Max = categoryData.Count > 0 ? (int)(categoryData.Count / 0.75) : 100 ,
+                AxisPointer = new AxisPointer { Show = true},
+            }, // X[0]
+
+            new XAxis // X[1]: Volume Total (Direita - Invertido)
             {
-                Type = AxisPointerType.Cross
-            }
-        };
-
-        // Update legend to include both scatter series
-        ChartOptions.Legend = new Legend
-        {
-            Data = new List<string> { "Candle", "Aggressive Short", "Aggressive Long" },
-            Top = "20"
-        };
-
-        ChartOptions.XAxis = new XAxis
-        {
-            Type = AxisType.Category,
-            Data = categoryData,
-            BoundaryGap = new BoundaryGap("150%", "150%"),
-            Min = 0,
-            Max = values.Count * 1.25
-        };
-
-        ChartOptions.YAxis = new YAxis
-        {
-            Scale = true,
-            SplitArea = new SplitArea
-            {
-                Show = true
-            }
-        };
-
-        var symbolSizeFunction = new NumberArrayOrFunction(
-            new JavascriptFunction(
-                $@"function (value) {{
-                        return value[2] * {BubbleSize.ToString(System.Globalization.CultureInfo.InvariantCulture)};
-                   }}"
-            )
-        );
-
-        ChartOptions.Series = new List<ISeries>
-        {
-            new CandlestickSeries
-            {
-                Name = "WINFUT",
-                Data = values,
-                ItemStyle = new ItemStyle
-                {
-                    Color = "#ffffff",
-                    Color0 = "#000000",
-                    BorderColor = "#000000",
-                    BorderColor0 = "#ffffff"
-                }
+                Type = AxisType.Value, Show = false, Inverse = true, Min = 0,
+                Max = maxVolume > 0 ? maxVolume * 4 : 10000,
+                AxisPointer = new AxisPointer { Show = false },
             },
 
+            new XAxis // X[2]: Delta (Esquerda - Normal)
+            {
+                Type = AxisType.Value, Show = false, Inverse = false, Min = 0,
+                Max = maxDelta > 0 ? maxDelta * 4 : 10000, // Escala proporcional ao delta
+                AxisPointer = new AxisPointer { Show = false },
+            }
+        };
+
+        // 3. EIXOS Y
+        ChartOptions.YAxisList = new List<YAxis>
+        {
+            new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true}, },
+            new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = new AxisLabel { Show = true, Color = "#aaa" } }
+        };
+
+        var symbolSizeFunction = new NumberArrayOrFunction(new JavascriptFunction($@"function (v) {{ return v[2] * {BubbleSize.ToString(System.Globalization.CultureInfo.InvariantCulture)} * {(BubbleVisible ? 1 : 0)}; }}"));
+        var volumeProfileFunction = new JavascriptFunction(@"
+                    function (params, api) {
+                        var volumeVal = api.value(0);
+                        var priceVal = api.value(1);
+                        var stepVal = api.value(2);
+
+                        var start = api.coord([0, priceVal]);
+                        var end = api.coord([volumeVal* " + ProfileSizeH.ToString(System.Globalization.CultureInfo.InvariantCulture) + @", priceVal]);
+
+                        // Calcula a altura da faixa de preço em pixels
+                        var size = api.size([0, stepVal]);
+                        var barHeight = size[1] * " + ProfileSizeV.ToString(System.Globalization.CultureInfo.InvariantCulture) + @"; // 0.95 para deixar um pequeno respiro entre barras
+
+                        return {
+                            type: 'rect',
+                            shape: {
+                                x: end[0],
+                                y: start[1] - barHeight / 2,
+                                width: start[0] - end[0],
+                                height: barHeight
+                            },
+                            style: api.style({
+                                fill: api.value(0) == " + maxVolume.ToString(System.Globalization.CultureInfo.InvariantCulture) + @" ? '#rgba(255, 100, 0, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")' : 'rgba(100, 150, 250, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")',
+                                stroke: 'rgba(100, 150, 250, " + ((ProfileOpacity * (ProfileVisible ? 1 : 0)) - 0.2).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")'
+                            })
+                        };
+                    }
+                ");
+        var deltaprofileFunction = new JavascriptFunction(@"
+                    function (params, api) {
+                        var deltaAbs = api.value(0);
+                        var priceVal = api.value(1);
+                        var stepVal = api.value(2);
+                        var rawDelta = api.value(3);
+
+                        var start = api.coord([0, priceVal]); // Ponto na parede esquerda (X=0)
+                        var end = api.coord([deltaAbs, priceVal]);
+
+                        var size = api.size([0, stepVal]);
+                        var barHeight = size[1] * " + DeltaSizeV.ToString(System.Globalization.CultureInfo.InvariantCulture) + @";
+
+                        return {
+                            type: 'rect',
+                            shape: {
+                                x: start[0], // Começa no zero da esquerda
+                                y: start[1] - barHeight / 2,
+                                width: (end[0] - start[0]) * " + DeltaSizeH.ToString(System.Globalization.CultureInfo.InvariantCulture) + @", // Cresce para a direita
+                                height: barHeight
+                            },
+                            style: api.style({
+                                fill: rawDelta >= 0 ? 'rgba(50, 50, 255, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")' : 'rgba(255, 50, 50, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")',
+                                stroke: rawDelta >= 0 ? 'rgba(50, 50, 255, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")' : 'rgba(255, 50, 50, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")',
+                                //lineWidth: 1
+                            })
+                        };
+                    }
+                ");
+
+        // 4. SÉRIES
+        ChartOptions.Series = new List<ISeries>
+        {
+            new CustomSeries
+            {
+                Name = "Delta Profile",
+                XAxisIndex = 2, // Usa o novo eixo da esquerda
+                YAxisIndex = 1,
+                Z = 0,
+                Data = VolumeLevels.Select(v => new object[] { Math.Abs(v.Delta), v.Price, priceStep, v.Delta }).ToList(),
+                RenderItem = deltaprofileFunction
+            },
+
+            // --- VOLUME PROFILE (CUSTOM) ---
+            new CustomSeries
+            {
+                Name = "Volume Profile",
+                XAxisIndex = 1,
+                YAxisIndex = 1,
+                Z = 0, // Fundo
+                Data = VolumeLevels.Select(v => new object[] { v.Total, v.Price, priceStep }).ToList(),
+                RenderItem = volumeProfileFunction,
+            },
+
+            // --- CANDLES ---
+            new CandlestickSeries
+            {
+                Name = "Candle",
+                Data = values,
+                Z = 2,
+                ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#000000", BorderColor0 = "#ffffff" }
+            },
+
+            // --- AGRESSÕES (BOLHAS) ---
             new ScatterSeries
             {
                 Name = "Aggressive Red",
-                Data = RawDataBubbleRed.Select(e => new object[] { e.Time.GetCandleStart(TimeFrame).ToString("HH:mm"), e.Price, e.Amount, e.Agent.Description() }).ToList(),
+                // Adicionamos e.Agent.Description() no final do array (índice 3)
+                Data = RawDataBubbleRed.Select(e => new object[] {
+                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
+                    e.Price,
+                    e.Amount,
+                    e.Agent?.Description() ?? "Desconhecido"
+                }).ToList(),
                 SymbolSize = symbolSizeFunction,
-                ItemStyle = new ItemStyle
-                {
-                    Color = "#ff0000",
-                    Opacity = 0.3,
-                    BorderColor = "#ff0000",
-                    BorderWidth = 1,
-                },
-                Tooltip = new Tooltip()
-                {
-                    Trigger = TooltipTrigger.Item,
-                    Formatter = new StringOrFunction(
-                        new JavascriptFunction(
-                            @"function (params) {
-                                return 'Time: ' + params.value[0] + '<br/>' +
-                                        'Price: ' + params.value[1] + '<br/>' +
-                                        'Amount: ' + params.value[2] + '<br/>' +
-                                        'Agent: ' + params.value[3] + '<br/>';
-                            }")
-                    )
-                }
+                Z = 3,
+                ItemStyle = new ItemStyle { Color = "#ff0000", Opacity = BubbleOpacity, BorderColor = "#ff0000", BorderWidth = 1 }
             },
-
             new ScatterSeries
             {
                 Name = "Aggressive Blue",
-                Data = RawDataBubbleBlue.Select(e => new object[] { e.Time.GetCandleStart(TimeFrame).ToString("HH:mm"), e.Price, e.Amount, e.Agent.Description() }).ToList(),
+                Data = RawDataBubbleBlue.Select(e => new object[] {
+                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
+                    e.Price,
+                    e.Amount,
+                    e.Agent?.Description() ?? "Desconhecido"
+                }).ToList(),
                 SymbolSize = symbolSizeFunction,
-                ItemStyle = new ItemStyle
-                {
-                    Color = "#0000ff",
-                    Opacity = 0.3,
-                    BorderColor = "#0000ff",
-                    BorderWidth = 1,
-
-                },
-                Tooltip = new Tooltip()
-                {
-                    Trigger = TooltipTrigger.Item,
-                    Formatter = new StringOrFunction(
-                        new JavascriptFunction(
-                            @"function (params) {
-                                return 'Time: ' + params.value[0] + '<br/>' +
-                                        'Price: ' + params.value[1] + '<br/>' +
-                                        'Amount: ' + params.value[2] + '<br/>' +
-                                        'Agent: ' + params.value[3] + '<br/>';
-                            }")
-                    )
-                }
+                Z = 3,
+                ItemStyle = new ItemStyle { Color = "#0000ff", Opacity = BubbleOpacity, BorderColor = "#0000ff", BorderWidth = 1 }
             }
         };
-
-        //await EChart.UpdateAsync();
     }
-
-
-    public bool openDrawer { get; set; } = false;
-    public double BubbleSize { get; set; } = 0.015;
 
 }
 
@@ -248,23 +416,187 @@
 </MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height:calc(100vh - 220px);">
-    <MudDrawer Open="openDrawer" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent">
-        <MudPaper Class="p-4">
-            <MudText Typo="Typo.h6">Bubbles (Aggressors)</MudText>
-            <MudSlider @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">@($"Aggressive ({ThresholdBubble.ToString()})")</MudSlider>
-            <MudSlider @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=0.10 T=@double Variant="Variant.Filled">@($"Size ({BubbleSize.ToString("0.000")})")</MudSlider>
+    <MudDrawer Open="openDrawer" Width="25vw" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
+        <MudPaper Class="p-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly >
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.Timelapse" Text="TimeFrame (Min)" Expanded=false>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                            <MudToggleGroup T=int @bind-Value=TimeFrame Delimiters Size="Size.Small" Outlined>
+                                <MudToggleItem Disabled Value="1">1</MudToggleItem>
+                                <MudToggleItem Value="2">2</MudToggleItem>
+                                <MudToggleItem Disabled Value="5">5</MudToggleItem>
+                                <MudToggleItem Disabled Value="15">15</MudToggleItem>
+                                <MudToggleItem Disabled Value="30">30</MudToggleItem>
+                                <MudToggleItem Disabled Value="60">60</MudToggleItem>
+                            </MudToggleGroup>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
         </MudPaper>
-        <MudPaper Class="p-4 mt-2">
-            <MudText Typo="Typo.h6">TimeFrame (Min)</MudText>
-            <MudToggleGroup T=int @bind-Value=TimeFrame Delimiters Size="Size.Small" Outlined>
-                <MudToggleItem Value="1">1</MudToggleItem>
-                <MudToggleItem Value="2">2</MudToggleItem>
-                <MudToggleItem Value="5">5</MudToggleItem>
-                <MudToggleItem Value="15">15</MudToggleItem>
-                <MudToggleItem Value="30">30</MudToggleItem>
-                <MudToggleItem Value="60">60</MudToggleItem>
-            </MudToggleGroup>
+        <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly >
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
+                    <NestedList>
+                        <MudList T="string" Dense ReadOnly >
+                            <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
+                                <NestedList>
+                                    <MudListItem Dense="true">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                            <MudSwitch @bind-Value="DeltaVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                        </MudStack>
+                                    </MudListItem>
+                                    <MudListItem Dense="true">
+                                        <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
+                                                <MudText Typo="Typo.caption">@DeltaSizeH.ToString("0.000")</MudText>
+                                            </MudStack>
+                                        </MudSlider>
+                                    </MudListItem>
+
+                                    <MudListItem Dense="true">
+                                        <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudText Typo="Typo.body2">Size (Vertical)</MudText>
+                                                <MudText Typo="Typo.caption">@DeltaSizeV.ToString("0.000")</MudText>
+                                            </MudStack>
+                                        </MudSlider>
+                                    </MudListItem>
+
+                                    <MudListItem Dense="true">
+                                        <MudSlider Size="Size.Small" @bind-Value="@DeltaOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudText Typo="Typo.body2">Opacity</MudText>
+                                                <MudText Typo="Typo.caption">@DeltaOpacity.ToString("P2")</MudText>
+                                            </MudStack>
+                                        </MudSlider>
+                                    </MudListItem>
+                                </NestedList>
+                            </MudListItem>
+                            <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
+                                <NestedList>
+                                    <MudListItem Dense="true">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                            <MudSwitch @bind-Value="ProfileVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                        </MudStack>
+                                    </MudListItem>
+                                    <MudListItem Dense="true">
+                                        <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
+                                                <MudText Typo="Typo.caption">@ProfileSizeH.ToString("0.000")</MudText>
+                                            </MudStack>
+                                        </MudSlider>
+                                    </MudListItem>
+
+                                    <MudListItem Dense="true">
+                                        <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudText Typo="Typo.body2">Size (Vertical)</MudText>
+                                                <MudText Typo="Typo.caption">@ProfileSizeV.ToString("0.000")</MudText>
+                                            </MudStack>
+                                        </MudSlider>
+                                    </MudListItem>
+
+                                    <MudListItem Dense="true">
+                                        <MudSlider Size="Size.Small" @bind-Value="@ProfileOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudText Typo="Typo.body2">Opacity</MudText>
+                                                <MudText Typo="Typo.caption">@ProfileOpacity.ToString("P2")</MudText>
+                                            </MudStack>
+                                        </MudSlider>
+                                    </MudListItem>
+                                </NestedList>
+                            </MudListItem>
+                        </MudList>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+            
         </MudPaper>
+        <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly >
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Bubbles (Aggressors)" Expanded=true>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                <MudSwitch @bind-Value="BubbleVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                            </MudStack>
+                        </MudListItem>
+                        <MudListItem Dense="true" >
+                            <MudSlider Size="Size.Small" Disabled @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Amount</MudText>
+                                    <MudText Typo="Typo.caption">@ThresholdBubble.ToString()</MudText>
+                                </MudStack>
+                            </MudSlider>
+                        </MudListItem>
+                        <MudListItem Dense="true" >
+                            <MudSlider Size="Size.Small" @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=0.10 T=@double Variant="Variant.Filled">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Size</MudText>
+                                    <MudText Typo="Typo.caption">@BubbleSize.ToString("0.000")</MudText>
+                                </MudStack>
+                            </MudSlider>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSlider Size="Size.Small" @bind-Value="@BubbleOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Opacity</MudText>
+                                    <MudText Typo="Typo.caption">@BubbleOpacity.ToString("P2")</MudText>
+                                </MudStack>
+                            </MudSlider>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+        <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly >
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Agents (Corretoras)" Expanded=false>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                            <MudList Dense T="Ticks2.Agents?">
+                                <MudListItem Dense=true OnClickPreventDefault OnClick="SelectAllAgents">
+                                    <AvatarContent>
+                                        <MudCheckBox Dense Value="@(SelectedAgents.Count == AllBubbleAgents.Count)" ValueChanged="(bool c) => SelectAllAgents()"></MudCheckBox>
+                                    </AvatarContent>
+                                    <ChildContent>
+                                        <MudText Typo="Typo.caption">
+                                            Selecionar Todos
+                                        </MudText>
+                                    </ChildContent>
+                                </MudListItem>
+
+                                <MudDivider />
+                                @foreach (Ticks2.Agents? agent in AllBubbleAgents.OrderBy(q => q.Description()))
+                                {
+                                    if (agent is null) continue;
+
+                                    <MudListItem Dense="true" OnClick="@(() => ToggleAgent(agent))">
+                                        <AvatarContent>
+                                            <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)"></MudCheckBox>
+                                        </AvatarContent>
+                                        <ChildContent>
+                                            <MudText Typo="Typo.caption">
+                                                @agent.Description()
+                                            </MudText>
+                                        </ChildContent>
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+        
     </MudDrawer>
     <Vizor.ECharts.EChart @ref="EChart"
                           Renderer="Vizor.ECharts.ChartRenderer.Canvas"

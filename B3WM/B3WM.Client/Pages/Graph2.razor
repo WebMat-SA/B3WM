@@ -1,8 +1,10 @@
 ﻿@page "/graph2"
+
 @using Vizor.ECharts
+@using System.Linq
 
 <MudButton Variant="Variant.Filled" OnClick="GenerateChart">
-    Gerar Scatter
+    Gerar gráfico
 </MudButton>
 
 <Vizor.ECharts.EChart @ref="EChart"
@@ -12,106 +14,164 @@
                       Height="600px" />
 
 @code {
-
     private EChart? EChart;
 
-    private Vizor.ECharts.ChartOptions ChartOptions = new()
+    private Vizor.ECharts.ChartOptions ChartOptions = new Vizor.ECharts.ChartOptions
     {
-        Grid = new Grid
+        DarkMode = true
+    };
+
+    private List<object[]> RawData = new();
+    private List<object[]> RawDataBubble = new();
+
+    protected override void OnInitialized()
+    {
+        // ======= GERAR DADOS FAKES =======
+        var random = new Random();
+        DateTime start = new DateTime(2023, 1, 1);
+
+        for (int i = 0; i < 50; i++)
         {
-            Left = "10",
-            Right = "10",
-            Bottom = "15",
-            Top = "10",
-            ContainLabel = true
+            var open = random.Next(2000, 2500);
+            var close = open + random.Next(-50, 50);
+            var low = Math.Min(open, close) - random.Next(10, 30);
+            var high = Math.Max(open, close) + random.Next(10, 30);
+            RawData.Add(new object[] { start.AddDays(i).ToString("yyyy/MM/dd"), open, close, low, high });
+
+            var volume = random.Next(1, 100);
+            RawDataBubble.Add(new object[] { start.AddDays(i).ToString("yyyy/MM/dd"), close, volume });
         }
-    };
-
-    // =========================
-    // DADOS
-    // [GDP, LifeExpectancy, Population, Country, Year]
-    // =========================
-    private readonly List<object[]> RawData = new()
-    {
-        new object[] { 28604, 77, 17096869, "Australia", 1990 },
-        new object[] { 31163, 77.4, 27662440, "Canada", 1990 },
-        new object[] { 1516, 68, 1154605773, "China", 1990 },
-        new object[] { 29550, 79.1, 122249285, "Japan", 1990 },
-        new object[] { 37062, 75.4, 252847810, "United States", 1990 },
-
-        new object[] { 44056, 81.8, 23968973, "Australia", 2015 },
-        new object[] { 43294, 81.7, 35939927, "Canada", 2015 },
-        new object[] { 13334, 76.9, 1376048943, "China", 2015 },
-        new object[] { 36162, 83.5, 126573481, "Japan", 2015 },
-        new object[] { 53354, 79.1, 321773631, "United States", 2015 }
-    };
+    }
 
     private async Task GenerateChart()
     {
         if (EChart is null)
             return;
 
-        var data1990 = RawData.Where(d => (int)d[4] == 1990).ToList();
-        var data2015 = RawData.Where(d => (int)d[4] == 2015).ToList();
+        // ======= CATEGORIA E VALORES CANDLE =======
+        var categoryData = RawData.Select(r => r[0].ToString()!).ToList();
+        var candleValues = RawData.Select(r => new object[] { r[1], r[2], r[3], r[4] }).ToList();
 
-        ChartOptions.Title = new Title
+        // ======= GRID =======
+        ChartOptions.Grid = new Vizor.ECharts.Grid
         {
-            Text = "1990 and 2015 per capita life expectancy and GDP",
-            Left = "center"
+            Left = "10%",
+            Right = "20%", // espaço para volume
+            Top = "10",
+            Bottom = "15",
+            ContainLabel = true
         };
 
-        ChartOptions.Legend = new Legend
+        // ======= XAxis =======
+        ChartOptions.XAxisList = new List<XAxis>
         {
-            Data = new List<string> { "1990", "2015" },
-            Bottom = "5%"
-        };
-
-        ChartOptions.Tooltip = new Tooltip
-        {
-            Trigger = TooltipTrigger.Axis,
-            AxisPointer = new AxisPointer
+            new XAxis
             {
-                Type = AxisPointerType.Cross
+                Type = AxisType.Category,
+                Data = categoryData,
+                BoundaryGap = false,
+                GridIndex = 0
+            },
+            new XAxis
+            {
+                Type = AxisType.Value,
+                GridIndex = 1,
+                Position = TopOrBottom.Top,
+                SplitLine = new SplitLine { Show = false }
             }
         };
 
-        ChartOptions.XAxis = new XAxis
+        // ======= YAxis =======
+        ChartOptions.YAxisList = new List<YAxis>
         {
-            Type = AxisType.Value,
+            new YAxis
+            {
+                Scale = true,
+                GridIndex = 0,
+                SplitArea = new SplitArea { Show = true }
+            },
+            new YAxis
+            {
+                Scale = true,
+                GridIndex = 1,
+                Position = LeftOrRight.Right,
+                AxisLabel = new AxisLabel { Show = false },
+                SplitLine = new SplitLine { Show = false }
+            }
         };
 
-        ChartOptions.YAxis = new YAxis
+        // ======= Tooltip =======
+        ChartOptions.Tooltip = new Tooltip
         {
-            Type = AxisType.Value,
-            
+            Trigger = TooltipTrigger.Axis,
+            AxisPointer = new AxisPointer { Type = AxisPointerType.Cross }
         };
 
+        // ======= DataZoom =======
+        ChartOptions.DataZoom = new List<IDataZoom>
+        {
+            new InsideDataZoom { Start = 50, End = 100 },
+            new SliderDataZoom { Top = "90%", Start = 50, End = 100 }
+        };
+
+        // ======= Agrupar volume por preço =======
+        var volumeByPrice = RawDataBubble
+            .GroupBy(x => Convert.ToDecimal(x[1])) // price
+            .Select(g => new { Price = g.Key, Volume = g.Sum(v => Convert.ToDecimal(v[2])) })
+            .OrderBy(x => x.Price)
+            .ToList();
+
+        var volumeSeriesData = volumeByPrice.Select(x => new object[] { x.Volume, x.Price }).ToList();
+
+        // ======= Symbol Size Function para Bubbles =======
+        var symbolSizeFunction = new NumberArrayOrFunction(
+            new JavascriptFunction(@"function (value) { return value[2] * 2; }")
+        );
+
+        // ======= SERIES =======
         ChartOptions.Series = new List<ISeries>
         {
-            new ScatterSeries
+            // Candle
+            new CandlestickSeries
             {
-                Name = "1990",
-                Data = data1990.Select(d => new object[]
+                Name = "Candle",
+                Data = candleValues,
+                ItemStyle = new ItemStyle
                 {
-                    d[0], // GDP
-                    d[1], // Life expectancy
-                    d[2], // Population
-                    d[3]  // Country
-                }).ToList(),
-                SymbolSize = 15
+                    Color = "#ffffff",
+                    Color0 = "#000000",
+                    BorderColor = "#000000",
+                    BorderColor0 = "#ffffff"
+                }
             },
 
+            // Scatter Bubbles
             new ScatterSeries
             {
-                Name = "2015",
-                Data = data2015.Select(d => new object[]
+                Name = "Bubbles",
+                Data = RawDataBubble,
+                SymbolSize = symbolSizeFunction,
+                ItemStyle = new ItemStyle
                 {
-                    d[0],
-                    d[1],
-                    d[2],
-                    d[3]
-                }).ToList(),
-                SymbolSize = 20
+                    Color = "#ff0000",
+                    Opacity = 0.3,
+                    BorderColor = "#ff0000",
+                    BorderWidth = 1
+                }
+            },
+
+            // Volume por preço (horizontal)
+            new BarSeries
+            {
+                Name = "Volume by Price",
+                XAxisIndex = 1,
+                YAxisIndex = 1,
+                Data = volumeSeriesData,
+                BarWidth = "80%",
+                ItemStyle = new ItemStyle
+                {
+                    Color = "#888888"
+                }
             }
         };
 

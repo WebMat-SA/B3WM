@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace B3WM.Client.Services
 {
-    public class LocalStorageAccessor
+    public class LocalStorageAccessor : IAsyncDisposable
     {
         private Lazy<IJSObjectReference> _accessorJsRef = new();
         private readonly IJSRuntime _jsRuntime;

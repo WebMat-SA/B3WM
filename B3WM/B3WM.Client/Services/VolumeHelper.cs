@@ -5,32 +5,38 @@ namespace B3WM.Client.Services
 {
     public class VolumeHelper : IDisposable
     {
-        private readonly Action<IEnumerable<VolumeLevel>>? OnVolumeSnapshot;
-
-        private readonly ConcurrentQueue<byte[]> queue = new();
+        private readonly ConcurrentQueue<byte[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
         private readonly ConcurrentDictionary<double, VolumeLevel> _volumes = new();
-
         private readonly object _lock = new();
 
         private int _isProcessing = 0;
 
-        private readonly int _throttleMs;
-        private long _lastDispatch;
-
-        public VolumeHelper(Action<IEnumerable<VolumeLevel>> onVolumeSnapshot, int throttleMs = 200)
+        public VolumeHelper()
         {
-            OnVolumeSnapshot = onVolumeSnapshot;
-            _throttleMs = throttleMs;
-            _lastDispatch = Environment.TickCount64;
+        }
+
+        // 🔥 UI consulta quando quiser
+        public List<VolumeLevel> GetSnapshot()
+        {
+            return _volumes.Values
+                .OrderBy(v => v.Price)
+                .Select(v => new VolumeLevel
+                {
+                    Price = v.Price,
+                    Total = v.Total,
+                    BuyVolume = v.BuyVolume,
+                    SellVolume = v.SellVolume
+                })
+                .ToList();
         }
 
         public Task Enqueue(byte[] data)
         {
             if (data == null) return Task.CompletedTask;
 
-            queue.Enqueue(data);
+            _queue.Enqueue(data);
 
             if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
             {
@@ -48,7 +54,7 @@ namespace B3WM.Client.Services
 
                 while (!token.IsCancellationRequested)
                 {
-                    while (queue.TryDequeue(out var item))
+                    while (_queue.TryDequeue(out var item))
                     {
                         if (item == null) continue;
 
@@ -58,20 +64,19 @@ namespace B3WM.Client.Services
                         foreach (var t in ticks)
                         {
                             ProcessTick(t);
-                            await Task.Yield();
+                            await Task.Yield(); // libera o loop WASM
                         }
                     }
 
                     Interlocked.Exchange(ref _isProcessing, 0);
 
-                    if (!queue.IsEmpty &&
+                    if (!_queue.IsEmpty &&
                         Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
                         continue;
 
                     break;
                 }
             }
-            catch { }
             finally
             {
                 Interlocked.Exchange(ref _isProcessing, 0);
@@ -90,48 +95,35 @@ namespace B3WM.Client.Services
             if (isBuyAggression == null)
                 return;
 
-            lock (_lock)
-            {
-                var level = _volumes.GetOrAdd(t.Value, price =>
-                    new VolumeLevel { Price = price });
-
-                level.Total += t.Volume;
-
-                if (isBuyAggression.Value)
-                    level.BuyVolume += t.Volume;
-                else
-                    level.SellVolume += t.Volume;
-            }
-
-            TryDispatchSnapshot();
-        }
-
-        private void TryDispatchSnapshot()
-        {
-            var now = Environment.TickCount64;
-
-            if (now - _lastDispatch < _throttleMs)
-                return;
-
-            _lastDispatch = now;
-
-            List<VolumeLevel> snapshot;
-
-            lock (_lock)
-            {
-                snapshot = _volumes.Values
-                    .OrderBy(v => v.Price)
-                    .Select(v => new VolumeLevel
+            _volumes.AddOrUpdate(
+                t.Value,
+                price =>
+                {
+                    var level = new VolumeLevel
                     {
-                        Price = v.Price,
-                        Total = v.Total,
-                        BuyVolume = v.BuyVolume,
-                        SellVolume = v.SellVolume
-                    })
-                    .ToList();
-            }
+                        Price = price,
+                        Total = t.Volume
+                    };
 
-            OnVolumeSnapshot?.Invoke(snapshot);
+                    if (isBuyAggression.Value)
+                        level.BuyVolume = t.Volume;
+                    else
+                        level.SellVolume = t.Volume;
+
+                    return level;
+                },
+                (price, existing) =>
+                {
+                    existing.Total += t.Volume;
+
+                    if (isBuyAggression.Value)
+                        existing.BuyVolume += t.Volume;
+                    else
+                        existing.SellVolume += t.Volume;
+
+                    return existing;
+                }
+            );
         }
 
         public void Reset()
@@ -144,7 +136,7 @@ namespace B3WM.Client.Services
 
         public void Dispose()
         {
-            try { _cts.Cancel(); } catch { }
+            _cts.Cancel();
         }
     }
 }

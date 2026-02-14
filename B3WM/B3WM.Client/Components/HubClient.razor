@@ -1,15 +1,23 @@
 ﻿@using B3WM.Shared.Entity
+@using B3WM.Shared.Extensions
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text
 @using System.Collections.Concurrent
 @using System.Timers
 @inject NavigationManager Navigation
+@inject IndexedDbStorageAccessor indexedDbStorage
+@inherits Components.PersistentComponentBase
 @implements IAsyncDisposable
 
 @code {
+
+    protected override string PersistenceKey => $"{nameof(HubClient)}_state";
+    protected override bool ContinuousSave => true;
+
     private HubConnection? hubConnection;
 
     private int _counter { get; set; } = 0;
+    public bool openDrawer { get; set; } = false;
 
     private BubbleHelper? bubbleHelper;
 
@@ -41,12 +49,121 @@
     [Parameter]
     public int TimeFrame { get; set; } = 5;
 
+    private bool _EnableTimesAndTrades = true;
+    [Parameter, PersistState]
+    public bool EnableTimesAndTrades
+    {
+        get => _EnableTimesAndTrades;
+        set
+        {
+            if (_EnableTimesAndTrades != value)
+            {
+                _EnableTimesAndTrades = value;
+
+                if (!_EnableTimesAndTrades){
+                    EnableSaveTicksToIndexedDb = false;
+                    EnableBubbleFormer = false;
+                    EnableCandleFormer = false;
+                    EnableVolumeFormer = false;
+                }
+
+                StateHasChanged();
+            }
+        }
+    }
+
+    [Parameter, PersistState]
+    public bool EnableBook { get; set; } = true;
+
+    [Parameter, PersistState]
+    public bool EnableTimesAndTradesSimple { get; set; } = true;
+
+    [Parameter, PersistState]
+    public bool EnableSaveTicksToIndexedDb { get; set; } = false;
+
+
+    private bool _EnableCandleFormer = true;
+    [PersistState]
+    public bool EnableCandleFormer
+    {
+        get => _EnableCandleFormer;
+        set
+        {
+            if (_EnableCandleFormer != value)
+            {
+                _EnableCandleFormer = value;
+                if (!_EnableCandleFormer)
+                {
+                    candleHelper?.Dispose();
+                    candleHelper = null;
+                }
+                else
+                {
+                    _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool _EnableVolumeFormer = true;
+    [PersistState]
+    public bool EnableVolumeFormer
+    {
+        get => _EnableVolumeFormer;
+        set
+        {
+            if (_EnableVolumeFormer != value)
+            {
+                _EnableVolumeFormer = value;
+                if (!_EnableVolumeFormer)
+                {
+                    candleHelper?.Dispose();
+                    candleHelper = null;
+                }
+                else
+                {
+                    _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool _EnableBubbleFormer = true;
+    [PersistState]
+    public bool EnableBubbleFormer
+    {
+        get => _EnableBubbleFormer;
+        set
+        {
+            if (_EnableBubbleFormer != value)
+            {
+                _EnableBubbleFormer = value;
+                if (!_EnableBubbleFormer)
+                {
+                    candleHelper?.Dispose();
+                    candleHelper = null;
+                }
+                else
+                {
+                    _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
 
     public bool IsConnected =>
         hubConnection?.State == HubConnectionState.Connected;
 
+    private PeriodicTimer? _timer;
+
     protected override async Task OnInitializedAsync()
     {
+        await base.OnInitializedAsync();
+
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
             .WithAutomaticReconnect()
@@ -54,13 +171,43 @@
 
         hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
         //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
-        hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
+        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
         await hubConnection.StartAsync();
     }
 
+    protected override void OnInitialized()
+    {
+        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000));
+        _ = RunLoop();
+    }
+
+    private async Task RunLoop()
+    {
+        while (await _timer!.WaitForNextTickAsync())
+        {
+            if (candleHelper is not null && OnCurrentBarChange.HasDelegate)
+            {
+                var snapshot = candleHelper.GetCurrentBarSnapshot();
+
+                if (snapshot != null)
+                    await OnCurrentBarChange.InvokeAsync(snapshot);
+
+            }
+
+            if (volumeHelper is not null && OnVolumeUpdate.HasDelegate)
+            {
+                var volumeSnapshot = volumeHelper.GetSnapshot();
+
+                if (volumeSnapshot != null)
+                    await OnVolumeUpdate.InvokeAsync(volumeSnapshot);
+            }
+        }
+    }
+
     private async void OnReceiveBook(byte[] data)
     {
+        if (!EnableBook) return;
 
         //debug de velocidade e confirmação de dados
         _counter++;
@@ -73,6 +220,8 @@
 
     private void OnReceiveTNT(byte[] data)
     {
+        if (!EnableTimesAndTrades) return;
+
         //debug de velocidade e confirmação de dados
         _counter++;
 
@@ -91,6 +240,8 @@
 
     private void OnReceiveTNTSimple(byte[] data)
     {
+        if (!EnableTimesAndTradesSimple) return;
+
         //debug de velocidade e confirmação de dados
         _counter++;
 
@@ -99,31 +250,38 @@
 
     private async Task Enqueue(byte[] data)
     {
-        if (bubbleHelper is null)
+        if (EnableBubbleFormer)
         {
-            // fallback: create helper if for some reason it's not initialized yet
-            bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
+            if (bubbleHelper is null)
+            {
+                // fallback: create helper if for some reason it's not initialized yet
+                bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
+            }
+
+            _ = bubbleHelper.Enqueue(data);
         }
 
-        _ = bubbleHelper.Enqueue(data);
-
-
-        if (candleHelper is null)
+        if (EnableCandleFormer)
         {
-            // fallback: create helper if for some reason it's not initialized yet
-            candleHelper = new CandleHelper(NewBars, CurrentBarChange, TimeFrame);
+            if (candleHelper is null)
+            {
+                // fallback: create helper if for some reason it's not initialized yet
+                candleHelper = new CandleHelper(NewBars, TimeFrame);
+            }
+
+            _ = candleHelper.Enqueue(data);
         }
 
-        _ = candleHelper.Enqueue(data);
-
-
-        if (volumeHelper is null)
+        if (EnableVolumeFormer)
         {
-            // fallback: create helper if for some reason it's not initialized yet
-            volumeHelper = new VolumeHelper(UpdateVolume);
-        }
+            if (volumeHelper is null)
+            {
+                // fallback: create helper if for some reason it's not initialized yet
+                volumeHelper = new VolumeHelper();
+            }
 
-        _ = volumeHelper.Enqueue(data);
+            _ = volumeHelper.Enqueue(data);
+        }
 
     }
 
@@ -139,31 +297,125 @@
             OnCandleSeriesChange.InvokeAsync(bars);
     }
 
-    public void CurrentBarChange(Bars bar)
+    public async new ValueTask DisposeAsync()
     {
-        if (OnCurrentBarChange.HasDelegate)
-            OnCurrentBarChange.InvokeAsync(bar);
-    }
+        await base.DisposeAsync();
 
-    public void UpdateVolume(IEnumerable<VolumeLevel> levels)
-    {
-        if (OnVolumeUpdate.HasDelegate)
-            OnVolumeUpdate.InvokeAsync(levels);
-    }
-    public async ValueTask DisposeAsync()
-    {
         if (hubConnection is not null)
         {
             await hubConnection.DisposeAsync();
         }
-
+        candleHelper?.Dispose();
         bubbleHelper?.Dispose();
+        volumeHelper?.Dispose();
     }
 
 }
 
-<MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
-    <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@_counter" OnClick="() => _counter = 0">
-        <MudIcon Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" @onclick="() => _counter = 0" />
-    </MudBadge>
-</MudTooltip>
+<MudStack Row AlignItems="AlignItems.Center">
+    <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
+        <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@_counter" OnClick="() => _counter = 0">
+            <MudIconButton Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="() => openDrawer = !openDrawer" />
+        </MudBadge>
+    </MudTooltip>
+
+</MudStack>
+
+<MudDrawer Class="p-1" Variant="DrawerVariant.Temporary" ClipMode="DrawerClipMode.Docked" Width="22vw" Anchor="Anchor.Right" @bind-Open=openDrawer Style="height: 100vh;">
+    <MudStack Justify="Justify.SpaceBetween" Spacing="1">
+
+        <MudPaper Class="p-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.AllOut" Text="Serviços Externos (Tryd)" Expanded=true>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="EnableTimesAndTrades" ThumbIcon="@(EnableTimesAndTrades == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableTimesAndTrades == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Times and Trades
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="EnableBook" ThumbIcon="@(EnableBook == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableBook == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Book
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="EnableTimesAndTradesSimple" ThumbIcon="@(EnableTimesAndTradesSimple == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableTimesAndTradesSimple == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Times and Trades (Simples)
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" Disabled=@(!EnableTimesAndTrades || true) @bind-Value="EnableSaveTicksToIndexedDb" ThumbIcon="@(EnableSaveTicksToIndexedDb == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableSaveTicksToIndexedDb == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Save Ticks (Local DB)
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+        <MudPaper Class="p-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.VideoSettings" Text="Serviços Internos" Expanded=true>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="EnableCandleFormer" ThumbIcon="@(EnableCandleFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableCandleFormer == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Formação de Candles (no trimeframe específico)
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="EnableBubbleFormer" ThumbIcon="@(EnableBubbleFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableBubbleFormer == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Formação dos bubbles (>= Amount informado)
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="EnableVolumeFormer" ThumbIcon="@(EnableVolumeFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableVolumeFormer == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Formação de Volume Inspector
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+        <MudPaper Class="p-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.Wifi" Expanded=true>
+                    
+                    <AvatarContent>
+                        <MudTooltip Text="@hubConnection?.State.ToString()">
+                            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" />
+                        </MudTooltip>
+                    </AvatarContent>
+                    <ChildContent>
+                        <MudText Typo="Typo.caption">Status</MudText>
+                    </ChildContent>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Dados recebidos:</MudText>
+                                <MudText Typo="Typo.caption" @onclick="() => _counter = 0">@_counter</MudText>
+                            </MudStack>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+    </MudStack>
+    
+</MudDrawer>

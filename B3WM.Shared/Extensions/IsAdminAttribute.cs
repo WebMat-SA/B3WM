@@ -9,4 +9,9 @@ namespace B3WM.Shared.Extensions
     public class IsAdminAttribute: Attribute
     {
     }
+
+    [AttributeUsage(AttributeTargets.Property)]
+    public class PersistStateAttribute : Attribute
+    {
+    }
 }
