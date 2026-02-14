@@ -399,26 +399,19 @@
 
 }
 
-<MudStack AlignItems="AlignItems.Center"
-          Justify="Justify.SpaceBetween"
-          Class="px-5 pt-3"
-          Row>
-
-    <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer"></MudIconButton>
-
-    <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar"
-                                      OnCurrentBarChange="NewCurrentBar"
-                                      OnVolumeUpdate = "VolumeUpdate"
-                                      TimeFrame="TimeFrame"
-                                      BubbleThreshold="ThresholdBubble"
-                                      OnNewBubble="@NewBubble" />
-
+@* --- INTERFACE --- *@
+<MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row>
+    <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
+    <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar" OnCurrentBarChange="NewCurrentBar"
+                                      OnVolumeUpdate="VolumeUpdate" TimeFrame="TimeFrame"
+                                      BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" />
 </MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height:calc(100vh - 220px);">
     <MudDrawer Open="openDrawer" Width="25vw" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
+        @* TIMEFRAME *@
         <MudPaper Class="p-1" Outlined Elevation="0">
-            <MudList T="string" Dense ReadOnly >
+            <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.Timelapse" Text="TimeFrame (Min)" Expanded=false>
                     <NestedList>
                         <MudListItem Dense="true">
@@ -435,92 +428,95 @@
                 </MudListItem>
             </MudList>
         </MudPaper>
+
+        @* VOLUMES (DELTAS E PROFILE) *@
         <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
-            <MudList T="string" Dense ReadOnly >
+            <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
                     <NestedList>
-                        <MudList T="string" Dense ReadOnly >
-                            <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
-                                <NestedList>
-                                    <MudListItem Dense="true">
+                        @* Deltas *@
+                        <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
+                            <NestedList>
+                                <MudListItem Dense="true">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                        <MudSwitch @bind-Value="DeltaVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
                                         <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                            <MudText Typo="Typo.body2">Show on Chart</MudText>
-                                            <MudSwitch @bind-Value="DeltaVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                            <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
+                                            <MudText Typo="Typo.caption">@DeltaSizeH.ToString("0.000")</MudText>
                                         </MudStack>
-                                    </MudListItem>
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
-                                                <MudText Typo="Typo.caption">@DeltaSizeH.ToString("0.000")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
+                                    </MudSlider>
+                                </MudListItem>
 
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Size (Vertical)</MudText>
-                                                <MudText Typo="Typo.caption">@DeltaSizeV.ToString("0.000")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
-
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small" @bind-Value="@DeltaOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Opacity</MudText>
-                                                <MudText Typo="Typo.caption">@DeltaOpacity.ToString("P2")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
-                                </NestedList>
-                            </MudListItem>
-                            <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
-                                <NestedList>
-                                    <MudListItem Dense="true">
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
                                         <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                            <MudText Typo="Typo.body2">Show on Chart</MudText>
-                                            <MudSwitch @bind-Value="ProfileVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                            <MudText Typo="Typo.body2">Size (Vertical)</MudText>
+                                            <MudText Typo="Typo.caption">@DeltaSizeV.ToString("0.000")</MudText>
                                         </MudStack>
-                                    </MudListItem>
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
-                                                <MudText Typo="Typo.caption">@ProfileSizeH.ToString("0.000")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
+                                    </MudSlider>
+                                </MudListItem>
 
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Size (Vertical)</MudText>
-                                                <MudText Typo="Typo.caption">@ProfileSizeV.ToString("0.000")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@DeltaOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Opacity</MudText>
+                                            <MudText Typo="Typo.caption">@DeltaOpacity.ToString("P2")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+                            </NestedList>
+                        </MudListItem>
+                        <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
+                            <NestedList>
+                                <MudListItem Dense="true">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                        <MudSwitch @bind-Value="ProfileVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
+                                            <MudText Typo="Typo.caption">@ProfileSizeH.ToString("0.000")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
 
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small" @bind-Value="@ProfileOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Opacity</MudText>
-                                                <MudText Typo="Typo.caption">@ProfileOpacity.ToString("P2")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
-                                </NestedList>
-                            </MudListItem>
-                        </MudList>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Size (Vertical)</MudText>
+                                            <MudText Typo="Typo.caption">@ProfileSizeV.ToString("0.000")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@ProfileOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Opacity</MudText>
+                                            <MudText Typo="Typo.caption">@ProfileOpacity.ToString("P2")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+                            </NestedList>
+                        </MudListItem>
                     </NestedList>
                 </MudListItem>
             </MudList>
-            
+
         </MudPaper>
+
+        @* BUBBLES E AGENTS *@
         <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
-            <MudList T="string" Dense ReadOnly >
-                <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Bubbles (Aggressors)" Expanded=true>
+            <MudList T="string" Dense>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Bubbles" Expanded=true>
                     <NestedList>
                         <MudListItem Dense="true">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
@@ -528,7 +524,7 @@
                                 <MudSwitch @bind-Value="BubbleVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
                             </MudStack>
                         </MudListItem>
-                        <MudListItem Dense="true" >
+                        <MudListItem Dense="true">
                             <MudSlider Size="Size.Small" Disabled @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                     <MudText Typo="Typo.body2">Amount</MudText>
@@ -536,7 +532,7 @@
                                 </MudStack>
                             </MudSlider>
                         </MudListItem>
-                        <MudListItem Dense="true" >
+                        <MudListItem Dense="true">
                             <MudSlider Size="Size.Small" @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=0.10 T=@double Variant="Variant.Filled">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                     <MudText Typo="Typo.body2">Size</MudText>
@@ -552,51 +548,47 @@
                                 </MudStack>
                             </MudSlider>
                         </MudListItem>
-                    </NestedList>
-                </MudListItem>
-            </MudList>
-        </MudPaper>
-        <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
-            <MudList T="string" Dense ReadOnly >
-                <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Agents (Corretoras)" Expanded=false>
-                    <NestedList>
-                        <MudListItem Dense="true">
-                            <MudList Dense T="Ticks2.Agents?">
-                                <MudListItem Dense=true OnClickPreventDefault OnClick="SelectAllAgents">
-                                    <AvatarContent>
-                                        <MudCheckBox Dense Value="@(SelectedAgents.Count == AllBubbleAgents.Count)" ValueChanged="(bool c) => SelectAllAgents()"></MudCheckBox>
-                                    </AvatarContent>
-                                    <ChildContent>
-                                        <MudText Typo="Typo.caption">
-                                            Selecionar Todos
-                                        </MudText>
-                                    </ChildContent>
+                        <MudListItem Icon="@Icons.Material.Filled.People" Text="Agents" Expanded=false>
+                            <NestedList>
+                                <MudListItem Dense="true">
+                                    <MudList Dense T="Ticks2.Agents?">
+                                        <MudListItem Dense=true OnClickPreventDefault OnClick="SelectAllAgents">
+                                            <AvatarContent>
+                                                <MudCheckBox Dense Value="@(SelectedAgents.Count == AllBubbleAgents.Count)" ValueChanged="(bool c) => SelectAllAgents()"></MudCheckBox>
+                                            </AvatarContent>
+                                            <ChildContent>
+                                                <MudText Typo="Typo.caption">
+                                                    Selecionar Todos
+                                                </MudText>
+                                            </ChildContent>
+                                        </MudListItem>
+
+                                        <MudDivider />
+                                        @foreach (Ticks2.Agents? agent in AllBubbleAgents.OrderBy(q => q.Description()))
+                                        {
+                                            if (agent is null) continue;
+
+                                            <MudListItem Dense="true" OnClick="@(() => ToggleAgent(agent))">
+                                                <AvatarContent>
+                                                    <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)"></MudCheckBox>
+                                                </AvatarContent>
+                                                <ChildContent>
+                                                    <MudText Typo="Typo.caption">
+                                                        @agent.Description()
+                                                    </MudText>
+                                                </ChildContent>
+                                            </MudListItem>
+                                        }
+                                    </MudList>
                                 </MudListItem>
-
-                                <MudDivider />
-                                @foreach (Ticks2.Agents? agent in AllBubbleAgents.OrderBy(q => q.Description()))
-                                {
-                                    if (agent is null) continue;
-
-                                    <MudListItem Dense="true" OnClick="@(() => ToggleAgent(agent))">
-                                        <AvatarContent>
-                                            <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)"></MudCheckBox>
-                                        </AvatarContent>
-                                        <ChildContent>
-                                            <MudText Typo="Typo.caption">
-                                                @agent.Description()
-                                            </MudText>
-                                        </ChildContent>
-                                    </MudListItem>
-                                }
-                            </MudList>
+                            </NestedList>
                         </MudListItem>
                     </NestedList>
                 </MudListItem>
             </MudList>
         </MudPaper>
 
-        
+
     </MudDrawer>
     <Vizor.ECharts.EChart @ref="EChart"
                           Renderer="Vizor.ECharts.ChartRenderer.Canvas"
