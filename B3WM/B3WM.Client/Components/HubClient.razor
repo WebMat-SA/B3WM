@@ -349,13 +349,7 @@
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
-                        <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" Disabled=@(!EnableTimesAndTrades || true) @bind-Value="EnableSaveTicksToIndexedDb" ThumbIcon="@(EnableSaveTicksToIndexedDb == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableSaveTicksToIndexedDb == true ? Color.Success : Color.Error)">
-                                <MudText Typo="Typo.caption" Class="ml-4">
-                                    Save Ticks (Local DB)
-                                </MudText>
-                            </MudSwitch>
-                        </MudListItem>
+                        
                     </NestedList>
                 </MudListItem>
             </MudList>
@@ -383,6 +377,13 @@
                             <MudSwitch Size="Size.Small" @bind-Value="EnableVolumeFormer" ThumbIcon="@(EnableVolumeFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableVolumeFormer == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Formação de Volume Inspector
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" Disabled=@(!EnableTimesAndTrades || true) @bind-Value="EnableSaveTicksToIndexedDb" ThumbIcon="@(EnableSaveTicksToIndexedDb == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableSaveTicksToIndexedDb == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Save Ticks (Local DB)
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
