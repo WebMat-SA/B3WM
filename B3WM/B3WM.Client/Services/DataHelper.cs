@@ -1,21 +1,39 @@
-﻿using B3WM.Shared.Entity;
-using Microsoft.AspNetCore.Components;
-using System;
-using System.Collections.Concurrent;
+using B3WM.Shared.Entity;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace B3WM.Client.Services
 {
     public class DataHelper
     {
+        private static readonly char[] PaperSeparator = new[] { '#' };
+        private static readonly char[] FieldSeparator = new[] { '|' };
+        private static readonly char[] ItemSeparator = new[] { '@' };
+        private static readonly char[] BookItemSeparator = new[] { ';' };
+        private const string BuyerStarter = "Comprador";
+        private const string SellerStarter = "Vendedor";
+        private const string CrossStarter = "Cross";
+        private const string OpenBookValue = "Aber.";
 
-        byte[]? data;
+        private readonly byte[] data;
+        private static int _timesAndTradesSequence = 0;
+        private static int _bookSequence = 0;
+        private static readonly ConditionalWeakTable<byte[], CachedTicks> TimesAndTradesCache = new();
+
+        private sealed class CachedTicks
+        {
+            public CachedTicks(List<Ticks2> ticks)
+            {
+                Ticks = ticks;
+            }
+
+            public List<Ticks2> Ticks { get; }
+        }
+
         public DataHelper(byte[] data)
         {
             this.data = data;
@@ -23,98 +41,103 @@ namespace B3WM.Client.Services
 
         public ICollection<Ticks2> TimesAndTrades(bool isSimpleTrade = false)
         {
-            string prefix = isSimpleTrade ? "NEG!" : "NEGS!";
+            var sw = Stopwatch.StartNew();
+            bool cacheHit = false;
+            List<Ticks2> ticksQueue;
 
-            ICollection<Ticks2> TicksQueue = new Collection<Ticks2>();
+            if (TimesAndTradesCache.TryGetValue(data, out var cached))
+            {
+                cacheHit = true;
+                ticksQueue = cached.Ticks;
+            }
+            else
+            {
+                ticksQueue = ParseTimesAndTrades();
+                TimesAndTradesCache.Add(data, new CachedTicks(ticksQueue));
+            }
 
+            sw.Stop();
+            var seq = Interlocked.Increment(ref _timesAndTradesSequence);
+            HelperPerformanceConfig.LogSampled(
+                nameof(DataHelper),
+                "TimesAndTrades",
+                sw.ElapsedMilliseconds,
+                seq,
+                $"payloadBytes={data.Length} ticks={ticksQueue.Count} cacheHit={cacheHit}");
+            return ticksQueue;
+        }
+
+        private List<Ticks2> ParseTimesAndTrades()
+        {
+            var ticksQueue = new List<Ticks2>();
             string textData = Encoding.UTF8.GetString(data);
-
-            string[] manyPapersInfo = (textData).Split(new[] { "#" }, StringSplitOptions.None);
+            string[] manyPapersInfo = textData.Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (string onePaperInfo in manyPapersInfo)
             {
-                if (string.IsNullOrEmpty(onePaperInfo))
+                string[] parameters = onePaperInfo.Split(FieldSeparator, StringSplitOptions.None);
+                if (parameters.Length < 7)
                     continue;
 
-                string[] parameters = onePaperInfo.Split(new[] { "|" }, StringSplitOptions.None);
-                if (parameters.Length >= 7)
+                string[] trydIds = parameters[1].Split(ItemSeparator, StringSplitOptions.None);
+                string[] times = parameters[2].Split(ItemSeparator, StringSplitOptions.None);
+                string[] values = parameters[3].Split(ItemSeparator, StringSplitOptions.None);
+                string[] volumes = parameters[4].Split(ItemSeparator, StringSplitOptions.None);
+                string[] buyers = parameters[5].Split(ItemSeparator, StringSplitOptions.None);
+                string[] sellers = parameters[6].Split(ItemSeparator, StringSplitOptions.None);
+                string[]? starters = parameters.Length > 7 ? parameters[7].Split(ItemSeparator, StringSplitOptions.None) : null;
+
+                int lines = Math.Min(
+                    trydIds.Length,
+                    Math.Min(times.Length,
+                    Math.Min(values.Length,
+                    Math.Min(volumes.Length,
+                    Math.Min(buyers.Length, sellers.Length)))));
+
+                for (int i = 0; i < lines; i++)
                 {
-                    // pre-split columns once to avoid repeated allocations
-                    var col0 = parameters[0].Split(new[] { prefix }, StringSplitOptions.None);
-                    string paper = col0.Length > 1 ? col0[1] : col0[0];
+                    if (!int.TryParse(trydIds[i], out int trydId))
+                        continue;
 
-                    string[] trydIds = parameters[1].Split(new[] { "@" }, StringSplitOptions.None);
-                    string[] times = parameters[2].Split(new[] { "@" }, StringSplitOptions.None);
-                    string[] values = parameters[3].Split(new[] { "@" }, StringSplitOptions.None);
-                    string[] volumes = parameters[4].Split(new[] { "@" }, StringSplitOptions.None);
-                    string[] buyers = parameters[5].Split(new[] { "@" }, StringSplitOptions.None);
-                    string[] sellers = parameters[6].Split(new[] { "@" }, StringSplitOptions.None);
-                    string[] starters = parameters.Length > 7 ? parameters[7].Split(new[] { "@" }, StringSplitOptions.None) : null;
+                    if (!DateTime.TryParseExact(times[i], "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime time))
+                        continue;
 
-                    int lines = trydIds.Length;
+                    if (!double.TryParse(values[i], NumberStyles.Any, CultureInfo.CurrentCulture, out double value))
+                        continue;
 
-                    for (int i = 0; i < lines; i++)
+                    if (!int.TryParse(volumes[i], out int volume))
+                        continue;
+
+                    if (!int.TryParse(buyers[i], out int buyerInt))
+                        continue;
+
+                    if (!int.TryParse(sellers[i], out int sellerInt))
+                        continue;
+
+                    var tick = new Ticks2
                     {
-                        try
-                        {
-                            // parse fields using TryParse to avoid exceptions
-                            if (!int.TryParse(trydIds[i], out int trydId))
-                                continue;
+                        TrydID = trydId,
+                        Time = time,
+                        Value = value,
+                        Volume = volume,
+                        Buyer = (Ticks2.Agents)buyerInt,
+                        Seller = (Ticks2.Agents)sellerInt,
+                        Starter = ParseStarter(starters, i)
+                    };
 
-                            if (!DateTime.TryParseExact(times[i], "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime time))
-                                continue;
-
-                            if (!double.TryParse(values[i], NumberStyles.Any, CultureInfo.CurrentCulture, out double value))
-                                continue;
-
-                            if (!int.TryParse(volumes[i], out int volume))
-                                continue;
-
-                            if (!int.TryParse(buyers[i], out int buyerInt))
-                                continue;
-
-                            if (!int.TryParse(sellers[i], out int sellerInt))
-                                continue;
-
-                            var tick = new Ticks2
-                            {
-                                TrydID = trydId,
-                                Time = time,
-                                Value = value,
-                                Volume = volume,
-                                Buyer = (Ticks2.Agents)buyerInt,
-                                Seller = (Ticks2.Agents)sellerInt
-                            };
-
-                            if (starters != null && starters.Length > 0)
-                            {
-                                string starterValue = (i < starters.Length) ? starters[i] : starters[0];
-                                tick.Starter = starterValue == "Comprador" ? Ticks2.ActionType.Buy : (starterValue == "Vendedor" ? Ticks2.ActionType.Sale : (starterValue == "Cross" ? Ticks2.ActionType.Cross : Ticks2.ActionType.Auction));
-                            }
-                            else
-                            {
-                                tick.Starter = Ticks2.ActionType.Auction;
-                            }
-
-                            TicksQueue.Add(tick);
-                        }
-                        catch (Exception err)
-                        {
-                            Console.WriteLine("TimesAndSales - " + err.Message);
-                            Console.WriteLine(onePaperInfo);
-                        }
-                    }
+                    ticksQueue.Add(tick);
                 }
             }
 
-            return TicksQueue;
+            return ticksQueue;
         }
 
         public List<BookItem> Book()
         {
+            var sw = Stopwatch.StartNew();
             List<BookItem> PseudoBook = new List<BookItem>();
 
-            string[] manyPapersInfo = (Encoding.UTF8.GetString(data)).Split('#');
+            string[] manyPapersInfo = Encoding.UTF8.GetString(data).Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
 
             for (int paperinfoCount = manyPapersInfo.Length - 1; paperinfoCount >= 0; paperinfoCount--)
             {
@@ -129,13 +152,11 @@ namespace B3WM.Client.Services
 
                 try
                 {
-                    string paper = parameters[0].Replace("LVL2!", "").ToUpper();
-
                     // iterate book parameters and split each only once
                     BookItem bi = null;
                     for (int bookParam = 1; bookParam < parameters.Length; bookParam++)
                     {
-                        string[] bookitem = parameters[bookParam].Split(';');
+                        string[] bookitem = parameters[bookParam].Split(BookItemSeparator);
 
                         if (bookitem.Length != 4)
                             continue;
@@ -167,7 +188,7 @@ namespace B3WM.Client.Services
                                 if (bi == null)
                                     bi = new BookItem();
 
-                                if (content == "Aber.")
+                                if (content == OpenBookValue)
                                     bi.Value = -1.0d;
                                 else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val2))
                                     bi.Value = val2;
@@ -182,7 +203,7 @@ namespace B3WM.Client.Services
                                 if (bi == null)
                                     bi = new BookItem();
 
-                                if (content == "Aber.")
+                                if (content == OpenBookValue)
                                     bi.Value = -1.0d;
                                 else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val3))
                                     bi.Value = val3;
@@ -222,7 +243,28 @@ namespace B3WM.Client.Services
                 }
             }
 
+            sw.Stop();
+            var seq = Interlocked.Increment(ref _bookSequence);
+            HelperPerformanceConfig.LogSampled(
+                nameof(DataHelper),
+                "Book",
+                sw.ElapsedMilliseconds,
+                seq,
+                $"payloadBytes={data.Length} papers={manyPapersInfo.Length} items={PseudoBook.Count}");
             return PseudoBook;
+        }
+
+        private static Ticks2.ActionType ParseStarter(string[]? starters, int index)
+        {
+            if (starters == null || starters.Length == 0)
+                return Ticks2.ActionType.Auction;
+
+            string starterValue = index < starters.Length ? starters[index] : starters[0];
+
+            if (starterValue == BuyerStarter) return Ticks2.ActionType.Buy;
+            if (starterValue == SellerStarter) return Ticks2.ActionType.Sale;
+            if (starterValue == CrossStarter) return Ticks2.ActionType.Cross;
+            return Ticks2.ActionType.Auction;
         }
     }
 }

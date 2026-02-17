@@ -1,6 +1,7 @@
-﻿@using B3WM.Shared.Entity
+@using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
 @using System.Linq
+@using System.Diagnostics
 @using Vizor.ECharts
 @inject LocalStorageAccessor localStorage
 @inherits Components.PersistentComponentBase
@@ -13,7 +14,7 @@
     [PersistState]
     public int TimeFrame { get; set; } = 2;
     [PersistState]
-    public int ThresholdBubble { get; set; } = 500;
+    public int ThresholdBubble { get; set; } = 300;
     [PersistState]
     public double BubbleSize { get; set; } = 0.015;
     [PersistState]
@@ -43,6 +44,56 @@
 
     private Vizor.ECharts.EChart? EChart;
 
+    private static bool _logPerformance = true;
+    private const int PerformanceLogThresholdMs = 20;
+
+    private bool _isChartUpdatePending;
+    private bool _isChartUpdateDispatchScheduled;
+    private bool _chartUpdateRequested;
+    private bool _throttleTimerScheduled;
+    private DateTime _lastChartUpdateUtc = DateTime.MinValue;
+    private const int MinChartUpdateIntervalFloorMs = 220;
+    private const int MinChartUpdateIntervalCeilMs = 700;
+    private int _dynamicChartUpdateIntervalMs = 420;
+    private double _avgChartUpdateDurationMs = 350;
+    private const int VolumeOnlyUpdateIntervalMs = 2500;
+    private DateTime _lastCurrentBarEventUtc = DateTime.MinValue;
+    private const int BubblePersistIntervalMs = 5000;
+    private const int BarsPersistIntervalMs = 5000;
+    private bool _bubblePersistDirty;
+    private bool _barsPersistDirty;
+    private bool _isPersistScheduled;
+    private DateTime _lastBubblePersistUtc = DateTime.MinValue;
+    private DateTime _lastBarsPersistUtc = DateTime.MinValue;
+
+    private int _bubbleDataVersion;
+    private int _lastBubbleDataVersion = -1;
+    private List<object[]>? _cachedRedBubbleData;
+    private List<object[]>? _cachedBlueBubbleData;
+
+    private (int BarsCount, int CurrentBarVersion) _lastBarsCacheKey;
+    private (int BarsCount, int CurrentBarVersion) _lastBarsSnapshotCacheKey;
+    private int _currentBarVersion;
+    private List<Bars>? _cachedBarsSnapshot;
+    private List<string>? _cachedCategoryData;
+    private List<object[]>? _cachedCandleValues;
+
+    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _jsFunctionCacheKey;
+    private bool _jsFunctionCacheValid;
+    private NumberArrayOrFunction? _cachedSymbolSizeFunction;
+    private JavascriptFunction? _cachedVolumeProfileFunction;
+    private JavascriptFunction? _cachedDeltaProfileFunction;
+
+    private int _volumeDataVersion;
+    private int _lastVolumeDataVersion = -1;
+    private double _cachedMaxVolume;
+    private double _cachedMaxDelta;
+    private double _cachedVolumeMinPrice = double.PositiveInfinity;
+    private double _cachedVolumeMaxPrice = double.NegativeInfinity;
+    private double _cachedPriceStep = 1.0;
+    private List<object[]>? _cachedDeltaProfileData;
+    private List<object[]>? _cachedVolumeProfileData;
+
     private IList<Bars> Bars { get; set; } = new List<Bars>();
     private Bars CurrentBar { get; set; } = new Bars();
     private IList<Bars> RawDataBar 
@@ -61,68 +112,164 @@
 
     private IList<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
 
+    private static void LogPerf(string scope, long elapsedMs, bool always = false)
+    {
+        if (!_logPerformance) return;
+        if (!always && elapsedMs < PerformanceLogThresholdMs) return;
+        Console.WriteLine($"[{scope}] {elapsedMs}ms");
+    }
+
     [PersistState]
     private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
-    private IList<Ticks2.Agents?> AllBubbleAgents => Bubbles.Select(q => q.Agent).Distinct().ToList();
+    private readonly HashSet<Ticks2.Agents?> _allBubbleAgents = new();
+    private IList<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
 
     protected override async Task OnInitializedAsync()
     {
+        var sw = Stopwatch.StartNew();
         await base.OnInitializedAsync();
 
-        var storedBars = await localStorage.GetItemAsync<List<Bars>>($"bars_{TimeFrame}");
+        var barsTask = localStorage.GetItemAsync<List<Bars>>($"bars_{TimeFrame}");
+        var bubbleTask = localStorage.GetItemAsync<List<Bubble>>($"bubbles_{ThresholdBubble}");
+        await Task.WhenAll(barsTask, bubbleTask);
+
+        var storedBars = await barsTask;
         if (storedBars != null)
-            Bars = storedBars.Where(q=> q.Date >= DateTime.Today.Date).ToList();
+            Bars = storedBars.Where(q => q.Date >= DateTime.Today.Date).ToList();
 
-        var storedBubble = await localStorage.GetItemAsync<List<Bubble>>($"bubbles_{ThresholdBubble}");
+        var storedBubble = await bubbleTask;
         if (storedBubble != null)
-            Bubbles = storedBubble;
+        {
+            Bubbles = storedBubble.Where(q => q.Time >= DateTime.Today.Date).ToList();
+            _allBubbleAgents.Clear();
+            foreach (var bubble in Bubbles)
+                _allBubbleAgents.Add(bubble.Agent);
+            _bubbleDataVersion++;
+        }
 
-        if (EChart != null) await EChart.UpdateAsync(true);
+        // Chart is built on first render via DataLoader; no need to request update here
+        sw.Stop();
+        LogPerf("OnInitializedAsync total", sw.ElapsedMilliseconds, always: true);
     }
 
-    public async void NewBar(IEnumerable<Bars> bars)
+    private async Task<bool> RequestChartUpdate()
     {
+        if (_isChartUpdatePending)
+        {
+            return false;
+        }
+
+        var elapsed = (DateTime.UtcNow - _lastChartUpdateUtc).TotalMilliseconds;
+        if (elapsed < _dynamicChartUpdateIntervalMs && _lastChartUpdateUtc != DateTime.MinValue)
+        {
+            if (!_throttleTimerScheduled)
+            {
+                _throttleTimerScheduled = true;
+                _ = RunThrottledUpdateAfter((int)(_dynamicChartUpdateIntervalMs - elapsed));
+            }
+            return false;
+        }
+
+        _isChartUpdatePending = true;
+
+        try
+        {
+            if (EChart != null)
+            {
+                var swUpdate = Stopwatch.StartNew();
+                await EChart.UpdateAsync(true);
+                swUpdate.Stop();
+                var elapsedMs = swUpdate.ElapsedMilliseconds;
+                _avgChartUpdateDurationMs = (_avgChartUpdateDurationMs * 0.85) + (elapsedMs * 0.15);
+                _dynamicChartUpdateIntervalMs = (int)Math.Clamp(
+                    _avgChartUpdateDurationMs * 0.95,
+                    MinChartUpdateIntervalFloorMs,
+                    MinChartUpdateIntervalCeilMs);
+                LogPerf("RequestChartUpdate UpdateAsync", elapsedMs, always: true);
+            }
+            _lastChartUpdateUtc = DateTime.UtcNow;
+            return true;
+        }
+        finally
+        {
+            _isChartUpdatePending = false;
+        }
+    }
+
+    private async Task RunThrottledUpdateAfter(int delayMs)
+    {
+        if (delayMs > 0) await Task.Delay(delayMs);
+        _throttleTimerScheduled = false;
+        if (_chartUpdateRequested)
+            ScheduleChartUpdate();
+    }
+
+    public void NewBar(IEnumerable<Bars> bars)
+    {
+        var sw = Stopwatch.StartNew();
         foreach (var bar in bars)
             Bars.Add(bar);
 
-        await localStorage.SetItemAsync($"bars_{TimeFrame}", Bars);
-
-        if (EChart != null) await EChart.UpdateAsync(true);
+        ScheduleBarsPersist();
+        ScheduleChartUpdate();
+        sw.Stop();
+        LogPerf("NewBar total", sw.ElapsedMilliseconds);
     }
 
-    public async void NewCurrentBar(Bars bar)
+    public void NewCurrentBar(Bars bar)
     {
+        var sw = Stopwatch.StartNew();
         CurrentBar = bar;
-
-        if (EChart != null) await EChart.UpdateAsync(true);
+        _currentBarVersion++;
+        _lastCurrentBarEventUtc = DateTime.UtcNow;
+        ScheduleChartUpdate();
+        sw.Stop();
+        LogPerf("NewCurrentBar total", sw.ElapsedMilliseconds);
     }
 
-    public async void NewBubble(Bubble data)
+    public void NewBubble(Bubble data)
     {
-        if (!AllBubbleAgents.Contains(data.Agent))
-            SelectedAgents = SelectedAgents.Append(data.Agent).ToList();
+        var sw = Stopwatch.StartNew();
+        if (_allBubbleAgents.Add(data.Agent) && !SelectedAgents.Contains(data.Agent))
+            SelectedAgents.Add(data.Agent);
 
         Bubbles.Add(data);
-        await localStorage.SetItemAsync($"bubbles_{ThresholdBubble}", Bubbles);
-
-        if (EChart != null) await EChart.UpdateAsync(true);
+        _bubbleDataVersion++;
+        ScheduleBubblePersist();
+        ScheduleChartUpdate();
+        sw.Stop();
+        LogPerf("NewBubble total", sw.ElapsedMilliseconds);
     }
 
-    public async void VolumeUpdate(IEnumerable<VolumeLevel> volumes)
+    public void VolumeUpdate(IEnumerable<VolumeLevel> volumes)
     {
-        VolumeLevels = volumes.ToList();
+        var sw = Stopwatch.StartNew();
+        VolumeLevels = volumes as IList<VolumeLevel> ?? volumes.ToList();
+        _volumeDataVersion++;
+        // CurrentBar updates already trigger frequent chart refreshes.
+        // Only force a volume-only refresh if there was no recent current-bar event.
+        if ((DateTime.UtcNow - _lastCurrentBarEventUtc).TotalMilliseconds >= VolumeOnlyUpdateIntervalMs)
+            ScheduleChartUpdate();
+        sw.Stop();
+        LogPerf("VolumeUpdate total", sw.ElapsedMilliseconds);
     }
 
     public void SelectAllAgents()
     {
-        if (SelectedAgents.Count() == AllBubbleAgents.Count())
+        var sw = Stopwatch.StartNew();
+        if (SelectedAgents.Count == _allBubbleAgents.Count)
             SelectedAgents = new List<Ticks2.Agents?>();
         else
             SelectedAgents = AllBubbleAgents.ToList();
+        _bubbleDataVersion++;
+        ScheduleChartUpdate();
+        sw.Stop();
+        LogPerf("SelectAllAgents total", sw.ElapsedMilliseconds);
     }
 
     private void ToggleAgent(Ticks2.Agents? agent)
     {
+        var sw = Stopwatch.StartNew();
         var list = SelectedAgents.ToList();
         if (list.Contains(agent))
             list.Remove(agent);
@@ -130,7 +277,110 @@
             list.Add(agent);
 
         SelectedAgents = list;
+        _bubbleDataVersion++;
         StateHasChanged();
+        ScheduleChartUpdate();
+        sw.Stop();
+        LogPerf("ToggleAgent total", sw.ElapsedMilliseconds);
+    }
+
+    private void ScheduleChartUpdate()
+    {
+        _chartUpdateRequested = true;
+        if (_isChartUpdateDispatchScheduled)
+            return;
+
+        _isChartUpdateDispatchScheduled = true;
+        _ = InvokeAsync(ProcessChartUpdateQueueAsync);
+    }
+
+    private async Task ProcessChartUpdateQueueAsync()
+    {
+        try
+        {
+            while (true)
+            {
+                // Consome o lote atual e permite novos pedidos chegarem durante o update.
+                _chartUpdateRequested = false;
+                var didUpdate = await RequestChartUpdate();
+
+                // Se não atualizou (throttle/pending), encerra; o timer/novo evento reagenda.
+                if (!didUpdate || !_chartUpdateRequested)
+                    break;
+
+                // Evita monopolizar o loop WASM quando há rajada contínua de eventos.
+                await Task.Yield();
+            }
+        }
+        finally
+        {
+            _isChartUpdateDispatchScheduled = false;
+
+            // Se chegou pedido novo enquanto encerrava e não há timer de throttle ativo,
+            // agenda outro ciclo sem recursão síncrona.
+            if (_chartUpdateRequested && !_throttleTimerScheduled)
+                ScheduleChartUpdate();
+        }
+    }
+
+    private void ScheduleBubblePersist()
+    {
+        _bubblePersistDirty = true;
+        SchedulePersist();
+    }
+
+    private void ScheduleBarsPersist()
+    {
+        _barsPersistDirty = true;
+        SchedulePersist();
+    }
+
+    private void SchedulePersist()
+    {
+        if (_isPersistScheduled)
+            return;
+
+        _isPersistScheduled = true;
+        _ = InvokeAsync(PersistDirtyDataIfNeededAsync);
+    }
+
+    private async Task PersistDirtyDataIfNeededAsync()
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+
+            if (_bubblePersistDirty &&
+                (_lastBubblePersistUtc == DateTime.MinValue ||
+                 (now - _lastBubblePersistUtc).TotalMilliseconds >= BubblePersistIntervalMs))
+            {
+                _bubblePersistDirty = false;
+                _lastBubblePersistUtc = now;
+                await localStorage.SetItemAsync($"bubbles_{ThresholdBubble}", Bubbles);
+            }
+
+            if (_barsPersistDirty &&
+                (_lastBarsPersistUtc == DateTime.MinValue ||
+                 (now - _lastBarsPersistUtc).TotalMilliseconds >= BarsPersistIntervalMs))
+            {
+                _barsPersistDirty = false;
+                _lastBarsPersistUtc = now;
+                await localStorage.SetItemAsync($"bars_{TimeFrame}", Bars);
+            }
+        }
+        finally
+        {
+            _isPersistScheduled = false;
+            if (_bubblePersistDirty || _barsPersistDirty)
+                _ = RunPersistRetryAfter(500);
+        }
+    }
+
+    private async Task RunPersistRetryAfter(int delayMs)
+    {
+        if (delayMs > 0) await Task.Delay(delayMs);
+        if (_bubblePersistDirty || _barsPersistDirty)
+            SchedulePersist();
     }
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
@@ -210,38 +460,120 @@
     private void GenerateChart()
     {
         if (EChart is null) return;
+        var swTotal = Stopwatch.StartNew();
 
-        // 1. CÁLCULO DE LIMITES GLOBAIS
-        var allPrices = RawDataBar.SelectMany(b => new[] { (double)b.High, (double)b.Low })
-                            .Concat(VolumeLevels.Select(v => (double)v.Price)).ToList();
+        var swBars = Stopwatch.StartNew();
+        var barsKey = (Bars.Count, _currentBarVersion);
+        List<Bars> bars;
+        if (_cachedBarsSnapshot != null && _lastBarsSnapshotCacheKey == barsKey)
+        {
+            bars = _cachedBarsSnapshot;
+        }
+        else
+        {
+            bars = new List<Bars>(Bars.Count + 1);
+            foreach (var bar in Bars)
+                bars.Add(bar);
 
-        if (!allPrices.Any()) return;
+            if (CurrentBar.Date != default)
+                bars.Add(CurrentBar);
 
-        double actualMin = allPrices.Min();
-        double actualMax = allPrices.Max();
+            bars.Sort((a, b) => a.Date.CompareTo(b.Date));
+            _cachedBarsSnapshot = bars;
+            _lastBarsSnapshotCacheKey = barsKey;
+        }
+        swBars.Stop();
+        LogPerf("GenerateChart RawDataBar", swBars.ElapsedMilliseconds);
+
+        if (bars.Count == 0) return;
+
+        var swLimites = Stopwatch.StartNew();
+        double barsMin = double.PositiveInfinity;
+        double barsMax = double.NegativeInfinity;
+        foreach (var b in bars)
+        {
+            var low = (double)b.Low;
+            var high = (double)b.High;
+            if (low < barsMin) barsMin = low;
+            if (high > barsMax) barsMax = high;
+        }
+
+        if (_lastVolumeDataVersion != _volumeDataVersion)
+        {
+            _cachedMaxVolume = 0;
+            _cachedMaxDelta = 0;
+            _cachedVolumeMinPrice = double.PositiveInfinity;
+            _cachedVolumeMaxPrice = double.NegativeInfinity;
+            _cachedPriceStep = 1.0;
+
+            if (VolumeLevels.Count >= 2)
+                _cachedPriceStep = Math.Abs(VolumeLevels[1].Price - VolumeLevels[0].Price);
+
+            var deltaProfileCache = new List<object[]>(VolumeLevels.Count);
+            var volumeProfileCache = new List<object[]>(VolumeLevels.Count);
+            foreach (var v in VolumeLevels)
+            {
+                var total = (double)v.Total;
+                var absDelta = Math.Abs((double)v.Delta);
+                var price = (double)v.Price;
+                if (total > _cachedMaxVolume) _cachedMaxVolume = total;
+                if (absDelta > _cachedMaxDelta) _cachedMaxDelta = absDelta;
+                if (price < _cachedVolumeMinPrice) _cachedVolumeMinPrice = price;
+                if (price > _cachedVolumeMaxPrice) _cachedVolumeMaxPrice = price;
+
+                deltaProfileCache.Add(new object[] { absDelta, v.Price, _cachedPriceStep, v.Delta });
+                volumeProfileCache.Add(new object[] { v.Total, v.Price, _cachedPriceStep });
+            }
+
+            _cachedDeltaProfileData = deltaProfileCache;
+            _cachedVolumeProfileData = volumeProfileCache;
+            _lastVolumeDataVersion = _volumeDataVersion;
+        }
+
+        double actualMin = barsMin;
+        double actualMax = barsMax;
+        if (!double.IsPositiveInfinity(_cachedVolumeMinPrice) && _cachedVolumeMinPrice < actualMin)
+            actualMin = _cachedVolumeMinPrice;
+        if (!double.IsNegativeInfinity(_cachedVolumeMaxPrice) && _cachedVolumeMaxPrice > actualMax)
+            actualMax = _cachedVolumeMaxPrice;
+
+        if (double.IsInfinity(actualMin) || double.IsInfinity(actualMax)) return;
         double range = actualMax - actualMin;
+        if (range <= 0) range = Math.Max(1.0, Math.Abs(actualMax) * 0.01);
 
-        // Aumentamos para 10% de padding (5% no topo, 5% no fundo)
-        // Isso evita que candles ou barras customizadas encostem na borda da grid
         double paddingFactor = 0.25;
         double minPrice = actualMin - (range * paddingFactor);
         double maxPrice = actualMax + (range * paddingFactor);
+        swLimites.Stop();
+        LogPerf("GenerateChart Limites", swLimites.ElapsedMilliseconds);
 
-        // 2. CONFIGURAÇÃO DO STEP (Para as barras custom não ficarem coladas)
-        double priceStep = 1.0;
-        if (VolumeLevels.Count >= 2)
+        var swDados = Stopwatch.StartNew();
+        var maxVolume = _cachedMaxVolume;
+        var maxDelta = _cachedMaxDelta;
+        List<string> categoryData;
+        List<object[]> values;
+        if (_cachedCategoryData != null && _lastBarsCacheKey == barsKey)
         {
-            priceStep = Math.Abs(VolumeLevels[1].Price - VolumeLevels[0].Price);
+            categoryData = _cachedCategoryData;
+            values = _cachedCandleValues!;
         }
+        else
+        {
+            categoryData = new List<string>(bars.Count);
+            values = new List<object[]>(bars.Count);
+            foreach (var row in bars)
+            {
+                categoryData.Add(row.Date.ToString("dd/MM HH:mm"));
+                values.Add(new object[] { row.Open, row.Close, row.Low, row.High });
+            }
+            _lastBarsCacheKey = barsKey;
+            _cachedCategoryData = categoryData;
+            _cachedCandleValues = values;
+        }
+        swDados.Stop();
+        LogPerf("GenerateChart Dados eixo", swDados.ElapsedMilliseconds);
 
-        var categoryData = RawDataBar.Select(row => row.Date.ToString("dd/MM HH:mm")).ToList();
-        var values = RawDataBar.Select(row => new object[] { row.Open, row.Close, row.Low, row.High }).ToList();
-        var maxVolume = VolumeLevels.Any() ? (double)VolumeLevels.Max(v => v.Total) : 0;
-
-        // Cálculo do maior delta absoluto para escala do eixo esquerdo
-        var maxDelta = VolumeLevels.Any() ? (double)VolumeLevels.Max(v => Math.Abs(v.Delta)) : 0;
-
-        // 1. CONFIGURAÇÃO DOS EIXOS X
+        var swEixos = Stopwatch.StartNew();
         ChartOptions.XAxisList = new List<XAxis>
         {
             new XAxis 
@@ -273,20 +605,35 @@
             new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true}, },
             new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = new AxisLabel { Show = true, Color = "#aaa" } }
         };
+        swEixos.Stop();
+        LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
 
-        var symbolSizeFunction = new NumberArrayOrFunction(new JavascriptFunction($@"function (v) {{ return v[2] * {BubbleSize.ToString(System.Globalization.CultureInfo.InvariantCulture)} * {(BubbleVisible ? 1 : 0)}; }}"));
-        var volumeProfileFunction = new JavascriptFunction(@"
+        var swJs = Stopwatch.StartNew();
+        var jsKey = (BubbleSize, BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta);
+        NumberArrayOrFunction symbolSizeFunction;
+        JavascriptFunction volumeProfileFunction;
+        JavascriptFunction deltaprofileFunction;
+        if (_jsFunctionCacheValid && _jsFunctionCacheKey == jsKey)
+        {
+            symbolSizeFunction = _cachedSymbolSizeFunction!;
+            volumeProfileFunction = _cachedVolumeProfileFunction!;
+            deltaprofileFunction = _cachedDeltaProfileFunction!;
+        }
+        else
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            symbolSizeFunction = new NumberArrayOrFunction(new JavascriptFunction($@"function (v) {{ return v[2] * {BubbleSize.ToString(inv)} * {(BubbleVisible ? 1 : 0)}; }}"));
+            volumeProfileFunction = new JavascriptFunction(@"
                     function (params, api) {
                         var volumeVal = api.value(0);
                         var priceVal = api.value(1);
                         var stepVal = api.value(2);
 
                         var start = api.coord([0, priceVal]);
-                        var end = api.coord([volumeVal* " + ProfileSizeH.ToString(System.Globalization.CultureInfo.InvariantCulture) + @", priceVal]);
+                        var end = api.coord([volumeVal* " + ProfileSizeH.ToString(inv) + @", priceVal]);
 
-                        // Calcula a altura da faixa de preço em pixels
                         var size = api.size([0, stepVal]);
-                        var barHeight = size[1] * " + ProfileSizeV.ToString(System.Globalization.CultureInfo.InvariantCulture) + @"; // 0.95 para deixar um pequeno respiro entre barras
+                        var barHeight = size[1] * " + ProfileSizeV.ToString(inv) + @";
 
                         return {
                             type: 'rect',
@@ -297,63 +644,101 @@
                                 height: barHeight
                             },
                             style: api.style({
-                                fill: api.value(0) == " + maxVolume.ToString(System.Globalization.CultureInfo.InvariantCulture) + @" ? '#rgba(255, 100, 0, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")' : 'rgba(100, 150, 250, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")',
-                                stroke: 'rgba(100, 150, 250, " + ((ProfileOpacity * (ProfileVisible ? 1 : 0)) - 0.2).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")'
+                                fill: api.value(0) == " + maxVolume.ToString(inv) + @" ? '#rgba(255, 100, 0, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")' : 'rgba(100, 150, 250, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")',
+                                stroke: 'rgba(100, 150, 250, " + ((ProfileOpacity * (ProfileVisible ? 1 : 0)) - 0.2).ToString(inv) + @")'
                             })
                         };
                     }
                 ");
-        var deltaprofileFunction = new JavascriptFunction(@"
+            deltaprofileFunction = new JavascriptFunction(@"
                     function (params, api) {
                         var deltaAbs = api.value(0);
                         var priceVal = api.value(1);
                         var stepVal = api.value(2);
                         var rawDelta = api.value(3);
 
-                        var start = api.coord([0, priceVal]); // Ponto na parede esquerda (X=0)
+                        var start = api.coord([0, priceVal]);
                         var end = api.coord([deltaAbs, priceVal]);
 
                         var size = api.size([0, stepVal]);
-                        var barHeight = size[1] * " + DeltaSizeV.ToString(System.Globalization.CultureInfo.InvariantCulture) + @";
+                        var barHeight = size[1] * " + DeltaSizeV.ToString(inv) + @";
 
                         return {
                             type: 'rect',
                             shape: {
-                                x: start[0], // Começa no zero da esquerda
+                                x: start[0],
                                 y: start[1] - barHeight / 2,
-                                width: (end[0] - start[0]) * " + DeltaSizeH.ToString(System.Globalization.CultureInfo.InvariantCulture) + @", // Cresce para a direita
+                                width: (end[0] - start[0]) * " + DeltaSizeH.ToString(inv) + @",
                                 height: barHeight
                             },
                             style: api.style({
-                                fill: rawDelta >= 0 ? 'rgba(50, 50, 255, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")' : 'rgba(255, 50, 50, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")',
-                                stroke: rawDelta >= 0 ? 'rgba(50, 50, 255, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")' : 'rgba(255, 50, 50, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(System.Globalization.CultureInfo.InvariantCulture) + @")',
-                                //lineWidth: 1
+                                fill: rawDelta >= 0 ? 'rgba(50, 50, 255, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(inv) + @")' : 'rgba(255, 50, 50, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(inv) + @")',
+                                stroke: rawDelta >= 0 ? 'rgba(50, 50, 255, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(inv) + @")' : 'rgba(255, 50, 50, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(inv) + @")'
                             })
                         };
                     }
                 ");
+            _jsFunctionCacheKey = jsKey;
+            _cachedSymbolSizeFunction = symbolSizeFunction;
+            _cachedVolumeProfileFunction = volumeProfileFunction;
+            _cachedDeltaProfileFunction = deltaprofileFunction;
+            _jsFunctionCacheValid = true;
+        }
+        swJs.Stop();
+        LogPerf("GenerateChart Funcoes JS", swJs.ElapsedMilliseconds);
 
-        // 4. SÉRIES
+        var swBubbles = Stopwatch.StartNew();
+        if (_lastBubbleDataVersion != _bubbleDataVersion)
+        {
+            var selectedAgents = new HashSet<Ticks2.Agents?>(SelectedAgents);
+            var redList = new List<(DateTime Time, object[] Data)>();
+            var blueList = new List<(DateTime Time, object[] Data)>();
+            foreach (var e in Bubbles)
+            {
+                if (!selectedAgents.Contains(e.Agent)) continue;
+                var arr = new object[] {
+                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
+                    e.Price,
+                    e.Amount,
+                    e.Agent?.Description() ?? "Desconhecido"
+                };
+                if (e.ActionType == Ticks2.ActionType.Sale)
+                    redList.Add((e.Time, arr));
+                else if (e.ActionType == Ticks2.ActionType.Buy)
+                    blueList.Add((e.Time, arr));
+            }
+            redList.Sort((a, b) => a.Time.CompareTo(b.Time));
+            blueList.Sort((a, b) => a.Time.CompareTo(b.Time));
+            _cachedRedBubbleData = redList.ConvertAll(x => x.Data);
+            _cachedBlueBubbleData = blueList.ConvertAll(x => x.Data);
+            _lastBubbleDataVersion = _bubbleDataVersion;
+        }
+        var redBubbleData = _cachedRedBubbleData ?? new List<object[]>();
+        var blueBubbleData = _cachedBlueBubbleData ?? new List<object[]>();
+        swBubbles.Stop();
+        LogPerf("GenerateChart Bubbles", swBubbles.ElapsedMilliseconds);
+
+        var swSeries = Stopwatch.StartNew();
+        var deltaProfileData = _cachedDeltaProfileData ?? new List<object[]>();
+        var volumeProfileData = _cachedVolumeProfileData ?? new List<object[]>();
         ChartOptions.Series = new List<ISeries>
         {
             new CustomSeries
             {
                 Name = "Delta Profile",
-                XAxisIndex = 2, // Usa o novo eixo da esquerda
+                XAxisIndex = 2,
                 YAxisIndex = 1,
                 Z = 0,
-                Data = VolumeLevels.Select(v => new object[] { Math.Abs(v.Delta), v.Price, priceStep, v.Delta }).ToList(),
+                Data = deltaProfileData,
                 RenderItem = deltaprofileFunction
             },
-
-            // --- VOLUME PROFILE (CUSTOM) ---
             new CustomSeries
             {
                 Name = "Volume Profile",
                 XAxisIndex = 1,
                 YAxisIndex = 1,
-                Z = 0, // Fundo
-                Data = VolumeLevels.Select(v => new object[] { v.Total, v.Price, priceStep }).ToList(),
+                Z = 0,
+                Data = volumeProfileData,
                 RenderItem = volumeProfileFunction,
             },
 
@@ -370,13 +755,7 @@
             new ScatterSeries
             {
                 Name = "Aggressive Red",
-                // Adicionamos e.Agent.Description() no final do array (índice 3)
-                Data = RawDataBubbleRed.Select(e => new object[] {
-                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
-                    e.Price,
-                    e.Amount,
-                    e.Agent?.Description() ?? "Desconhecido"
-                }).ToList(),
+                Data = redBubbleData,
                 SymbolSize = symbolSizeFunction,
                 Z = 3,
                 ItemStyle = new ItemStyle { Color = "#ff0000", Opacity = BubbleOpacity, BorderColor = "#ff0000", BorderWidth = 1 }
@@ -384,17 +763,16 @@
             new ScatterSeries
             {
                 Name = "Aggressive Blue",
-                Data = RawDataBubbleBlue.Select(e => new object[] {
-                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
-                    e.Price,
-                    e.Amount,
-                    e.Agent?.Description() ?? "Desconhecido"
-                }).ToList(),
+                Data = blueBubbleData,
                 SymbolSize = symbolSizeFunction,
                 Z = 3,
                 ItemStyle = new ItemStyle { Color = "#0000ff", Opacity = BubbleOpacity, BorderColor = "#0000ff", BorderWidth = 1 }
             }
         };
+        swSeries.Stop();
+        swTotal.Stop();
+        LogPerf("GenerateChart Series", swSeries.ElapsedMilliseconds);
+        LogPerf("GenerateChart total", swTotal.ElapsedMilliseconds, always: true);
     }
 
 }

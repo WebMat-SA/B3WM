@@ -1,4 +1,4 @@
-﻿@using B3WM.Shared.Entity
+@using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text
@@ -118,8 +118,8 @@
                 _EnableVolumeFormer = value;
                 if (!_EnableVolumeFormer)
                 {
-                    candleHelper?.Dispose();
-                    candleHelper = null;
+                    volumeHelper?.Dispose();
+                    volumeHelper = null;
                 }
                 else
                 {
@@ -142,8 +142,8 @@
                 _EnableBubbleFormer = value;
                 if (!_EnableBubbleFormer)
                 {
-                    candleHelper?.Dispose();
-                    candleHelper = null;
+                    bubbleHelper?.Dispose();
+                    bubbleHelper = null;
                 }
                 else
                 {
@@ -159,6 +159,18 @@
         hubConnection?.State == HubConnectionState.Connected;
 
     private PeriodicTimer? _timer;
+    private DateTime _lastUiRefreshUtc = DateTime.MinValue;
+    private const int UiRefreshIntervalMs = 1000;
+    private const int CurrentBarPublishIntervalMs = 250;
+    private const int VolumePublishIntervalMs = 600;
+    private int _lastPublishedCurrentBarVersion = -1;
+    private int _lastPublishedVolumeVersion = -1;
+    private DateTime _lastPublishedCurrentBarAtUtc = DateTime.MinValue;
+    private DateTime _lastPublishedVolumeAtUtc = DateTime.MinValue;
+    private bool _isCurrentBarPublishInFlight;
+    private Bars? _pendingCurrentBarSnapshot;
+    private bool _isVolumePublishInFlight;
+    private List<VolumeLevel>? _pendingVolumeSnapshot;
 
     protected override async Task OnInitializedAsync()
     {
@@ -178,7 +190,7 @@
 
     protected override void OnInitialized()
     {
-        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000));
+        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
         _ = RunLoop();
     }
 
@@ -188,20 +200,84 @@
         {
             if (candleHelper is not null && OnCurrentBarChange.HasDelegate)
             {
-                var snapshot = candleHelper.GetCurrentBarSnapshot();
+                var currentBarVersion = candleHelper.GetCurrentBarVersion();
+                var now = DateTime.UtcNow;
+                var canPublishByInterval =
+                    _lastPublishedCurrentBarAtUtc == DateTime.MinValue ||
+                    (now - _lastPublishedCurrentBarAtUtc).TotalMilliseconds >= CurrentBarPublishIntervalMs;
 
-                if (snapshot != null)
-                    await OnCurrentBarChange.InvokeAsync(snapshot);
-
+                if (currentBarVersion != _lastPublishedCurrentBarVersion && canPublishByInterval)
+                {
+                    var snapshot = candleHelper.GetCurrentBarSnapshot();
+                    if (snapshot != null)
+                    {
+                        _lastPublishedCurrentBarVersion = currentBarVersion;
+                        _lastPublishedCurrentBarAtUtc = now;
+                        _pendingCurrentBarSnapshot = snapshot;
+                        _ = TryPublishCurrentBarAsync();
+                    }
+                }
             }
 
             if (volumeHelper is not null && OnVolumeUpdate.HasDelegate)
             {
-                var volumeSnapshot = volumeHelper.GetSnapshot();
+                var volumeVersion = volumeHelper.GetVolumeVersion();
+                var now = DateTime.UtcNow;
+                var canPublishByInterval =
+                    _lastPublishedVolumeAtUtc == DateTime.MinValue ||
+                    (now - _lastPublishedVolumeAtUtc).TotalMilliseconds >= VolumePublishIntervalMs;
 
-                if (volumeSnapshot != null)
-                    await OnVolumeUpdate.InvokeAsync(volumeSnapshot);
+                if (volumeVersion != _lastPublishedVolumeVersion && canPublishByInterval)
+                {
+                    var volumeSnapshot = volumeHelper.GetSnapshot();
+                    _lastPublishedVolumeVersion = volumeVersion;
+                    _lastPublishedVolumeAtUtc = now;
+                    _pendingVolumeSnapshot = volumeSnapshot;
+                    _ = TryPublishVolumeAsync();
+                }
             }
+        }
+    }
+
+    private async Task TryPublishCurrentBarAsync()
+    {
+        if (_isCurrentBarPublishInFlight)
+            return;
+
+        _isCurrentBarPublishInFlight = true;
+        try
+        {
+            while (_pendingCurrentBarSnapshot is not null)
+            {
+                var snapshot = _pendingCurrentBarSnapshot;
+                _pendingCurrentBarSnapshot = null;
+                await OnCurrentBarChange.InvokeAsync(snapshot);
+            }
+        }
+        finally
+        {
+            _isCurrentBarPublishInFlight = false;
+        }
+    }
+
+    private async Task TryPublishVolumeAsync()
+    {
+        if (_isVolumePublishInFlight)
+            return;
+
+        _isVolumePublishInFlight = true;
+        try
+        {
+            while (_pendingVolumeSnapshot is not null)
+            {
+                var snapshot = _pendingVolumeSnapshot;
+                _pendingVolumeSnapshot = null;
+                await OnVolumeUpdate.InvokeAsync(snapshot);
+            }
+        }
+        finally
+        {
+            _isVolumePublishInFlight = false;
         }
     }
 
@@ -214,7 +290,7 @@
 
         if (OnBookChange.HasDelegate) await OnBookChange.InvokeAsync(new DataHelper(data).Book());
 
-        StateHasChanged();
+        RequestUiRefreshThrottled();
 
     }
 
@@ -225,8 +301,8 @@
         //debug de velocidade e confirmação de dados
         _counter++;
 
-        // UI update - keep lightweight here
-        InvokeAsync(StateHasChanged);
+        // Avoid re-rendering for every packet; this path can be called many times per second.
+        RequestUiRefreshThrottled();
 
         //converte a lista para ticks2
         var newQueue = new DataHelper(data).TimesAndTrades();
@@ -245,10 +321,21 @@
         //debug de velocidade e confirmação de dados
         _counter++;
 
-        StateHasChanged();
+        RequestUiRefreshThrottled();
     }
 
-    private async Task Enqueue(byte[] data)
+    private void RequestUiRefreshThrottled()
+    {
+        var now = DateTime.UtcNow;
+        if (_lastUiRefreshUtc != DateTime.MinValue &&
+            (now - _lastUiRefreshUtc).TotalMilliseconds < UiRefreshIntervalMs)
+            return;
+
+        _lastUiRefreshUtc = now;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private Task Enqueue(byte[] data)
     {
         if (EnableBubbleFormer)
         {
@@ -267,6 +354,8 @@
             {
                 // fallback: create helper if for some reason it's not initialized yet
                 candleHelper = new CandleHelper(NewBars, TimeFrame);
+                _lastPublishedCurrentBarVersion = -1;
+                _lastPublishedCurrentBarAtUtc = DateTime.MinValue;
             }
 
             _ = candleHelper.Enqueue(data);
@@ -278,11 +367,14 @@
             {
                 // fallback: create helper if for some reason it's not initialized yet
                 volumeHelper = new VolumeHelper();
+                _lastPublishedVolumeVersion = -1;
+                _lastPublishedVolumeAtUtc = DateTime.MinValue;
             }
 
             _ = volumeHelper.Enqueue(data);
         }
 
+        return Task.CompletedTask;
     }
 
     public void NewBubble(Bubble data)
