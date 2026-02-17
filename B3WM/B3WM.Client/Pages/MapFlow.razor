@@ -1,9 +1,8 @@
-@using B3WM.Shared.Entity
+﻿@using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
 @using System.Linq
 @using System.Diagnostics
 @using Vizor.ECharts
-@inject LocalStorageAccessor localStorage
 @inherits Components.PersistentComponentBase
 @page "/map-flow"
 
@@ -47,24 +46,14 @@
     private static bool _logPerformance = true;
     private const int PerformanceLogThresholdMs = 20;
 
-    private bool _isChartUpdatePending;
-    private bool _isChartUpdateDispatchScheduled;
-    private bool _chartUpdateRequested;
-    private bool _throttleTimerScheduled;
-    private DateTime _lastChartUpdateUtc = DateTime.MinValue;
-    private const int MinChartUpdateIntervalFloorMs = 220;
-    private const int MinChartUpdateIntervalCeilMs = 700;
-    private int _dynamicChartUpdateIntervalMs = 420;
-    private double _avgChartUpdateDurationMs = 350;
-    private const int VolumeOnlyUpdateIntervalMs = 2500;
-    private DateTime _lastCurrentBarEventUtc = DateTime.MinValue;
-    private const int BubblePersistIntervalMs = 5000;
-    private const int BarsPersistIntervalMs = 5000;
-    private bool _bubblePersistDirty;
-    private bool _barsPersistDirty;
-    private bool _isPersistScheduled;
-    private DateTime _lastBubblePersistUtc = DateTime.MinValue;
-    private DateTime _lastBarsPersistUtc = DateTime.MinValue;
+    // --- Controle de redraw do gráfico (único ponto: InvalidateChart + throttle) ---
+    // Fontes que invalidam: Bars, CurrentBar, Bubbles, VolumeLevels, SelectedAgents (drawer).
+    // O que é plotado: candles, volume profile, delta profile, bolhas (agressões).
+    private const int ChartRedrawMinIntervalMs = 280;
+    private bool _chartNeedsRedraw;
+    private bool _chartRedrawScheduled;
+    private bool _chartRedrawInProgress;
+    private DateTime _chartLastRedrawUtc = DateTime.MinValue;
 
     private int _bubbleDataVersion;
     private int _lastBubbleDataVersion = -1;
@@ -126,82 +115,66 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var sw = Stopwatch.StartNew();
         await base.OnInitializedAsync();
-
-        var barsTask = localStorage.GetItemAsync<List<Bars>>($"bars_{TimeFrame}");
-        var bubbleTask = localStorage.GetItemAsync<List<Bubble>>($"bubbles_{ThresholdBubble}");
-        await Task.WhenAll(barsTask, bubbleTask);
-
-        var storedBars = await barsTask;
-        if (storedBars != null)
-            Bars = storedBars.Where(q => q.Date >= DateTime.Today.Date).ToList();
-
-        var storedBubble = await bubbleTask;
-        if (storedBubble != null)
-        {
-            Bubbles = storedBubble.Where(q => q.Time >= DateTime.Today.Date).ToList();
-            _allBubbleAgents.Clear();
-            foreach (var bubble in Bubbles)
-                _allBubbleAgents.Add(bubble.Agent);
-            _bubbleDataVersion++;
-        }
-
-        // Chart is built on first render via DataLoader; no need to request update here
-        sw.Stop();
-        LogPerf("OnInitializedAsync total", sw.ElapsedMilliseconds, always: true);
     }
 
-    private async Task<bool> RequestChartUpdate()
+    /// <summary>Marca o gráfico para redesenho. Único ponto de entrada para qualquer fonte (Hub ou UI).</summary>
+    private void InvalidateChart()
     {
-        if (_isChartUpdatePending)
-        {
-            return false;
-        }
+        _chartNeedsRedraw = true;
+        EnsureChartRedrawScheduled();
+    }
 
-        var elapsed = (DateTime.UtcNow - _lastChartUpdateUtc).TotalMilliseconds;
-        if (elapsed < _dynamicChartUpdateIntervalMs && _lastChartUpdateUtc != DateTime.MinValue)
-        {
-            if (!_throttleTimerScheduled)
-            {
-                _throttleTimerScheduled = true;
-                _ = RunThrottledUpdateAfter((int)(_dynamicChartUpdateIntervalMs - elapsed));
-            }
-            return false;
-        }
+    private void EnsureChartRedrawScheduled()
+    {
+        if (_chartRedrawScheduled) return;
+        _chartRedrawScheduled = true;
+        _ = InvokeAsync(ProcessChartRedrawAsync);
+    }
 
-        _isChartUpdatePending = true;
-
+    private async Task ProcessChartRedrawAsync()
+    {
         try
         {
-            if (EChart != null)
+            while (_chartNeedsRedraw)
             {
-                var swUpdate = Stopwatch.StartNew();
-                await EChart.UpdateAsync(true);
-                swUpdate.Stop();
-                var elapsedMs = swUpdate.ElapsedMilliseconds;
-                _avgChartUpdateDurationMs = (_avgChartUpdateDurationMs * 0.85) + (elapsedMs * 0.15);
-                _dynamicChartUpdateIntervalMs = (int)Math.Clamp(
-                    _avgChartUpdateDurationMs * 0.95,
-                    MinChartUpdateIntervalFloorMs,
-                    MinChartUpdateIntervalCeilMs);
-                LogPerf("RequestChartUpdate UpdateAsync", elapsedMs, always: true);
+                _chartNeedsRedraw = false;
+
+                var now = DateTime.UtcNow;
+                var elapsed = _chartLastRedrawUtc == DateTime.MinValue ? double.PositiveInfinity : (now - _chartLastRedrawUtc).TotalMilliseconds;
+                if (elapsed < ChartRedrawMinIntervalMs)
+                {
+                    _chartNeedsRedraw = true;
+                    await Task.Delay((int)(ChartRedrawMinIntervalMs - elapsed));
+                    continue;
+                }
+
+                if (_chartRedrawInProgress || EChart == null)
+                    break;
+
+                _chartRedrawInProgress = true;
+                try
+                {
+                    var sw = Stopwatch.StartNew();
+                    await EChart.UpdateAsync(true);
+                    sw.Stop();
+                    _chartLastRedrawUtc = DateTime.UtcNow;
+                    LogPerf("Chart redraw", sw.ElapsedMilliseconds, always: true);
+                }
+                finally
+                {
+                    _chartRedrawInProgress = false;
+                }
+
+                await Task.Yield();
             }
-            _lastChartUpdateUtc = DateTime.UtcNow;
-            return true;
         }
         finally
         {
-            _isChartUpdatePending = false;
+            _chartRedrawScheduled = false;
+            if (_chartNeedsRedraw)
+                EnsureChartRedrawScheduled();
         }
-    }
-
-    private async Task RunThrottledUpdateAfter(int delayMs)
-    {
-        if (delayMs > 0) await Task.Delay(delayMs);
-        _throttleTimerScheduled = false;
-        if (_chartUpdateRequested)
-            ScheduleChartUpdate();
     }
 
     public void NewBar(IEnumerable<Bars> bars)
@@ -209,9 +182,7 @@
         var sw = Stopwatch.StartNew();
         foreach (var bar in bars)
             Bars.Add(bar);
-
-        ScheduleBarsPersist();
-        ScheduleChartUpdate();
+        InvalidateChart();
         sw.Stop();
         LogPerf("NewBar total", sw.ElapsedMilliseconds);
     }
@@ -221,8 +192,7 @@
         var sw = Stopwatch.StartNew();
         CurrentBar = bar;
         _currentBarVersion++;
-        _lastCurrentBarEventUtc = DateTime.UtcNow;
-        ScheduleChartUpdate();
+        InvalidateChart();
         sw.Stop();
         LogPerf("NewCurrentBar total", sw.ElapsedMilliseconds);
     }
@@ -232,11 +202,9 @@
         var sw = Stopwatch.StartNew();
         if (_allBubbleAgents.Add(data.Agent) && !SelectedAgents.Contains(data.Agent))
             SelectedAgents.Add(data.Agent);
-
         Bubbles.Add(data);
         _bubbleDataVersion++;
-        ScheduleBubblePersist();
-        ScheduleChartUpdate();
+        InvalidateChart();
         sw.Stop();
         LogPerf("NewBubble total", sw.ElapsedMilliseconds);
     }
@@ -246,10 +214,7 @@
         var sw = Stopwatch.StartNew();
         VolumeLevels = volumes as IList<VolumeLevel> ?? volumes.ToList();
         _volumeDataVersion++;
-        // CurrentBar updates already trigger frequent chart refreshes.
-        // Only force a volume-only refresh if there was no recent current-bar event.
-        if ((DateTime.UtcNow - _lastCurrentBarEventUtc).TotalMilliseconds >= VolumeOnlyUpdateIntervalMs)
-            ScheduleChartUpdate();
+        InvalidateChart();
         sw.Stop();
         LogPerf("VolumeUpdate total", sw.ElapsedMilliseconds);
     }
@@ -262,7 +227,7 @@
         else
             SelectedAgents = AllBubbleAgents.ToList();
         _bubbleDataVersion++;
-        ScheduleChartUpdate();
+        InvalidateChart();
         sw.Stop();
         LogPerf("SelectAllAgents total", sw.ElapsedMilliseconds);
     }
@@ -275,112 +240,12 @@
             list.Remove(agent);
         else
             list.Add(agent);
-
         SelectedAgents = list;
         _bubbleDataVersion++;
         StateHasChanged();
-        ScheduleChartUpdate();
+        InvalidateChart();
         sw.Stop();
         LogPerf("ToggleAgent total", sw.ElapsedMilliseconds);
-    }
-
-    private void ScheduleChartUpdate()
-    {
-        _chartUpdateRequested = true;
-        if (_isChartUpdateDispatchScheduled)
-            return;
-
-        _isChartUpdateDispatchScheduled = true;
-        _ = InvokeAsync(ProcessChartUpdateQueueAsync);
-    }
-
-    private async Task ProcessChartUpdateQueueAsync()
-    {
-        try
-        {
-            while (true)
-            {
-                // Consome o lote atual e permite novos pedidos chegarem durante o update.
-                _chartUpdateRequested = false;
-                var didUpdate = await RequestChartUpdate();
-
-                // Se não atualizou (throttle/pending), encerra; o timer/novo evento reagenda.
-                if (!didUpdate || !_chartUpdateRequested)
-                    break;
-
-                // Evita monopolizar o loop WASM quando há rajada contínua de eventos.
-                await Task.Yield();
-            }
-        }
-        finally
-        {
-            _isChartUpdateDispatchScheduled = false;
-
-            // Se chegou pedido novo enquanto encerrava e não há timer de throttle ativo,
-            // agenda outro ciclo sem recursão síncrona.
-            if (_chartUpdateRequested && !_throttleTimerScheduled)
-                ScheduleChartUpdate();
-        }
-    }
-
-    private void ScheduleBubblePersist()
-    {
-        _bubblePersistDirty = true;
-        SchedulePersist();
-    }
-
-    private void ScheduleBarsPersist()
-    {
-        _barsPersistDirty = true;
-        SchedulePersist();
-    }
-
-    private void SchedulePersist()
-    {
-        if (_isPersistScheduled)
-            return;
-
-        _isPersistScheduled = true;
-        _ = InvokeAsync(PersistDirtyDataIfNeededAsync);
-    }
-
-    private async Task PersistDirtyDataIfNeededAsync()
-    {
-        try
-        {
-            var now = DateTime.UtcNow;
-
-            if (_bubblePersistDirty &&
-                (_lastBubblePersistUtc == DateTime.MinValue ||
-                 (now - _lastBubblePersistUtc).TotalMilliseconds >= BubblePersistIntervalMs))
-            {
-                _bubblePersistDirty = false;
-                _lastBubblePersistUtc = now;
-                await localStorage.SetItemAsync($"bubbles_{ThresholdBubble}", Bubbles);
-            }
-
-            if (_barsPersistDirty &&
-                (_lastBarsPersistUtc == DateTime.MinValue ||
-                 (now - _lastBarsPersistUtc).TotalMilliseconds >= BarsPersistIntervalMs))
-            {
-                _barsPersistDirty = false;
-                _lastBarsPersistUtc = now;
-                await localStorage.SetItemAsync($"bars_{TimeFrame}", Bars);
-            }
-        }
-        finally
-        {
-            _isPersistScheduled = false;
-            if (_bubblePersistDirty || _barsPersistDirty)
-                _ = RunPersistRetryAfter(500);
-        }
-    }
-
-    private async Task RunPersistRetryAfter(int delayMs)
-    {
-        if (delayMs > 0) await Task.Delay(delayMs);
-        if (_bubblePersistDirty || _barsPersistDirty)
-            SchedulePersist();
     }
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
@@ -502,7 +367,10 @@
             if (high > barsMax) barsMax = high;
         }
 
-        if (_lastVolumeDataVersion != _volumeDataVersion)
+        // Atualizar cache de volume/delta quando a versão mudar ou quando há dados e o cache está vazio (ex.: primeira carga).
+        var volumeNeedsRefresh = _lastVolumeDataVersion != _volumeDataVersion
+            || (VolumeLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
+        if (volumeNeedsRefresh)
         {
             _cachedMaxVolume = 0;
             _cachedMaxDelta = 0;
