@@ -15,6 +15,10 @@ namespace B3WM.Client.Services
     public class DataHelper
     {
 
+        /// <summary>Valores e preços vêm no formato brasileiro: ponto = separador de milhares (186.565 = 186565).</summary>
+        private static readonly CultureInfo BrazilianNumberFormat = CultureInfo.GetCultureInfo("pt-BR");
+
+
         byte[]? data;
         public DataHelper(byte[] data)
         {
@@ -64,7 +68,7 @@ namespace B3WM.Client.Services
                             if (!DateTime.TryParseExact(times[i], "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime time))
                                 continue;
 
-                            if (!double.TryParse(values[i], NumberStyles.Any, CultureInfo.CurrentCulture, out double value))
+                            if (!double.TryParse(values[i], NumberStyles.Any, BrazilianNumberFormat, out double value))
                                 continue;
 
                             if (!int.TryParse(volumes[i], out int volume))
@@ -169,7 +173,7 @@ namespace B3WM.Client.Services
 
                                 if (content == "Aber.")
                                     bi.Value = -1.0d;
-                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val2))
+                                else if (double.TryParse(content, NumberStyles.Any, BrazilianNumberFormat, out double val2))
                                     bi.Value = val2;
                                 else
                                     continue;
@@ -184,7 +188,7 @@ namespace B3WM.Client.Services
 
                                 if (content == "Aber.")
                                     bi.Value = -1.0d;
-                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val3))
+                                else if (double.TryParse(content, NumberStyles.Any, BrazilianNumberFormat, out double val3))
                                     bi.Value = val3;
                                 else
                                     continue;
