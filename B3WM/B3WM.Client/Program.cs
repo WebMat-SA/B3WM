@@ -2,6 +2,7 @@ using B3WM.Client.Services;
 using Blazored.SessionStorage;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
+using System.Globalization;
 
 namespace B3WM.Client
 {
@@ -18,6 +19,11 @@ namespace B3WM.Client
             builder.Services.AddBlazoredSessionStorage();
             builder.Services.AddScoped<IAccountService, AccountService>();
             builder.Services.AddMudServices();
+
+            var culture = new CultureInfo("pt-BR");
+
+            CultureInfo.DefaultThreadCurrentCulture = culture;
+            CultureInfo.DefaultThreadCurrentUICulture = culture;
 
             await builder.Build().RunAsync();
         }

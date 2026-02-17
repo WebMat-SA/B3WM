@@ -19,7 +19,8 @@ namespace B3WM.Client.Services
         private const string CrossStarter = "Cross";
         private const string OpenBookValue = "Aber.";
 
-        private CultureInfo BrazilianNumberFormat = new CultureInfo("pt-BR");
+        /// <summary>Valores e preços vêm no formato brasileiro: ponto = separador de milhares (186.565 = 186565).</summary>
+        private static readonly CultureInfo BrazilianNumberFormat = CultureInfo.GetCultureInfo("pt-BR");
 
         private readonly byte[] _data;
         private static int _timesAndTradesSequence = 0;

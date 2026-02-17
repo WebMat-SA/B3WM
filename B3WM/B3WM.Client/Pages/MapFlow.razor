@@ -398,13 +398,13 @@
         {
             // --- ZOOM HORIZONTAL (Tempo) ---
             new Vizor.ECharts.InsideDataZoom { XAxisIndex = new [] { 0.0 } },
-            new Vizor.ECharts.SliderDataZoom { XAxisIndex = new[] { 0.0 }, Top = "92%" },
+            //new Vizor.ECharts.SliderDataZoom { XAxisIndex = new[] { 0.0 }, Top = "92%" },
 
             // --- ZOOM VERTICAL (Preço) ---
             // Inside permite usar o Scroll do mouse sobre o gráfico para dar zoom no preço
             new Vizor.ECharts.InsideDataZoom { YAxisIndex = new[] { 0.0, 1.0 } },
             // Slider adiciona aquela barra lateral para controle preciso (opcional)
-            new Vizor.ECharts.SliderDataZoom { YAxisIndex = new[] { 0.0, 1.0 }, Left = "1%" }
+            //new Vizor.ECharts.SliderDataZoom { YAxisIndex = new[] { 0.0, 1.0 }, Left = "1%" }
         },
 
         Tooltip = new Tooltip
@@ -415,7 +415,11 @@
             AxisPointer = new AxisPointer
             {
                 Type = AxisPointerType.Cross,
-                Label = new Label { Show = true } // Mostra o valor no balão do eixo
+                Label = new Label
+                {
+                    Show = true,
+                    Formatter = new JavascriptFunction("function(params) { var v = params.value != null ? params.value : params.axisValue; return typeof v === 'number' ? Math.round(v) : v; }")
+                }
             },
             Formatter = new JavascriptFunction(@"
                 function (params) {
@@ -599,11 +603,12 @@
             }
         };
 
-        // 3. EIXOS Y
+        // 3. EIXOS Y (labels apenas inteiros)
+        var yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
         ChartOptions.YAxisList = new List<YAxis>
         {
-            new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true}, },
-            new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = new AxisLabel { Show = true, Color = "#aaa" } }
+            new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true }, AxisLabel = yAxisLabelInt },
+            new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = yAxisLabelInt }
         };
         swEixos.Stop();
         LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
@@ -815,7 +820,7 @@
                         @* Deltas *@
                         <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
                             <NestedList>
-                                <MudListItem Dense="true">
+                                <MudListItem Dense="true" OnClick="() => DeltaVisible = !DeltaVisible">
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                         <MudText Typo="Typo.body2">Show on Chart</MudText>
                                         <MudSwitch @bind-Value="DeltaVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
@@ -851,7 +856,7 @@
                         </MudListItem>
                         <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
                             <NestedList>
-                                <MudListItem Dense="true">
+                                <MudListItem Dense="true" OnClick="() => ProfileVisible = !ProfileVisible">
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                         <MudText Typo="Typo.body2">Show on Chart</MudText>
                                         <MudSwitch @bind-Value="ProfileVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
@@ -896,7 +901,7 @@
             <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Bubbles" Expanded=true>
                     <NestedList>
-                        <MudListItem Dense="true">
+                        <MudListItem Dense="true" OnClick="() => BubbleVisible = !BubbleVisible">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Show on Chart</MudText>
                                 <MudSwitch @bind-Value="BubbleVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
@@ -911,7 +916,7 @@
                             </MudSlider>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSlider Size="Size.Small" @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=0.10 T=@double Variant="Variant.Filled">
+                            <MudSlider Size="Size.Small" @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                     <MudText Typo="Typo.body2">Size</MudText>
                                     <MudText Typo="Typo.caption">@BubbleSize.ToString("0.000")</MudText>
