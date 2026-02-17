@@ -19,6 +19,8 @@ namespace B3WM.Client.Services
         private const string CrossStarter = "Cross";
         private const string OpenBookValue = "Aber.";
 
+        private CultureInfo BrazilianNumberFormat = new CultureInfo("pt-BR");
+
         private readonly byte[] _data;
         private static int _timesAndTradesSequence = 0;
         private static int _bookSequence = 0;
@@ -102,7 +104,7 @@ namespace B3WM.Client.Services
                     if (!DateTime.TryParseExact(times[i], "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime time))
                         continue;
 
-                    if (!double.TryParse(values[i], NumberStyles.Any, CultureInfo.CurrentCulture, out double value))
+                    if (!double.TryParse(values[i], NumberStyles.Any, BrazilianNumberFormat, out double value))
                         continue;
 
                     if (!int.TryParse(volumes[i], out int volume))
@@ -190,7 +192,7 @@ namespace B3WM.Client.Services
 
                                 if (content == OpenBookValue)
                                     bi.Value = -1.0d;
-                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val2))
+                                else if (double.TryParse(content, NumberStyles.Any, BrazilianNumberFormat, out double val2))
                                     bi.Value = val2;
                                 else
                                     continue;
@@ -205,7 +207,7 @@ namespace B3WM.Client.Services
 
                                 if (content == OpenBookValue)
                                     bi.Value = -1.0d;
-                                else if (double.TryParse(content, NumberStyles.Any, CultureInfo.CurrentCulture, out double val3))
+                                else if (double.TryParse(content, NumberStyles.Any, BrazilianNumberFormat, out double val3))
                                     bi.Value = val3;
                                 else
                                     continue;
