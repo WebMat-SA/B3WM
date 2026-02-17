@@ -19,7 +19,7 @@ namespace B3WM.Client.Services
         private const string CrossStarter = "Cross";
         private const string OpenBookValue = "Aber.";
 
-        private readonly byte[] data;
+        private readonly byte[] _data;
         private static int _timesAndTradesSequence = 0;
         private static int _bookSequence = 0;
         private static readonly ConditionalWeakTable<byte[], CachedTicks> TimesAndTradesCache = new();
@@ -36,7 +36,7 @@ namespace B3WM.Client.Services
 
         public DataHelper(byte[] data)
         {
-            this.data = data;
+            _data = data;
         }
 
         public ICollection<Ticks2> TimesAndTrades(bool isSimpleTrade = false)
@@ -45,7 +45,7 @@ namespace B3WM.Client.Services
             bool cacheHit = false;
             List<Ticks2> ticksQueue;
 
-            if (TimesAndTradesCache.TryGetValue(data, out var cached))
+            if (TimesAndTradesCache.TryGetValue(_data, out var cached))
             {
                 cacheHit = true;
                 ticksQueue = cached.Ticks;
@@ -53,7 +53,7 @@ namespace B3WM.Client.Services
             else
             {
                 ticksQueue = ParseTimesAndTrades();
-                TimesAndTradesCache.Add(data, new CachedTicks(ticksQueue));
+                TimesAndTradesCache.Add(_data, new CachedTicks(ticksQueue));
             }
 
             sw.Stop();
@@ -63,14 +63,14 @@ namespace B3WM.Client.Services
                 "TimesAndTrades",
                 sw.ElapsedMilliseconds,
                 seq,
-                $"payloadBytes={data.Length} ticks={ticksQueue.Count} cacheHit={cacheHit}");
+                $"payloadBytes={_data.Length} ticks={ticksQueue.Count} cacheHit={cacheHit}");
             return ticksQueue;
         }
 
         private List<Ticks2> ParseTimesAndTrades()
         {
             var ticksQueue = new List<Ticks2>();
-            string textData = Encoding.UTF8.GetString(data);
+            string textData = Encoding.UTF8.GetString(_data);
             string[] manyPapersInfo = textData.Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (string onePaperInfo in manyPapersInfo)
@@ -135,9 +135,9 @@ namespace B3WM.Client.Services
         public List<BookItem> Book()
         {
             var sw = Stopwatch.StartNew();
-            List<BookItem> PseudoBook = new List<BookItem>();
+            List<BookItem> pseudoBook = new List<BookItem>();
 
-            string[] manyPapersInfo = Encoding.UTF8.GetString(data).Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
+            string[] manyPapersInfo = Encoding.UTF8.GetString(_data).Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
 
             for (int paperinfoCount = manyPapersInfo.Length - 1; paperinfoCount >= 0; paperinfoCount--)
             {
@@ -196,7 +196,7 @@ namespace B3WM.Client.Services
                                     continue;
 
                                 bi.Type = Ticks2.ActionType.Buy;
-                                PseudoBook.Add(bi);
+                                pseudoBook.Add(bi);
                                 bi = null;
                                 break;
                             case 3:
@@ -230,7 +230,7 @@ namespace B3WM.Client.Services
                                 bi.Agent = (Ticks2.Agents)agent5;
                                 bi.Type = Ticks2.ActionType.Sale;
 
-                                PseudoBook.Add(bi);
+                                pseudoBook.Add(bi);
                                 bi = null;
                                 break;
                         }
@@ -250,8 +250,8 @@ namespace B3WM.Client.Services
                 "Book",
                 sw.ElapsedMilliseconds,
                 seq,
-                $"payloadBytes={data.Length} papers={manyPapersInfo.Length} items={PseudoBook.Count}");
-            return PseudoBook;
+                $"payloadBytes={_data.Length} papers={manyPapersInfo.Length} items={pseudoBook.Count}");
+            return pseudoBook;
         }
 
         private static Ticks2.ActionType ParseStarter(string[]? starters, int index)

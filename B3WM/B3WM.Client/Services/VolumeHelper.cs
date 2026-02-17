@@ -17,11 +17,6 @@ namespace B3WM.Client.Services
         private int _pendingChunks = 0;
         private int _batchSequence = 0;
 
-        public VolumeHelper()
-        {
-        }
-
-        // 🔥 UI consulta quando quiser
         public List<VolumeLevel> GetSnapshot()
         {
             return _volumes.Values

@@ -8,8 +8,8 @@ namespace B3WM.Client.Services
     public class CandleHelper : IDisposable
     {
         private const int YieldEveryTicks = 256;
-        private readonly Action<IEnumerable<Bars>>? OnClosedBars;
-        private readonly int TimeFrameMinutes;
+        private readonly Action<IEnumerable<Bars>>? _onClosedBars;
+        private readonly int _timeFrameMinutes;
 
         private readonly ConcurrentQueue<byte[]> _queue = new();
         private int _isProcessing = 0;
@@ -27,11 +27,10 @@ namespace B3WM.Client.Services
             Action<IEnumerable<Bars>> onClosedBars,
             int timeFrameMinutes = 5)
         {
-            OnClosedBars = onClosedBars;
-            TimeFrameMinutes = timeFrameMinutes;
+            _onClosedBars = onClosedBars;
+            _timeFrameMinutes = timeFrameMinutes;
         }
 
-        // 🔥 UI pode consultar quando quiser
         public Bars? GetCurrentBarSnapshot()
         {
             lock (_lock)
@@ -137,7 +136,7 @@ namespace B3WM.Client.Services
 
         private void ProcessTick(Ticks2 t)
         {
-            var candleStart = t.Time.GetCandleStart(TimeFrameMinutes);
+            var candleStart = t.Time.GetCandleStart(_timeFrameMinutes);
 
             Bars? closedBar = null;
 
@@ -152,10 +151,8 @@ namespace B3WM.Client.Services
 
                 if (_currentBar.Date != candleStart)
                 {
-                    // 🔥 BAR FECHOU
                     closedBar = _currentBar;
 
-                    // cria nova
                     _currentBar = CreateNewBar(candleStart, t.Value, t.Volume);
                     _currentBarVersion++;
                 }
@@ -166,11 +163,10 @@ namespace B3WM.Client.Services
                 }
             }
 
-            // 🔥 Evento imediato fora do lock
             if (closedBar != null)
             {
                 var sw = Stopwatch.StartNew();
-                OnClosedBars?.Invoke(new[] { CloneBar(closedBar) });
+                _onClosedBars?.Invoke(new[] { CloneBar(closedBar) });
                 sw.Stop();
                 _closedBarsEmittedInBatch++;
                 _closedBarsCallbackMsInBatch += sw.ElapsedMilliseconds;

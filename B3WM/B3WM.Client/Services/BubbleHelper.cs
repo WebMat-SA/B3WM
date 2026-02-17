@@ -8,12 +8,11 @@ namespace B3WM.Client.Services
     public class BubbleHelper : IDisposable
     {
         private const int YieldEveryTicks = 256;
-        private readonly ConcurrentQueue<byte[]> queue = new();
+        private readonly ConcurrentQueue<byte[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
-        private readonly Action<Bubble>? OnNewBubble;
-        private readonly int BubbleThreshold;
-
+        private readonly Action<Bubble>? _onNewBubble;
+        private readonly int _bubbleThreshold;
 
         private int _isProcessing = 0;
         private int _pendingChunks = 0;
@@ -30,15 +29,15 @@ namespace B3WM.Client.Services
 
         public BubbleHelper(Action<Bubble> onNewBubble, int bubbleThreshold = 125)
         {
-            OnNewBubble = onNewBubble;
-            BubbleThreshold = bubbleThreshold;
+            _onNewBubble = onNewBubble;
+            _bubbleThreshold = bubbleThreshold;
         }
 
         public Task Enqueue(byte[] data)
         {
             if (data == null) return Task.CompletedTask;
 
-            queue.Enqueue(data);
+            _queue.Enqueue(data);
             Interlocked.Increment(ref _pendingChunks);
 
             if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
@@ -66,7 +65,7 @@ namespace B3WM.Client.Services
                     long parseMs = 0;
                     long tickProcessingMs = 0;
 
-                    while (queue.TryDequeue(out var item))
+                    while (_queue.TryDequeue(out var item))
                     {
                         chunks++;
                         Interlocked.Decrement(ref _pendingChunks);
@@ -105,14 +104,17 @@ namespace B3WM.Client.Services
 
                     Interlocked.Exchange(ref _isProcessing, 0);
 
-                    if (!queue.IsEmpty &&
+                    if (!_queue.IsEmpty &&
                         Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
                         continue;
 
                     break;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"BubbleHelper.ProcessQueueAsync error: {ex.Message}");
+            }
             finally
             {
                 Interlocked.Exchange(ref _isProcessing, 0);
@@ -159,7 +161,7 @@ namespace B3WM.Client.Services
 
         private void FinalizeRunning()
         {
-            if (_runningAgent != null && _runningSum >= BubbleThreshold)
+            if (_runningAgent != null && _runningSum >= _bubbleThreshold)
             {
                 try
                 {
@@ -173,7 +175,7 @@ namespace B3WM.Client.Services
                     };
 
                     var sw = Stopwatch.StartNew();
-                    OnNewBubble?.Invoke(bubble);
+                    _onNewBubble?.Invoke(bubble);
                     sw.Stop();
                     _emittedBubblesInBatch++;
                     _emitCallbackMsInBatch += sw.ElapsedMilliseconds;
@@ -192,7 +194,7 @@ namespace B3WM.Client.Services
 
         public void Dispose()
         {
-            try { _cts.Cancel(); } catch { }
+            _cts.Cancel();
         }
     }
 }
