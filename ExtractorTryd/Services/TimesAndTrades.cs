@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.AspNetCore.SignalR.Client;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -39,6 +39,21 @@ namespace ExtractorTryd.Services
             hubConnection.StartAsync();
         }
 
+        /// <summary>Envia comando de unsubscribe ao RTD para evitar assinatura duplicada ao reconectar.</summary>
+        private static void SendUnsubscribe(Socket socket)
+        {
+            if (socket == null || !socket.Connected) return;
+            try
+            {
+                foreach (var item in ativos)
+                {
+                    string str = $@"NEGS$U|{item}#";
+                    socket.Send(Encoding.ASCII.GetBytes(str));
+                }
+            }
+            catch { }
+        }
+
         public static void Start(CancellationToken stoppingToken, BackgroundWorker worker)
         {
             try
@@ -64,6 +79,7 @@ namespace ExtractorTryd.Services
 
                     while (!stoppingToken.IsCancellationRequested)
                     {
+                        if (stoppingToken.IsCancellationRequested) { SendUnsubscribe(socket); break; }
                         if (hubConnection.State == HubConnectionState.Disconnected) StartHubConnection();
 
                         byte[] chunk = new byte[8192];

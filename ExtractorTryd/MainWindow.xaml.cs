@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.AspNetCore.SignalR.Client;
 using ExtractorTryd.Services;
 using System;
 using System.Collections.Generic;
@@ -66,6 +66,7 @@ namespace ExtractorTryd
             {
                 SourceTnT.Cancel();
                 workerTnT.CancelAsync();
+                //TimesAndTrades.StopConnection();
             }
         }
 
@@ -94,7 +95,7 @@ namespace ExtractorTryd
                 if (MessagesListBox.Items.Count > 15) MessagesListBox.Items.RemoveAt(0);
             });
 
-            Dispatcher.Invoke(() => StatusTextBlock.Text = $"{TimesAndTrades.hubConnection.State.ToString()}");
+            Dispatcher.Invoke(() => StatusTextBlock.Text = $"{TimesAndTrades.hubConnection?.State.ToString()}");
             Dispatcher.Invoke(() => StatusTextBlockData.Text = $"{ev.ProgressPercentage}");
         }
 
@@ -121,6 +122,7 @@ namespace ExtractorTryd
             {
                 SourceBk.Cancel();
                 workerBk.CancelAsync();
+                //Book.StopConnection();
             }
         }
 
@@ -173,6 +175,7 @@ namespace ExtractorTryd
             {
                 SourceTntS.Cancel();
                 workerTntS.CancelAsync();
+                //TimesAndTradesSimple.StopConnection();
             }
         }
 

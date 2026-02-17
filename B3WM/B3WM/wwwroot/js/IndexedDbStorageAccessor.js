@@ -1,4 +1,4 @@
-﻿let dbInstance = null;
+let dbInstance = null;
 let DATABASE_NAME = null;
 let CURRENT_VERSION = null;
 
@@ -100,6 +100,34 @@ export async function put(storeName, value) {
 
         request.onsuccess = () => resolve(true);
         request.onerror = reject;
+    });
+}
+
+// ------------------------------
+// PUT BATCH (uma transação, vários puts – add/update por keyPath, sem duplicar)
+// ------------------------------
+export async function putBatch(storeName, values) {
+
+    if (!values || values.length === 0) {
+        return Promise.resolve(true);
+    }
+
+    let db = await getDb();
+
+    return new Promise((resolve, reject) => {
+
+        let tx = db.transaction(storeName, "readwrite");
+        let store = tx.objectStore(storeName);
+
+        let completed = 0;
+        const total = values.length;
+
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+
+        for (let i = 0; i < values.length; i++) {
+            store.put(values[i]);
+        }
     });
 }
 
