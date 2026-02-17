@@ -213,8 +213,10 @@ window.vizorECharts = {
 		// parse the options
 		var parsedOptions = eval('(' + chartOptions + ')');
 
-		// iterate through the options and map all JS functions / external data sources
-		// set the chart options
+		// Atualização parcial de séries:
+		// O ECharts em merge mode (notMerge padrão = false) atualiza apenas os índices
+		// fornecidos no array series e deixa os demais intactos (sem re-render).
+		// O C# envia apenas as séries que mudaram, na ordem correta, aproveitando isso.
 		chart.setOption(parsedOptions);
 
 		// hide the loading animation

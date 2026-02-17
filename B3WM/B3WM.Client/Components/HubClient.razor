@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text
 @using System.Collections.Concurrent
+@using System.Threading.Channels
 @using System.Timers
 @inject NavigationManager Navigation
 @inject IndexedDbStorageAccessor indexedDbStorage
@@ -159,18 +160,28 @@
         hubConnection?.State == HubConnectionState.Connected;
 
     private PeriodicTimer? _timer;
-    private DateTime _lastUiRefreshUtc = DateTime.MinValue;
+
+    // Throttle: evita atualizar UI e publicar barra/volume mais que o necessário
     private const int UiRefreshIntervalMs = 1000;
     private const int CurrentBarPublishIntervalMs = 250;
     private const int VolumePublishIntervalMs = 600;
-    private int _lastPublishedCurrentBarVersion = -1;
-    private int _lastPublishedVolumeVersion = -1;
-    private DateTime _lastPublishedCurrentBarAtUtc = DateTime.MinValue;
-    private DateTime _lastPublishedVolumeAtUtc = DateTime.MinValue;
-    private bool _isCurrentBarPublishInFlight;
-    private Bars? _pendingCurrentBarSnapshot;
-    private bool _isVolumePublishInFlight;
-    private List<VolumeLevel>? _pendingVolumeSnapshot;
+    private DateTime _lastUiRefreshUtc = DateTime.MinValue;
+    private (int version, DateTime atUtc) _currentBarThrottle = (-1, DateTime.MinValue);
+    private (int version, DateTime atUtc) _volumeThrottle = (-1, DateTime.MinValue);
+    private Bars? _currentBarPending;
+    private bool _currentBarPublishing;
+    private List<VolumeLevel>? _volumePending;
+    private bool _volumePublishing;
+
+    private readonly Channel<List<Ticks2>> _ticksSaveChannel = Channel.CreateUnbounded<List<Ticks2>>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    private CancellationTokenSource? _ticksSaveCts;
+
+    private static bool ShouldPublish(int currentVersion, (int version, DateTime atUtc) throttle, int intervalMs)
+    {
+        if (currentVersion == throttle.version) return false;
+        var now = DateTime.UtcNow;
+        return throttle.atUtc == DateTime.MinValue || (now - throttle.atUtc).TotalMilliseconds >= intervalMs;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -186,6 +197,9 @@
         //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
         await hubConnection.StartAsync();
+
+        _ticksSaveCts = new CancellationTokenSource();
+        _ = RunTicksSaveLoopAsync(_ticksSaveCts.Token);
     }
 
     protected override void OnInitialized()
@@ -200,20 +214,14 @@
         {
             if (candleHelper is not null && OnCurrentBarChange.HasDelegate)
             {
-                var currentBarVersion = candleHelper.GetCurrentBarVersion();
-                var now = DateTime.UtcNow;
-                var canPublishByInterval =
-                    _lastPublishedCurrentBarAtUtc == DateTime.MinValue ||
-                    (now - _lastPublishedCurrentBarAtUtc).TotalMilliseconds >= CurrentBarPublishIntervalMs;
-
-                if (currentBarVersion != _lastPublishedCurrentBarVersion && canPublishByInterval)
+                var version = candleHelper.GetCurrentBarVersion();
+                if (ShouldPublish(version, _currentBarThrottle, CurrentBarPublishIntervalMs))
                 {
                     var snapshot = candleHelper.GetCurrentBarSnapshot();
                     if (snapshot != null)
                     {
-                        _lastPublishedCurrentBarVersion = currentBarVersion;
-                        _lastPublishedCurrentBarAtUtc = now;
-                        _pendingCurrentBarSnapshot = snapshot;
+                        _currentBarThrottle = (version, DateTime.UtcNow);
+                        _currentBarPending = snapshot;
                         _ = TryPublishCurrentBarAsync();
                     }
                 }
@@ -221,18 +229,11 @@
 
             if (volumeHelper is not null && OnVolumeUpdate.HasDelegate)
             {
-                var volumeVersion = volumeHelper.GetVolumeVersion();
-                var now = DateTime.UtcNow;
-                var canPublishByInterval =
-                    _lastPublishedVolumeAtUtc == DateTime.MinValue ||
-                    (now - _lastPublishedVolumeAtUtc).TotalMilliseconds >= VolumePublishIntervalMs;
-
-                if (volumeVersion != _lastPublishedVolumeVersion && canPublishByInterval)
+                var version = volumeHelper.GetVolumeVersion();
+                if (ShouldPublish(version, _volumeThrottle, VolumePublishIntervalMs))
                 {
-                    var volumeSnapshot = volumeHelper.GetSnapshot();
-                    _lastPublishedVolumeVersion = volumeVersion;
-                    _lastPublishedVolumeAtUtc = now;
-                    _pendingVolumeSnapshot = volumeSnapshot;
+                    _volumeThrottle = (version, DateTime.UtcNow);
+                    _volumePending = volumeHelper.GetSnapshot();
                     _ = TryPublishVolumeAsync();
                 }
             }
@@ -241,44 +242,32 @@
 
     private async Task TryPublishCurrentBarAsync()
     {
-        if (_isCurrentBarPublishInFlight)
-            return;
-
-        _isCurrentBarPublishInFlight = true;
+        if (_currentBarPublishing) return;
+        _currentBarPublishing = true;
         try
         {
-            while (_pendingCurrentBarSnapshot is not null)
+            while (_currentBarPending is { } snapshot)
             {
-                var snapshot = _pendingCurrentBarSnapshot;
-                _pendingCurrentBarSnapshot = null;
+                _currentBarPending = null;
                 await OnCurrentBarChange.InvokeAsync(snapshot);
             }
         }
-        finally
-        {
-            _isCurrentBarPublishInFlight = false;
-        }
+        finally { _currentBarPublishing = false; }
     }
 
     private async Task TryPublishVolumeAsync()
     {
-        if (_isVolumePublishInFlight)
-            return;
-
-        _isVolumePublishInFlight = true;
+        if (_volumePublishing) return;
+        _volumePublishing = true;
         try
         {
-            while (_pendingVolumeSnapshot is not null)
+            while (_volumePending is { } snapshot)
             {
-                var snapshot = _pendingVolumeSnapshot;
-                _pendingVolumeSnapshot = null;
+                _volumePending = null;
                 await OnVolumeUpdate.InvokeAsync(snapshot);
             }
         }
-        finally
-        {
-            _isVolumePublishInFlight = false;
-        }
+        finally { _volumePublishing = false; }
     }
 
     private async void OnReceiveBook(byte[] data)
@@ -304,14 +293,18 @@
         // Avoid re-rendering for every packet; this path can be called many times per second.
         RequestUiRefreshThrottled();
 
-        //converte a lista para ticks2
-        var newQueue = new DataHelper(data).TimesAndTrades();
+        // Parse único: todos os helpers e subscribers recebem a mesma lista
+        var ticks = new DataHelper(data).TimesAndTrades().ToList();
+        if (ticks.Count == 0) return;
 
         // Notify subscribers about the new tick in the same order we dequeue it
         if (OnNewTicks.HasDelegate)
-            OnNewTicks.InvokeAsync(newQueue);
+            OnNewTicks.InvokeAsync(ticks);
 
-        _ = Enqueue(data);
+        if (EnableSaveTicksToIndexedDb)
+            _ticksSaveChannel.Writer.TryWrite(ticks);
+
+        _ = Enqueue(ticks);
     }
 
     private void OnReceiveTNTSimple(byte[] data)
@@ -335,43 +328,38 @@
         _ = InvokeAsync(StateHasChanged);
     }
 
-    private Task Enqueue(byte[] data)
+    private Task Enqueue(IReadOnlyList<Ticks2> ticks)
     {
+        if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
+
         if (EnableBubbleFormer)
         {
             if (bubbleHelper is null)
-            {
-                // fallback: create helper if for some reason it's not initialized yet
                 bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
-            }
 
-            _ = bubbleHelper.Enqueue(data);
+            _ = bubbleHelper.Enqueue(ticks);
         }
 
         if (EnableCandleFormer)
         {
             if (candleHelper is null)
             {
-                // fallback: create helper if for some reason it's not initialized yet
                 candleHelper = new CandleHelper(NewBars, TimeFrame);
-                _lastPublishedCurrentBarVersion = -1;
-                _lastPublishedCurrentBarAtUtc = DateTime.MinValue;
+                _currentBarThrottle = (-1, DateTime.MinValue);
             }
 
-            _ = candleHelper.Enqueue(data);
+            _ = candleHelper.Enqueue(ticks);
         }
 
         if (EnableVolumeFormer)
         {
             if (volumeHelper is null)
             {
-                // fallback: create helper if for some reason it's not initialized yet
                 volumeHelper = new VolumeHelper();
-                _lastPublishedVolumeVersion = -1;
-                _lastPublishedVolumeAtUtc = DateTime.MinValue;
+                _volumeThrottle = (-1, DateTime.MinValue);
             }
 
-            _ = volumeHelper.Enqueue(data);
+            _ = volumeHelper.Enqueue(ticks);
         }
 
         return Task.CompletedTask;
@@ -385,12 +373,44 @@
 
     public void NewBars(IEnumerable<Bars> bars)
     {
-        if (OnCandleSeriesChange.HasDelegate)
-            OnCandleSeriesChange.InvokeAsync(bars);
+        if (bars == null || !OnCandleSeriesChange.HasDelegate) return;
+        var list = bars.ToList();
+        if (list.Count == 0) return;
+        OnCandleSeriesChange.InvokeAsync(list);
+    }
+
+    private async Task RunTicksSaveLoopAsync(CancellationToken ct)
+    {
+        const int maxBatchSize = 400;
+        var batch = new List<Ticks2>();
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    batch.Clear();
+                    await foreach (var list in _ticksSaveChannel.Reader.ReadAllAsync(ct))
+                    {
+                        batch.AddRange(list);
+                        while (batch.Count < maxBatchSize && _ticksSaveChannel.Reader.TryRead(out var next))
+                            batch.AddRange(next);
+                        break;
+                    }
+                    if (batch.Count > 0)
+                        await indexedDbStorage.PutTicksBatchAsync(batch);
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception) { /* evita derrubar o loop */ }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     public async new ValueTask DisposeAsync()
     {
+        _ticksSaveCts?.Cancel();
+        _ticksSaveChannel.Writer.Complete();
         await base.DisposeAsync();
 
         if (hubConnection is not null)
@@ -402,6 +422,15 @@
         volumeHelper?.Dispose();
     }
 
+    public void ResetHelpers()
+    {
+        bubbleHelper?.Dispose();
+        bubbleHelper = null;
+        candleHelper?.Dispose();
+        candleHelper = null;
+        //volumeHelper?.Dispose();
+        //volumeHelper = null;
+    }
 }
 
 <MudStack Row AlignItems="AlignItems.Center">
@@ -473,7 +502,7 @@
                             </MudSwitch>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" Disabled=@(!EnableTimesAndTrades || true) @bind-Value="EnableSaveTicksToIndexedDb" ThumbIcon="@(EnableSaveTicksToIndexedDb == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableSaveTicksToIndexedDb == true ? Color.Success : Color.Error)">
+                            <MudSwitch Size="Size.Small" Disabled="@(!EnableTimesAndTrades)" @bind-Value="EnableSaveTicksToIndexedDb" ThumbIcon="@(EnableSaveTicksToIndexedDb == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableSaveTicksToIndexedDb == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Save Ticks (Local DB)
                                 </MudText>

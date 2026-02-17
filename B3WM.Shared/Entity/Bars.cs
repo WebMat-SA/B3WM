@@ -103,7 +103,7 @@ namespace B3WM.Shared.Entity
 
         public override string ToString()
         {
-            return $"Close:{Close.ToString("0.00")} - Low:{Low.ToString("0.00")} - High:{High.ToString("0.00")} - Open:{Open.ToString("0.00")} - Date:{Date.ToString("dd/MM/yyyy HH:mm:ss")}";
+            return $"Close:{Close.ToString("0.00")} - Low:{Low.ToString("0.00")} - High:{High.ToString("0.00")} - Open:{Open.ToString("0.00")} - Amplitude: {(High - Low).ToString("0.00")} - Date:{Date.ToString("dd/MM/yyyy HH:mm:ss")}";
         }
     }
 

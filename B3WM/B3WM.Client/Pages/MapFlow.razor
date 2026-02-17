@@ -1,4 +1,5 @@
-﻿@using B3WM.Shared.Entity
+@using B3WM.Client.Components
+@using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
 @using System.Linq
 @using System.Diagnostics
@@ -60,9 +61,10 @@
     private List<object[]>? _cachedRedBubbleData;
     private List<object[]>? _cachedBlueBubbleData;
 
-    private (int BarsCount, int CurrentBarVersion) _lastBarsCacheKey;
-    private (int BarsCount, int CurrentBarVersion) _lastBarsSnapshotCacheKey;
+    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsCacheKey;
+    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsSnapshotCacheKey;
     private int _currentBarVersion;
+    private int _barsDataVersion;
     private List<Bars>? _cachedBarsSnapshot;
     private List<string>? _cachedCategoryData;
     private List<object[]>? _cachedCandleValues;
@@ -83,14 +85,38 @@
     private List<object[]>? _cachedDeltaProfileData;
     private List<object[]>? _cachedVolumeProfileData;
 
+    // === Envio seletivo de séries (merge mode) ===
+    // Controla quais séries realmente mudaram desde o último render.
+    // No modo notMerge:false, ECharts mantém as séries não enviadas intactas no canvas.
+    private bool _forceFullRedraw = true; // true no primeiro render e após mudança de TimeFrame
+    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
+    private int _lastRenderedVolumeVersion = -1;
+    private int _lastRenderedBubbleVersion = -1;
+    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _lastRenderedJsKey = default;
+
+    // Objetos de série cacheados (recriados apenas quando dado muda)
+    private CandlestickSeries? _cachedCandleSeriesObj;
+    private CustomSeries? _cachedDeltaSeriesObj;
+    private CustomSeries? _cachedVolumeSeriesObj;
+    private ScatterSeries? _cachedRedBubbleSeriesObj;
+    private ScatterSeries? _cachedBlueBubbleSeriesObj;
+
+    // Objetos estáticos de eixo (nunca mudam entre renders)
+    private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
+    private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
+
+    private HubClient? HubClient { get; set; }
+
     private IList<Bars> Bars { get; set; } = new List<Bars>();
     private Bars CurrentBar { get; set; } = new Bars();
+    /// <summary>Barras fechadas + barra atual (sem duplicar por Date).</summary>
     private IList<Bars> RawDataBar 
     { 
         get
         {
             var _Bars = Bars.ToList();
-            _Bars.Add(CurrentBar);
+            if (CurrentBar.Date != default && !Bars.Any(b => b.Date == CurrentBar.Date))
+                _Bars.Add(CurrentBar);
             return _Bars.OrderBy(q => q.Date).ToList();
         }
     }
@@ -177,11 +203,43 @@
         }
     }
 
+    private static Bars CloneBar(Bars bar)
+    {
+        return new Bars
+        {
+            Date = bar.Date,
+            Open = bar.Open,
+            High = bar.High,
+            Low = bar.Low,
+            Close = bar.Close,
+            Volume = bar.Volume
+        };
+    }
+
     public void NewBar(IEnumerable<Bars> bars)
     {
+        if (bars == null) return;
         var sw = Stopwatch.StartNew();
         foreach (var bar in bars)
-            Bars.Add(bar);
+        {
+            if (bar == null || bar.Date == default) continue;
+            var existing = Bars.FirstOrDefault(b => b.Date == bar.Date);
+            if (existing != null)
+            {
+                existing.Open = bar.Open;
+                existing.High = bar.High;
+                existing.Low = bar.Low;
+                existing.Close = bar.Close;
+                existing.Volume = bar.Volume;
+                _barsDataVersion++;
+            }
+            else
+            {
+                // Cópia defensiva: armazenar nossa própria instância para não depender da referência do callback.
+                Bars.Add(CloneBar(bar));
+                _barsDataVersion++;
+            }
+        }
         InvalidateChart();
         sw.Stop();
         LogPerf("NewBar total", sw.ElapsedMilliseconds);
@@ -211,12 +269,19 @@
 
     public void VolumeUpdate(IEnumerable<VolumeLevel> volumes)
     {
-        var sw = Stopwatch.StartNew();
-        VolumeLevels = volumes as IList<VolumeLevel> ?? volumes.ToList();
-        _volumeDataVersion++;
-        InvalidateChart();
-        sw.Stop();
-        LogPerf("VolumeUpdate total", sw.ElapsedMilliseconds);
+        try{
+
+            var sw = Stopwatch.StartNew();
+            VolumeLevels = volumes as IList<VolumeLevel> ?? volumes.ToList();
+            _volumeDataVersion++;
+            InvalidateChart();
+            sw.Stop();
+            LogPerf("VolumeUpdate total", sw.ElapsedMilliseconds);
+        }
+        catch(Exception e)
+        {
+            Console.WriteLine("VolumeUpdate Error" + e.Message);
+        }
     }
 
     public void SelectAllAgents()
@@ -246,6 +311,26 @@
         InvalidateChart();
         sw.Stop();
         LogPerf("ToggleAgent total", sw.ElapsedMilliseconds);
+    }
+
+    private void TimeFrameChanged(int value)
+    {
+        TimeFrame = value;
+        //preciso zerar os hubclients helpers e limpar os dados atuais para evitar que barras antigas sejam interpretadas como novas (ex.: barras de 1min virando 2min e gerando muitos updates).
+
+        Bubbles = new List<Bubble>();
+        Bars = new List<Bars>();
+        CurrentBar = new Bars();
+
+        //VolumeLevels = new List<VolumeLevel>();
+
+        HubClient?.ResetHelpers();
+
+        // Força rebuild completo no próximo render: limpou dados, precisa enviar todas as séries.
+        _bubbleDataVersion++;
+        _forceFullRedraw = true;
+
+        InvalidateChart();
     }
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
@@ -306,17 +391,17 @@
                                 Hora: ${time}`;
                     }
 
-                    // 2. LÓGICA PARA CANDLES
+                    // 2. LÓGICA PARA CANDLES (d = [Open, Close, Low, High] - índice 0,1,2,3)
                     if (params.seriesName === 'Candle') {
-                        var d = params.data; // values = [open, close, low, high]
+                        var d = params.data;
                         var color = d[2] >= d[1] ? '#00fa9a' : '#ff4500';
 
-                        // params.name contém o valor do eixo X (HH:mm)
                         return `<b>${params.name}</b><br/>
                                 Abertura: ${d[1]}<br/>
                                 Fechamento: ${d[2]}<br/>
+                                Mínima: ${d[3]}<br/>
                                 Máxima: ${d[4]}<br/>
-                                Mínima: ${d[3]}`;
+                                Amplitude: ${d[4]-d[3]}`;
                     }
 
                     return '';
@@ -332,7 +417,9 @@
         var swTotal = Stopwatch.StartNew();
 
         var swBars = Stopwatch.StartNew();
-        var barsKey = (Bars.Count, _currentBarVersion);
+        // Incluir no key se CurrentBar entra no snapshot, senão com 2+ barras reutilizamos cache errado (ex.: snapshot de 3 itens quando deveria ser 2).
+        var includeCurrentBar = CurrentBar.Date != default && !Bars.Any(b => b.Date == CurrentBar.Date);
+        var barsKey = (Bars.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
         List<Bars> bars;
         if (_cachedBarsSnapshot != null && _lastBarsSnapshotCacheKey == barsKey)
         {
@@ -344,7 +431,9 @@
             foreach (var bar in Bars)
                 bars.Add(bar);
 
-            if (CurrentBar.Date != default)
+            // Só inclui CurrentBar se ainda não existir em Bars (evita candle duplicado no mesmo horário:
+            // quando uma barra fecha, ela vai para Bars mas CurrentBar pode ainda ter o mesmo Date até o próximo tick).
+            if (includeCurrentBar)
                 bars.Add(CurrentBar);
 
             bars.Sort((a, b) => a.Date.CompareTo(b.Date));
@@ -471,12 +560,12 @@
             }
         };
 
-        // 3. EIXOS Y (labels apenas inteiros)
-        var yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
+        // 3. EIXOS Y (labels apenas inteiros; linhas de guia com opacidade reduzida)
+        // _yAxisLabelInt e _splitLineGuides são campos readonly — não recriados a cada render.
         ChartOptions.YAxisList = new List<YAxis>
         {
-            new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true }, AxisLabel = yAxisLabelInt },
-            new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = yAxisLabelInt }
+            new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true }, AxisLabel = _yAxisLabelInt, SplitLine = _splitLineGuides },
+            new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = _yAxisLabelInt, SplitLine = _splitLineGuides }
         };
         swEixos.Stop();
         LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
@@ -594,54 +683,72 @@
         var swSeries = Stopwatch.StartNew();
         var deltaProfileData = _cachedDeltaProfileData ?? new List<object[]>();
         var volumeProfileData = _cachedVolumeProfileData ?? new List<object[]>();
-        ChartOptions.Series = new List<ISeries>
-        {
-            new CustomSeries
-            {
-                Name = "Delta Profile",
-                XAxisIndex = 2,
-                YAxisIndex = 1,
-                Z = 0,
-                Data = deltaProfileData,
-                RenderItem = deltaprofileFunction
-            },
-            new CustomSeries
-            {
-                Name = "Volume Profile",
-                XAxisIndex = 1,
-                YAxisIndex = 1,
-                Z = 0,
-                Data = volumeProfileData,
-                RenderItem = volumeProfileFunction,
-            },
 
-            // --- CANDLES ---
-            new CandlestickSeries
+        // --- Detecção de mudanças por tipo de série ---
+        // No modo notMerge:false (merge), o ECharts mantém no canvas as séries que NÃO forem enviadas.
+        // Só enviamos uma série quando o dado dela realmente mudou desde o último render.
+        bool jsFunctionChanged = _lastRenderedJsKey != jsKey;
+        if (jsFunctionChanged) _lastRenderedJsKey = jsKey;
+
+        bool candleDataChanged = _forceFullRedraw || _lastRenderedCandleKey    != barsKey;
+        bool volumeDataChanged = _forceFullRedraw || _lastRenderedVolumeVersion != _volumeDataVersion || jsFunctionChanged;
+        bool bubbleDataChanged = _forceFullRedraw || _lastRenderedBubbleVersion != _bubbleDataVersion  || jsFunctionChanged;
+
+        // Rebuild de objetos de série apenas quando necessário
+        if (candleDataChanged)
+        {
+            _cachedCandleSeriesObj = new CandlestickSeries
             {
                 Name = "Candle",
                 Data = values,
                 Z = 2,
                 ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#000000", BorderColor0 = "#ffffff" }
-            },
+            };
+            _lastRenderedCandleKey = barsKey;
+        }
 
-            // --- AGRESSÕES (BOLHAS) ---
-            new ScatterSeries
-            {
-                Name = "Aggressive Red",
-                Data = redBubbleData,
-                SymbolSize = symbolSizeFunction,
-                Z = 3,
-                ItemStyle = new ItemStyle { Color = "#ff0000", Opacity = BubbleOpacity, BorderColor = "#ff0000", BorderWidth = 1 }
-            },
-            new ScatterSeries
-            {
-                Name = "Aggressive Blue",
-                Data = blueBubbleData,
-                SymbolSize = symbolSizeFunction,
-                Z = 3,
-                ItemStyle = new ItemStyle { Color = "#0000ff", Opacity = BubbleOpacity, BorderColor = "#0000ff", BorderWidth = 1 }
-            }
-        };
+        if (bubbleDataChanged)
+        {
+            _cachedRedBubbleSeriesObj  = new ScatterSeries { Name = "Aggressive Red",  Data = redBubbleData,  SymbolSize = symbolSizeFunction, Z = 3, ItemStyle = new ItemStyle { Color = "#ff0000", Opacity = BubbleOpacity, BorderColor = "#ff0000", BorderWidth = 1 } };
+            _cachedBlueBubbleSeriesObj = new ScatterSeries { Name = "Aggressive Blue", Data = blueBubbleData, SymbolSize = symbolSizeFunction, Z = 3, ItemStyle = new ItemStyle { Color = "#0000ff", Opacity = BubbleOpacity, BorderColor = "#0000ff", BorderWidth = 1 } };
+            _lastRenderedBubbleVersion = _bubbleDataVersion;
+        }
+
+        if (volumeDataChanged)
+        {
+            _cachedDeltaSeriesObj  = new CustomSeries { Name = "Delta Profile",  XAxisIndex = 2, YAxisIndex = 1, Z = 0, Data = deltaProfileData,  RenderItem = deltaprofileFunction };
+            _cachedVolumeSeriesObj = new CustomSeries { Name = "Volume Profile", XAxisIndex = 1, YAxisIndex = 1, Z = 0, Data = volumeProfileData, RenderItem = volumeProfileFunction };
+            _lastRenderedVolumeVersion = _volumeDataVersion;
+        }
+
+        // === Envio seletivo por comprimento de array ===
+        // Ordem: [0]Candle  [1]RedBubble  [2]BlueBubble  [3]DeltaProfile  [4]VolumeProfile
+        //
+        // ECharts merge mode (notMerge padrão = false) atualiza APENAS os índices
+        // fornecidos e deixa os demais intactos NO CANVAS, sem re-renderizar.
+        //
+        // Casos:
+        //   só candle mudou          → envia [candle]           (índices 1-4 intactos → Delta/Volume NÃO re-renderizados)
+        //   candle + bubbles         → envia [candle,red,blue]  (índices 3-4 intactos → Delta/Volume NÃO re-renderizados)
+        //   volume mudou (qualquer)  → envia todos os 5         (update completo, evento raro)
+        var seriesList = new List<ISeries>(5);
+        seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
+
+        if (bubbleDataChanged || volumeDataChanged)
+        {
+            seriesList.Add(_cachedRedBubbleSeriesObj  ?? new ScatterSeries { Name = "Aggressive Red"  }); // [1]
+            seriesList.Add(_cachedBlueBubbleSeriesObj ?? new ScatterSeries { Name = "Aggressive Blue" }); // [2]
+        }
+
+        if (volumeDataChanged)
+        {
+            seriesList.Add(_cachedDeltaSeriesObj  ?? new CustomSeries { Name = "Delta Profile"  }); // [3]
+            seriesList.Add(_cachedVolumeSeriesObj ?? new CustomSeries { Name = "Volume Profile" }); // [4]
+        }
+
+        ChartOptions.Series = seriesList;
+        _forceFullRedraw = false;
+
         swSeries.Stop();
         swTotal.Stop();
         LogPerf("GenerateChart Series", swSeries.ElapsedMilliseconds);
@@ -655,7 +762,7 @@
     <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
     <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar" OnCurrentBarChange="NewCurrentBar"
                                       OnVolumeUpdate="VolumeUpdate" TimeFrame="TimeFrame"
-                                      BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" />
+                                      BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" @ref=HubClient />
 </MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height:calc(100vh - 220px);">
@@ -666,13 +773,13 @@
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.Timelapse" Text="TimeFrame (Min)" Expanded=false>
                     <NestedList>
                         <MudListItem Dense="true">
-                            <MudToggleGroup T=int @bind-Value=TimeFrame Delimiters Size="Size.Small" Outlined>
-                                <MudToggleItem Disabled Value="1">1</MudToggleItem>
+                            <MudToggleGroup T=int Value=TimeFrame ValueChanged="TimeFrameChanged" Delimiters Size="Size.Small" Outlined>
+                                <MudToggleItem Value="1">1</MudToggleItem>
                                 <MudToggleItem Value="2">2</MudToggleItem>
-                                <MudToggleItem Disabled Value="5">5</MudToggleItem>
-                                <MudToggleItem Disabled Value="15">15</MudToggleItem>
-                                <MudToggleItem Disabled Value="30">30</MudToggleItem>
-                                <MudToggleItem Disabled Value="60">60</MudToggleItem>
+                                <MudToggleItem Value="5">5</MudToggleItem>
+                                <MudToggleItem Value="15">15</MudToggleItem>
+                                <MudToggleItem Value="30">30</MudToggleItem>
+                                <MudToggleItem Value="60">60</MudToggleItem>
                             </MudToggleGroup>
                         </MudListItem>
                     </NestedList>
@@ -776,7 +883,7 @@
                             </MudStack>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSlider Size="Size.Small" Disabled @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
+                            <MudSlider Size="Size.Small" @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                     <MudText Typo="Typo.body2">Amount</MudText>
                                     <MudText Typo="Typo.caption">@ThresholdBubble.ToString()</MudText>

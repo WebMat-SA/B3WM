@@ -2,6 +2,7 @@ using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
 
 namespace B3WM.Client.Services
 {
@@ -11,7 +12,7 @@ namespace B3WM.Client.Services
         private readonly Action<IEnumerable<Bars>>? _onClosedBars;
         private readonly int _timeFrameMinutes;
 
-        private readonly ConcurrentQueue<byte[]> _queue = new();
+        private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
         private int _isProcessing = 0;
         private int _pendingChunks = 0;
         private int _batchSequence = 0;
@@ -50,11 +51,11 @@ namespace B3WM.Client.Services
             }
         }
 
-        public Task Enqueue(byte[] data)
+        public Task Enqueue(IReadOnlyList<Ticks2> ticks)
         {
-            if (data == null) return Task.CompletedTask;
+            if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
 
-            _queue.Enqueue(data);
+            _queue.Enqueue(ticks);
             Interlocked.Increment(ref _pendingChunks);
 
             if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
@@ -82,20 +83,18 @@ namespace B3WM.Client.Services
                     _closedBarsEmittedInBatch = 0;
                     _closedBarsCallbackMsInBatch = 0;
 
-                    while (_queue.TryDequeue(out var item))
+                    while (_queue.TryDequeue(out var ticks))
                     {
-                        chunks++;
                         Interlocked.Decrement(ref _pendingChunks);
 
                         swParse.Restart();
-                        var helper = new DataHelper(item);
-                        var ticks = helper.TimesAndTrades();
+                        var sortedTicks = ticks.OrderBy(x => x.Time).ToList();
                         swParse.Stop();
                         parseMs += swParse.ElapsedMilliseconds;
                         tickCount += ticks.Count;
 
                         var swTicks = Stopwatch.StartNew();
-                        foreach (var t in ticks)
+                        foreach (var t in sortedTicks)
                         {
                             ProcessTick(t);
                             processedTicksSinceYield++;
@@ -138,7 +137,7 @@ namespace B3WM.Client.Services
         {
             var candleStart = t.Time.GetCandleStart(_timeFrameMinutes);
 
-            Bars? closedBar = null;
+            Bars? barToEmit = null;
 
             lock (_lock)
             {
@@ -149,24 +148,26 @@ namespace B3WM.Client.Services
                     return;
                 }
 
-                if (_currentBar.Date != candleStart)
+                if (candleStart > _currentBar.Date)
                 {
-                    closedBar = _currentBar;
-
+                    // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
+                    barToEmit = CloneBar(_currentBar);
                     _currentBar = CreateNewBar(candleStart, t.Value, t.Volume);
                     _currentBarVersion++;
                 }
-                else
+                else if (candleStart == _currentBar.Date)
                 {
                     UpdateBar(_currentBar, t.Value, t.Volume);
                     _currentBarVersion++;
                 }
+                // candleStart < _currentBar.Date: tick do passado (ordem inversa/atrasado), ignorar
             }
 
-            if (closedBar != null)
+            // Emitir fora do lock; usamos só a cópia já feita.
+            if (barToEmit != null)
             {
                 var sw = Stopwatch.StartNew();
-                _onClosedBars?.Invoke(new[] { CloneBar(closedBar) });
+                _onClosedBars?.Invoke(new[] { barToEmit });
                 sw.Stop();
                 _closedBarsEmittedInBatch++;
                 _closedBarsCallbackMsInBatch += sw.ElapsedMilliseconds;

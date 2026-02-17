@@ -1,4 +1,6 @@
-﻿using Microsoft.JSInterop;
+using B3WM.Shared.Entity;
+using Microsoft.JSInterop;
+using System.Linq;
 using System.Text.Json;
 
 namespace B3WM.Client.Services
@@ -15,9 +17,9 @@ namespace B3WM.Client.Services
 
         private static readonly string[] Stores =
         {
-            "Bars",
-            "Bubbles",
-            "VolumeLevels",
+            //"Bars",
+            //"Bubbles",
+            //"VolumeLevels",
             "Ticks"
         };
 
@@ -173,6 +175,19 @@ namespace B3WM.Client.Services
             var merged = mergeFunc(existing, newValue);
 
             await PutAsync(store, merged);
+        }
+
+        /// <summary>
+        /// Salva um lote de ticks no IndexedDB (add ou update por TrydID = id). Uma transação, sem duplicar.
+        /// </summary>
+        public async Task PutTicksBatchAsync(IEnumerable<Ticks2> ticks)
+        {
+            if (ticks == null) return;
+            var list = ticks.Select(TickStorageItem.FromTick).ToList();
+            if (list.Count == 0) return;
+
+            await EnsureInitializedAsync();
+            await _accessorJsRef.Value.InvokeVoidAsync("putBatch", "Ticks", list);
         }
     }
 }

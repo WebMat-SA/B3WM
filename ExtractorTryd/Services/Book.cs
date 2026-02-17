@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.AspNetCore.SignalR.Client;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -29,10 +29,37 @@ namespace ExtractorTryd.Services
 
         public static void StartHubConnection()
         {
+            if (hubConnection != null)
+            {
+                try { hubConnection.StopAsync().GetAwaiter().GetResult(); } catch { }
+                hubConnection.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                hubConnection = null;
+            }
             hubConnection = new HubConnectionBuilder()
                 .WithUrl("https://localhost:5001/api/datahub")
                 .Build();
             hubConnection.StartAsync();
+        }
+
+        /// <summary>Envia comando de unsubscribe ao RTD para evitar assinatura duplicada ao reconectar.</summary>
+        private static void SendUnsubscribe(Socket socket)
+        {
+            if (socket == null || !socket.Connected) return;
+            try
+            {
+                foreach (var item in ativos.OrderBy(q => q))
+                {
+                    for (int linha_book = 0; linha_book < BookRows; linha_book++)
+                    {
+                        for (int coluna_book = 0; coluna_book < 6; coluna_book++)
+                        {
+                            string str = $@"LVL2$U|0|{item}|{linha_book}|{coluna_book}#";
+                            socket.Send(Encoding.ASCII.GetBytes(str));
+                        }
+                    }
+                }
+            }
+            catch { }
         }
 
         public static void Start(CancellationToken stoppingToken, BackgroundWorker worker)
@@ -68,6 +95,7 @@ namespace ExtractorTryd.Services
 
                     while (!stoppingToken.IsCancellationRequested)
                     {
+                        if (stoppingToken.IsCancellationRequested) { SendUnsubscribe(socket); break; }
                         if (hubConnection.State == HubConnectionState.Disconnected) StartHubConnection();
 
                         byte[] chunk = new byte[8192];

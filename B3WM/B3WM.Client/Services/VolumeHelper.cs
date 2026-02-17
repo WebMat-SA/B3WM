@@ -7,7 +7,7 @@ namespace B3WM.Client.Services
     public class VolumeHelper : IDisposable
     {
         private const int YieldEveryTicks = 256;
-        private readonly ConcurrentQueue<byte[]> _queue = new();
+        private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
         private readonly ConcurrentDictionary<double, VolumeLevel> _volumes = new();
@@ -31,11 +31,11 @@ namespace B3WM.Client.Services
                 .ToList();
         }
 
-        public Task Enqueue(byte[] data)
+        public Task Enqueue(IReadOnlyList<Ticks2> ticks)
         {
-            if (data == null) return Task.CompletedTask;
+            if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
 
-            _queue.Enqueue(data);
+            _queue.Enqueue(ticks);
             Interlocked.Increment(ref _pendingChunks);
 
             if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
@@ -60,23 +60,14 @@ namespace B3WM.Client.Services
                 while (!token.IsCancellationRequested)
                 {
                     var sw = Stopwatch.StartNew();
-                    var swParse = Stopwatch.StartNew();
                     int chunks = 0, tickCount = 0;
                     int processedTicksSinceYield = 0;
-                    long parseMs = 0;
                     long tickProcessingMs = 0;
 
-                    while (_queue.TryDequeue(out var item))
+                    while (_queue.TryDequeue(out var ticks))
                     {
-                        if (item == null) continue;
-
                         chunks++;
                         Interlocked.Decrement(ref _pendingChunks);
-                        swParse.Restart();
-                        var helper = new DataHelper(item);
-                        var ticks = helper.TimesAndTrades();
-                        swParse.Stop();
-                        parseMs += swParse.ElapsedMilliseconds;
                         tickCount += ticks.Count;
 
                         var swTicks = Stopwatch.StartNew();
@@ -101,7 +92,7 @@ namespace B3WM.Client.Services
                             "ProcessQueueAsync",
                             sw.ElapsedMilliseconds,
                             seq,
-                            $"chunks={chunks} ticks={tickCount} parseMs={parseMs} tickMs={tickProcessingMs} priceLevels={_volumes.Count} pending={pending}");
+                            $"chunks={chunks} ticks={tickCount} tickMs={tickProcessingMs} priceLevels={_volumes.Count} pending={pending}");
                     }
 
                     Interlocked.Exchange(ref _isProcessing, 0);
