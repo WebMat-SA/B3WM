@@ -12,6 +12,19 @@ namespace B3WM.Client.Services
 
         private readonly ConcurrentDictionary<double, VolumeLevel> _volumes = new();
 
+        // Ticks brutos armazenados para permitir snapshot filtrado por intervalo de tempo.
+        private readonly struct RawTick
+        {
+            public readonly DateTime Time;
+            public readonly double Price;
+            public readonly int Volume;
+            public readonly bool IsBuy;
+            public RawTick(DateTime time, double price, int volume, bool isBuy)
+            { Time = time; Price = price; Volume = volume; IsBuy = isBuy; }
+        }
+        private readonly List<RawTick> _rawTicks = new();
+        private readonly object _rawTicksLock = new();
+
         private int _isProcessing = 0;
         private int _volumeVersion = 0;
         private int _pendingChunks = 0;
@@ -29,6 +42,39 @@ namespace B3WM.Client.Services
                     SellVolume = v.SellVolume
                 })
                 .ToList();
+        }
+
+        /// <summary>
+        /// Retorna um snapshot do volume profile agregado apenas pelos ticks
+        /// cujo timestamp esteja dentro do intervalo [from, to].
+        /// Se ambos forem null, equivale a <see cref="GetSnapshot()"/>.
+        /// </summary>
+        public List<VolumeLevel> GetSnapshot(DateTime? from, DateTime? to)
+        {
+            if (!from.HasValue && !to.HasValue)
+                return GetSnapshot();
+
+            RawTick[] snapshot;
+            lock (_rawTicksLock)
+                snapshot = _rawTicks.ToArray();
+
+            var result = new Dictionary<double, VolumeLevel>();
+            foreach (var t in snapshot)
+            {
+                if (from.HasValue && t.Time < from.Value) continue;
+                if (to.HasValue   && t.Time > to.Value)   continue;
+
+                if (!result.TryGetValue(t.Price, out var level))
+                {
+                    level = new VolumeLevel { Price = t.Price };
+                    result[t.Price] = level;
+                }
+                level.Total += t.Volume;
+                if (t.IsBuy) level.BuyVolume += t.Volume;
+                else         level.SellVolume += t.Volume;
+            }
+
+            return result.Values.OrderBy(v => v.Price).ToList();
         }
 
         public Task Enqueue(IReadOnlyList<Ticks2> ticks)
@@ -152,12 +198,18 @@ namespace B3WM.Client.Services
                 }
             );
 
+            // Armazena o tick bruto para permitir recálculo por intervalo de tempo.
+            lock (_rawTicksLock)
+                _rawTicks.Add(new RawTick(t.Time, t.Value, t.Volume, isBuyAggression.Value));
+
             Interlocked.Increment(ref _volumeVersion);
         }
 
         public void Reset()
         {
             _volumes.Clear();
+            lock (_rawTicksLock)
+                _rawTicks.Clear();
             Interlocked.Increment(ref _volumeVersion);
         }
 

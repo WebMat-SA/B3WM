@@ -431,6 +431,13 @@
         //volumeHelper?.Dispose();
         //volumeHelper = null;
     }
+
+    /// <summary>
+    /// Retorna o volume profile filtrado pelo intervalo de tempo especificado.
+    /// Usa todos os ticks acumulados se ambos os parâmetros forem null.
+    /// </summary>
+    public List<VolumeLevel>? GetVolumeSnapshot(DateTime? from, DateTime? to)
+        => volumeHelper?.GetSnapshot(from, to);
 }
 
 <MudStack Row AlignItems="AlignItems.Center">
