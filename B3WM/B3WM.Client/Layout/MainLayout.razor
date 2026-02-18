@@ -15,14 +15,13 @@
             <MudMenuItem Href="/map-flow">MapFlow</MudMenuItem>
         </MudMenu>
     </MudAppBar>
-    <MudMainContent>
+    <MudMainContent Style="max-height: calc(94vh - var(--mud-appbar-height))">
         @Body
     </MudMainContent>
 </MudLayout>
 
 
 @code{
-
     protected override void OnAfterRender(bool firstRender)
     {
         if (firstRender)

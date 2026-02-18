@@ -3,6 +3,8 @@
 @using B3WM.Shared.Extensions
 @using System.Linq
 @using System.Diagnostics
+@using MudBlazor.Extensions.Helper
+@using Nextended.Core.Contracts
 @using Vizor.ECharts
 @inherits Components.PersistentComponentBase
 @page "/map-flow"
@@ -44,8 +46,10 @@
 
     private Vizor.ECharts.EChart? EChart;
 
-    private static bool _logPerformance = true;
+    private static bool _logPerformance = false;
     private const int PerformanceLogThresholdMs = 20;
+
+    private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
 
     // --- Controle de redraw do gráfico (único ponto: InvalidateChart + throttle) ---
     // Fontes que invalidam: Bars, CurrentBar, Bubbles, VolumeLevels, SelectedAgents (drawer).
@@ -77,6 +81,11 @@
 
     private int _volumeDataVersion;
     private int _lastVolumeDataVersion = -1;
+
+    // Filtro de volume por intervalo de barras: quando ativo, mostramos snapshot filtrado em vez do volume em tempo real.
+    private bool _volumeFilterActive;
+    private List<VolumeLevel>? _filteredVolumeLevels;
+    private int _filteredVolumeDataVersion;
     private double _cachedMaxVolume;
     private double _cachedMaxDelta;
     private double _cachedVolumeMinPrice = double.PositiveInfinity;
@@ -218,6 +227,14 @@
 
     public void NewBar(IEnumerable<Bars> bars)
     {
+        var count = RawDataBar.Count;
+
+        if (count == 0) return;
+
+        // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
+        var isFullRange = _dateRange.Start == 0 && _dateRange.End >= count - 1;
+        Console.WriteLine("[RawDataBar.Count]: " + count + "[IsFullRange]: " + isFullRange);
+
         if (bars == null) return;
         var sw = Stopwatch.StartNew();
         foreach (var bar in bars)
@@ -239,6 +256,11 @@
                 Bars.Add(CloneBar(bar));
                 _barsDataVersion++;
             }
+        }
+
+        if (isFullRange)
+        {
+            _dateRange = new MudExRange<int>(0, RawDataBar.Count);
         }
         InvalidateChart();
         sw.Stop();
@@ -329,6 +351,43 @@
         // Força rebuild completo no próximo render: limpou dados, precisa enviar todas as séries.
         _bubbleDataVersion++;
         _forceFullRedraw = true;
+
+        InvalidateChart();
+    }
+
+    private string IndexEndToDateStringBars(IRange<int> range)
+    {
+        return $" {RawDataBar.ElementAtOrDefault(range.End)?.Date:dd/MM HH:mm}";
+    }
+    private string IndexStartToDateStringBars(IRange<int> range)
+    {
+        return $"{RawDataBar.ElementAtOrDefault(range.Start)?.Date:dd/MM HH:mm}";
+    }
+    private void ApplyVolumeFilter(IRange<int> newRange)
+    {
+        _dateRange = newRange;
+
+        var count = RawDataBar.Count;
+        if (count == 0) return;
+
+        // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
+        var isFullRange = newRange.Start == 0 && newRange.End >= count - 1;
+        if (isFullRange)
+        {
+            _volumeFilterActive = false;
+            _filteredVolumeLevels = null;
+        }
+        else
+        {
+            var startBar = RawDataBar.ElementAtOrDefault(newRange.Start);
+            var endBar = RawDataBar.ElementAtOrDefault(newRange.End);
+            if (startBar != null && endBar != null && HubClient != null)
+            {
+                _filteredVolumeLevels = HubClient.GetVolumeSnapshot(startBar.Date, endBar.Date) ?? new List<VolumeLevel>();
+                _volumeFilterActive = true;
+                _filteredVolumeDataVersion++;
+            }
+        }
 
         InvalidateChart();
     }
@@ -456,9 +515,15 @@
             if (high > barsMax) barsMax = high;
         }
 
+        // Fonte efetiva: sem filtro = VolumeLevels (tempo real); com filtro = snapshot do intervalo do slider.
+        IList<VolumeLevel> effectiveLevels = _volumeFilterActive && _filteredVolumeLevels != null
+            ? _filteredVolumeLevels
+            : VolumeLevels;
+        var effectiveVolumeVersion = _volumeFilterActive ? _filteredVolumeDataVersion : _volumeDataVersion;
+
         // Atualizar cache de volume/delta quando a versão mudar ou quando há dados e o cache está vazio (ex.: primeira carga).
-        var volumeNeedsRefresh = _lastVolumeDataVersion != _volumeDataVersion
-            || (VolumeLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
+        var volumeNeedsRefresh = _lastVolumeDataVersion != effectiveVolumeVersion
+            || (effectiveLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
         if (volumeNeedsRefresh)
         {
             _cachedMaxVolume = 0;
@@ -467,12 +532,12 @@
             _cachedVolumeMaxPrice = double.NegativeInfinity;
             _cachedPriceStep = 1.0;
 
-            if (VolumeLevels.Count >= 2)
-                _cachedPriceStep = Math.Abs(VolumeLevels[1].Price - VolumeLevels[0].Price);
+            if (effectiveLevels.Count >= 2)
+                _cachedPriceStep = Math.Abs(effectiveLevels[1].Price - effectiveLevels[0].Price);
 
-            var deltaProfileCache = new List<object[]>(VolumeLevels.Count);
-            var volumeProfileCache = new List<object[]>(VolumeLevels.Count);
-            foreach (var v in VolumeLevels)
+            var deltaProfileCache = new List<object[]>(effectiveLevels.Count);
+            var volumeProfileCache = new List<object[]>(effectiveLevels.Count);
+            foreach (var v in effectiveLevels)
             {
                 var total = (double)v.Total;
                 var absDelta = Math.Abs((double)v.Delta);
@@ -488,7 +553,7 @@
 
             _cachedDeltaProfileData = deltaProfileCache;
             _cachedVolumeProfileData = volumeProfileCache;
-            _lastVolumeDataVersion = _volumeDataVersion;
+            _lastVolumeDataVersion = effectiveVolumeVersion;
         }
 
         double actualMin = barsMin;
@@ -691,7 +756,7 @@
         if (jsFunctionChanged) _lastRenderedJsKey = jsKey;
 
         bool candleDataChanged = _forceFullRedraw || _lastRenderedCandleKey    != barsKey;
-        bool volumeDataChanged = _forceFullRedraw || _lastRenderedVolumeVersion != _volumeDataVersion || jsFunctionChanged;
+        bool volumeDataChanged = _forceFullRedraw || _lastRenderedVolumeVersion != effectiveVolumeVersion || jsFunctionChanged;
         bool bubbleDataChanged = _forceFullRedraw || _lastRenderedBubbleVersion != _bubbleDataVersion  || jsFunctionChanged;
 
         // Rebuild de objetos de série apenas quando necessário
@@ -718,7 +783,7 @@
         {
             _cachedDeltaSeriesObj  = new CustomSeries { Name = "Delta Profile",  XAxisIndex = 2, YAxisIndex = 1, Z = 0, Data = deltaProfileData,  RenderItem = deltaprofileFunction };
             _cachedVolumeSeriesObj = new CustomSeries { Name = "Volume Profile", XAxisIndex = 1, YAxisIndex = 1, Z = 0, Data = volumeProfileData, RenderItem = volumeProfileFunction };
-            _lastRenderedVolumeVersion = _volumeDataVersion;
+            _lastRenderedVolumeVersion = effectiveVolumeVersion;
         }
 
         // === Envio seletivo por comprimento de array ===
@@ -765,8 +830,8 @@
                                       BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" @ref=HubClient />
 </MudStack>
 
-<MudDrawerContainer Class="mud-height-full" Style="height:calc(100vh - 220px);">
-    <MudDrawer Open="openDrawer" Width="25vw" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
+<MudDrawerContainer Class="mud-height-full" Style="height: calc(94vh - var(--mud-appbar-height))">
+    <MudDrawer Open="openDrawer" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
         @* TIMEFRAME *@
         <MudPaper Class="p-1" Outlined Elevation="0">
             <MudList T="string" Dense>
@@ -792,6 +857,22 @@
             <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
                     <NestedList>
+                        <MudListItem Dense="true">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Range</MudText>
+                                <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} → {IndexEndToDateStringBars(_dateRange)}")</MudText>
+                            </MudStack>
+                            <MudExRangeSlider T="int"
+                                              Value="_dateRange"
+                                              ValueChanged="ApplyVolumeFilter"
+                                              AllowWholeRangeDrag
+                                              Size="Size.Small"
+                                              SizeRange="@(new MudExRange<int>(0, Math.Max(0, RawDataBar.Count - 1)))"
+                                              ToEndStringFunc="IndexEndToDateStringBars"
+                                              ToStartStringFunc="IndexStartToDateStringBars"
+                                              Class="pr-5 mr-5" Disabled="@(RawDataBar.Count <= 2)" />
+                        </MudListItem>
+
                         @* Deltas *@
                         <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
                             <NestedList>
