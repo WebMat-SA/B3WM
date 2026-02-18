@@ -25,6 +25,8 @@ namespace ExtractorTryd
     /// </summary>
     public partial class MainWindow : Window
     {
+        public string Symbol { get; set; } = "WINJ26";
+
         BackgroundWorker workerTnT = new BackgroundWorker();
         CancellationTokenSource SourceTnT { get; set; }
         CancellationToken TokenTnT { get; set; }
@@ -42,6 +44,8 @@ namespace ExtractorTryd
         public MainWindow()
         {
             InitializeComponent();
+
+            DataContext = this;
         }
 
         private void TimesAndTrades_Click(object sender, RoutedEventArgs e)
@@ -80,7 +84,7 @@ namespace ExtractorTryd
                     break;
                 }
 
-                TimesAndTrades.Start(TokenTnT, workerTnT);
+                TimesAndTrades.Start(TokenTnT, workerTnT,new string[] { Symbol });
 
                 Task.Delay(1000).Wait();
             }
@@ -135,7 +139,7 @@ namespace ExtractorTryd
                     e.Cancel = true;
                     break;
                 }
-                Book.Start(TokenBk, workerBk);
+                Book.Start(TokenBk, workerBk, new string[] { Symbol });
                 Task.Delay(1000).Wait();
             }
         }
@@ -188,7 +192,7 @@ namespace ExtractorTryd
                     e.Cancel = true;
                     break;
                 }
-                TimesAndTradesSimple.Start(TokenTntS, workerTntS);
+                TimesAndTradesSimple.Start(TokenTntS, workerTntS, new string[] { Symbol });
                 Task.Delay(1000).Wait();
             }
         }

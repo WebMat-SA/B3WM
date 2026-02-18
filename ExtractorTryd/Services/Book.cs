@@ -19,7 +19,7 @@ namespace ExtractorTryd.Services
         public static int Counter { get; set; } = 0;
 
 
-        public static string[] ativos { get; set; } = new string[] { "WING26" };
+        public static string[] ativos { get; set; } = new string[] { "WINJ26" };
 
         // Deduplication: remember recent message hashes and timestamps to avoid processing duplicates
         private static readonly object _dedupLock = new object();
@@ -62,10 +62,12 @@ namespace ExtractorTryd.Services
             catch { }
         }
 
-        public static void Start(CancellationToken stoppingToken, BackgroundWorker worker)
+        public static void Start(CancellationToken stoppingToken, BackgroundWorker worker, string[] _ativos)
         {
             try
             {
+                ativos = _ativos;
+
                 StartHubConnection();
 
                 using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
