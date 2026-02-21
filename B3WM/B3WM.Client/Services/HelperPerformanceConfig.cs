@@ -7,7 +7,7 @@ namespace B3WM.Client.Services
     public static class HelperPerformanceConfig
     {
         /// <summary>Quando true, CandleHelper imprime [Perf] no console.</summary>
-        public static bool EnableCandleHelper { get; set; } = true;
+        public static bool EnableCandleHelper { get; set; } = false;
 
         /// <summary>Quando true, VolumeHelper imprime [Perf] no console.</summary>
         public static bool EnableVolumeHelper { get; set; } = false;
@@ -17,6 +17,9 @@ namespace B3WM.Client.Services
 
         /// <summary>Quando true, DataHelper imprime [Perf] no console.</summary>
         public static bool EnableDataHelper { get; set; } = false;
+
+        /// <summary>Quando true, IndexedDbStorageAccessor imprime [Perf] no console.</summary>
+        public static bool EnableIndexedDbStorage { get; set; } = false;
 
         /// <summary>
         /// Loga sempre quando a operação ultrapassa este tempo (ms).
@@ -57,6 +60,7 @@ namespace B3WM.Client.Services
             nameof(VolumeHelper) => EnableVolumeHelper,
             nameof(BubbleHelper) => EnableBubbleHelper,
             nameof(DataHelper) => EnableDataHelper,
+            nameof(IndexedDbStorageAccessor) => EnableIndexedDbStorage,
             _ => false
         };
     }

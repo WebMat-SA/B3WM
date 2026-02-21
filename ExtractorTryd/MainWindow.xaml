@@ -5,8 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:ExtractorTryd"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="1220">
-    <Grid Margin="10">
+        Title="MainWindow" Height="450" Width="1225">
+    <Grid Margin="10,10,15,10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />

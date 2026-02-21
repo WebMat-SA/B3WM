@@ -4,12 +4,13 @@ using B3WM.Shared.Entity;
 namespace B3WM.Client.Services
 {
     /// <summary>
-    /// Ticks2 com "id" para keyPath do IndexedDB. Chave única: TrydID + Time (evita duplicatas).
+    /// Ticks2 com "id" para keyPath do IndexedDB (case-sensitive). Chave única: TrydID (evita duplicatas).
     /// </summary>
     public class TickStorageItem : Ticks2
     {
+        /// <summary>Chave para IndexedDB keyPath - OBRIGATÓRIO ser "id" (lowercase) pois keyPath é case-sensitive.</summary>
         [JsonPropertyName("id")]
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = string.Empty;
 
         public static TickStorageItem FromTick(Ticks2 t)
         {

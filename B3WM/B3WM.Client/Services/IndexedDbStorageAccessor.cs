@@ -1,7 +1,10 @@
 using B3WM.Shared.Entity;
 using Microsoft.JSInterop;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace B3WM.Client.Services
 {
@@ -13,7 +16,7 @@ namespace B3WM.Client.Services
         private bool _initialized = false;
 
         private const string DatabaseName = "B3WM.Database";
-        private const int DatabaseVersion = 1;
+        private const int DatabaseVersion = 2;
 
         private static readonly string[] Stores =
         {
@@ -126,6 +129,41 @@ namespace B3WM.Client.Services
         }
 
         // ========================================
+        // GET CHUNK (leitura em blocos via Web Worker - não bloqueia main thread)
+        // afterKey: null na primeira chamada; id do último item na próxima (ou time ISO quando minDate).
+        // minDate: limite inferior - só retorna ticks com time >= minDate (últimos N dias, etc).
+        // Quando minDate é passado, usa índice byTime e retorna em ordem cronológica (ASC).
+        // ========================================
+        public async Task<(List<T> Items, string? LastKey)> GetChunkAsync<T>(
+            string store,
+            int chunkSize,
+            string? afterKey = null,
+            DateTime? minDate = null)
+        {
+            await WaitForReference();
+
+            var minDateIso = minDate.HasValue ? minDate.Value.ToString("o") : (string?)null;
+
+            var result = await _accessorJsRef.Value.InvokeAsync<ChunkResult<T>>(
+                "getChunkFromWorker",
+                store,
+                chunkSize,
+                afterKey ?? "",
+                new { minDate = minDateIso });
+
+            return (result?.Items ?? new List<T>(), result?.LastKey);
+        }
+
+        private sealed class ChunkResult<T>
+        {
+            [JsonPropertyName("items")]
+            public List<T> Items { get; set; } = new();
+
+            [JsonPropertyName("lastKey")]
+            public string? LastKey { get; set; }
+        }
+
+        // ========================================
         // REMOVE
         // ========================================
         public async Task RemoveAsync(string store, object key)
@@ -177,17 +215,34 @@ namespace B3WM.Client.Services
             await PutAsync(store, merged);
         }
 
+        private static int _putTicksBatchSequence;
+
         /// <summary>
-        /// Salva um lote de ticks no IndexedDB (add ou update por TrydID = id). Uma transação, sem duplicar.
+        /// Salva um lote de ticks no IndexedDB via Web Worker (thread separada).
+        /// A escrita pesada ocorre fora da main thread, evitando impacto no render do gráfico.
         /// </summary>
         public async Task PutTicksBatchAsync(IEnumerable<Ticks2> ticks)
         {
             if (ticks == null) return;
+            var swTotal = Stopwatch.StartNew();
+            var swConvert = Stopwatch.StartNew();
             var list = ticks.Select(TickStorageItem.FromTick).ToList();
+            swConvert.Stop();
             if (list.Count == 0) return;
 
-            await EnsureInitializedAsync();
-            await _accessorJsRef.Value.InvokeVoidAsync("putBatch", "Ticks", list);
+            await WaitForReference();
+            var swPost = Stopwatch.StartNew();
+            await _accessorJsRef.Value.InvokeVoidAsync("postTicksToWorker", "Ticks", list);
+            swPost.Stop();
+            swTotal.Stop();
+
+            var seq = Interlocked.Increment(ref _putTicksBatchSequence);
+            HelperPerformanceConfig.LogSampled(
+                nameof(IndexedDbStorageAccessor),
+                "PutTicksBatchAsync",
+                swTotal.ElapsedMilliseconds,
+                seq,
+                $"convertMs={swConvert.ElapsedMilliseconds} postToWorkerMs={swPost.ElapsedMilliseconds} count={list.Count} [Worker]");
         }
     }
 }

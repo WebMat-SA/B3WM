@@ -66,6 +66,28 @@ namespace B3WM.Client.Services
             return Task.CompletedTask;
         }
 
+        /// <summary>Processa ticks de forma síncrona (para load do IndexedDB). Emite barras fechadas via callback. Não usa fila.</summary>
+        public void ProcessTicksSync(IReadOnlyList<Ticks2> ticks)
+        {
+            if (ticks == null || ticks.Count == 0) return;
+            foreach (var t in ticks.OrderBy(x => x.Time))
+                ProcessTick(t);
+        }
+
+        /// <summary>Emite a barra em construção, se houver. Usar ao final do load do IndexedDB.</summary>
+        public void Flush()
+        {
+            lock (_lock)
+            {
+                if (_currentBar != null)
+                {
+                    var bar = CloneBar(_currentBar);
+                    _onClosedBars?.Invoke(new[] { bar });
+                    _currentBar = null;
+                }
+            }
+        }
+
         private async Task ProcessQueueAsync()
         {
             try
@@ -85,6 +107,7 @@ namespace B3WM.Client.Services
 
                     while (_queue.TryDequeue(out var ticks))
                     {
+                        chunks++;
                         Interlocked.Decrement(ref _pendingChunks);
 
                         swParse.Restart();

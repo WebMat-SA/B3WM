@@ -65,8 +65,8 @@
     private List<object[]>? _cachedRedBubbleData;
     private List<object[]>? _cachedBlueBubbleData;
 
-    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsCacheKey;
-    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsSnapshotCacheKey;
+    private (int BarsCount, int BarsFromIndexedDbCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsCacheKey;
+    private (int BarsCount, int BarsFromIndexedDbCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsSnapshotCacheKey;
     private int _currentBarVersion;
     private int _barsDataVersion;
     private List<Bars>? _cachedBarsSnapshot;
@@ -98,7 +98,7 @@
     // Controla quais séries realmente mudaram desde o último render.
     // No modo notMerge:false, ECharts mantém as séries não enviadas intactas no canvas.
     private bool _forceFullRedraw = true; // true no primeiro render e após mudança de TimeFrame
-    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
+    private (int BarsCount, int BarsFromIndexedDbCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
     private int _lastRenderedVolumeVersion = -1;
     private int _lastRenderedBubbleVersion = -1;
     private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _lastRenderedJsKey = default;
@@ -117,16 +117,22 @@
     private HubClient? HubClient { get; set; }
 
     private IList<Bars> Bars { get; set; } = new List<Bars>();
+    /// <summary>Candles carregados do IndexedDB (histórico).</summary>
+    private IList<Bars> BarsFromIndexedDb { get; set; } = new List<Bars>();
     private Bars CurrentBar { get; set; } = new Bars();
-    /// <summary>Barras fechadas + barra atual (sem duplicar por Date).</summary>
+    /// <summary>Barras fechadas (Bars + BarsFromIndexedDb) + barra atual (sem duplicar por Date).</summary>
     private IList<Bars> RawDataBar 
     { 
         get
         {
-            var _Bars = Bars.ToList();
-            if (CurrentBar.Date != default && !Bars.Any(b => b.Date == CurrentBar.Date))
-                _Bars.Add(CurrentBar);
-            return _Bars.OrderBy(q => q.Date).ToList();
+            var combined = Bars.Concat(BarsFromIndexedDb)
+                .GroupBy(b => b.Date)
+                .Select(g => g.First())
+                .OrderBy(q => q.Date)
+                .ToList();
+            if (CurrentBar.Date != default && !combined.Any(b => b.Date == CurrentBar.Date))
+                combined.Add(CurrentBar);
+            return combined.OrderBy(q => q.Date).ToList();
         }
     }
 
@@ -148,14 +154,79 @@
     private readonly HashSet<Ticks2.Agents?> _allBubbleAgents = new();
     private IList<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
 
+    private bool _isLoadingFromIndexedDb;
+    private int _loadingProgress; // 0-100 ou total de ticks processados (opcional)
+    private string _loadingStatus = string.Empty;
+    private DateTime _lastLoadingProgressUpdate = DateTime.MinValue;
+    private const int LoadingProgressThrottleMs = 80; // reduz re-renders durante carregamento
+    // Suprime InvalidateChart de dados históricos durante carregamento do IndexedDB.
+    // Callbacks live (NewBar, NewCurrentBar, VolumeUpdate) passam bypassSuppression=true
+    // e continuam atualizando o gráfico normalmente mesmo durante o carregamento.
+    private bool _suppressChartInvalidation;
+
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
     }
 
-    /// <summary>Marca o gráfico para redesenho. Único ponto de entrada para qualquer fonte (Hub ou UI).</summary>
-    private void InvalidateChart()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender && HubClient != null && !_isLoadingFromIndexedDb)
+        {
+            //await LoadDataFromDb();
+        }
+    }
+
+    private async Task LoadDataFromDb()
+    {
+        if (HubClient == null || _isLoadingFromIndexedDb)
+            return;
+
+        _isLoadingFromIndexedDb = true;
+        _suppressChartInvalidation = true; // bloqueia redraws enquanto dados chegam
+        _loadingProgress = 0;
+        _loadingStatus = "Iniciando...";
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(50); // dá tempo da UI renderizar o overlay antes do carregamento pesado
+
+        try
+        {
+            await HubClient.LoadFromIndexedDbAsync(async (loaded, total, status) =>
+            {
+                _loadingProgress = total > 0 ? (int)(100.0 * loaded / total) : 0;
+                _loadingStatus = status;
+                // Throttle: só atualiza a barra de progresso na UI (sem redraw do gráfico)
+                var now = DateTime.UtcNow;
+                var elapsed = (now - _lastLoadingProgressUpdate).TotalMilliseconds;
+                var isComplete = total > 0 && loaded >= total;
+                if (isComplete || elapsed >= LoadingProgressThrottleMs)
+                {
+                    _lastLoadingProgressUpdate = now;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }, minDate: DateTime.Today.AddDays(-1));
+        }
+        finally
+        {
+            _suppressChartInvalidation = false;
+            _isLoadingFromIndexedDb = false;
+            _loadingStatus = string.Empty;
+            // Um único redraw completo com todos os dados já carregados
+            _forceFullRedraw = true;
+            InvalidateChart();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// Marca o gráfico para redesenho.
+    /// bypassSuppression=true: dados live (NewBar, NewCurrentBar, VolumeUpdate) — nunca suprimidos.
+    /// bypassSuppression=false (padrão): dados históricos/mistos — suprimidos durante carregamento do IndexedDB.
+    /// </summary>
+    private void InvalidateChart(bool bypassSuppression = false)
+    {
+        if (_suppressChartInvalidation && !bypassSuppression) return;
         _chartNeedsRedraw = true;
         EnsureChartRedrawScheduled();
     }
@@ -225,17 +296,38 @@
         };
     }
 
+    public void NewBarFromIndexedDb(IEnumerable<Bars> bars)
+    {
+        if (bars == null) return;
+        var sw = Stopwatch.StartNew();
+        foreach (var bar in bars)
+        {
+            if (bar == null || bar.Date == default) continue;
+            var existing = BarsFromIndexedDb.FirstOrDefault(b => b.Date == bar.Date);
+            if (existing != null)
+            {
+                existing.Open = bar.Open;
+                existing.High = bar.High;
+                existing.Low = bar.Low;
+                existing.Close = bar.Close;
+                existing.Volume = bar.Volume;
+            }
+            else
+            {
+                BarsFromIndexedDb.Add(CloneBar(bar));
+            }
+        }
+        _barsDataVersion++;
+        InvalidateChart();
+        sw.Stop();
+        LogPerf("NewBarFromIndexedDb total", sw.ElapsedMilliseconds);
+    }
+
     public void NewBar(IEnumerable<Bars> bars)
     {
         var count = RawDataBar.Count;
+        var isFullRange = count > 0 && _dateRange.End >= count - 1;
 
-        if (count == 0) return;
-
-        // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
-        var isFullRange = _dateRange.Start == 0 && _dateRange.End >= count - 1;
-        Console.WriteLine("[RawDataBar.Count]: " + count + "[IsFullRange]: " + isFullRange);
-
-        if (bars == null) return;
         var sw = Stopwatch.StartNew();
         foreach (var bar in bars)
         {
@@ -260,9 +352,10 @@
 
         if (isFullRange)
         {
-            _dateRange = new MudExRange<int>(0, RawDataBar.Count);
+            _dateRange = new MudExRange<int>(_dateRange.Start, RawDataBar.Count);
+            ApplyVolumeFilter(_dateRange);
         }
-        InvalidateChart();
+        InvalidateChart(bypassSuppression: true); // live: sempre atualiza
         sw.Stop();
         LogPerf("NewBar total", sw.ElapsedMilliseconds);
     }
@@ -272,9 +365,9 @@
         var sw = Stopwatch.StartNew();
         CurrentBar = bar;
         _currentBarVersion++;
-        InvalidateChart();
-        sw.Stop();
+        InvalidateChart(bypassSuppression: true); // live: sempre atualiza
         LogPerf("NewCurrentBar total", sw.ElapsedMilliseconds);
+        sw.Stop();
     }
 
     public void NewBubble(Bubble data)
@@ -296,7 +389,7 @@
             var sw = Stopwatch.StartNew();
             VolumeLevels = volumes as IList<VolumeLevel> ?? volumes.ToList();
             _volumeDataVersion++;
-            InvalidateChart();
+            InvalidateChart(bypassSuppression: true); // live: sempre atualiza (rate-limited 600ms)
             sw.Stop();
             LogPerf("VolumeUpdate total", sw.ElapsedMilliseconds);
         }
@@ -338,20 +431,27 @@
     private void TimeFrameChanged(int value)
     {
         TimeFrame = value;
-        //preciso zerar os hubclients helpers e limpar os dados atuais para evitar que barras antigas sejam interpretadas como novas (ex.: barras de 1min virando 2min e gerando muitos updates).
 
-        Bubbles = new List<Bubble>();
         Bars = new List<Bars>();
+        BarsFromIndexedDb = new List<Bars>();
         CurrentBar = new Bars();
 
-        //VolumeLevels = new List<VolumeLevel>();
+        HubClient?.RemountCandles(TimeFrame);
 
-        HubClient?.ResetHelpers();
-
-        // Força rebuild completo no próximo render: limpou dados, precisa enviar todas as séries.
-        _bubbleDataVersion++;
         _forceFullRedraw = true;
+        InvalidateChart();
+    }
 
+    private void ThresholdBubbleChanged(int value)
+    {
+        ThresholdBubble = value;
+        Bubbles = new List<Bubble>();
+        _bubbleDataVersion++;
+        _allBubbleAgents.Clear();
+
+        HubClient?.RemountBubbles(ThresholdBubble);
+
+        _forceFullRedraw = true;
         InvalidateChart();
     }
 
@@ -476,9 +576,9 @@
         var swTotal = Stopwatch.StartNew();
 
         var swBars = Stopwatch.StartNew();
-        // Incluir no key se CurrentBar entra no snapshot, senão com 2+ barras reutilizamos cache errado (ex.: snapshot de 3 itens quando deveria ser 2).
-        var includeCurrentBar = CurrentBar.Date != default && !Bars.Any(b => b.Date == CurrentBar.Date);
-        var barsKey = (Bars.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
+        var hasCurrentBarInBars = Bars.Any(b => b.Date == CurrentBar.Date) || BarsFromIndexedDb.Any(b => b.Date == CurrentBar.Date);
+        var includeCurrentBar = CurrentBar.Date != default && !hasCurrentBarInBars;
+        var barsKey = (Bars.Count, BarsFromIndexedDb.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
         List<Bars> bars;
         if (_cachedBarsSnapshot != null && _lastBarsSnapshotCacheKey == barsKey)
         {
@@ -486,16 +586,16 @@
         }
         else
         {
-            bars = new List<Bars>(Bars.Count + 1);
+            bars = new List<Bars>(Bars.Count + BarsFromIndexedDb.Count + 1);
             foreach (var bar in Bars)
                 bars.Add(bar);
+            foreach (var bar in BarsFromIndexedDb)
+                bars.Add(bar);
 
-            // Só inclui CurrentBar se ainda não existir em Bars (evita candle duplicado no mesmo horário:
-            // quando uma barra fecha, ela vai para Bars mas CurrentBar pode ainda ter o mesmo Date até o próximo tick).
             if (includeCurrentBar)
                 bars.Add(CurrentBar);
 
-            bars.Sort((a, b) => a.Date.CompareTo(b.Date));
+            bars = bars.GroupBy(b => b.Date).Select(g => g.First()).OrderBy(b => b.Date).ToList();
             _cachedBarsSnapshot = bars;
             _lastBarsSnapshotCacheKey = barsKey;
         }
@@ -662,6 +762,8 @@
                         var size = api.size([0, stepVal]);
                         var barHeight = size[1] * " + ProfileSizeV.ToString(inv) + @";
 
+                        var isPoc = Math.abs(volumeVal - " + maxVolume.ToString(inv) + @") < 0.5;
+
                         return {
                             type: 'rect',
                             shape: {
@@ -671,7 +773,7 @@
                                 height: barHeight
                             },
                             style: api.style({
-                                fill: api.value(0) == " + maxVolume.ToString(inv) + @" ? '#rgba(255, 100, 0, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")' : 'rgba(100, 150, 250, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")',
+                                fill: isPoc ? 'rgba(255, 100, 0, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")' : 'rgba(100, 150, 250, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")',
                                 stroke: 'rgba(100, 150, 250, " + ((ProfileOpacity * (ProfileVisible ? 1 : 0)) - 0.2).ToString(inv) + @")'
                             })
                         };
@@ -767,7 +869,8 @@
                 Name = "Candle",
                 Data = values,
                 Z = 2,
-                ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#000000", BorderColor0 = "#ffffff" }
+                Clip = false, // Evita que o candle inteiro suma ao dar zoom quando as bordas (high/low) saem da área visível
+                ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#ffffff", BorderColor0 = "#ffffff" }
             };
             _lastRenderedCandleKey = barsKey;
         }
@@ -817,20 +920,34 @@
         swSeries.Stop();
         swTotal.Stop();
         LogPerf("GenerateChart Series", swSeries.ElapsedMilliseconds);
-        LogPerf("GenerateChart total", swTotal.ElapsedMilliseconds, always: true);
+        LogPerf("GenerateChart total", swTotal.ElapsedMilliseconds);
     }
 
 }
 
 @* --- INTERFACE --- *@
-<MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row>
-    <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
+<MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
+    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadDataFromDb"/>
+    </MudStack>
     <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar" OnCurrentBarChange="NewCurrentBar"
-                                      OnVolumeUpdate="VolumeUpdate" TimeFrame="TimeFrame"
-                                      BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" @ref=HubClient />
+                                        OnCandleSeriesFromIndexedDb="NewBarFromIndexedDb"
+                                        OnVolumeUpdate="VolumeUpdate" TimeFrame="TimeFrame"
+                                        BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" @ref=HubClient />
+    <MudOverlay Visible="_isLoadingFromIndexedDb" ZIndex="10" Class="d-flex align-center justify-center" DarkBackground=true Absolute=true>
+        <MudStack Row Spacing="3" Class="px-3 py-2" AlignItems="AlignItems.Center" Style="background-color:darkorange;">
+            <MudProgressCircular Size="Size.Small" Indeterminate="@(_loadingProgress == 0)" Value="@_loadingProgress" />
+            @if (!string.IsNullOrEmpty(_loadingStatus))
+            {
+                <MudText Typo="Typo.body2" Class="text-center">@_loadingStatus</MudText>
+            }
+        </MudStack>
+    </MudOverlay>
 </MudStack>
 
-<MudDrawerContainer Class="mud-height-full" Style="height: calc(94vh - var(--mud-appbar-height))">
+
+<MudDrawerContainer Class="mud-height-full" Style="height: 100%">
     <MudDrawer Open="openDrawer" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
         @* TIMEFRAME *@
         <MudPaper Class="p-1" Outlined Elevation="0">
@@ -964,7 +1081,7 @@
                             </MudStack>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSlider Size="Size.Small" @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
+                            <MudSlider Size="Size.Small" Value="@ThresholdBubble" ValueChanged="ThresholdBubbleChanged" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                     <MudText Typo="Typo.body2">Amount</MudText>
                                     <MudText Typo="Typo.caption">@ThresholdBubble.ToString()</MudText>
