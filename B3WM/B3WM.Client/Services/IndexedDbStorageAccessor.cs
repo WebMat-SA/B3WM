@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using B3WM.Client.Model;
 
 namespace B3WM.Client.Services
 {

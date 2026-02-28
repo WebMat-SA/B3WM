@@ -15,6 +15,7 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.12" />
     <PackageReference Include="MudBlazor" Version="8.15.0" />
     <PackageReference Include="MudBlazor.Extensions" Version="*" />
+    <PackageReference Include="Tewr.BlazorWorker.BackgroundService" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>

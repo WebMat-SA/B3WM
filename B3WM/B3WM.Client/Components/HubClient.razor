@@ -20,6 +20,10 @@
     private HubConnection? hubConnection;
 
     private int _counter { get; set; } = 0;
+    private int _bubbleQueue { get; set; } = 0;
+    private int _volumeQueue { get; set; } = 0;
+    private int _candleQueue { get; set; } = 0;
+
     public bool openDrawer { get; set; } = false;
 
     private BubbleHelper? bubbleHelper;
@@ -222,6 +226,22 @@
     {
         while (await _timer!.WaitForNextTickAsync())
         {
+
+            if (candleHelper is not null)
+            {
+                _candleQueue = candleHelper.GetQueueCountSnapshot();
+            }
+
+            if (bubbleHelper is not null)
+            {
+                _bubbleQueue = bubbleHelper.GetQueueCountSnapshot();
+            }
+
+            if (volumeHelper is not null)
+            {
+                _volumeQueue = volumeHelper.GetQueueCountSnapshot();
+            }
+
             if (candleHelper is not null && OnCurrentBarChange.HasDelegate)
             {
                 var version = candleHelper.GetCurrentBarVersion();
@@ -343,11 +363,11 @@
     {
         if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
 
-        lock (_allTicksLock)
-        {
-            foreach (var t in ticks)
-                _allTicksForRemount.Add(t);
-        }
+        // lock (_allTicksLock)
+        // {
+        //     foreach (var t in ticks)
+        //         _allTicksForRemount.Add(t);
+        // }
 
         if (EnableBubbleFormer)
         {
@@ -655,15 +675,34 @@
     }
 }
 
-<MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="5">
+<MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
     <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
         <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@_counter" OnClick="() => _counter = 0">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="() => openDrawer = !openDrawer" />
         </MudBadge>
     </MudTooltip>
-    <MudTooltip Text="@($"Last Update: {_lastUpdateBarPending?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
-        <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@_lastUpdateBarPending?.ToString("HH:mm:ss")">
-            <MudIcon Icon="@Icons.Material.Filled.CandlestickChart"/>
+    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
+    <div style="margin-right: 40px">
+        <MudTooltip Text="@($"Last Update Candle: {_lastUpdateBarPending?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
+            <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@_lastUpdateBarPending?.ToString("HH:mm:ss")">
+                <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
+    <MudTooltip Text="@($"Candle Queue: {_candleQueue}")" Placement="Placement.Left">
+        <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@_candleQueue">
+            <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" />
+        </MudBadge>
+    </MudTooltip>
+    <MudTooltip Text="@($"Bubble Queue: {_bubbleQueue}")" Placement="Placement.Left">
+        <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@_bubbleQueue">
+            <MudIcon Icon="@Icons.Material.Filled.BubbleChart" />
+        </MudBadge>
+    </MudTooltip>
+    <MudTooltip Text="@($"Volume Queue: {_volumeQueue}")" Placement="Placement.Left">
+        <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@_volumeQueue">
+            <MudIcon Icon="@Icons.Material.Filled.BarChart" />
         </MudBadge>
     </MudTooltip>
 </MudStack>

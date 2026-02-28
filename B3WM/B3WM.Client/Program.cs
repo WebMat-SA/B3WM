@@ -1,5 +1,7 @@
+using B3WM.Client.Components;
 using B3WM.Client.Services;
 using Blazored.SessionStorage;
+using BlazorWorker.Core;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Extensions;
 using MudBlazor.Services;
@@ -27,6 +29,8 @@ namespace B3WM.Client
             builder.Services.AddMudExtensions();
 
             builder.Services.AddMudServices();
+
+            builder.Services.AddWorkerFactory();
 
             var culture = new CultureInfo("pt-BR");
 

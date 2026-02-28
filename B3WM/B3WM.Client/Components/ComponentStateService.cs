@@ -1,8 +1,9 @@
-﻿using B3WM.Shared.Extensions;
+﻿using B3WM.Client.Services;
+using B3WM.Shared.Extensions;
 using System.Reflection;
 using System.Text.Json;
 
-namespace B3WM.Client.Services
+namespace B3WM.Client.Components
 {
     public class ComponentStateService
     {

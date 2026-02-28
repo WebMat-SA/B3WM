@@ -153,7 +153,8 @@
 
     [PersistState]
     private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
-    private readonly HashSet<Ticks2.Agents?> _allBubbleAgents = new();
+    [PersistState]
+    private HashSet<Ticks2.Agents?> _allBubbleAgents { get; set; } = new();
     private IList<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
 
     private bool _isLoadingFromIndexedDb;
@@ -169,15 +170,6 @@
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        await base.OnAfterRenderAsync(firstRender);
-        if (firstRender && HubClient != null && !_isLoadingFromIndexedDb)
-        {
-            //await LoadDataFromDb();
-        }
     }
 
     private async Task LoadDataFromDb()

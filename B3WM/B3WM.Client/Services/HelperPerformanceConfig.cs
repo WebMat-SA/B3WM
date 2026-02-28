@@ -7,7 +7,7 @@ namespace B3WM.Client.Services
     public static class HelperPerformanceConfig
     {
         /// <summary>Quando true, CandleHelper imprime [Perf] no console.</summary>
-        public static bool EnableCandleHelper { get; set; } = false;
+        public static bool EnableCandleHelper { get; set; } = true;
 
         /// <summary>Quando true, VolumeHelper imprime [Perf] no console.</summary>
         public static bool EnableVolumeHelper { get; set; } = false;

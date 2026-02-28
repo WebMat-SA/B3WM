@@ -33,6 +33,16 @@ namespace B3WM.Client.Services
             _bubbleThreshold = bubbleThreshold;
         }
 
+        public int GetQueueCountSnapshot()
+        {
+            if (_queue == null)
+                return 0;
+
+            _ = _queue.TryGetNonEnumeratedCount(out int result);
+
+            return result;
+        }
+
         public Task Enqueue(IReadOnlyList<Ticks2> ticks)
         {
             if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
@@ -52,10 +62,10 @@ namespace B3WM.Client.Services
         {
             try
             {
-                var token = _cts.Token;
+                //var token = _cts.Token;
 
-                while (!token.IsCancellationRequested)
-                {
+                //while (!token.IsCancellationRequested)
+                //{
                     var sw = Stopwatch.StartNew();
                     int chunks = 0, tickCount = 0;
                     int processedTicksSinceYield = 0;
@@ -96,12 +106,12 @@ namespace B3WM.Client.Services
 
                     Interlocked.Exchange(ref _isProcessing, 0);
 
-                    if (!_queue.IsEmpty &&
-                        Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-                        continue;
+                //    if (!_queue.IsEmpty &&
+                //        Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
+                //        continue;
 
-                    break;
-                }
+                //    break;
+                //}
             }
             catch (Exception ex)
             {

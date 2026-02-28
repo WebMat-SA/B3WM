@@ -1,5 +1,4 @@
-﻿using B3WM.Client.Services;
-using Microsoft.AspNetCore.Components;
+﻿using Microsoft.AspNetCore.Components;
 
 namespace B3WM.Client.Components
 {

@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using B3WM.Shared.Entity;
 
-namespace B3WM.Client.Services
+namespace B3WM.Client.Model
 {
     /// <summary>
     /// Bubbles para IndexedDB. KeyPath "id" (case-sensitive). Sem timeframe.
