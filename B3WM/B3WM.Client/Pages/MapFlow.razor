@@ -1,4 +1,5 @@
 @using B3WM.Client.Components
+@using B3WM.Client.Services
 @using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
 @using System.Linq
@@ -8,6 +9,7 @@
 @using Vizor.ECharts
 @inherits Components.PersistentComponentBase
 @page "/map-flow"
+@inject IndexedDbStorageAccessor IndexedDbStorage
 
 @code {
     protected override string PersistenceKey => $"{nameof(MapFlow)}_state";
@@ -216,6 +218,42 @@
             _forceFullRedraw = true;
             InvalidateChart();
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SaveToIndexedDb()
+    {
+        try
+        {
+            var rawBars = RawDataBar.ToList();
+            var bars = rawBars.Select(b => BarStorageItem.FromBar(b, TimeFrame)).ToList();
+            await IndexedDbStorage.PutBarsBatchAsync(bars);
+
+            var bubbles = Bubbles.Select((b, i) => BubbleStorageItem.FromBubble(b, i)).ToList();
+            await IndexedDbStorage.ClearAsync("Bubbles");
+            await IndexedDbStorage.PutBubblesBatchAsync(bubbles);
+
+            var volumeItems = new List<VolumeLevelStorageItem>();
+            if (HubClient != null)
+            {
+                var barEnd = TimeFrame > 0 ? TimeSpan.FromMinutes(TimeFrame) : TimeSpan.FromMinutes(1);
+                foreach (var bar in rawBars)
+                {
+                    var endDate = bar.Date.Add(barEnd).AddMilliseconds(-1);
+                    var snapshot = HubClient.GetVolumeSnapshot(bar.Date, endDate);
+                    if (snapshot != null)
+                    {
+                        foreach (var v in snapshot)
+                            volumeItems.Add(VolumeLevelStorageItem.FromVolumeLevel(v, bar.Date));
+                    }
+                }
+            }
+            await IndexedDbStorage.ClearAsync("VolumeLevels");
+            await IndexedDbStorage.PutVolumeLevelsBatchAsync(volumeItems);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveToIndexedDb error: {ex.Message}");
         }
     }
 
@@ -928,8 +966,12 @@
 @* --- INTERFACE --- *@
 <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
     <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
-        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadDataFromDb"/>
+        <MudTooltip Text="Configurações">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
+        </MudTooltip>
+        <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadDataFromDb"/>
+        </MudTooltip>
     </MudStack>
     <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar" OnCurrentBarChange="NewCurrentBar"
                                         OnCandleSeriesFromIndexedDb="NewBarFromIndexedDb"

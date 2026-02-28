@@ -1,3 +1,4 @@
+@using B3WM.Client.Services
 @using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
 @using Microsoft.AspNetCore.SignalR.Client
@@ -553,9 +554,11 @@
         string? afterKey = null;
         var readCount = 0;
 
+        DateTime startTime = DateTime.Now;
+
         while (true)
         {
-            if (progress != null) await progress(readCount, 0, $"Buscando ticks no IndexedDB... ({readCount:N0} lidos)");
+            if (progress != null) await progress(readCount, 0, $"Buscando ticks no IndexedDB... Iniciado às {startTime.ToString("HH:mm:ss")} | ({readCount:N0} lidos)...");
 
             var (chunk, lastKey) = await indexedDbStorage.GetChunkAsync<TickStorageItem>(
                 "Ticks", readChunkSize, afterKey,

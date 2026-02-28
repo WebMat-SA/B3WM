@@ -16,14 +16,14 @@ namespace B3WM.Client.Services
         private bool _initialized = false;
 
         private const string DatabaseName = "B3WM.Database";
-        private const int DatabaseVersion = 2;
+        private const int DatabaseVersion = 3;
 
         private static readonly string[] Stores =
         {
-            //"Bars",
-            //"Bubbles",
-            //"VolumeLevels",
-            "Ticks"
+            "Ticks",
+            "Bars",
+            "Bubbles",
+            "VolumeLevels"
         };
 
         //private readonly JsonSerializerOptions _serializeOptions = new()
@@ -243,6 +243,62 @@ namespace B3WM.Client.Services
                 swTotal.ElapsedMilliseconds,
                 seq,
                 $"convertMs={swConvert.ElapsedMilliseconds} postToWorkerMs={swPost.ElapsedMilliseconds} count={list.Count} [Worker]");
+        }
+
+        /// <summary>Salva barras no IndexedDB via Web Worker.</summary>
+        public async Task PutBarsBatchAsync(IEnumerable<BarStorageItem> bars)
+        {
+            if (bars == null) return;
+            var list = bars.ToList();
+            if (list.Count == 0) return;
+
+            await WaitForReference();
+            await _accessorJsRef.Value.InvokeVoidAsync("postTicksToWorker", "Bars", list);
+        }
+
+        /// <summary>Retorna barras do timeframe especificado, ordenadas por data.</summary>
+        public async Task<List<BarStorageItem>> GetBarsByTimeframeAsync(int timeframe)
+        {
+            await EnsureInitializedAsync();
+            var all = await GetAllAsync<BarStorageItem>("Bars");
+            return all.Where(b => b.Timeframe == timeframe).OrderBy(b => b.Date).ToList();
+        }
+
+        /// <summary>Salva bubbles no IndexedDB via Web Worker.</summary>
+        public async Task PutBubblesBatchAsync(IEnumerable<BubbleStorageItem> items)
+        {
+            if (items == null) return;
+            var list = items.ToList();
+            if (list.Count == 0) return;
+
+            await WaitForReference();
+            await _accessorJsRef.Value.InvokeVoidAsync("postTicksToWorker", "Bubbles", list);
+        }
+
+        /// <summary>Retorna todos os bubbles, ordenados por time.</summary>
+        public async Task<List<BubbleStorageItem>> GetAllBubblesAsync()
+        {
+            await EnsureInitializedAsync();
+            var all = await GetAllAsync<BubbleStorageItem>("Bubbles");
+            return all.OrderBy(b => b.Time).ToList();
+        }
+
+        /// <summary>Salva volume levels no IndexedDB via Web Worker.</summary>
+        public async Task PutVolumeLevelsBatchAsync(IEnumerable<VolumeLevelStorageItem> items)
+        {
+            if (items == null) return;
+            var list = items.ToList();
+            if (list.Count == 0) return;
+
+            await WaitForReference();
+            await _accessorJsRef.Value.InvokeVoidAsync("postTicksToWorker", "VolumeLevels", list);
+        }
+
+        /// <summary>Retorna todos os volume levels salvos.</summary>
+        public async Task<List<VolumeLevelStorageItem>> GetAllVolumeLevelsAsync()
+        {
+            await EnsureInitializedAsync();
+            return await GetAllAsync<VolumeLevelStorageItem>("VolumeLevels");
         }
     }
 }

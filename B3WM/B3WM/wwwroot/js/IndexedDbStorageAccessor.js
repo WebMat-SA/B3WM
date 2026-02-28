@@ -87,6 +87,9 @@ export function initialize(databaseName, version, stores) {
                 if (storeName === 'Ticks' && !store.indexNames.contains('byTime')) {
                     store.createIndex('byTime', 'time', { unique: false });
                 }
+                if (storeName === 'Bars' && !store.indexNames.contains('byTimeframe')) {
+                    store.createIndex('byTimeframe', 'timeframe', { unique: false });
+                }
             });
         };
 

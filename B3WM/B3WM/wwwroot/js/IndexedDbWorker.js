@@ -4,8 +4,8 @@
  * KeyPath "id" (case-sensitive).
  */
 const DB_NAME = 'B3WM.Database';
-const DB_VERSION = 2;
-const STORES = ['Ticks'];
+const DB_VERSION = 3;
+const STORES = ['Ticks', 'Bars', 'Bubbles', 'VolumeLevels'];
 
 let dbInstance = null;
 
@@ -28,6 +28,9 @@ function getDb() {
                 }
                 if (name === 'Ticks' && !store.indexNames.contains('byTime')) {
                     store.createIndex('byTime', 'time', { unique: false });
+                }
+                if (name === 'Bars' && !store.indexNames.contains('byTimeframe')) {
+                    store.createIndex('byTimeframe', 'timeframe', { unique: false });
                 }
             });
         };
