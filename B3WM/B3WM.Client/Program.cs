@@ -25,10 +25,10 @@ namespace B3WM.Client
             // use this to add MudServices and the MudBlazor.Extensions
             builder.Services.AddMudServicesWithExtensions();
 
-            // or this to add only the MudBlazor.Extensions but please ensure that this is added after mud servicdes are added. That means after `AddMudServices`
-            builder.Services.AddMudExtensions();
+            //// or this to add only the MudBlazor.Extensions but please ensure that this is added after mud servicdes are added. That means after `AddMudServices`
+            //builder.Services.AddMudExtensions();
 
-            builder.Services.AddMudServices();
+            //builder.Services.AddMudServices();
 
             builder.Services.AddWorkerFactory();
 

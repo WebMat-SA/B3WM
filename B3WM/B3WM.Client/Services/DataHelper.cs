@@ -1,10 +1,9 @@
 using B3WM.Shared.Entity;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading;
+
 
 namespace B3WM.Client.Services
 {
@@ -60,12 +59,10 @@ namespace B3WM.Client.Services
             }
 
             sw.Stop();
-            var seq = Interlocked.Increment(ref _timesAndTradesSequence);
-            HelperPerformanceConfig.LogSampled(
+            HelperPerformanceConfig.Log(
                 nameof(DataHelper),
                 "TimesAndTrades",
                 sw.ElapsedMilliseconds,
-                seq,
                 $"payloadBytes={_data.Length} ticks={ticksQueue.Count} cacheHit={cacheHit}");
             return ticksQueue;
         }
@@ -247,12 +244,10 @@ namespace B3WM.Client.Services
             }
 
             sw.Stop();
-            var seq = Interlocked.Increment(ref _bookSequence);
-            HelperPerformanceConfig.LogSampled(
+            HelperPerformanceConfig.Log(
                 nameof(DataHelper),
                 "Book",
                 sw.ElapsedMilliseconds,
-                seq,
                 $"payloadBytes={_data.Length} papers={manyPapersInfo.Length} items={pseudoBook.Count}");
             return pseudoBook;
         }

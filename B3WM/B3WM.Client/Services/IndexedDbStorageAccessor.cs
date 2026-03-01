@@ -237,12 +237,10 @@ namespace B3WM.Client.Services
             swPost.Stop();
             swTotal.Stop();
 
-            var seq = Interlocked.Increment(ref _putTicksBatchSequence);
-            HelperPerformanceConfig.LogSampled(
+            HelperPerformanceConfig.Log(
                 nameof(IndexedDbStorageAccessor),
                 "PutTicksBatchAsync",
                 swTotal.ElapsedMilliseconds,
-                seq,
                 $"convertMs={swConvert.ElapsedMilliseconds} postToWorkerMs={swPost.ElapsedMilliseconds} count={list.Count} [Worker]");
         }
 

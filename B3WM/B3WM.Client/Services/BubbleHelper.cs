@@ -32,6 +32,7 @@ namespace B3WM.Client.Services
             _onNewBubble = onNewBubble;
             _bubbleThreshold = bubbleThreshold;
         }
+        public BubbleHelper() { }
 
         public int GetQueueCountSnapshot()
         {
@@ -96,11 +97,10 @@ namespace B3WM.Client.Services
                     {
                         var seq = Interlocked.Increment(ref _batchSequence);
                         var pending = Volatile.Read(ref _pendingChunks);
-                        HelperPerformanceConfig.LogSampled(
+                        HelperPerformanceConfig.Log(
                             nameof(BubbleHelper),
                             "ProcessQueueAsync",
                             sw.ElapsedMilliseconds,
-                            seq,
                             $"chunks={chunks} ticks={tickCount} tickMs={tickProcessingMs} emitCount={_emittedBubblesInBatch} emitMs={_emitCallbackMsInBatch} pending={pending}");
                     }
 

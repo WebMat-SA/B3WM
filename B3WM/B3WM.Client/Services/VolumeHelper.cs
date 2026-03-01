@@ -143,11 +143,10 @@ namespace B3WM.Client.Services
                     {
                         var seq = Interlocked.Increment(ref _batchSequence);
                         var pending = Volatile.Read(ref _pendingChunks);
-                        HelperPerformanceConfig.LogSampled(
+                        HelperPerformanceConfig.Log(
                             nameof(VolumeHelper),
                             "ProcessQueueAsync",
                             sw.ElapsedMilliseconds,
-                            seq,
                             $"chunks={chunks} ticks={tickCount} tickMs={tickProcessingMs} priceLevels={_volumes.Count} pending={pending}");
                     }
 

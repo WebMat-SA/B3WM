@@ -12,7 +12,7 @@ namespace B3WM.Shared.Entity
     {
 
         public int TrydID { get; set; }
-        
+
         public DateTime Time { get; set; }
         public double Value { get; set; }
         public int Volume { get; set; }
@@ -222,36 +222,36 @@ namespace B3WM.Shared.Entity
             RLP,
         }
 
-        public static bool CheckAnomaly(IDictionary<Agents, int> balanceByAgents, double multiplierSame, double multiplierOther, ActionType starter)
-        {
-            try
-            {
-                if (balanceByAgents == null || balanceByAgents.Count == 0)
-                    return false;
+        //public static bool CheckAnomaly(IDictionary<Agents, int> balanceByAgents, double multiplierSame, double multiplierOther, ActionType starter)
+        //{
+        //    try
+        //    {
+        //        if (balanceByAgents == null || balanceByAgents.Count == 0)
+        //            return false;
 
-                var maxs = balanceByAgents.OrderByDescending(q => q.Value).Take(2).ToList();
-                var mins = balanceByAgents.OrderBy(q => q.Value).Take(2).ToList();
+        //        var maxs = balanceByAgents.OrderByDescending(q => q.Value).Take(2).ToList();
+        //        var mins = balanceByAgents.OrderBy(q => q.Value).Take(2).ToList();
 
-                if (starter == ActionType.Buy)
-                {
-                    if (maxs[0].Value * multiplierSame > maxs[1].Value &&
-                        maxs[0].Value * multiplierOther > Math.Abs(mins[0].Value))
-                        return true;
-                }
-                else if (starter == ActionType.Sale)
-                {
-                    if (mins[0].Value * multiplierSame < mins[1].Value &&
-                        Math.Abs(mins[0].Value * multiplierOther) > maxs[0].Value)
-                        return true;
-                }
-            }catch(Exception expt)
-            {
-                Console.WriteLine(expt.Message);
-                Console.WriteLine("CheckAnomaly");
-            }
+        //        if (starter == ActionType.Buy)
+        //        {
+        //            if (maxs[0].Value * multiplierSame > maxs[1].Value &&
+        //                maxs[0].Value * multiplierOther > Math.Abs(mins[0].Value))
+        //                return true;
+        //        }
+        //        else if (starter == ActionType.Sale)
+        //        {
+        //            if (mins[0].Value * multiplierSame < mins[1].Value &&
+        //                Math.Abs(mins[0].Value * multiplierOther) > maxs[0].Value)
+        //                return true;
+        //        }
+        //    }catch(Exception expt)
+        //    {
+        //        Console.WriteLine(expt.Message);
+        //        Console.WriteLine("CheckAnomaly");
+        //    }
 
 
-            return false;
-        }
+        //    return false;
+        //}
     }
 }

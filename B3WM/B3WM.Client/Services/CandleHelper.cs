@@ -1,35 +1,38 @@
 using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
+using BlazorWorker.WorkerBackgroundService;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Serialization;
+using Vizor.ECharts;
 
 namespace B3WM.Client.Services
 {
     public class CandleHelper : IDisposable
     {
-        private const int YieldEveryTicks = 256;
-        private readonly Action<IEnumerable<Bars>>? _onClosedBars;
-        private readonly int _timeFrameMinutes;
+        public event EventHandler<IEnumerable<Bars>>? OnClosedBars;
+        public event EventHandler<Bars?>? OnUpdateLastBar;
+        public event EventHandler<int>? OnQueueCount;
+        
+        private int _timeFrameMinutes;
 
-        private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
-        private int _isProcessing = 0;
-        private int _pendingChunks = 0;
-        private int _batchSequence = 0;
+        private readonly ConcurrentQueue<Ticks2[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
         private readonly object _lock = new();
         private Bars? _currentBar;
-        private int _currentBarVersion;
-        private int _closedBarsEmittedInBatch;
-        private long _closedBarsCallbackMsInBatch;
 
-        public CandleHelper(
-            Action<IEnumerable<Bars>> onClosedBars,
-            int timeFrameMinutes = 5)
+        private PeriodicTimer? _timer;
+
+        private int _queueCount { get; set; }
+
+        public void Init(int throtlingms = 200, int timeFrame = 5)
         {
-            _onClosedBars = onClosedBars;
-            _timeFrameMinutes = timeFrameMinutes;
+            _timeFrameMinutes = timeFrame;
+
+            _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
+            _ = RunLoop();
         }
 
         public Bars? GetCurrentBarSnapshot()
@@ -43,35 +46,22 @@ namespace B3WM.Client.Services
             }
         }
 
-        public int GetCurrentBarVersion()
+        private async Task RunLoop()
         {
-            lock (_lock)
+            while (await _timer!.WaitForNextTickAsync())
             {
-                return _currentBarVersion;
+                OnUpdateLastBar?.Invoke(this, GetCurrentBarSnapshot());
+                OnQueueCount?.Invoke(this, _queueCount);
             }
         }
 
-        public int GetQueueCountSnapshot()
+        public Task Enqueue(Ticks2[] ticks)
         {
-            if (_queue == null)
-                return 0;
-
-            _ = _queue.TryGetNonEnumeratedCount(out int result);
-
-            return result;
-        }
-
-        public Task Enqueue(IReadOnlyList<Ticks2> ticks)
-        {
-            if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
+            if (ticks == null || ticks.Length == 0) return Task.CompletedTask;
 
             _queue.Enqueue(ticks);
-            Interlocked.Increment(ref _pendingChunks);
 
-            if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-            {
-                _ = Task.Run(ProcessQueueAsync, _cts.Token);
-            }
+            _ = Task.Run(ProcessQueueAsync, _cts.Token);
 
             return Task.CompletedTask;
         }
@@ -84,85 +74,35 @@ namespace B3WM.Client.Services
                 ProcessTick(t);
         }
 
-        /// <summary>Emite a barra em construção, se houver. Usar ao final do load do IndexedDB.</summary>
-        public void Flush()
+        private void ProcessQueueAsync()
         {
-            lock (_lock)
-            {
-                if (_currentBar != null)
-                {
-                    var bar = CloneBar(_currentBar);
-                    _onClosedBars?.Invoke(new[] { bar });
-                    _currentBar = null;
-                }
-            }
-        }
-
-        private async Task ProcessQueueAsync()
-        {
+            var sw = Stopwatch.StartNew();
+            
             try
             {
-                //var token = _cts.Token;
+                long tickProcessingMs = 0;
 
-                //while (!token.IsCancellationRequested)
-                //{
-                    var sw = Stopwatch.StartNew();
-                    var swParse = Stopwatch.StartNew();
-                    int chunks = 0, tickCount = 0;
-                    int processedTicksSinceYield = 0;
-                    long parseMs = 0;
-                    long tickProcessingMs = 0;
-                    _closedBarsEmittedInBatch = 0;
-                    _closedBarsCallbackMsInBatch = 0;
+                while (_queue.TryDequeue(out var ticks))
+                {
+                    var sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
 
-                    while (_queue.TryDequeue(out var ticks))
+                    _queueCount = sortedTicks.Count;
+                    var swTicks = Stopwatch.StartNew();
+                    foreach (var t in sortedTicks)
                     {
-                        chunks++;
-                        Interlocked.Decrement(ref _pendingChunks);
-
-                        swParse.Restart();
-                        var sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
-                        swParse.Stop();
-                        parseMs += swParse.ElapsedMilliseconds;
-                        tickCount += ticks.Count;
-
-                        var swTicks = Stopwatch.StartNew();
-                        foreach (var t in sortedTicks)
-                        {
-                            ProcessTick(t);
-                            processedTicksSinceYield++;
-                            if ((processedTicksSinceYield & (YieldEveryTicks - 1)) == 0)
-                                await Task.Yield(); // libera o loop WASM sem custo por tick
-                        }
-                        swTicks.Stop();
-                        tickProcessingMs += swTicks.ElapsedMilliseconds;
+                        ProcessTick(t);
                     }
-
-                    sw.Stop();
-                    if (chunks > 0)
-                    {
-                        var seq = Interlocked.Increment(ref _batchSequence);
-                        var pending = Volatile.Read(ref _pendingChunks);
-                        HelperPerformanceConfig.LogSampled(
-                            nameof(CandleHelper),
-                            "ProcessQueueAsync",
-                            sw.ElapsedMilliseconds,
-                            seq,
-                            $"chunks={chunks} ticks={tickCount} parseMs={parseMs} tickMs={tickProcessingMs} closedBars={_closedBarsEmittedInBatch} closeCbMs={_closedBarsCallbackMsInBatch} pending={pending}");
-                    }
-
-                    Interlocked.Exchange(ref _isProcessing, 0);
-
-                    //if (!_queue.IsEmpty &&
-                    //    Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-                    //    continue;
-
-                    //break;
-                //}
+                    swTicks.Stop();
+                    tickProcessingMs += swTicks.ElapsedMilliseconds;
+                }  
             }
             finally
             {
-                Interlocked.Exchange(ref _isProcessing, 0);
+                HelperPerformanceConfig.Log(
+                    nameof(CandleHelper),
+                    "ProcessQueueAsync",
+                    sw.ElapsedMilliseconds,
+                    "");
             }
         }
 
@@ -177,7 +117,6 @@ namespace B3WM.Client.Services
                 if (_currentBar == null)
                 {
                     _currentBar = CreateNewBar(candleStart, t.Value, t.Volume);
-                    _currentBarVersion++;
                     return;
                 }
 
@@ -186,12 +125,10 @@ namespace B3WM.Client.Services
                     // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
                     barToEmit = CloneBar(_currentBar);
                     _currentBar = CreateNewBar(candleStart, t.Value, t.Volume);
-                    _currentBarVersion++;
                 }
                 else if (candleStart == _currentBar.Date)
                 {
                     UpdateBar(_currentBar, t.Value, t.Volume);
-                    _currentBarVersion++;
                 }
                 // candleStart < _currentBar.Date: tick do passado (ordem inversa/atrasado), ignorar
             }
@@ -200,10 +137,8 @@ namespace B3WM.Client.Services
             if (barToEmit != null)
             {
                 var sw = Stopwatch.StartNew();
-                _onClosedBars?.Invoke(new[] { barToEmit });
+                OnClosedBars?.Invoke(this, new[] { barToEmit });
                 sw.Stop();
-                _closedBarsEmittedInBatch++;
-                _closedBarsCallbackMsInBatch += sw.ElapsedMilliseconds;
             }
         }
 

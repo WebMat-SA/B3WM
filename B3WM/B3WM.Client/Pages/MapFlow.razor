@@ -1,15 +1,20 @@
+@using System.Diagnostics
+@using System.Linq
 @using B3WM.Client.Components
+@using B3WM.Client.Model
 @using B3WM.Client.Services
 @using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
-@using System.Linq
-@using System.Diagnostics
+@using MudBlazor.Extensions
 @using MudBlazor.Extensions.Helper
 @using Nextended.Core.Contracts
+@using MudBlazor.Extensions.Components
+@using MudBlazor.Extensions.Components.ObjectEdit
 @using Vizor.ECharts
-@inherits Components.PersistentComponentBase
-@page "/map-flow"
 @inject IndexedDbStorageAccessor IndexedDbStorage
+@inherits Components.PersistentComponentBase
+
+@page "/map-flow"
 
 @code {
     protected override string PersistenceKey => $"{nameof(MapFlow)}_state";
@@ -48,7 +53,7 @@
 
     private Vizor.ECharts.EChart? EChart;
 
-    private static bool _logPerformance = false;
+    private static bool _logPerformance = true;
     private const int PerformanceLogThresholdMs = 20;
 
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
@@ -132,8 +137,8 @@
                 .Select(g => g.First())
                 .OrderBy(q => q.Date)
                 .ToList();
-            if (CurrentBar.Date != default && !combined.Any(b => b.Date == CurrentBar.Date))
-                combined.Add(CurrentBar);
+            // if (CurrentBar.Date != default && !combined.Any(b => b.Date == CurrentBar.Date))
+            //     combined.Add(CurrentBar);
             return combined.OrderBy(q => q.Date).ToList();
         }
     }
@@ -392,6 +397,7 @@
 
     public void NewCurrentBar(Bars bar)
     {
+        if (bar != null) Console.WriteLine($"NewCurrentBar: {bar.Date:dd/MM HH:mm:ss} O:{bar.Open} H:{bar.High} L:{bar.Low} C:{bar.Close} V:{bar.Volume}");
         var sw = Stopwatch.StartNew();
         CurrentBar = bar;
         _currentBarVersion++;
@@ -962,11 +968,10 @@
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
         </MudTooltip>
         <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadDataFromDb"/>
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadDataFromDb" Disabled/>
         </MudTooltip>
     </MudStack>
     <B3WM.Client.Components.HubClient OnCandleSeriesChange="NewBar" OnCurrentBarChange="NewCurrentBar"
-                                        OnCandleSeriesFromIndexedDb="NewBarFromIndexedDb"
                                         OnVolumeUpdate="VolumeUpdate" TimeFrame="TimeFrame"
                                         BubbleThreshold="ThresholdBubble" OnNewBubble="NewBubble" @ref=HubClient />
     <MudOverlay Visible="_isLoadingFromIndexedDb" ZIndex="10" Class="d-flex align-center justify-center" DarkBackground=true Absolute=true>
@@ -1141,7 +1146,7 @@
                         <MudListItem Icon="@Icons.Material.Filled.People" Text="Agents" Expanded=false>
                             <NestedList>
                                 <MudListItem Dense="true">
-                                    <MudList Dense T="Ticks2.Agents?">
+                                    <MudList Dense T="Ticks2.Agents?" ReadOnly=true>
                                         <MudListItem Dense=true OnClickPreventDefault OnClick="SelectAllAgents">
                                             <AvatarContent>
                                                 <MudCheckBox Dense Value="@(SelectedAgents.Count == AllBubbleAgents.Count)" ValueChanged="(bool c) => SelectAllAgents()"></MudCheckBox>

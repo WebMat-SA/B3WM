@@ -7,7 +7,7 @@ namespace B3WM.Client.Services
     public static class HelperPerformanceConfig
     {
         /// <summary>Quando true, CandleHelper imprime [Perf] no console.</summary>
-        public static bool EnableCandleHelper { get; set; } = true;
+        public static bool EnableCandleHelper { get; set; } = false;
 
         /// <summary>Quando true, VolumeHelper imprime [Perf] no console.</summary>
         public static bool EnableVolumeHelper { get; set; } = false;
@@ -40,18 +40,6 @@ namespace B3WM.Client.Services
                 ? $"[Perf] {helperName}.{operation} = {elapsedMs} ms | {extra}"
                 : $"[Perf] {helperName}.{operation} = {elapsedMs} ms";
             Console.WriteLine(msg);
-        }
-
-        internal static void LogSampled(string helperName, string operation, long elapsedMs, int sequence, string? extra = null)
-        {
-            if (!IsEnabled(helperName)) return;
-
-            var sampleEvery = SampleEveryOperations <= 0 ? 1 : SampleEveryOperations;
-            var isSlow = elapsedMs >= SlowOperationMs;
-            var isSampleHit = sequence <= 1 || (sequence % sampleEvery == 0);
-            if (!isSlow && !isSampleHit) return;
-
-            Log(helperName, operation, elapsedMs, $"seq={sequence}" + (string.IsNullOrWhiteSpace(extra) ? string.Empty : $" | {extra}"));
         }
 
         private static bool IsEnabled(string helperName) => helperName switch
