@@ -7,16 +7,13 @@ namespace B3WM.Client.Services
 {
     public class BubbleHelper : IDisposable
     {
-        private const int YieldEveryTicks = 256;
-        private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
+        public event EventHandler<Bubble>? OnNewBubble;
+        public event EventHandler<int>? OnQueueCount;
+
+        private readonly ConcurrentQueue<Ticks2[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
-        private readonly Action<Bubble>? _onNewBubble;
-        private readonly int _bubbleThreshold;
-
-        private int _isProcessing = 0;
-        private int _pendingChunks = 0;
-        private int _batchSequence = 0;
+        private int _bubbleThreshold { get; set; }
 
         // 🔥 Estado contínuo
         private int _runningSum = 0;
@@ -24,94 +21,70 @@ namespace B3WM.Client.Services
         private Ticks2.ActionType? _runningStarter = null;
         private double _lastPrice = 0;
         private DateTime _lastTime;
-        private int _emittedBubblesInBatch;
-        private long _emitCallbackMsInBatch;
 
-        public BubbleHelper(Action<Bubble> onNewBubble, int bubbleThreshold = 125)
+        private PeriodicTimer? _timer;
+
+        private bool NotifyQueueCount { get; set; }
+
+        private int _queueCount { get; set; }
+
+        public void Init(int throtlingms = 200, int bubbleThreshold = 125, bool _notifyqueue = true)
         {
-            _onNewBubble = onNewBubble;
             _bubbleThreshold = bubbleThreshold;
+            NotifyQueueCount = _notifyqueue;
+
+            _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
+            _ = RunLoop();
         }
-        public BubbleHelper() { }
-
-        public int GetQueueCountSnapshot()
+        private async Task RunLoop()
         {
-            if (_queue == null)
-                return 0;
-
-            _ = _queue.TryGetNonEnumeratedCount(out int result);
-
-            return result;
+            while (await _timer!.WaitForNextTickAsync())
+            {
+                if (NotifyQueueCount) OnQueueCount?.Invoke(this, _queueCount);
+            }
         }
 
-        public Task Enqueue(IReadOnlyList<Ticks2> ticks)
+        public void Enqueue(Ticks2[] ticks)
         {
-            if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
+            if (ticks == null || ticks.Length == 0) return;
 
             _queue.Enqueue(ticks);
-            Interlocked.Increment(ref _pendingChunks);
 
-            if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-            {
-                _ = Task.Run(ProcessQueueAsync, _cts.Token);
-            }
+            _ = ProcessQueueAsync();
 
-            return Task.CompletedTask;
+            //return Task.CompletedTask;
         }
 
-        private async Task ProcessQueueAsync()
+        private Task ProcessQueueAsync()
         {
+            var sw = Stopwatch.StartNew();
             try
             {
-                //var token = _cts.Token;
+                long tickProcessingMs = 0;
 
-                //while (!token.IsCancellationRequested)
-                //{
-                    var sw = Stopwatch.StartNew();
-                    int chunks = 0, tickCount = 0;
-                    int processedTicksSinceYield = 0;
-                    _emittedBubblesInBatch = 0;
-                    _emitCallbackMsInBatch = 0;
-                    long tickProcessingMs = 0;
+                while (_queue.TryDequeue(out var ticks))
+                {
 
-                    while (_queue.TryDequeue(out var ticks))
+                    var swTicks = Stopwatch.StartNew();
+                    var sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
+                    _queueCount = sortedTicks.Count;
+
+                    foreach (var t in sortedTicks)
                     {
-                        chunks++;
-                        Interlocked.Decrement(ref _pendingChunks);
-                        tickCount += ticks.Count;
-
-                        var swTicks = Stopwatch.StartNew();
-                        foreach (var t in ticks)
-                        {
-                            ProcessTick(t);
-                            processedTicksSinceYield++;
-                            if ((processedTicksSinceYield & (YieldEveryTicks - 1)) == 0)
-                                await Task.Yield();
-                        }
-                        swTicks.Stop();
-                        tickProcessingMs += swTicks.ElapsedMilliseconds;
+                        ProcessTick(t);
                     }
+                    swTicks.Stop();
+                    tickProcessingMs += swTicks.ElapsedMilliseconds;
+                }
 
-                    sw.Stop();
-                    if (chunks > 0)
-                    {
-                        var seq = Interlocked.Increment(ref _batchSequence);
-                        var pending = Volatile.Read(ref _pendingChunks);
-                        HelperPerformanceConfig.Log(
-                            nameof(BubbleHelper),
-                            "ProcessQueueAsync",
-                            sw.ElapsedMilliseconds,
-                            $"chunks={chunks} ticks={tickCount} tickMs={tickProcessingMs} emitCount={_emittedBubblesInBatch} emitMs={_emitCallbackMsInBatch} pending={pending}");
-                    }
+                sw.Stop();
 
-                    Interlocked.Exchange(ref _isProcessing, 0);
+                HelperPerformanceConfig.Log(
+                        nameof(BubbleHelper),
+                        "ProcessQueueAsync",
+                        sw.ElapsedMilliseconds,
+                        $"tickMs={tickProcessingMs}");
 
-                //    if (!_queue.IsEmpty &&
-                //        Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-                //        continue;
-
-                //    break;
-                //}
             }
             catch (Exception ex)
             {
@@ -119,8 +92,10 @@ namespace B3WM.Client.Services
             }
             finally
             {
-                Interlocked.Exchange(ref _isProcessing, 0);
+                sw.Stop();
             }
+
+            return Task.CompletedTask;
         }
 
         private void ProcessTick(Ticks2 t)
@@ -177,10 +152,8 @@ namespace B3WM.Client.Services
                     };
 
                     var sw = Stopwatch.StartNew();
-                    _onNewBubble?.Invoke(bubble);
+                    OnNewBubble?.Invoke(this, bubble);
                     sw.Stop();
-                    _emittedBubblesInBatch++;
-                    _emitCallbackMsInBatch += sw.ElapsedMilliseconds;
                 }
                 catch (Exception ex)
                 {
@@ -197,6 +170,13 @@ namespace B3WM.Client.Services
         public void Dispose()
         {
             _cts.Cancel();
+        }
+
+        public void ToggleNotifyQueue()
+        {
+            _queueCount = 0;
+            OnQueueCount?.Invoke(this, _queueCount);
+            NotifyQueueCount = !NotifyQueueCount;
         }
     }
 }

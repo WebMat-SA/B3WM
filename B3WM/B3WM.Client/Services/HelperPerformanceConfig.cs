@@ -1,3 +1,6 @@
+using B3WM.Client.Components;
+using B3WM.Client.Pages;
+
 namespace B3WM.Client.Services
 {
     /// <summary>
@@ -21,16 +24,17 @@ namespace B3WM.Client.Services
         /// <summary>Quando true, IndexedDbStorageAccessor imprime [Perf] no console.</summary>
         public static bool EnableIndexedDbStorage { get; set; } = false;
 
-        /// <summary>
-        /// Loga sempre quando a operação ultrapassa este tempo (ms).
-        /// </summary>
-        public static int SlowOperationMs { get; set; } = 120;
+        /// <summary>Quando true, MapFlow imprime [Perf] no console.</summary>
+        public static bool EnableMapFlow { get; set; } = false;
 
-        /// <summary>
-        /// Além dos lentos, também loga 1 em cada N operações (amostragem).
-        /// Use 1 para logar tudo.
-        /// </summary>
-        public static int SampleEveryOperations { get; set; } = 20;
+        /// <summary>Quando true, MapFlowGraph imprime [Perf] no console.</summary>
+        public static bool EnableMapFlowGraph { get; set; } = false;
+
+        /// <summary>Quando true, HubClient imprime [Perf] no console.</summary>
+        public static bool EnableHubClient { get; set; } = true;
+
+        /// <summary>Quando true, MainHelper imprime [Perf] no console.</summary>
+        public static bool EnableMainHelper { get; set; } = false;
 
         internal static void Log(string helperName, string operation, long elapsedMs, string? extra = null)
         {
@@ -49,6 +53,10 @@ namespace B3WM.Client.Services
             nameof(BubbleHelper) => EnableBubbleHelper,
             nameof(DataHelper) => EnableDataHelper,
             nameof(IndexedDbStorageAccessor) => EnableIndexedDbStorage,
+            nameof(MapFlow) => EnableMapFlow,
+            nameof(MapFlowGraph) => EnableMapFlowGraph,
+            nameof(HubClient) => EnableHubClient,
+            nameof(MainHelper) => EnableMainHelper,
             _ => false
         };
     }

@@ -1,16 +1,25 @@
 using B3WM.Shared.Entity;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Vizor.ECharts;
 
 namespace B3WM.Client.Services
 {
     public class VolumeHelper : IDisposable
     {
-        private const int YieldEveryTicks = 256;
+        public event EventHandler<int>? OnQueueCount;
+        public event EventHandler<List<VolumeLevel>>? OnVolumeUpdate;
+
         private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
         private readonly ConcurrentDictionary<double, VolumeLevel> _volumes = new();
+
+        private int _queueCount { get; set; }
+
+        private bool NotifyQueueCount { get; set; }
+
+        private PeriodicTimer? _timer;
 
         // Ticks brutos armazenados para permitir snapshot filtrado por intervalo de tempo.
         private readonly struct RawTick
@@ -25,10 +34,25 @@ namespace B3WM.Client.Services
         private readonly List<RawTick> _rawTicks = new();
         private readonly object _rawTicksLock = new();
 
-        private int _isProcessing = 0;
         private int _volumeVersion = 0;
-        private int _pendingChunks = 0;
-        private int _batchSequence = 0;
+
+
+        public void Init(int throtlingms = 200, bool _notifyqueue = true)
+        {
+            NotifyQueueCount = _notifyqueue;
+
+            _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
+            _ = RunLoop();
+        }
+
+        private async Task RunLoop()
+        {
+            while (await _timer!.WaitForNextTickAsync())
+            {
+                OnVolumeUpdate?.Invoke(this, GetSnapshot());
+                if (NotifyQueueCount) OnQueueCount?.Invoke(this, _queueCount);
+            }
+        }
 
         public List<VolumeLevel> GetSnapshot()
         {
@@ -77,29 +101,13 @@ namespace B3WM.Client.Services
             return result.Values.OrderBy(v => v.Price).ToList();
         }
 
-        public int GetQueueCountSnapshot()
+        public void Enqueue(Ticks2[] ticks)
         {
-            if (_queue == null)
-                return 0;
-
-            _ = _queue.TryGetNonEnumeratedCount(out int result);
-
-            return result;
-        }
-
-        public Task Enqueue(IReadOnlyList<Ticks2> ticks)
-        {
-            if (ticks == null || ticks.Count == 0) return Task.CompletedTask;
+            if (ticks == null || ticks.Length == 0) return ;
 
             _queue.Enqueue(ticks);
-            Interlocked.Increment(ref _pendingChunks);
+            _ = ProcessQueueAsync();
 
-            if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-            {
-                _ = Task.Run(ProcessQueueAsync, _cts.Token);
-            }
-
-            return Task.CompletedTask;
         }
 
         public int GetVolumeVersion()
@@ -109,59 +117,32 @@ namespace B3WM.Client.Services
 
         private async Task ProcessQueueAsync()
         {
+            var sw = Stopwatch.StartNew();
             try
             {
-                //var token = _cts.Token;
+                long tickProcessingMs = 0;
 
-                //while (!token.IsCancellationRequested)
-                //{
-                    var sw = Stopwatch.StartNew();
-                    int chunks = 0, tickCount = 0;
-                    int processedTicksSinceYield = 0;
-                    long tickProcessingMs = 0;
-
-                    while (_queue.TryDequeue(out var ticks))
+                while (_queue.TryDequeue(out var ticks))
+                {
+                    _queueCount = ticks.Count;
+                    var swTicks = Stopwatch.StartNew();
+                    foreach (var t in ticks)
                     {
-                        chunks++;
-                        Interlocked.Decrement(ref _pendingChunks);
-                        tickCount += ticks.Count;
-
-                        var swTicks = Stopwatch.StartNew();
-                        foreach (var t in ticks)
-                        {
-                            ProcessTick(t);
-                            processedTicksSinceYield++;
-                            if ((processedTicksSinceYield & (YieldEveryTicks - 1)) == 0)
-                                await Task.Yield(); // libera o loop WASM sem custo por tick
-                        }
-                        swTicks.Stop();
-                        tickProcessingMs += swTicks.ElapsedMilliseconds;
+                        ProcessTick(t);
                     }
+                    swTicks.Stop();
+                    tickProcessingMs += swTicks.ElapsedMilliseconds;
+                }
 
-                    sw.Stop();
-                    if (chunks > 0)
-                    {
-                        var seq = Interlocked.Increment(ref _batchSequence);
-                        var pending = Volatile.Read(ref _pendingChunks);
-                        HelperPerformanceConfig.Log(
-                            nameof(VolumeHelper),
-                            "ProcessQueueAsync",
-                            sw.ElapsedMilliseconds,
-                            $"chunks={chunks} ticks={tickCount} tickMs={tickProcessingMs} priceLevels={_volumes.Count} pending={pending}");
-                    }
-
-                    Interlocked.Exchange(ref _isProcessing, 0);
-
-                //    if (!_queue.IsEmpty &&
-                //        Interlocked.CompareExchange(ref _isProcessing, 1, 0) == 0)
-                //        continue;
-
-                //    break;
-                //}
             }
             finally
             {
-                Interlocked.Exchange(ref _isProcessing, 0);
+                sw.Stop();
+                HelperPerformanceConfig.Log(
+                        nameof(VolumeHelper),
+                        "ProcessQueueAsync",
+                        sw.ElapsedMilliseconds,
+                        $"priceLevels={_volumes.Count}");
             }
         }
 
@@ -210,8 +191,6 @@ namespace B3WM.Client.Services
             // Armazena o tick bruto para permitir recálculo por intervalo de tempo.
             lock (_rawTicksLock)
                 _rawTicks.Add(new RawTick(t.Time, t.Value, t.Volume, isBuyAggression.Value));
-
-            Interlocked.Increment(ref _volumeVersion);
         }
 
         public void Reset()
@@ -225,6 +204,11 @@ namespace B3WM.Client.Services
         public void Dispose()
         {
             _cts.Cancel();
+        }
+
+        public void ToggleNotifyQueue()
+        {
+            NotifyQueueCount = !NotifyQueueCount;
         }
     }
 }

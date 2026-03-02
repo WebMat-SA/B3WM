@@ -16,36 +16,18 @@
 @using BlazorWorker.WorkerBackgroundService
 @using BlazorWorker.BackgroundServiceFactory
 @using BlazorWorker.Core
-@inject IWorkerFactory workerFactory
+
 
 @code {
 
     protected override string PersistenceKey => $"{nameof(HubClient)}_state";
     protected override bool ContinuousSave => true;
 
-    private HubConnection? hubConnection;
-
     private int _counter { get; set; } = 0;
-    private int _bubbleQueue { get; set; } = 0;
-    private int _volumeQueue { get; set; } = 0;
-    private int _candleQueue { get; set; } = 0;
 
     public bool openDrawer { get; set; } = false;
 
-    // private BubbleHelper? bubbleHelper;
 
-    // private CandleHelper? candleHelper;
-
-    // private VolumeHelper? volumeHelper;
-
-    private IWorker? CandleWorker;
-    private IWorkerBackgroundService<CandleHelper>? CandleService;
-
-    private IWorker BubbleWorker;
-    private IWorkerBackgroundService<BubbleHelper> BubbleBackground;
-
-    private IWorker VolumeWorker;
-    private IWorkerBackgroundService<VolumeHelper> VolumeBackground;
 
     [Parameter]
     public EventCallback<IEnumerable<Bars>> OnCandleSeriesChange { get; set; } = default!;
@@ -163,19 +145,17 @@
 
 
     public bool IsConnected =>
-        hubConnection?.State == HubConnectionState.Connected;
-
-    private PeriodicTimer? _timer;
+        HubClientReceiver?.hubConnection?.State == HubConnectionState.Connected;
 
     // Throttle: evita atualizar UI e publicar barra/volume mais que o necessário
-    private const int UiRefreshIntervalMs = 100;
+    private const int UiRefreshIntervalMs = 256;
     //private const int CurrentBarPublishIntervalMs = 250;
     //private const int VolumePublishIntervalMs = 600;
     private DateTime _lastUiRefreshUtc = DateTime.MinValue;
     private (int version, DateTime atUtc) _currentBarThrottle = (-1, DateTime.MinValue);
     private (int version, DateTime atUtc) _volumeThrottle = (-1, DateTime.MinValue);
     private Bars? _currentBarPending;
-    private DateTime? _lastUpdateBarPending { get; set; }
+
     private bool _currentBarPublishing;
     private List<VolumeLevel>? _volumePending;
     private bool _volumePublishing;
@@ -187,405 +167,59 @@
     private readonly List<Ticks2> _allTicksForRemount = new();
     private readonly object _allTicksLock = new();
 
-    private static bool ShouldPublish(int currentVersion, (int version, DateTime atUtc) throttle, int intervalMs)
-    {
-        if (currentVersion == throttle.version) return false;
-        var now = DateTime.UtcNow;
-        return throttle.atUtc == DateTime.MinValue || (now - throttle.atUtc).TotalMilliseconds >= intervalMs;
-    }
 
-    private async void InitHub(){
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
-            .WithAutomaticReconnect()
-            .Build();
-
-        hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
-        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
-        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
-
-        await hubConnection.StartAsync();
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        await base.OnInitializedAsync();
-
-        InitHub();
-
-        CreateWorkers();
-
-        _ticksSaveCts = new CancellationTokenSource();
-        _ = RunTicksSaveLoopAsync(_ticksSaveCts.Token);
-
-    }
-
-    public async void CreateWorkers()
-    {
-        await CreateCandleWorker();
-        await CreateBubbleWorker();
-        await CreateVolumeWorker();
-    }
-
-    public async Task CreateCandleWorker()
-    {
-        if (CandleWorker == null)
-        {
-            CandleWorker = await workerFactory.CreateAsync();
-        }
-
-        if (CandleService == null)
-        {
-            CandleService = await CandleWorker.CreateBackgroundServiceAsync<CandleHelper>(options
-                     => options.UseCustomExpressionSerializer(typeof(KnownTypesJsonSerializer)));
-            //cria os listeners (estilo signalR)
-            await CandleService.RegisterEventListenerAsync(nameof(CandleHelper.OnClosedBars), (object? s, IEnumerable<Bars> data) => NewBars(data));
-
-            await CandleService.RegisterEventListenerAsync(nameof(CandleHelper.OnQueueCount), (object? s, int data) =>
-            {
-                _candleQueue = data;
-            });
-
-            await CandleService.RegisterEventListenerAsync(nameof(CandleHelper.OnUpdateLastBar), (object? s, Bars? data) => _ = NewCurrentBar(data));
-
-            await CandleService.RunAsync(s => s.Init(1000, TimeFrame));
-        }
-
-    }
-
-    public async Task CreateBubbleWorker()
-    {
-
-        BubbleWorker = await workerFactory.CreateAsync();
-        BubbleBackground = await CandleWorker.CreateBackgroundServiceAsync<BubbleHelper>();
-    }
-
-    public async Task CreateVolumeWorker()
-    {
-        VolumeWorker = await workerFactory.CreateAsync();
-        VolumeBackground = await CandleWorker.CreateBackgroundServiceAsync<VolumeHelper>();
-    }
-
-    // protected override void OnInitialized()
-    // {
-    //     _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
-    //     _ = RunLoop();
-    // }
-
-    // private async Task RunLoop()
-    // {
-    //     while (await _timer!.WaitForNextTickAsync())
-    //     {
-
-    //         if (candleHelper is not null)
-    //         {
-    //             //_candleQueue = candleHelper.GetQueueCountSnapshot();
-    //         }
-
-    //         if (bubbleHelper is not null)
-    //         {
-    //             _bubbleQueue = bubbleHelper.GetQueueCountSnapshot();
-    //         }
-
-    //         if (volumeHelper is not null)
-    //         {
-    //             _volumeQueue = volumeHelper.GetQueueCountSnapshot();
-    //         }
-
-    //         if (candleHelper is not null && OnCurrentBarChange.HasDelegate)
-    //         {
-    //             var version = candleHelper.GetCurrentBarVersion();
-    //             if (ShouldPublish(version, _currentBarThrottle, CurrentBarPublishIntervalMs))
-    //             {
-    //                 var snapshot = candleHelper.GetCurrentBarSnapshot();
-    //                 if (snapshot != null)
-    //                 {
-    //                     _currentBarThrottle = (version, DateTime.UtcNow);
-    //                     _currentBarPending = snapshot;
-    //                     _ = TryPublishCurrentBarAsync();
-    //                 }
-    //             }
-    //         }
-
-    //         if (volumeHelper is not null && OnVolumeUpdate.HasDelegate)
-    //         {
-    //             var version = volumeHelper.GetVolumeVersion();
-    //             if (ShouldPublish(version, _volumeThrottle, VolumePublishIntervalMs))
-    //             {
-    //                 _volumeThrottle = (version, DateTime.UtcNow);
-    //                 _volumePending = volumeHelper.GetSnapshot();
-    //                 _ = TryPublishVolumeAsync();
-    //             }
-    //         }
-    //     }
-    // }
-
-
-    private async Task TryPublishVolumeAsync()
-    {
-        if (_volumePublishing) return;
-        _volumePublishing = true;
-        try
-        {
-            while (_volumePending is { } snapshot)
-            {
-                _volumePending = null;
-                await OnVolumeUpdate.InvokeAsync(snapshot);
-            }
-        }
-        finally { _volumePublishing = false; }
-    }
-
-    private async void OnReceiveBook(byte[] data)
-    {
-        if (!EnableBook) return;
-
-        //debug de velocidade e confirmação de dados
-        _counter++;
-
-        if (OnBookChange.HasDelegate) await OnBookChange.InvokeAsync(new DataHelper(data).Book());
-
-        RequestUiRefreshThrottled();
-
-    }
-
-    private void OnReceiveTNT(byte[] data)
-    {
-        if (!EnableTimesAndTrades) return;
-
-        //debug de velocidade e confirmação de dados
-        _counter++;
-
-        // Avoid re-rendering for every packet; this path can be called many times per second.
-        RequestUiRefreshThrottled();
-
-        // Parse único: todos os helpers e subscribers recebem a mesma lista
-        var ticks = new DataHelper(data).TimesAndTrades().ToArray();
-        if (ticks.Length == 0) return;
-
-        // Notify subscribers about the new tick in the same order we dequeue it
-        if (OnNewTicks.HasDelegate)
-            OnNewTicks.InvokeAsync(ticks);
-
-        if (EnableSaveTicksToIndexedDb)
-            _ticksSaveChannel.Writer.TryWrite(ticks);
-
-        _lastUpdateBarPending = ticks.Last().Time;
-        _ = Enqueue(ticks);
-    }
-
-    private void OnReceiveTNTSimple(byte[] data)
-    {
-        if (!EnableTimesAndTradesSimple) return;
-
-        //debug de velocidade e confirmação de dados
-        _counter++;
-
-        RequestUiRefreshThrottled();
-    }
-
-    private void RequestUiRefreshThrottled()
-    {
-        var now = DateTime.UtcNow;
-        if (_lastUiRefreshUtc != DateTime.MinValue &&
-            (now - _lastUiRefreshUtc).TotalMilliseconds < UiRefreshIntervalMs)
-            return;
-
-        _lastUiRefreshUtc = now;
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private Task Enqueue(Ticks2[] ticks)
-    {
-        if (ticks == null || ticks.Length == 0) return Task.CompletedTask ;
-
-        // lock (_allTicksLock)
-        // {
-        //     foreach (var t in ticks)
-        //         _allTicksForRemount.Add(t);
-        // }
-
-        if (EnableBubbleFormer)
-        {
-            // if (bubbleHelper is null)
-            //     bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
-
-            // _ = bubbleHelper.Enqueue(ticks);
-        }
-
-        if (EnableCandleFormer)
-        {
-            if (CandleService != null && ticks != null)
-            {
-                _ = CandleService.RunAsync(s => s.Enqueue(ticks));
-            }
-            //verificar se o serviço está ativo, e enfileirar dados
-            // if (candleHelper is null)
-            // {
-            //     candleHelper = new CandleHelper(NewBars, TimeFrame);
-            //     _currentBarThrottle = (-1, DateTime.MinValue);
-            // }
-
-            //_ = candleHelper.Enqueue(ticks);
-        }
-
-        if (EnableVolumeFormer)
-        {
-            // if (volumeHelper is null)
-            // {
-            //     volumeHelper = new VolumeHelper();
-            //     _volumeThrottle = (-1, DateTime.MinValue);
-            // }
-
-            // _ = volumeHelper.Enqueue(ticks);
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public void NewBubble(Bubble data)
-    {
-        if (OnNewBubble.HasDelegate) 
-            OnNewBubble.InvokeAsync(data);
-    }
-
-    public void NewBars(IEnumerable<Bars> bars)
-    {
-        if (bars == null || !OnCandleSeriesChange.HasDelegate) return;
-        var list = bars.ToList();
-        if (list.Count == 0) return;
-        OnCandleSeriesChange.InvokeAsync(list);
-    }
-
-    public Task NewCurrentBar(Bars? bar)
-    {
-        if (OnCurrentBarChange.HasDelegate)
-            _ = OnCurrentBarChange.InvokeAsync(bar);
-        return Task.CompletedTask;
-    }
+    private HubClientReceiver? HubClientReceiver { get; set; }
 
     private static int _ticksSaveLoopSequence;
 
-    private async Task RunTicksSaveLoopAsync(CancellationToken ct)
-    {
-        const int maxBatchSize = 400;
-        var batch = new List<Ticks2>();
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                try
-                {
-                    batch.Clear();
-                    var swRead = Stopwatch.StartNew();
-                    await foreach (var list in _ticksSaveChannel.Reader.ReadAllAsync(ct))
-                    {
-                        batch.AddRange(list);
-                        while (batch.Count < maxBatchSize && _ticksSaveChannel.Reader.TryRead(out var next))
-                            batch.AddRange(next);
-                        break;
-                    }
-                    swRead.Stop();
+    // private async Task RunTicksSaveLoopAsync(CancellationToken ct)
+    // {
+    //     const int maxBatchSize = 400;
+    //     var batch = new List<Ticks2>();
+    //     try
+    //     {
+    //         while (!ct.IsCancellationRequested)
+    //         {
+    //             try
+    //             {
+    //                 batch.Clear();
+    //                 var swRead = Stopwatch.StartNew();
+    //                 await foreach (var list in _ticksSaveChannel.Reader.ReadAllAsync(ct))
+    //                 {
+    //                     batch.AddRange(list);
+    //                     while (batch.Count < maxBatchSize && _ticksSaveChannel.Reader.TryRead(out var next))
+    //                         batch.AddRange(next);
+    //                     break;
+    //                 }
+    //                 swRead.Stop();
 
-                    if (batch.Count > 0)
-                    {
-                        var swWrite = Stopwatch.StartNew();
-                        await indexedDbStorage.PutTicksBatchAsync(batch);
-                        swWrite.Stop();
-                        if (HelperPerformanceConfig.EnableIndexedDbStorage)
-                            HelperPerformanceConfig.Log(nameof(IndexedDbStorageAccessor), "RunTicksSaveLoop", swWrite.ElapsedMilliseconds, $"channelReadMs={swRead.ElapsedMilliseconds} count={batch.Count}");
-                    }
+    //                 if (batch.Count > 0)
+    //                 {
+    //                     var swWrite = Stopwatch.StartNew();
+    //                     await indexedDbStorage.PutTicksBatchAsync(batch);
+    //                     swWrite.Stop();
+    //                     if (HelperPerformanceConfig.EnableIndexedDbStorage)
+    //                         HelperPerformanceConfig.Log(nameof(IndexedDbStorageAccessor), "RunTicksSaveLoop", swWrite.ElapsedMilliseconds, $"channelReadMs={swRead.ElapsedMilliseconds} count={batch.Count}");
+    //                 }
 
-                    await Task.Yield(); // cede o controle para evitar bloqueios prolongados; útil se houver muitos ticks acumulados
-                }
-                catch (OperationCanceledException) { break; }
-                catch (Exception) { /* evita derrubar o loop */ }
-            }
-        }
-        catch (OperationCanceledException) { }
-    }
+    //                 //await Task.Yield(); // cede o controle para evitar bloqueios prolongados; útil se houver muitos ticks acumulados
+    //             }
+    //             catch (OperationCanceledException) { break; }
+    //             catch (Exception) { /* evita derrubar o loop */ }
+    //         }
+    //     }
+    //     catch (OperationCanceledException) { }
+    // }
 
     public async new ValueTask DisposeAsync()
     {
-        _ticksSaveCts?.Cancel();
-        _ticksSaveChannel.Writer.Complete();
+        // _ticksSaveCts?.Cancel();
+        // _ticksSaveChannel.Writer.Complete();
+
         await base.DisposeAsync();
 
-        if (hubConnection is not null)
-        {
-            await hubConnection.DisposeAsync();
-        }
-
-        if (CandleWorker != null) await CandleWorker.DisposeAsync();
-        if (BubbleWorker != null) await BubbleWorker.DisposeAsync();
-        if (VolumeWorker != null) await VolumeWorker.DisposeAsync();
-        if (CandleService != null) await CandleService.DisposeAsync();
-        if (BubbleBackground != null) await BubbleBackground.DisposeAsync();
-        if (VolumeBackground != null) await VolumeBackground.DisposeAsync();
-
-
     }
 
-    public void ResetHelpers()
-    {
-        // bubbleHelper?.Dispose();
-        // bubbleHelper = null;
-        // candleHelper?.Dispose();
-        // candleHelper = null;
-    }
-
-    private void ResetCandleHelper()
-    {
-        // candleHelper?.Dispose();
-        // candleHelper = null;
-        // _currentBarThrottle = (-1, DateTime.MinValue);
-    }
-
-    private void ResetBubbleHelper()
-    {
-        // bubbleHelper?.Dispose();
-        // bubbleHelper = null;
-    }
-
-    /// <summary>Remonta os bubbles com o novo threshold. Usa os ticks já carregados (IndexedDB + live).</summary>
-    public void RemountBubbles(int threshold)
-    {
-        List<Ticks2> ticks;
-        lock (_allTicksLock)
-        {
-            if (_allTicksForRemount.Count == 0) return;
-            ticks = _allTicksForRemount.OrderBy(x => x.Time).ToList();
-        }
-
-        ResetBubbleHelper();
-        //bubbleHelper = new BubbleHelper(NewBubble, threshold);
-        const int batchSize = 500;
-        for (var i = 0; i < ticks.Count; i += batchSize)
-        {
-            var batch = ticks.Skip(i).Take(batchSize).ToList();
-            //_ = bubbleHelper.Enqueue(batch);
-        }
-    }
-
-    /// <summary>Remonta os candles com o novo timeframe. Usa os ticks já carregados (IndexedDB + live). VolumeHelper não é alterado.</summary>
-    public void RemountCandles(int timeframe)
-    {
-        List<Ticks2> ticks;
-        lock (_allTicksLock)
-        {
-            if (_allTicksForRemount.Count == 0) return;
-            ticks = _allTicksForRemount.OrderBy(x => x.Time).ToList();
-        }
-
-        //ResetCandleHelper();
-        //candleHelper = new CandleHelper(NewBars, timeframe);
-        const int batchSize = 500;
-        for (var i = 0; i < ticks.Count; i += batchSize)
-        {
-            var batch = ticks.Skip(i).Take(batchSize).ToList();
-            //_ = candleHelper.Enqueue(batch);
-        }
-    }
 
     /// <summary>
     /// Retorna o volume profile filtrado pelo intervalo de tempo especificado.
@@ -593,163 +227,30 @@
     /// </summary>
     public List<VolumeLevel>? GetVolumeSnapshot(DateTime? from, DateTime? to)
         => null;// volumeHelper?.GetSnapshot(from, to);
-
-    /// <summary>
-    /// Carrega ticks salvos do IndexedDB e processa através dos helpers.
-    /// Usa CandleHelper separado para candles do banco (não conflita com live).
-    /// Com minDate, os dados vêm ordenados do IndexedDB (ordem cronológica, sem sort/merge no C#).
-    /// </summary>
-    /// <param name="progress">Callback de progresso (lidos, total, mensagem)</param>
-    /// <param name="maxTicks">Limite de ticks a carregar</param>
-    /// <param name="minDate">Data limite inferior - só carrega ticks com time &gt;= minDate (ex: últimos N dias). Null = sem limite.</param>
-    public async Task LoadFromIndexedDbAsync(
-        Func<int, int, string, Task>? progress = null,
-        long maxTicks = long.MaxValue,
-        DateTime? minDate = null)
-    {
-        if (!EnableTimesAndTrades) return;
-
-        const int readChunkSize = 2_500;
-        const int enqueueBatchSize = 100_000;
-
-        var useOptimizedQuery = minDate.HasValue; // minDate: usa índice byTime, ordem cronológica
-
-        // 1. Ler do IndexedDB em blocos
-        var items = new List<TickStorageItem>();
-        string? afterKey = null;
-        var readCount = 0;
-
-        DateTime startTime = DateTime.Now;
-
-        while (true)
-        {
-            if (progress != null) await progress(readCount, 0, $"Buscando ticks no IndexedDB... Iniciado às {startTime.ToString("HH:mm:ss")} | ({readCount:N0} lidos)...");
-
-            var (chunk, lastKey) = await indexedDbStorage.GetChunkAsync<TickStorageItem>(
-                "Ticks", readChunkSize, afterKey,
-                minDate: useOptimizedQuery ? minDate : null);
-
-            if (chunk.Count == 0) break;
-
-            items.AddRange(chunk);
-            readCount = items.Count;
-            afterKey = lastKey;
-
-            if (string.IsNullOrEmpty(lastKey) || readCount >= maxTicks) break;
-            await Task.Delay(1);
-        }
-
-        if (items.Count == 0)
-        {
-            if (progress != null) await progress(0, 0, string.Empty);
-            return;
-        }
-
-        var total = items.Count;
-
-        // 2. Ordem: useOptimizedQuery já traz cronológico (ASC). Fallback: ordenar por id (legado)
-        if (!useOptimizedQuery)
-        {
-            items.Sort((a, b) => a.Time.CompareTo(b.Time));
-            if (progress != null) await progress(total, total, $"Ordenados {total:N0} ticks");
-        }
-
-        // 4. CandleHelper dedicado para IndexedDB
-        // CandleHelper? loadCandleHelper = null;
-        // if (EnableCandleFormer && OnCandleSeriesFromIndexedDb.HasDelegate)
-        //     loadCandleHelper = new CandleHelper(NewBarsFromIndexedDb, TimeFrame);
-
-        // try
-        // {
-        //     if (progress != null) await progress(0, total, "Processando ticks...");
-        //     var processed = 0;
-
-        //     for (var i = 0; i < items.Count; i += enqueueBatchSize)
-        //     {
-        //         var take = Math.Min(enqueueBatchSize, items.Count - i);
-        //         var batch = new List<Ticks2>(take);
-        //         for (var j = 0; j < take; j++)
-        //             batch.Add(items[i + j]);
-
-        //         EnqueueFromIndexedDbLoad(batch, loadCandleHelper);
-        //         processed += take;
-        //         if (progress != null) await progress(processed, total, $"Processando {processed:N0} / {total:N0} ticks");
-        //         await Task.Delay(1);
-        //     }
-
-        //     loadCandleHelper?.Flush();
-        // }
-        // finally
-        // {
-        //     loadCandleHelper?.Dispose();
-        // }
-
-        if (progress != null) await progress(total, total, string.Empty);
-    }
-
-    // /// <summary>Envia ticks do load para Volume/Bubble e CandleHelper de load (não para o live).</summary>
-    // private void EnqueueFromIndexedDbLoad(IReadOnlyList<Ticks2> ticks, CandleHelper? loadCandleHelper)
-    // {
-    //     if (ticks == null || ticks.Count == 0) return;
-
-    //     lock (_allTicksLock)
-    //     {
-    //         foreach (var t in ticks)
-    //             _allTicksForRemount.Add(t);
-    //     }
-
-    //     if (EnableBubbleFormer)
-    //     {
-    //         if (bubbleHelper is null)
-    //             bubbleHelper = new BubbleHelper(NewBubble, BubbleThreshold);
-    //         _ = bubbleHelper.Enqueue(ticks);
-    //     }
-
-    //     if (loadCandleHelper != null)
-    //         loadCandleHelper.ProcessTicksSync(ticks);
-
-    //     if (EnableVolumeFormer)
-    //     {
-    //         if (volumeHelper is null)
-    //         {
-    //             volumeHelper = new VolumeHelper();
-    //             _volumeThrottle = (-1, DateTime.MinValue);
-    //         }
-    //         _ = volumeHelper.Enqueue(ticks);
-    //     }
-    // }
 }
 
 <MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
-    <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
-        <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@_counter" OnClick="() => _counter = 0">
+    <MudTooltip Text="@($"{HubClientReceiver?.hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
+        <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@(_counter % 100)" OnClick="() => _counter = 0">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="() => openDrawer = !openDrawer" />
         </MudBadge>
     </MudTooltip>
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
-    <div style="margin-right: 40px">
-        <MudTooltip Text="@($"Last Update Candle: {_lastUpdateBarPending?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
-            <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@_lastUpdateBarPending?.ToString("HH:mm:ss")">
-                <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
-            </MudBadge>
-        </MudTooltip>
-    </div>
-    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
-    <MudTooltip Text="@($"Candle Queue: {_candleQueue}")" Placement="Placement.Left">
-        <MudBadge Color="@(_candleQueue >= 100 ? Color.Warning : Color.Success)" Overlap=true Bordered=true Content="@_candleQueue">
-            <MudIconButton Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" OnClick="CreateCandleWorker" />
-        </MudBadge>
-    </MudTooltip>
-    <MudTooltip Text="@($"Bubble Queue: {_bubbleQueue}")" Placement="Placement.Left">
-        <MudBadge Color="@(_bubbleQueue >= 100 ? Color.Warning : Color.Success)" Overlap=true Bordered=true Content="@_bubbleQueue">
-            <MudIconButton Icon="@Icons.Material.Filled.BubbleChart" Size="Size.Small" OnClick="CreateBubbleWorker" />
-        </MudBadge>
-    </MudTooltip>
-    <MudTooltip Text="@($"Volume Queue: {_volumeQueue}")" Placement="Placement.Left">
-        <MudBadge Color="@(_volumeQueue >= 100 ? Color.Warning : Color.Success)" Overlap=true Bordered=true Content="@_volumeQueue">
-            <MudIconButton Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" OnClick="CreateVolumeWorker" />
-        </MudBadge>
-    </MudTooltip>
+    <HubClientReceiver @ref=HubClientReceiver 
+        EnableTimesAndTrades=EnableTimesAndTrades 
+        @bind-_counter="_counter" />
+    <HubClientSender 
+        hubClientReceiver="HubClientReceiver" 
+        EnableBubbleFormer=EnableBubbleFormer 
+        EnableCandleFormer=EnableCandleFormer 
+        EnableVolumeFormer=EnableVolumeFormer
+        OnNewBars="OnCandleSeriesChange"
+        OnNewBubble="OnNewBubble"
+        OnNewCurrentBar="OnCurrentBarChange"
+        OnVolumeUpdate="OnVolumeUpdate"
+        TimeFrame="TimeFrame"
+        BubbleThreshold="BubbleThreshold"
+        />
 </MudStack>
 
 <MudDrawer Class="p-1" Variant="DrawerVariant.Temporary" ClipMode="DrawerClipMode.Docked" Width="22vw" Anchor="Anchor.Right" @bind-Open=openDrawer Style="height: 100vh;">
@@ -767,13 +268,13 @@
                             </MudSwitch>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" @bind-Value="EnableBook" ThumbIcon="@(EnableBook == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableBook == true ? Color.Success : Color.Error)">
+                            <MudSwitch Disabled Size="Size.Small" @bind-Value="EnableBook" ThumbIcon="@(EnableBook == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableBook == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Book
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
-                        <MudListItem Dense="true">
+                        <MudListItem Disabled Dense="true">
                             <MudSwitch Size="Size.Small" @bind-Value="EnableTimesAndTradesSimple" ThumbIcon="@(EnableTimesAndTradesSimple == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableTimesAndTradesSimple == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Times and Trades (Simples)
@@ -826,10 +327,9 @@
         <MudPaper Class="p-1" Outlined Elevation="0">
             <MudList T="string" Dense ReadOnly>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.Wifi" Expanded=true>
-                    
                     <AvatarContent>
-                        <MudTooltip Text="@hubConnection?.State.ToString()">
-                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="InitHub" Disabled=@(hubConnection == null || hubConnection.State == HubConnectionState.Connected) />
+                        <MudTooltip Text="@HubClientReceiver?.hubConnection?.State.ToString()">
+                            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" Disabled=@(HubClientReceiver?.hubConnection == null || HubClientReceiver?.hubConnection.State == HubConnectionState.Connected) />
                         </MudTooltip>
                     </AvatarContent>
                     <ChildContent>

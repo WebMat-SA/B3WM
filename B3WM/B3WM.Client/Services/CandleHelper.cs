@@ -27,9 +27,12 @@ namespace B3WM.Client.Services
 
         private int _queueCount { get; set; }
 
-        public void Init(int throtlingms = 200, int timeFrame = 5)
+        private bool NotifyQueueCount { get; set; }
+
+        public void Init(int throtlingms = 200, int timeFrame = 5, bool _notifyqueue = true)
         {
             _timeFrameMinutes = timeFrame;
+            NotifyQueueCount = _notifyqueue;
 
             _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
             _ = RunLoop();
@@ -51,19 +54,19 @@ namespace B3WM.Client.Services
             while (await _timer!.WaitForNextTickAsync())
             {
                 OnUpdateLastBar?.Invoke(this, GetCurrentBarSnapshot());
-                OnQueueCount?.Invoke(this, _queueCount);
+                if (NotifyQueueCount) OnQueueCount?.Invoke(this, _queueCount);
             }
         }
 
-        public Task Enqueue(Ticks2[] ticks)
+        public void Enqueue(Ticks2[] ticks)
         {
-            if (ticks == null || ticks.Length == 0) return Task.CompletedTask;
+            if (ticks == null || ticks.Length == 0) return ;
 
             _queue.Enqueue(ticks);
 
-            _ = Task.Run(ProcessQueueAsync, _cts.Token);
+            _ = ProcessQueueAsync();
 
-            return Task.CompletedTask;
+            //return Task.CompletedTask;
         }
 
         /// <summary>Processa ticks de forma síncrona (para load do IndexedDB). Emite barras fechadas via callback. Não usa fila.</summary>
@@ -74,7 +77,7 @@ namespace B3WM.Client.Services
                 ProcessTick(t);
         }
 
-        private void ProcessQueueAsync()
+        private Task ProcessQueueAsync()
         {
             var sw = Stopwatch.StartNew();
             
@@ -104,6 +107,8 @@ namespace B3WM.Client.Services
                     sw.ElapsedMilliseconds,
                     "");
             }
+
+            return Task.CompletedTask;
         }
 
         private void ProcessTick(Ticks2 t)
@@ -180,6 +185,12 @@ namespace B3WM.Client.Services
         public void Dispose()
         {
             _cts.Cancel();
+        }
+        public void ToggleNotifyQueue()
+        {
+            _queueCount = 0;
+            OnQueueCount?.Invoke(this, _queueCount);
+            NotifyQueueCount = !NotifyQueueCount;
         }
     }
 }

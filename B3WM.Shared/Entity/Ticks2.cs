@@ -147,6 +147,8 @@ namespace B3WM.Shared.Entity
             Banco_Ourinvest = 442	,
             [Display(Description = "BANCO MODAL")]
             Banco_Modal = 683	,
+            [Display(Description = "ABN AMRO CLEARING CTVM LTDA")]
+            ABN_AMRO = 688,
             [Display(Description = "DILLON S.A. DTVM")]
             Dillon = 711,
             [Display(Description = "BB GESTAO DE RECURSOS DTVM S/A")]
