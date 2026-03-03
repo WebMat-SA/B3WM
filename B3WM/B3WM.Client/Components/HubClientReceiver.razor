@@ -1,10 +1,14 @@
 ﻿@using B3WM.Shared.Entity
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Threading.Channels
+@using System.Diagnostics
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 @code {
+    [Parameter, EditorRequired]
+    public required HubClientWorker Worker { get; set; }
+
     [Parameter]
     public bool EnableTimesAndTrades { get; set; }
 
@@ -16,21 +20,11 @@
 
     public HubConnection? hubConnection;
 
-    public readonly Channel<Ticks2[]> _channelTicks = Channel.CreateUnbounded<Ticks2[]>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-
     private DateTime? _lastUpdateBarReceived { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
 
-        InitHub();
-
-        await base.OnInitializedAsync();
-
-    }
-
-    private async void InitHub()
-    {
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
             .WithAutomaticReconnect()
@@ -41,53 +35,62 @@
         //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
         await hubConnection.StartAsync();
-    }
 
-    private async void OnReceiveBook(byte[] data)
-    {
-        //if (!EnableBook) return;
-
-        //debug de velocidade e confirmação de dados
-        //_counter++;
-
-        //if (OnBookChange.HasDelegate) await OnBookChange.InvokeAsync(new DataHelper(data).Book());
+        await base.OnInitializedAsync();
 
     }
+
 
     private void OnReceiveTNT(byte[] data)
     {
+        if (data == null || data.Length == 0) return;
+
         if (!EnableTimesAndTrades) return;
+        var swTotal = Stopwatch.StartNew();
 
         //debug de velocidade e confirmação de dados
         _counter++;
 
         _counterChanged.InvokeAsync(_counter);
 
-        // Parse único: todos os helpers e subscribers recebem a mesma lista
-        var ticks = new DataHelper(data).TimesAndTrades().ToArray();
-        if (ticks.Length == 0) return;
+        if (Worker.MainService != null)
+        {
+            string json = System.Text.Json.JsonSerializer.Serialize(data, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                WriteIndented = false,
+                IncludeFields = true,
+            });
 
-        // Notify subscribers about the new tick in the same order we dequeue it
-        // if (OnNewTicks.HasDelegate)
-        //     OnNewTicks.InvokeAsync(ticks);
+            _ = Worker.MainService.RunAsync(s => s.Enqueue(json));
+        }
 
-        // if (EnableSaveTicksToIndexedDb)
-        //     _ticksSaveChannel.Writer.TryWrite(ticks);
+        _lastUpdateBarReceived = DateTime.Now;
 
-        _channelTicks.Writer.TryWrite(ticks);
+        swTotal.Stop();
 
-        _lastUpdateBarReceived = ticks.Last().Time;
-        StateHasChanged();
+        HelperPerformanceConfig.Log(nameof(HubClient), "OnReceiveTNT|Enqueue", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
     }
 
-    private void OnReceiveTNTSimple(byte[] data)
-    {
-        //if (!EnableTimesAndTradesSimple) return;
+    // private async void OnReceiveBook(byte[] data)
+    // {
+    //     //if (!EnableBook) return;
 
-        //debug de velocidade e confirmação de dados
-        //_counter++;
+    //     //debug de velocidade e confirmação de dados
+    //     //_counter++;
 
-    }
+    //     //if (OnBookChange.HasDelegate) await OnBookChange.InvokeAsync(new DataHelper(data).Book());
+
+    // }
+
+    // private void OnReceiveTNTSimple(byte[] data)
+    // {
+    //     //if (!EnableTimesAndTradesSimple) return;
+
+    //     //debug de velocidade e confirmação de dados
+    //     //_counter++;
+
+    // }
 
     public async ValueTask DisposeAsync()
     {
@@ -95,12 +98,10 @@
         {
             await hubConnection.DisposeAsync();
         }
-
-        _channelTicks.Writer.Complete();
     }
 }
 <div style="margin-right: 65px">
-    <MudTooltip Text="@($"Last Received: {_lastUpdateBarReceived?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
+    <MudTooltip Text="@($"Last Received (Local time): {_lastUpdateBarReceived?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
         <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@($"{_lastUpdateBarReceived?.ToString("HH: mm: ss")} ↓ ")">
             <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
         </MudBadge>

@@ -10,31 +10,38 @@ namespace B3WM.Client.Services
         public event EventHandler<IEnumerable<Bars>>? Candle_OnClosedBars;
         public event EventHandler<Bars?>? Candle_OnUpdateLastBar;
         public event EventHandler<int>? Candle_OnQueueCount;
+        public event EventHandler<string>? Candle_OnQueueTime;
 
         private BubbleHelper _bubble = new();
         public event EventHandler<Bubble>? Bubble_OnNewBubble;
         public event EventHandler<int>? Bubble_OnQueueCount;
+        public event EventHandler<string>? Bubble_OnQueueTime;
 
         private VolumeHelper _volume = new();
         public event EventHandler<int>? Volume_OnQueueCount;
         public event EventHandler<List<VolumeLevel>>? Volume_OnVolumeUpdate;
+        public event EventHandler<string>? Volume_OnQueueTime;
 
-        public bool EnableCandleFormer { get; set; }
-        public bool EnableVolumeFormer { get;set; }
-        public bool EnableBubbleFormer { get;set; }
+        private bool EnableCandleFormer { get; set; }
+        private bool EnableVolumeFormer { get;set; }
+        private bool EnableBubbleFormer { get; set; }
 
         public MainHelper()
         {
             _candle.OnUpdateLastBar += _candle_OnUpdateLastBar;
             _candle.OnClosedBars += _candle_OnClosedBars;
             _candle.OnQueueCount += _candle_OnQueueCount;
+            _candle.OnQueueTime += _candle_OnQueueTime;
 
             _bubble.OnNewBubble += _bubble_OnNewBubble;
             _bubble.OnQueueCount += _bubble_OnQueueCount;
+            _bubble.OnQueueTime += _bubble_OnQueueTime;
 
             _volume.OnVolumeUpdate += _volume_OnVolumeUpdate;
             _volume.OnQueueCount += _volume_OnQueueCount;
+            _volume.OnQueueTime += _volume_OnQueueTime;
         }
+
 
         #region Binding
 
@@ -99,6 +106,23 @@ namespace B3WM.Client.Services
             EnableVolumeFormer = _enableVolumeFormer;
             _volume.Init(throtlingms, _notifyqueue);
         }
+        private void _volume_OnQueueTime(object? sender, string e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_volume_OnQueueTime), 0, $"Volume queue time: {e}");
+            if (Volume_OnQueueTime != null) Volume_OnQueueTime.Invoke(this, e);
+        }
+
+        private void _bubble_OnQueueTime(object? sender, string e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_bubble_OnQueueTime), 0, $"Bubble queue time: {e}");
+            if (Bubble_OnQueueTime != null) Bubble_OnQueueTime.Invoke(this, e);
+        }
+
+        private void _candle_OnQueueTime(object? sender, string e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_candle_OnQueueTime), 0, $"Candle queue time: {e}");
+            if (Candle_OnQueueTime != null) Candle_OnQueueTime.Invoke(this, e);
+        }
 
         #endregion
 
@@ -117,9 +141,17 @@ namespace B3WM.Client.Services
             EnableVolumeFormer = enable;
         }
 
-        public void Enqueue(Ticks2[] ticks)
+        public List<VolumeLevel> VolumeGetSnapshot(DateTime? from, DateTime? to) => _volume.GetSnapshot(from,to);
+
+        public void Enqueue(string dataJson)
         {
             var sw = Stopwatch.StartNew();
+
+            byte[] data = System.Text.Json.JsonSerializer.Deserialize<byte[]>(dataJson) ?? Array.Empty<byte>();
+
+            // Parse único: todos os helpers e subscribers recebem a mesma lista
+            var ticks = new DataHelper(data).TimesAndTrades().ToArray();
+            if (ticks.Length == 0) return;
 
             if (EnableCandleFormer) _candle.Enqueue(ticks);
             if (EnableBubbleFormer) _bubble.Enqueue(ticks);

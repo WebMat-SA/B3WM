@@ -100,6 +100,9 @@
                 {
                     _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
                 }
+
+                if (HubClientWorker != null && HubClientWorker.MainService != null)
+                    HubClientWorker.MainService.RunAsync(s => s.SetEnableCandleFormer(_EnableCandleFormer));
                 StateHasChanged();
             }
         }
@@ -119,6 +122,9 @@
                 {
                     _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
                 }
+
+                if (HubClientWorker != null && HubClientWorker.MainService != null)
+                    HubClientWorker.MainService.RunAsync(s => s.SetEnableVolumeFormer(_EnableVolumeFormer));
                 StateHasChanged();
             }
         }
@@ -138,6 +144,9 @@
                 {
                     _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
                 }
+                if (HubClientWorker != null && HubClientWorker.MainService != null)
+                    HubClientWorker.MainService.RunAsync(s => s.SetEnableBubbleFormer(_EnableBubbleFormer));
+
                 StateHasChanged();
             }
         }
@@ -169,55 +178,13 @@
 
 
     private HubClientReceiver? HubClientReceiver { get; set; }
+    private HubClientWorker? HubClientWorker { get; set; }
 
     private static int _ticksSaveLoopSequence;
 
-    // private async Task RunTicksSaveLoopAsync(CancellationToken ct)
-    // {
-    //     const int maxBatchSize = 400;
-    //     var batch = new List<Ticks2>();
-    //     try
-    //     {
-    //         while (!ct.IsCancellationRequested)
-    //         {
-    //             try
-    //             {
-    //                 batch.Clear();
-    //                 var swRead = Stopwatch.StartNew();
-    //                 await foreach (var list in _ticksSaveChannel.Reader.ReadAllAsync(ct))
-    //                 {
-    //                     batch.AddRange(list);
-    //                     while (batch.Count < maxBatchSize && _ticksSaveChannel.Reader.TryRead(out var next))
-    //                         batch.AddRange(next);
-    //                     break;
-    //                 }
-    //                 swRead.Stop();
-
-    //                 if (batch.Count > 0)
-    //                 {
-    //                     var swWrite = Stopwatch.StartNew();
-    //                     await indexedDbStorage.PutTicksBatchAsync(batch);
-    //                     swWrite.Stop();
-    //                     if (HelperPerformanceConfig.EnableIndexedDbStorage)
-    //                         HelperPerformanceConfig.Log(nameof(IndexedDbStorageAccessor), "RunTicksSaveLoop", swWrite.ElapsedMilliseconds, $"channelReadMs={swRead.ElapsedMilliseconds} count={batch.Count}");
-    //                 }
-
-    //                 //await Task.Yield(); // cede o controle para evitar bloqueios prolongados; útil se houver muitos ticks acumulados
-    //             }
-    //             catch (OperationCanceledException) { break; }
-    //             catch (Exception) { /* evita derrubar o loop */ }
-    //         }
-    //     }
-    //     catch (OperationCanceledException) { }
-    // }
-
     public async new ValueTask DisposeAsync()
     {
-        // _ticksSaveCts?.Cancel();
-        // _ticksSaveChannel.Writer.Complete();
-
         await base.DisposeAsync();
-
     }
 
 
@@ -225,8 +192,13 @@
     /// Retorna o volume profile filtrado pelo intervalo de tempo especificado.
     /// Usa todos os ticks acumulados se ambos os parâmetros forem null.
     /// </summary>
-    public List<VolumeLevel>? GetVolumeSnapshot(DateTime? from, DateTime? to)
-        => null;// volumeHelper?.GetSnapshot(from, to);
+    public async Task<List<VolumeLevel>?> GetVolumeSnapshot(DateTime? from, DateTime? to)
+    {
+        if (HubClientWorker != null) 
+            return await HubClientWorker?.VolumeGetSnapshot(from, to);
+
+        return null;
+    }
 }
 
 <MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
@@ -237,10 +209,10 @@
     </MudTooltip>
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
     <HubClientReceiver @ref=HubClientReceiver 
-        EnableTimesAndTrades=EnableTimesAndTrades 
+        EnableTimesAndTrades=EnableTimesAndTrades
+        Worker="@HubClientWorker"
         @bind-_counter="_counter" />
-    <HubClientSender 
-        hubClientReceiver="HubClientReceiver" 
+    <HubClientWorker @ref=HubClientWorker
         EnableBubbleFormer=EnableBubbleFormer 
         EnableCandleFormer=EnableCandleFormer 
         EnableVolumeFormer=EnableVolumeFormer

@@ -9,6 +9,7 @@ namespace B3WM.Client.Services
     {
         public event EventHandler<Bubble>? OnNewBubble;
         public event EventHandler<int>? OnQueueCount;
+        public event EventHandler<string>? OnQueueTime;
 
         private readonly ConcurrentQueue<Ticks2[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
@@ -52,7 +53,7 @@ namespace B3WM.Client.Services
 
             _ = ProcessQueueAsync();
 
-            //return Task.CompletedTask;
+            OnQueueTime?.Invoke(this, ticks.Last().Time.ToString("HH:mm:ss"));
         }
 
         private Task ProcessQueueAsync()

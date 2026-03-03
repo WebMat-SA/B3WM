@@ -14,7 +14,8 @@ namespace B3WM.Client.Services
         public event EventHandler<IEnumerable<Bars>>? OnClosedBars;
         public event EventHandler<Bars?>? OnUpdateLastBar;
         public event EventHandler<int>? OnQueueCount;
-        
+        public event EventHandler<string>? OnQueueTime;
+
         private int _timeFrameMinutes;
 
         private readonly ConcurrentQueue<Ticks2[]> _queue = new();
@@ -66,6 +67,7 @@ namespace B3WM.Client.Services
 
             _ = ProcessQueueAsync();
 
+            OnQueueTime?.Invoke(this, ticks.Last().Time.ToString("HH:mm:ss"));
             //return Task.CompletedTask;
         }
 

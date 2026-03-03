@@ -79,7 +79,7 @@
     {
         GenerateChart();
 
-        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
         _ = RunLoop();
     }
 
@@ -87,8 +87,17 @@
     {
         while (await _timer!.WaitForNextTickAsync())
         {
-            HelperPerformanceConfig.Log(nameof(MapFlowGraph), "Timer Tick - Forçando atualização do gráfico", 0);
+            try
+            {
+                
+            var swTotal = Stopwatch.StartNew();
             if (EChart != null) await EChart.UpdateAsync(true);
+            swTotal.Stop();
+            HelperPerformanceConfig.Log(nameof(MapFlowGraph), "Timer Tick - Forçando atualização do gráfico", swTotal.ElapsedMilliseconds);
+            }catch (Exception ex)
+            {
+                HelperPerformanceConfig.Log(nameof(MapFlowGraph), "Timer Tick - Erro ao atualizar gráfico",0, ex.Message);
+            }
         }
     }
 
@@ -228,9 +237,9 @@
     private void GenerateChart()
     {
         if (EChart is null) return;
-        var swTotal = Stopwatch.StartNew();
+        //var swTotal = Stopwatch.StartNew();
 
-        var swBars = Stopwatch.StartNew();
+        //var swBars = Stopwatch.StartNew();
         var hasCurrentBarInBars = Bars.Any(b => b.Date == CurrentBar.Date);
         var includeCurrentBar = CurrentBar.Date != default && !hasCurrentBarInBars;
         var barsKey = (Bars.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
@@ -252,8 +261,8 @@
             _cachedBarsSnapshot = bars;
             _lastBarsSnapshotCacheKey = barsKey;
         }
-        swBars.Stop();
-        HelperPerformanceConfig.Log(nameof(MapFlowGraph), "GenerateChart RawDataBar", swBars.ElapsedMilliseconds);
+        //swBars.Stop();
+        //HelperPerformanceConfig.Log(nameof(MapFlowGraph), "GenerateChart RawDataBar", swBars.ElapsedMilliseconds);
 
         if (bars.Count == 0) return;
 
@@ -500,7 +509,7 @@
         swBubbles.Stop();
         //LogPerf("GenerateChart Bubbles", swBubbles.ElapsedMilliseconds);
 
-        var swSeries = Stopwatch.StartNew();
+        //var swSeries = Stopwatch.StartNew();
         var deltaProfileData = _cachedDeltaProfileData ?? new List<object[]>();
         var volumeProfileData = _cachedVolumeProfileData ?? new List<object[]>();
 
@@ -570,10 +579,10 @@
         ChartOptions.Series = seriesList;
         _forceFullRedraw = false;
 
-        swSeries.Stop();
-        swTotal.Stop();
-        HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart Series", swSeries.ElapsedMilliseconds);
-        HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart total", swTotal.ElapsedMilliseconds);
+        //swSeries.Stop();
+        //swTotal.Stop();
+        //HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart Series", swSeries.ElapsedMilliseconds);
+        //HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart total", swTotal.ElapsedMilliseconds);
     }
 }
 

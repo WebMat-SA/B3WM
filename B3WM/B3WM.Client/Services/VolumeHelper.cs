@@ -9,6 +9,7 @@ namespace B3WM.Client.Services
     {
         public event EventHandler<int>? OnQueueCount;
         public event EventHandler<List<VolumeLevel>>? OnVolumeUpdate;
+        public event EventHandler<string>? OnQueueTime;
 
         private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
         private readonly CancellationTokenSource _cts = new();
@@ -108,6 +109,7 @@ namespace B3WM.Client.Services
             _queue.Enqueue(ticks);
             _ = ProcessQueueAsync();
 
+            OnQueueTime?.Invoke(this, ticks.Last().Time.ToString("HH:mm:ss"));
         }
 
         public int GetVolumeVersion()

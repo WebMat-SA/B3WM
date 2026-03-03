@@ -85,151 +85,6 @@
     private string _loadingStatus = string.Empty;
     private DateTime _lastLoadingProgressUpdate = DateTime.MinValue;
     private const int LoadingProgressThrottleMs = 80; // reduz re-renders durante carregamento
-    // Suprime InvalidateChart de dados históricos durante carregamento do IndexedDB.
-    // Callbacks live (NewBar, NewCurrentBar, VolumeUpdate) passam bypassSuppression=true
-    // e continuam atualizando o gráfico normalmente mesmo durante o carregamento.
-    private bool _suppressChartInvalidation;
-
-    // private async Task LoadDataFromDb()
-    // {
-    //     if (HubClient == null || _isLoadingFromIndexedDb)
-    //         return;
-
-    //     _isLoadingFromIndexedDb = true;
-    //     _suppressChartInvalidation = true; // bloqueia redraws enquanto dados chegam
-    //     _loadingProgress = 0;
-    //     _loadingStatus = "Iniciando...";
-    //     await InvokeAsync(StateHasChanged);
-    //     await Task.Delay(50); // dá tempo da UI renderizar o overlay antes do carregamento pesado
-
-    //     try
-    //     {
-    //         await HubClient.LoadFromIndexedDbAsync(async (loaded, total, status) =>
-    //         {
-    //             _loadingProgress = total > 0 ? (int)(100.0 * loaded / total) : 0;
-    //             _loadingStatus = status;
-    //             // Throttle: só atualiza a barra de progresso na UI (sem redraw do gráfico)
-    //             var now = DateTime.UtcNow;
-    //             var elapsed = (now - _lastLoadingProgressUpdate).TotalMilliseconds;
-    //             var isComplete = total > 0 && loaded >= total;
-    //             if (isComplete || elapsed >= LoadingProgressThrottleMs)
-    //             {
-    //                 _lastLoadingProgressUpdate = now;
-    //                 await InvokeAsync(StateHasChanged);
-    //             }
-    //         }, minDate: DateTime.Today.AddDays(-1));
-    //     }
-    //     finally
-    //     {
-    //         _suppressChartInvalidation = false;
-    //         _isLoadingFromIndexedDb = false;
-    //         _loadingStatus = string.Empty;
-    //         // Um único redraw completo com todos os dados já carregados
-    //         //_forceFullRedraw = true;
-    //         InvalidateChart();
-    //         await InvokeAsync(StateHasChanged);
-    //     }
-    // }
-
-    // private async Task SaveToIndexedDb()
-    // {
-    //     try
-    //     {
-    //         var rawBars = RawDataBar.ToList();
-    //         var bars = rawBars.Select(b => BarStorageItem.FromBar(b, TimeFrame)).ToList();
-    //         await IndexedDbStorage.PutBarsBatchAsync(bars);
-
-    //         var bubbles = Bubbles.Select((b, i) => BubbleStorageItem.FromBubble(b, i)).ToList();
-    //         await IndexedDbStorage.ClearAsync("Bubbles");
-    //         await IndexedDbStorage.PutBubblesBatchAsync(bubbles);
-
-    //         var volumeItems = new List<VolumeLevelStorageItem>();
-    //         if (HubClient != null)
-    //         {
-    //             var barEnd = TimeFrame > 0 ? TimeSpan.FromMinutes(TimeFrame) : TimeSpan.FromMinutes(1);
-    //             foreach (var bar in rawBars)
-    //             {
-    //                 var endDate = bar.Date.Add(barEnd).AddMilliseconds(-1);
-    //                 var snapshot = HubClient.GetVolumeSnapshot(bar.Date, endDate);
-    //                 if (snapshot != null)
-    //                 {
-    //                     foreach (var v in snapshot)
-    //                         volumeItems.Add(VolumeLevelStorageItem.FromVolumeLevel(v, bar.Date));
-    //                 }
-    //             }
-    //         }
-    //         await IndexedDbStorage.ClearAsync("VolumeLevels");
-    //         await IndexedDbStorage.PutVolumeLevelsBatchAsync(volumeItems);
-    //     }
-    //     catch (Exception ex)
-    //     {
-    //         Console.WriteLine($"SaveToIndexedDb error: {ex.Message}");
-    //     }
-    // }
-
-    /// <summary>
-    /// Marca o gráfico para redesenho.
-    /// bypassSuppression=true: dados live (NewBar, NewCurrentBar, VolumeUpdate) — nunca suprimidos.
-    /// bypassSuppression=false (padrão): dados históricos/mistos — suprimidos durante carregamento do IndexedDB.
-    /// </summary>
-    // private void InvalidateChart(bool bypassSuppression = false)
-    // {
-    //     if (_suppressChartInvalidation && !bypassSuppression) return;
-    //     _chartNeedsRedraw = true;
-    //     EnsureChartRedrawScheduled();
-    // }
-
-    // private void EnsureChartRedrawScheduled()
-    // {
-    //     if (_chartRedrawScheduled) return;
-    //     _chartRedrawScheduled = true;
-    //     _ = InvokeAsync(ProcessChartRedrawAsync);
-    // }
-
-    // private async Task ProcessChartRedrawAsync()
-    // {
-    //     try
-    //     {
-    //         while (_chartNeedsRedraw)
-    //         {
-    //             _chartNeedsRedraw = false;
-
-    //             var now = DateTime.UtcNow;
-    //             var elapsed = _chartLastRedrawUtc == DateTime.MinValue ? double.PositiveInfinity : (now - _chartLastRedrawUtc).TotalMilliseconds;
-    //             if (elapsed < ChartRedrawMinIntervalMs)
-    //             {
-    //                 _chartNeedsRedraw = true;
-    //                 await Task.Delay((int)(ChartRedrawMinIntervalMs - elapsed));
-    //                 continue;
-    //             }
-
-    //             if (_chartRedrawInProgress || EChart == null)
-    //                 break;
-
-    //             _chartRedrawInProgress = true;
-    //             try
-    //             {
-    //                 var sw = Stopwatch.StartNew();
-    //                 await EChart.UpdateAsync(true);
-    //                 sw.Stop();
-    //                 _chartLastRedrawUtc = DateTime.UtcNow;
-    //                 //LogPerf("Chart redraw", sw.ElapsedMilliseconds, always: true);
-    //             }
-    //             finally
-    //             {
-    //                 _chartRedrawInProgress = false;
-    //             }
-
-    //             //await Task.Yield();
-    //         }
-    //     }
-    //     finally
-    //     {
-    //         _chartRedrawScheduled = false;
-    //         if (_chartNeedsRedraw)
-    //             EnsureChartRedrawScheduled();
-    //     }
-    // }
 
     private static Bars CloneBar(Bars bar)
     {
@@ -243,33 +98,6 @@
             Volume = bar.Volume
         };
     }
-
-    // public void NewBarFromIndexedDb(IEnumerable<Bars> bars)
-    // {
-    //     if (bars == null) return;
-    //     var sw = Stopwatch.StartNew();
-    //     foreach (var bar in bars)
-    //     {
-    //         if (bar == null || bar.Date == default) continue;
-    //         var existing = BarsFromIndexedDb.FirstOrDefault(b => b.Date == bar.Date);
-    //         if (existing != null)
-    //         {
-    //             existing.Open = bar.Open;
-    //             existing.High = bar.High;
-    //             existing.Low = bar.Low;
-    //             existing.Close = bar.Close;
-    //             existing.Volume = bar.Volume;
-    //         }
-    //         else
-    //         {
-    //             BarsFromIndexedDb.Add(CloneBar(bar));
-    //         }
-    //     }
-    //     _barsDataVersion++;
-    //     //InvalidateChart();
-    //     sw.Stop();
-    //     //LogPerf("NewBarFromIndexedDb total", sw.ElapsedMilliseconds);
-    // }
 
     public async Task NewBar(IEnumerable<Bars> bars)
     {
@@ -301,9 +129,8 @@
         if (isFullRange)
         {
             _dateRange = new MudExRange<int>(_dateRange.Start, Bars.Count);
-            ApplyVolumeFilter(_dateRange);
+            await ApplyVolumeFilter(_dateRange);
         }
-        //InvalidateChart(bypassSuppression: true); // live: sempre atualiza
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow), "NewBar total", sw.ElapsedMilliseconds);
 
@@ -315,7 +142,6 @@
         var sw = Stopwatch.StartNew();
         CurrentBar = bar;
         _currentBarVersion++;
-        //InvalidateChart(bypassSuppression: true); // live: sempre atualiza
         HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar total", sw.ElapsedMilliseconds);
         sw.Stop();
     }
@@ -327,14 +153,13 @@
             SelectedAgents.Add(data.Agent);
         Bubbles.Add(data);
         _bubbleDataVersion++;
-        //InvalidateChart();
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow),"NewBubble total", sw.ElapsedMilliseconds);
 
         await InvokeAsync(StateHasChanged);
     }
 
-    public async Task VolumeUpdate(IEnumerable<VolumeLevel> volumes)
+    public Task VolumeUpdate(IEnumerable<VolumeLevel> volumes)
     {
         try{
 
@@ -349,6 +174,8 @@
         {
             Console.WriteLine("VolumeUpdate Error" + e.Message);
         }
+
+        return Task.CompletedTask;
     }
 
     public async Task SelectAllAgents()
@@ -359,7 +186,6 @@
         else
             SelectedAgents = AllBubbleAgents.ToList();
         _bubbleDataVersion++;
-        //InvalidateChart();
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow),"SelectAllAgents total", sw.ElapsedMilliseconds);
 
@@ -411,7 +237,7 @@
     {
         return $"{Bars.ElementAtOrDefault(range.Start)?.Date:dd/MM HH:mm}";
     }
-    private void ApplyVolumeFilter(IRange<int> newRange)
+    private async Task ApplyVolumeFilter(IRange<int> newRange)
     {
         _dateRange = newRange;
 
@@ -431,14 +257,13 @@
             var endBar = Bars.ElementAtOrDefault(newRange.End);
             if (startBar != null && endBar != null && HubClient != null)
             {
-                _filteredVolumeLevels = HubClient.GetVolumeSnapshot(startBar.Date, endBar.Date) ?? new List<VolumeLevel>();
+                _filteredVolumeLevels = await HubClient.GetVolumeSnapshot(startBar.Date, endBar.Date) ?? new List<VolumeLevel>();
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
             }
         }
     }
 
-    
 }
 
 @* --- INTERFACE --- *@
@@ -627,7 +452,7 @@
                                 </MudStack>
                             </MudSlider>
                         </MudListItem>
-                        <MudListItem Icon="@Icons.Material.Filled.People" Text="Agents" Expanded=false>
+                        <MudListItem Icon="@Icons.Material.Filled.People" Text="Agents" Expanded=true>
                             <NestedList>
                                 <MudList Dense T="Ticks2.Agents?" ReadOnly=true Class="ml-3">
                                     <MudListItem Dense=true >
@@ -636,9 +461,7 @@
                                             <MudText Typo="Typo.caption">
                                                 Selecionar Todos
                                             </MudText>
-                                        </MudCheckBox>
-
-                                            
+                                        </MudCheckBox>     
                                     </MudListItem>
 
                                     <MudDivider />
