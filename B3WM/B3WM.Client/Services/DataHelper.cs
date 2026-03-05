@@ -21,24 +21,29 @@ namespace B3WM.Client.Services
         /// <summary>Valores e preços vêm no formato brasileiro: ponto = separador de milhares (186.565 = 186565).</summary>
         private static readonly CultureInfo BrazilianNumberFormat = CultureInfo.GetCultureInfo("pt-BR");
 
-        private readonly byte[] _data;
+        //private readonly byte[] _data;
+        private readonly string _textData;
         private static int _timesAndTradesSequence = 0;
         private static int _bookSequence = 0;
-        private static readonly ConditionalWeakTable<byte[], CachedTicks> TimesAndTradesCache = new();
+        //private static readonly ConditionalWeakTable<byte[], CachedTicks> TimesAndTradesCache = new();
 
-        private sealed class CachedTicks
+        //private sealed class CachedTicks
+        //{
+        //    public CachedTicks(List<Ticks2> ticks)
+        //    {
+        //        Ticks = ticks;
+        //    }
+
+        //    public List<Ticks2> Ticks { get; }
+        //}
+
+        //public DataHelper(byte[] data)
+        //{
+        //    _data = data;
+        //}
+        public DataHelper(string data)
         {
-            public CachedTicks(List<Ticks2> ticks)
-            {
-                Ticks = ticks;
-            }
-
-            public List<Ticks2> Ticks { get; }
-        }
-
-        public DataHelper(byte[] data)
-        {
-            _data = data;
+            _textData = data;
         }
 
         public ICollection<Ticks2> TimesAndTrades(bool isSimpleTrade = false)
@@ -47,31 +52,24 @@ namespace B3WM.Client.Services
             bool cacheHit = false;
             List<Ticks2> ticksQueue;
 
-            if (TimesAndTradesCache.TryGetValue(_data, out var cached))
-            {
-                cacheHit = true;
-                ticksQueue = cached.Ticks;
-            }
-            else
-            {
-                ticksQueue = ParseTimesAndTrades();
-                TimesAndTradesCache.Add(_data, new CachedTicks(ticksQueue));
-            }
+            ticksQueue = ParseTimesAndTrades(isSimpleTrade);
 
             sw.Stop();
             HelperPerformanceConfig.Log(
                 nameof(DataHelper),
                 "TimesAndTrades",
                 sw.ElapsedMilliseconds,
-                $"payloadBytes={_data.Length} ticks={ticksQueue.Count} cacheHit={cacheHit}");
+                $"payloadBytes={_textData.Length} ticks={ticksQueue.Count} cacheHit={cacheHit}");
             return ticksQueue;
         }
 
-        private List<Ticks2> ParseTimesAndTrades()
+        private List<Ticks2> ParseTimesAndTrades(bool isSimpleTrade = false)
         {
             var ticksQueue = new List<Ticks2>();
-            string textData = Encoding.UTF8.GetString(_data);
-            string[] manyPapersInfo = textData.Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
+            var separator = !isSimpleTrade ? "NEGS!" : "NEG!";
+            //string textData = Encoding.UTF8.GetString(_data);
+            string textData = _textData;
+            string[] manyPapersInfo = textData.Split(separator, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (string onePaperInfo in manyPapersInfo)
             {
@@ -137,7 +135,9 @@ namespace B3WM.Client.Services
             var sw = Stopwatch.StartNew();
             List<BookItem> pseudoBook = new List<BookItem>();
 
-            string[] manyPapersInfo = Encoding.UTF8.GetString(_data).Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
+            string[] manyPapersInfo = _textData.Split(PaperSeparator, StringSplitOptions.RemoveEmptyEntries);
+
+
 
             for (int paperinfoCount = manyPapersInfo.Length - 1; paperinfoCount >= 0; paperinfoCount--)
             {
@@ -248,7 +248,7 @@ namespace B3WM.Client.Services
                 nameof(DataHelper),
                 "Book",
                 sw.ElapsedMilliseconds,
-                $"payloadBytes={_data.Length} papers={manyPapersInfo.Length} items={pseudoBook.Count}");
+                $"payloadBytes={_textData.Length} papers={manyPapersInfo.Length} items={pseudoBook.Count}");
             return pseudoBook;
         }
 

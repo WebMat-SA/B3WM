@@ -11,14 +11,13 @@ namespace B3WM.Client.Services
         public event EventHandler<List<VolumeLevel>>? OnVolumeUpdate;
         public event EventHandler<string>? OnQueueTime;
 
-        private readonly ConcurrentQueue<IReadOnlyList<Ticks2>> _queue = new();
+        private readonly ConcurrentQueue<Ticks2[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
         private readonly ConcurrentDictionary<double, VolumeLevel> _volumes = new();
 
         private int _queueCount { get; set; }
-
-        private bool NotifyQueueCount { get; set; }
+        private string? _queueTime { get; set; }
 
         private PeriodicTimer? _timer;
 
@@ -38,10 +37,8 @@ namespace B3WM.Client.Services
         private int _volumeVersion = 0;
 
 
-        public void Init(int throtlingms = 200, bool _notifyqueue = true)
+        public void Init(int throtlingms = 200)
         {
-            NotifyQueueCount = _notifyqueue;
-
             _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
             _ = RunLoop();
         }
@@ -51,7 +48,8 @@ namespace B3WM.Client.Services
             while (await _timer!.WaitForNextTickAsync())
             {
                 OnVolumeUpdate?.Invoke(this, GetSnapshot());
-                if (NotifyQueueCount) OnQueueCount?.Invoke(this, _queueCount);
+                OnQueueCount?.Invoke(this, _queueCount);
+                OnQueueTime?.Invoke(this, _queueTime);
             }
         }
 
@@ -108,8 +106,6 @@ namespace B3WM.Client.Services
 
             _queue.Enqueue(ticks);
             _ = ProcessQueueAsync();
-
-            OnQueueTime?.Invoke(this, ticks.Last().Time.ToString("HH:mm:ss"));
         }
 
         public int GetVolumeVersion()
@@ -117,7 +113,7 @@ namespace B3WM.Client.Services
             return Volatile.Read(ref _volumeVersion);
         }
 
-        private async Task ProcessQueueAsync()
+        private Task ProcessQueueAsync()
         {
             var sw = Stopwatch.StartNew();
             try
@@ -126,7 +122,8 @@ namespace B3WM.Client.Services
 
                 while (_queue.TryDequeue(out var ticks))
                 {
-                    _queueCount = ticks.Count;
+                    _queueCount = ticks.Length;
+                    _queueTime = ticks.Last().Time.ToString("HH:mm:ss");
                     var swTicks = Stopwatch.StartNew();
                     foreach (var t in ticks)
                     {
@@ -145,7 +142,10 @@ namespace B3WM.Client.Services
                         "ProcessQueueAsync",
                         sw.ElapsedMilliseconds,
                         $"priceLevels={_volumes.Count}");
+
             }
+
+            return Task.CompletedTask;
         }
 
         private void ProcessTick(Ticks2 t)
@@ -206,11 +206,6 @@ namespace B3WM.Client.Services
         public void Dispose()
         {
             _cts.Cancel();
-        }
-
-        public void ToggleNotifyQueue()
-        {
-            NotifyQueueCount = !NotifyQueueCount;
         }
     }
 }

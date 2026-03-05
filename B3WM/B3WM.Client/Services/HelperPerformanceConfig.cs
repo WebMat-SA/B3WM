@@ -27,11 +27,8 @@ namespace B3WM.Client.Services
         /// <summary>Quando true, MapFlow imprime [Perf] no console.</summary>
         public static bool EnableMapFlow { get; set; } = false;
 
-        /// <summary>Quando true, MapFlowGraph imprime [Perf] no console.</summary>
-        public static bool EnableMapFlowGraph { get; set; } = false;
-
         /// <summary>Quando true, HubClient imprime [Perf] no console.</summary>
-        public static bool EnableHubClient { get; set; } = true;
+        public static bool EnableHubClient { get; set; } = false;
 
         /// <summary>Quando true, MainHelper imprime [Perf] no console.</summary>
         public static bool EnableMainHelper { get; set; } = false;
@@ -54,9 +51,9 @@ namespace B3WM.Client.Services
             nameof(DataHelper) => EnableDataHelper,
             nameof(IndexedDbStorageAccessor) => EnableIndexedDbStorage,
             nameof(MapFlow) => EnableMapFlow,
-            nameof(MapFlowGraph) => EnableMapFlowGraph,
             nameof(HubClient) => EnableHubClient,
             nameof(MainHelper) => EnableMainHelper,
+            "Log" => true,
             _ => false
         };
     }

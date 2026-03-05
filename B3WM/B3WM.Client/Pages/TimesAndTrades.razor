@@ -67,7 +67,7 @@
         _timer.Enabled = true;
     }
 
-    public void OnNewTick(IEnumerable<Ticks2> ticks)
+    public Task OnNewTick(IEnumerable<Ticks2> ticks)
     {
         foreach (var tick in ticks) Console.WriteLine(tick.ToString());
 
@@ -78,6 +78,7 @@
         if (_ticks.Count > MaxBuffer)
             _ticks.RemoveRange(MaxBuffer, _ticks.Count - MaxBuffer);
 
+        return Task.CompletedTask;
     }
 
     private Color GetColor(Ticks2 t)

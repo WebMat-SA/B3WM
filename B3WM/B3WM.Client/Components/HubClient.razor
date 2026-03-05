@@ -1,4 +1,3 @@
-@using B3WM.Client.Extensions
 @using B3WM.Client.Model
 @using B3WM.Client.Services
 @using B3WM.Shared.Entity
@@ -16,6 +15,7 @@
 @using BlazorWorker.WorkerBackgroundService
 @using BlazorWorker.BackgroundServiceFactory
 @using BlazorWorker.Core
+@inject IWorkerFactory workerFactory
 
 
 @code {
@@ -27,28 +27,26 @@
 
     public bool openDrawer { get; set; } = false;
 
-
+    [Parameter]
+    public Func<IEnumerable<Bars>, Task> OnCandleSeriesChange { get; set; } = default!;
 
     [Parameter]
-    public EventCallback<IEnumerable<Bars>> OnCandleSeriesChange { get; set; } = default!;
+    public Func<IEnumerable<BookItem>, Task> OnBookChange { get; set; } = default!;
 
     [Parameter]
-    public EventCallback<IEnumerable<BookItem>> OnBookChange { get; set; } = default!;
+    public Func<IEnumerable<Ticks2>, Task> OnNewTicks { get; set; } = default!;
 
     [Parameter]
-    public EventCallback<IEnumerable<Ticks2>> OnNewTicks { get; set; } = default!;
-
-    [Parameter]
-    public EventCallback<IEnumerable<VolumeLevel>> OnVolumeUpdate { get; set; } = default!;
+    public Func<IEnumerable<VolumeLevel>, Task> OnVolumeUpdate { get; set; } = default!;
 
     [Parameter]
     public int BubbleThreshold { get; set; } = 125;
 
     [Parameter]
-    public EventCallback<Bubble> OnNewBubble { get; set; } = default!;
+    public Func<Bubble, Task> OnNewBubble { get; set; } = default!;
 
     [Parameter]
-    public EventCallback<Bars> OnCurrentBarChange { get; set; } = default!;
+    public Func<Bars, Task> OnCurrentBarChange { get; set; } = default!;
 
     [Parameter]
     public int TimeFrame { get; set; } = 5;
@@ -70,8 +68,6 @@
                     EnableCandleFormer = false;
                     EnableVolumeFormer = false;
                 }
-
-                StateHasChanged();
             }
         }
     }
@@ -86,143 +82,402 @@
     public bool EnableSaveTicksToIndexedDb { get; set; } = false;
 
 
-    private bool _EnableCandleFormer = true;
-    [PersistState]
-    public bool EnableCandleFormer
-    {
-        get => _EnableCandleFormer;
-        set
-        {
-            if (_EnableCandleFormer != value)
-            {
-                _EnableCandleFormer = value;
-                if (_EnableCandleFormer)
-                {
-                    _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
-                }
 
-                if (HubClientWorker != null && HubClientWorker.MainService != null)
-                    HubClientWorker.MainService.RunAsync(s => s.SetEnableCandleFormer(_EnableCandleFormer));
-                StateHasChanged();
-            }
+    [PersistState]
+    public bool EnableCandleFormer { get; set; }
+
+    public async Task EnableCandleFormerChanged(bool value)
+    {
+        EnableCandleFormer = value;
+        if (EnableCandleFormer)
+        {
+            _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
+        }
+
+        if (MainService != null)
+        {
+            await MainService.RunAsync(s => s.SetEnableCandleFormer(EnableCandleFormer));
+            HelperPerformanceConfig.Log(nameof(HubClient), "EnableCandleFormerChanged", 0, $"EnableCandleFormer changed to {value} at {DateTime.Now:HH:mm:ss.fff}");
+        }
+        //StateHasChanged();
+    }
+
+    [PersistState]
+    public bool EnableVolumeFormer { get; set; }
+
+    public async Task EnableVolumeFormerChanged(bool value)
+    {
+        EnableVolumeFormer = value;
+        if (EnableVolumeFormer)
+        {
+            _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
+        }
+
+        if (MainService != null)
+        {
+            await MainService.RunAsync(s => s.SetEnableVolumeFormer(EnableVolumeFormer));
+            HelperPerformanceConfig.Log(nameof(HubClient), "EnableVolumeFormer", 0, $"EnableVolumeFormer changed to {value} at {DateTime.Now:HH:mm:ss.fff}");
         }
     }
 
-    private bool _EnableVolumeFormer = true;
     [PersistState]
-    public bool EnableVolumeFormer
-    {
-        get => _EnableVolumeFormer;
-        set
-        {
-            if (_EnableVolumeFormer != value)
-            {
-                _EnableVolumeFormer = value;
-                if (_EnableVolumeFormer)
-                {
-                    _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
-                }
+    public bool EnableBubbleFormer { get; set; }
 
-                if (HubClientWorker != null && HubClientWorker.MainService != null)
-                    HubClientWorker.MainService.RunAsync(s => s.SetEnableVolumeFormer(_EnableVolumeFormer));
-                StateHasChanged();
-            }
+    public async Task EnableBubbleFormerChanged(bool value)
+    {
+        EnableBubbleFormer = value;
+        if (EnableBubbleFormer)
+        {
+            EnableBubbleFormer = true; // CandleFormer depende de TimesAndTrades
         }
-    }
-
-    private bool _EnableBubbleFormer = true;
-    [PersistState]
-    public bool EnableBubbleFormer
-    {
-        get => _EnableBubbleFormer;
-        set
+        if (MainService != null)
         {
-            if (_EnableBubbleFormer != value)
-            {
-                _EnableBubbleFormer = value;
-                if (_EnableBubbleFormer)
-                {
-                    _EnableTimesAndTrades = true; // CandleFormer depende de TimesAndTrades
-                }
-                if (HubClientWorker != null && HubClientWorker.MainService != null)
-                    HubClientWorker.MainService.RunAsync(s => s.SetEnableBubbleFormer(_EnableBubbleFormer));
-
-                StateHasChanged();
-            }
+            await MainService.RunAsync(s => s.SetEnableBubbleFormer(EnableBubbleFormer));
+            HelperPerformanceConfig.Log(nameof(HubClient), "EnableBubbleFormer", 0, $"EnableBubbleFormer changed to {value} at {DateTime.Now:HH:mm:ss.fff}");
         }
     }
 
 
     public bool IsConnected =>
-        HubClientReceiver?.hubConnection?.State == HubConnectionState.Connected;
+        hubConnection?.State == HubConnectionState.Connected;
 
-    // Throttle: evita atualizar UI e publicar barra/volume mais que o necessário
-    private const int UiRefreshIntervalMs = 256;
-    //private const int CurrentBarPublishIntervalMs = 250;
-    //private const int VolumePublishIntervalMs = 600;
-    private DateTime _lastUiRefreshUtc = DateTime.MinValue;
-    private (int version, DateTime atUtc) _currentBarThrottle = (-1, DateTime.MinValue);
-    private (int version, DateTime atUtc) _volumeThrottle = (-1, DateTime.MinValue);
-    private Bars? _currentBarPending;
+    private IWorker? MainWorker;
+    private IWorkerBackgroundService<MainHelper>? MainService { get; set; }
 
-    private bool _currentBarPublishing;
-    private List<VolumeLevel>? _volumePending;
-    private bool _volumePublishing;
+    public int ThrottlingCandleMs = 500;
+    public int ThrottlingBubbleMs = 250;
+    public int ThrottlingVolumeMs = 250;
 
-    private readonly Channel<Ticks2[]> _ticksSaveChannel = Channel.CreateUnbounded<Ticks2[]>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-    private CancellationTokenSource? _ticksSaveCts;
+    private int _bubbleQueue;
+    private int _volumeQueue;
+    private int _candleQueue;
 
-    /// <summary>Ticks acumulados (loaded + live) para remontagem seletiva de candles, bubbles e volume.</summary>
-    private readonly List<Ticks2> _allTicksForRemount = new();
-    private readonly object _allTicksLock = new();
+    private string? _bubbleTimeQueue;
+    private string? _volumeTimeQueue;
+    private string? _candleTimeQueue;
 
+    public HubConnection? hubConnection;
 
-    private HubClientReceiver? HubClientReceiver { get; set; }
-    private HubClientWorker? HubClientWorker { get; set; }
+    private DateTime? _lastUpdateBarReceived { get; set; }
 
-    private static int _ticksSaveLoopSequence;
+    public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1000){ SingleReader = true, SingleWriter = false});
 
-    public async new ValueTask DisposeAsync()
+    protected override async Task OnInitializedAsync()
     {
-        await base.DisposeAsync();
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
+        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
+        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
+
+        await hubConnection.StartAsync();
+
+        await base.OnInitializedAsync();
+
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender){
+            await CreateWorkers();
+
+            _ = RunLoopCache();
+
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    public async Task CreateWorkers()
+    {
+        if (MainWorker == null)
+            MainWorker = await workerFactory.CreateAsync();
+
+        if (MainService != null)
+            return;
+
+        MainService = await MainWorker.CreateBackgroundServiceAsync<MainHelper>();
+
+        RegisterCandleEvents();
+        RegisterBubbleEvents();
+        RegisterVolumeEvents();
+
+        await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer));
+        await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer));
+        await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
+    }
+
+    #region Candle
+    private void RegisterCandleEvents()
+    {
+        MainService!.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnClosedBars),
+            (object? s, IEnumerable<Bars> data) =>
+            {
+                var sw = Stopwatch.StartNew();
+
+                _ = OnCandleSeriesChange?.Invoke(data);
+
+                sw.Stop();
+                HelperPerformanceConfig.Log(nameof(HubClient), "Candle_OnClosedBars",
+                    sw.ElapsedMilliseconds,
+                    $"Received new closed bars at {DateTime.Now:HH:mm:ss.fff}");
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnQueueCount),
+            (object? s, int data) =>
+            {
+                _candleQueue = data;
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnUpdateLastBar),
+            (object? s, Bars? data) =>
+            {
+                var sw = Stopwatch.StartNew();
+
+                _ = OnCurrentBarChange?.Invoke(data);
+
+                sw.Stop();
+                // HelperPerformanceConfig.Log(nameof(HubClient), "Candle_OnUpdateLastBar",
+                //     sw.ElapsedMilliseconds,
+                //     $"Received new current bar at {DateTime.Now:HH:mm:ss.fff}");
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnQueueTime),
+            (object? s, string data) =>
+            {
+                _candleTimeQueue = data;
+            });
+    }
+    #endregion
+
+    #region Bubble
+    private void RegisterBubbleEvents()
+    {
+        MainService!.RegisterEventListenerAsync(nameof(MainHelper.Bubble_OnNewBubble),
+            (object? s, Bubble data) =>
+            {
+                var sw = Stopwatch.StartNew();
+
+                _ = OnNewBubble?.Invoke(data);
+
+                sw.Stop();
+                HelperPerformanceConfig.Log(nameof(HubClient), "Bubble_OnNewBubble",
+                    sw.ElapsedMilliseconds,
+                    $"Received new bubble at {DateTime.Now:HH:mm:ss.fff}");
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Bubble_OnQueueCount),
+            (object? s, int data) =>
+            {
+                _bubbleQueue = data;
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Bubble_OnQueueTime),
+            (object? s, string data) =>
+            {
+                _bubbleTimeQueue = data;
+            });
+    }
+    #endregion
+
+    #region Volume
+    private void RegisterVolumeEvents()
+    {
+        MainService!.RegisterEventListenerAsync(nameof(MainHelper.Volume_OnQueueCount),
+            (object? s, int data) =>
+            {
+                _volumeQueue = data;
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Volume_OnVolumeUpdate),
+            (object? s, List<VolumeLevel> data) =>
+            {
+                var sw = Stopwatch.StartNew();
+
+                _ = OnVolumeUpdate?.Invoke(data);
+
+                sw.Stop();
+                // HelperPerformanceConfig.Log(nameof(HubClient), "Volume_OnUpdateLastVolume",
+                //     sw.ElapsedMilliseconds,
+                //     $"Received new current volume at {DateTime.Now:HH:mm:ss.fff}");
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Volume_OnQueueTime),
+            (object? s, string data) =>
+            {
+                _volumeTimeQueue = data;
+            });
+    }
+    #endregion
+
+    private CancellationTokenSource _cts = new();
+
+    private async Task RunLoopCache()
+    {
+        try
+        {
+            //HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", 0, $"Starting RunLoopCache at {DateTime.Now:HH:mm:ss.fff}");
+
+            while (await _channelToDo.Reader.WaitToReadAsync(_cts.Token))
+            {
+                var sw = Stopwatch.StartNew();
+
+                //cria variavel para enviar os dados uma unica vez para o worker, evitando múltiplas chamadas ao método RunAsync e consequentemente melhorando a performance
+                string allCompactData = string.Empty;
+
+                while (_channelToDo.Reader.TryRead(out byte[]? _data))
+                {
+                    if (_data == null) continue;
+
+                    allCompactData += Encoding.UTF8.GetString(_data);
+                }
+
+                if (MainService != null)
+                {
+                    var swTotal = Stopwatch.StartNew();
+
+                    await MainService.RunAsync(s => s.Enqueue(allCompactData));
+
+                    swTotal.Stop();
+                    HelperPerformanceConfig.Log(nameof(HubClient), "RunLoop.Work()", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
+                }
+
+                await Task.Delay(10);
+                sw.Stop();
+                HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Reameaning {_channelToDo.Reader.Count}");
+            }
+        }
+        catch (OperationCanceledException e )
+        {
+            // esperado ao cancelar
+            HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", 0, $"Error: {e.Message}");
+        }
+    }
+
+    private void OnReceiveTNT(byte[] data)
+    {
+        if (data == null || data.Length == 0) return;
+
+        if (!EnableTimesAndTrades) return;
+        
+
+        //debug de velocidade e confirmação de dados
+        _counter++;
+
+        _ = _channelToDo.Writer.WriteAsync(data);
+
+        _lastUpdateBarReceived = DateTime.Now;
+        
+    }
+
+    public async Task<List<VolumeLevel>> GetVolumeSnapshot(DateTime? from, DateTime? to)
+    {
+        var sw = Stopwatch.StartNew();
+
+        if (MainService == null)
+            return new();
+
+        var result = await MainService.RunAsync<List<VolumeLevel>>(s => s.VolumeGetSnapshot(from, to));
+
+        sw.Stop();
+        HelperPerformanceConfig.Log(nameof(HubClient), "VolumeGetSnapshot",
+            sw.ElapsedMilliseconds,
+            $"Received volume snapshot from {from} to {to} at {DateTime.Now:HH:mm:ss.fff}");
+
+        return result ?? new();
     }
 
 
-    /// <summary>
-    /// Retorna o volume profile filtrado pelo intervalo de tempo especificado.
-    /// Usa todos os ticks acumulados se ambos os parâmetros forem null.
-    /// </summary>
-    public async Task<List<VolumeLevel>?> GetVolumeSnapshot(DateTime? from, DateTime? to)
-    {
-        if (HubClientWorker != null) 
-            return await HubClientWorker?.VolumeGetSnapshot(from, to);
 
-        return null;
+    public int GetCacheCount()
+    {
+        //HelperPerformanceConfig.Log(nameof(HubClient), "GetCacheCount", 0, $"Current cache count: {_channelToDo.Reader.Count} at {DateTime.Now:HH:mm:ss.fff}");
+        return _channelToDo.Reader.Count;
+    }
+
+    double GetDiffInSeconds(string? time)
+    {
+        if (_lastUpdateBarReceived == null || string.IsNullOrEmpty(time))
+            return double.MaxValue;
+
+        var parsedTime = TimeSpan.Parse(time);
+
+        var combined = _lastUpdateBarReceived.Value.Date + parsedTime;
+
+        return (_lastUpdateBarReceived.Value - combined).TotalSeconds;
+    }
+
+    Color GetBadgeColor(string? time)
+    {
+        var diff = GetDiffInSeconds(time);
+        if (diff >= 60)
+            return Color.Error;
+        else if (diff >= 10)
+            return Color.Warning;
+        else
+            return Color.Success;
+    }
+
+    public new async ValueTask DisposeAsync()
+    {
+        if (MainWorker != null)
+            await MainWorker.DisposeAsync();
+
+        if (MainService != null)
+            await MainService.DisposeAsync();
+
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+
+        _channelToDo.Writer.Complete();
+
+        await base.DisposeAsync();
     }
 }
 
 <MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
-    <MudTooltip Text="@($"{HubClientReceiver?.hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
+    <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
         <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@(_counter % 100)" OnClick="() => _counter = 0">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="() => openDrawer = !openDrawer" />
         </MudBadge>
     </MudTooltip>
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
-    <HubClientReceiver @ref=HubClientReceiver 
-        EnableTimesAndTrades=EnableTimesAndTrades
-        Worker="@HubClientWorker"
-        @bind-_counter="_counter" />
-    <HubClientWorker @ref=HubClientWorker
-        EnableBubbleFormer=EnableBubbleFormer 
-        EnableCandleFormer=EnableCandleFormer 
-        EnableVolumeFormer=EnableVolumeFormer
-        OnNewBars="OnCandleSeriesChange"
-        OnNewBubble="OnNewBubble"
-        OnNewCurrentBar="OnCurrentBarChange"
-        OnVolumeUpdate="OnVolumeUpdate"
-        TimeFrame="TimeFrame"
-        BubbleThreshold="BubbleThreshold"
-        />
+    <div style="margin-right: 65px">
+        <MudTooltip Text="@($"Last Received (Local time): {_lastUpdateBarReceived?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
+            <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@($"{_lastUpdateBarReceived?.ToString("HH: mm: ss")} ↓ ")">
+                <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+
+    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
+    <div style="margin-right: 65px">
+        <MudTooltip Text="@($"Candle Queue: {_candleQueue}\nLast Time: {_candleTimeQueue}")" Placement="Placement.Left">
+            <MudBadge Color="GetBadgeColor(_candleTimeQueue)" Overlap=true Bordered=true Content="@($" {_candleTimeQueue} | {_candleQueue.ToString()}")">
+                <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+    <div style="margin-right: 65px">
+        <MudTooltip Text="@($"Bubble Queue: {_bubbleQueue}\nLast Time: {_bubbleTimeQueue}")" Placement="Placement.Left">
+            <MudBadge Color="GetBadgeColor(_bubbleTimeQueue)" Overlap=true Bordered=true Content="@($" {_bubbleTimeQueue} | {_bubbleQueue.ToString()}")">
+                <MudIcon Icon="@Icons.Material.Filled.BubbleChart" Size="Size.Small" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+    <div style="margin-right: 65px">
+        <MudTooltip Text="@($"Volume Queue: {_volumeQueue}\nLast Time: {_volumeTimeQueue}")" Placement="Placement.Left">
+            <MudBadge Color="GetBadgeColor(_volumeTimeQueue)" Overlap=true Bordered=true Content="@($" {_volumeTimeQueue} | {_volumeQueue.ToString()}")">
+                <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
 </MudStack>
 
 <MudDrawer Class="p-1" Variant="DrawerVariant.Temporary" ClipMode="DrawerClipMode.Docked" Width="22vw" Anchor="Anchor.Right" @bind-Open=openDrawer Style="height: 100vh;">
@@ -246,8 +501,8 @@
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
-                        <MudListItem Disabled Dense="true">
-                            <MudSwitch Size="Size.Small" @bind-Value="EnableTimesAndTradesSimple" ThumbIcon="@(EnableTimesAndTradesSimple == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableTimesAndTradesSimple == true ? Color.Success : Color.Error)">
+                        <MudListItem Dense="true">
+                            <MudSwitch Disabled Size="Size.Small" @bind-Value="EnableTimesAndTradesSimple" ThumbIcon="@(EnableTimesAndTradesSimple == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableTimesAndTradesSimple == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Times and Trades (Simples)
                                 </MudText>
@@ -264,21 +519,21 @@
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.VideoSettings" Text="Serviços Internos" Expanded=true>
                     <NestedList>
                         <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" @bind-Value="EnableCandleFormer" ThumbIcon="@(EnableCandleFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableCandleFormer == true ? Color.Success : Color.Error)">
+                            <MudSwitch Size="Size.Small" T="bool" Value="EnableCandleFormer" ValueChanged="EnableCandleFormerChanged" ThumbIcon="@(EnableCandleFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableCandleFormer == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Formação de Candles (no trimeframe específico)
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" @bind-Value="EnableBubbleFormer" ThumbIcon="@(EnableBubbleFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableBubbleFormer == true ? Color.Success : Color.Error)">
+                            <MudSwitch Size="Size.Small" T="bool" Value="EnableBubbleFormer" ValueChanged="EnableBubbleFormerChanged" ThumbIcon="@(EnableBubbleFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableBubbleFormer == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Formação dos bubbles (>= Amount informado)
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
                         <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" @bind-Value="EnableVolumeFormer" ThumbIcon="@(EnableVolumeFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableVolumeFormer == true ? Color.Success : Color.Error)">
+                            <MudSwitch Size="Size.Small" T="bool" Value="EnableVolumeFormer" ValueChanged="EnableVolumeFormerChanged" ThumbIcon="@(EnableVolumeFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableVolumeFormer == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Formação de Volume Inspector
                                 </MudText>
@@ -300,16 +555,14 @@
             <MudList T="string" Dense ReadOnly>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.Wifi" Expanded=true>
                     <AvatarContent>
-                        <MudTooltip Text="@HubClientReceiver?.hubConnection?.State.ToString()">
-                            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" Disabled=@(HubClientReceiver?.hubConnection == null || HubClientReceiver?.hubConnection.State == HubConnectionState.Connected) />
+                        <MudTooltip Text="@hubConnection?.State.ToString()">
+                            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" Disabled=@(hubConnection == null || hubConnection.State == HubConnectionState.Connected) />
                         </MudTooltip>
                     </AvatarContent>
                     <ChildContent>
                         <MudText Typo="Typo.caption">Status</MudText>
                     </ChildContent>
                     <NestedList>
-                        <MudListItem Dense="true">
-                        </MudListItem>
                         <MudListItem Dense="true">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Dados recebidos:</MudText>
@@ -320,6 +573,88 @@
                 </MudListItem>
             </MudList>
         </MudPaper>
+
+        <MudPaper Class="p-1" Outlined Elevation="0">
+            <MudList T="string" Dense ReadOnly>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.Wifi" Expanded=true>
+                    <AvatarContent>
+                        <MudTooltip Text="@hubConnection?.State.ToString()">
+                            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Info" />
+                        </MudTooltip>
+                    </AvatarContent>
+                    <ChildContent>
+                        <MudText Typo="Typo.caption">Logs</MudText>
+                    </ChildContent>
+                    <NestedList>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableCandleHelper" ThumbIcon="@(HelperPerformanceConfig.EnableCandleHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableCandleHelper == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Candle Helper
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableBubbleHelper" ThumbIcon="@(HelperPerformanceConfig.EnableBubbleHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableBubbleHelper == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Bubble Helper
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableVolumeHelper" ThumbIcon="@(HelperPerformanceConfig.EnableVolumeHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableVolumeHelper == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Volume Helper
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableDataHelper" ThumbIcon="@(HelperPerformanceConfig.EnableDataHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableDataHelper == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Data Helper
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableIndexedDbStorage" ThumbIcon="@(HelperPerformanceConfig.EnableIndexedDbStorage == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableIndexedDbStorage == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    IndexedDBStorage
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableMapFlow" ThumbIcon="@(HelperPerformanceConfig.EnableMapFlow == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableMapFlow == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    MapFlow
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableHubClient" ThumbIcon="@(HelperPerformanceConfig.EnableHubClient == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableHubClient == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Hub Client
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableMainHelper" ThumbIcon="@(HelperPerformanceConfig.EnableMainHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableMainHelper == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Main Helper
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+
     </MudStack>
     
 </MudDrawer>

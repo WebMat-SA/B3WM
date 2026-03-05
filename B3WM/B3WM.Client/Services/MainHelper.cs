@@ -87,24 +87,22 @@ namespace B3WM.Client.Services
             if (Candle_OnUpdateLastBar != null) Candle_OnUpdateLastBar.Invoke(this, e);
         }
 
-        public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _notifyqueue = true, bool _enableCandleFormer = true)
+        public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _enableCandleFormer = true)
         {
             EnableCandleFormer = _enableCandleFormer;
-            _candle.Init(throtlingms, timeFrame, _notifyqueue);
+            _candle.Init(throtlingms, timeFrame);
         }
 
-        public void InitBubble(int throtlingms = 200, int bubbleThreshold = 125, bool _notifyqueue = true, bool _enableBubbleFormer = true)
+        public void InitBubble(int throtlingms = 200, int bubbleThreshold = 125, bool _enableBubbleFormer = true)
         {
             EnableBubbleFormer = _enableBubbleFormer;
-            _bubble.Init(throtlingms, bubbleThreshold, _notifyqueue);
-
-            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitBubble), 0, $"BubbleHelper initialized with throtlingms={throtlingms}, bubbleThreshold={bubbleThreshold}, notifyQueue={_notifyqueue}, enableBubbleFormer={_enableBubbleFormer}");
+            _bubble.Init(throtlingms, bubbleThreshold);
         }
 
-        public void InitVolume(int throtlingms = 200, bool _notifyqueue = true, bool _enableVolumeFormer = true)
+        public void InitVolume(int throtlingms = 200, bool _enableVolumeFormer = true)
         {
             EnableVolumeFormer = _enableVolumeFormer;
-            _volume.Init(throtlingms, _notifyqueue);
+            _volume.Init(throtlingms);
         }
         private void _volume_OnQueueTime(object? sender, string e)
         {
@@ -128,29 +126,30 @@ namespace B3WM.Client.Services
 
         public void SetEnableCandleFormer(bool enable)
         {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(SetEnableCandleFormer), 0, $"Candle former enabled: {enable}");
             EnableCandleFormer = enable;
         }
 
         public void SetEnableBubbleFormer(bool enable)
         {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(SetEnableBubbleFormer), 0, $"Bubble former enabled: {enable}");
             EnableBubbleFormer = enable;
         }
 
         public void SetEnableVolumeFormer(bool enable)
         {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(SetEnableVolumeFormer), 0, $"Volume former enabled: {enable}");
             EnableVolumeFormer = enable;
         }
 
         public List<VolumeLevel> VolumeGetSnapshot(DateTime? from, DateTime? to) => _volume.GetSnapshot(from,to);
 
-        public void Enqueue(string dataJson)
+        public void Enqueue(string dataString)
         {
             var sw = Stopwatch.StartNew();
 
-            byte[] data = System.Text.Json.JsonSerializer.Deserialize<byte[]>(dataJson) ?? Array.Empty<byte>();
-
             // Parse único: todos os helpers e subscribers recebem a mesma lista
-            var ticks = new DataHelper(data).TimesAndTrades().ToArray();
+            var ticks = new DataHelper(dataString).TimesAndTrades().ToArray();
             if (ticks.Length == 0) return;
 
             if (EnableCandleFormer) _candle.Enqueue(ticks);

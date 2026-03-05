@@ -1,0 +1,30 @@
+﻿@code {
+    [Parameter]
+    public int? _cachecount { get; set; }
+
+    [Parameter]
+    public bool openDrawer { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> openDrawerChanged { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    public async Task NotifyChanges()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+}
+<MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+    <MudTooltip Text="Configurações">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; openDrawerChanged.InvokeAsync(openDrawer); }" />
+    </MudTooltip>
+    <MudTooltip Text="@($"Queue Exec ({_cachecount})")">
+        <MudBadge Color="@(_cachecount < 100 ? (_cachecount <= 2) ? MudBlazor.Color.Success : MudBlazor.Color.Warning : MudBlazor.Color.Error)" Overlap=true Bordered=true Content="@(_cachecount.ToString())">
+            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.QueryBuilder" />
+        </MudBadge>
+    </MudTooltip>
+    @ChildContent
+</MudStack>

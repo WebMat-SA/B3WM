@@ -49,12 +49,21 @@
     [PersistState]
     public bool DeltaVisible { get; set; } = true;
 
+    [PersistState]
+    public string ColorBuyer { get; set; } = "#26a69a";
+    [PersistState]
+    public string ColorSeller { get; set; } = "#ef5350";
+
     public bool openDrawer { get; set; } = false;
 
     private static bool _logPerformance = true;
     private const int PerformanceLogThresholdMs = 20;
 
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
+
+    int? _cachecount { get; set; }
+
+    private Vizor.ECharts.EChart? EChart;
 
 
     private int _bubbleDataVersion { get; set; }
@@ -67,6 +76,7 @@
 
 
     private HubClient? HubClient { get; set; }
+    private MapFlowBar? MapFlowBar { get; set; }
 
     private List<Bars> Bars { get; set; } = new List<Bars>();
     private Bars CurrentBar { get; set; } = new Bars();
@@ -85,6 +95,138 @@
     private string _loadingStatus = string.Empty;
     private DateTime _lastLoadingProgressUpdate = DateTime.MinValue;
     private const int LoadingProgressThrottleMs = 80; // reduz re-renders durante carregamento
+
+    // Objetos estáticos de eixo (nunca mudam entre renders)
+    private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
+    private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
+
+    private IList<Bubble> RawDataBubbleBlue => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains(q.Agent)).OrderBy(q => q.Time).ToList();
+    private IList<Bubble> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains(q.Agent)).OrderBy(q => q.Time).ToList();
+
+
+    private Vizor.ECharts.ChartOptions ChartOptions = new()
+    {
+        Grid = new Vizor.ECharts.Grid
+        {
+            Left = "10",
+            Right = "10",
+            Bottom = "15%",
+            Top = "10",
+            ContainLabel = true
+        },
+        // Ajuste do DataZoom para não afetar o eixo de volume (XAxisIndex 1)
+        DataZoom = new List<Vizor.ECharts.IDataZoom>
+        {
+            // --- ZOOM HORIZONTAL (Tempo) ---
+            new Vizor.ECharts.InsideDataZoom { XAxisIndex = new [] { 0.0 } },
+            //new Vizor.ECharts.SliderDataZoom { XAxisIndex = new[] { 0.0 }, Top = "92%" },
+
+            // --- ZOOM VERTICAL (Preço) ---
+            // Inside permite usar o Scroll do mouse sobre o gráfico para dar zoom no preço
+            new Vizor.ECharts.InsideDataZoom { YAxisIndex = new[] { 0.0, 1.0 } },
+            // Slider adiciona aquela barra lateral para controle preciso (opcional)
+            //new Vizor.ECharts.SliderDataZoom { YAxisIndex = new[] { 0.0, 1.0 }, Left = "1%" }
+        },
+
+        Tooltip = new Tooltip
+        {
+            // Mudamos para Item para que ele Priorize o objeto sob o mouse,
+            // mas ainda consiga mostrar informações do eixo se configurado.
+            Trigger = TooltipTrigger.Item,
+            AxisPointer = new AxisPointer
+            {
+                Type = AxisPointerType.Cross,
+                Label = new Label
+                {
+                    Show = true,
+                    Formatter = new JavascriptFunction("function(params) { var v = params.value != null ? params.value : params.axisValue; return typeof v === 'number' ? Math.round(v) : v; }")
+                }
+            },
+            Formatter = new JavascriptFunction(@"
+                function (params) {
+                    if (!params) return '';
+
+                    // 1. LÓGICA PARA BOLHAS (Aggressive)
+                    if (params.seriesName && params.seriesName.includes('Aggressive')) {
+                        var time = params.data[0];
+                        var price = params.data[1];
+                        var amount = params.data[2];
+                        var agent = params.data[3];
+                        var color = params.seriesName.includes('Blue') ? '#4488ff' : '#ff4444';
+
+                        return `<div style='border-bottom: 1px solid #ccc; margin-bottom: 5px;'>
+                                    <b style='color:${color}'>${agent}</b>
+                                </div>
+                                Qtd: <b>${amount}</b><br/>
+                                Preço: <b>${price}</b><br/>
+                                Hora: ${time}`;
+                    }
+
+                    // 2. LÓGICA PARA CANDLES (d = [Open, Close, Low, High] - índice 0,1,2,3)
+                    if (params.seriesName === 'Candle') {
+                        var d = params.data;
+                        var color = d[2] >= d[1] ? '#00fa9a' : '#ff4500';
+
+                        return `<b>${params.name}</b><br/>
+                                Abertura: ${d[1]}<br/>
+                                Fechamento: ${d[2]}<br/>
+                                Mínima: ${d[3]}<br/>
+                                Máxima: ${d[4]}<br/>
+                                Amplitude: ${d[4]-d[3]}`;
+                    }
+
+                    return '';
+                }
+            ")
+        }
+    };
+
+    // Objetos de série cacheados (recriados apenas quando dado muda)
+    private CandlestickSeries? _cachedCandleSeriesObj;
+    private CustomSeries? _cachedDeltaSeriesObj;
+    private CustomSeries? _cachedVolumeSeriesObj;
+    private ScatterSeries? _cachedRedBubbleSeriesObj;
+    private ScatterSeries? _cachedBlueBubbleSeriesObj;
+
+    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _jsFunctionCacheKey;
+    private bool _jsFunctionCacheValid;
+    private NumberArrayOrFunction? _cachedSymbolSizeFunction;
+    private JavascriptFunction? _cachedVolumeProfileFunction;
+    private JavascriptFunction? _cachedDeltaProfileFunction;
+
+
+    // Filtro de volume por intervalo de barras: quando ativo, mostramos snapshot filtrado em vez do volume em tempo real.
+    private double _cachedMaxVolume;
+    private double _cachedMaxDelta;
+    private double _cachedVolumeMinPrice = double.PositiveInfinity;
+    private double _cachedVolumeMaxPrice = double.NegativeInfinity;
+    private double _cachedPriceStep = 1.0;
+    private List<object[]>? _cachedDeltaProfileData;
+    private List<object[]>? _cachedVolumeProfileData;
+
+    // === Envio seletivo de séries (merge mode) ===
+    // Controla quais séries realmente mudaram desde o último render.
+    // No modo notMerge:false, ECharts mantém as séries não enviadas intactas no canvas.
+    private bool _forceFullRedraw = true; // true no primeiro render e após mudança de TimeFrame
+    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
+    private int _lastRenderedVolumeVersion = -1;
+    private int _lastRenderedBubbleVersion = -1;
+    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _lastRenderedJsKey = default;
+
+
+    private int _lastBubbleDataVersion = -1;
+    private List<object[]>? _cachedRedBubbleData;
+    private List<object[]>? _cachedBlueBubbleData;
+
+    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsCacheKey;
+    private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsSnapshotCacheKey;
+
+    private List<Bars>? _cachedBarsSnapshot;
+    private List<string>? _cachedCategoryData;
+    private List<object[]>? _cachedCandleValues;
+
+
+    private int _lastVolumeDataVersion = -1;
 
     private static Bars CloneBar(Bars bar)
     {
@@ -120,7 +262,7 @@
             }
             else
             {
-                // CÃ³pia defensiva: armazenar nossa prÃ³pria instÃ¢ncia para nÃ£o depender da referÃªncia do callback.
+                // Cópia defensiva: armazenar nossa própria instância para não depender da referência do callback.
                 Bars.Add(CloneBar(bar));
                 _barsDataVersion++;
             }
@@ -134,19 +276,37 @@
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow), "NewBar total", sw.ElapsedMilliseconds);
 
-        await InvokeAsync(StateHasChanged);
     }
 
     public async Task NewCurrentBar(Bars bar)
     {
         var sw = Stopwatch.StartNew();
+
         CurrentBar = bar;
         _currentBarVersion++;
-        HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar total", sw.ElapsedMilliseconds);
+
+        _cachecount = HubClient?.GetCacheCount();
+
+        if (_cachecount >= 2)
+        {
+            //notifica somente o filho, para não dar gargalo de renderizar o gráfico (que é mais pesado) a cada atualização de barra, já que o gráfico só precisa ser atualizado quando as barras históricas mudam ou quando o usuário interage com o filtro de volume.
+            //if (MapFlowBar != null) await MapFlowBar.NotifyChanges();
+
+            HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar skipped UI update", sw.ElapsedMilliseconds);
+            return; 
+        }
+
+        if (EChart != null) await EChart.UpdateAsync(true);
+
+
         sw.Stop();
+        HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar total", sw.ElapsedMilliseconds);
+
+
+        //return Task.CompletedTask;
     }
 
-    public async Task NewBubble(Bubble data)
+    public Task NewBubble(Bubble data)
     {
         var sw = Stopwatch.StartNew();
         if (_allBubbleAgents.Add(data.Agent) && !SelectedAgents.Contains(data.Agent))
@@ -156,7 +316,8 @@
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow),"NewBubble total", sw.ElapsedMilliseconds);
 
-        await InvokeAsync(StateHasChanged);
+        return Task.CompletedTask;
+        //await InvokeAsync(StateHasChanged);
     }
 
     public Task VolumeUpdate(IEnumerable<VolumeLevel> volumes)
@@ -168,7 +329,7 @@
             _volumeDataVersion++;
             //InvalidateChart(bypassSuppression: true); // live: sempre atualiza (rate-limited 600ms)
             sw.Stop();
-            HelperPerformanceConfig.Log(nameof(MapFlow),"VolumeUpdate total", sw.ElapsedMilliseconds);
+            //HelperPerformanceConfig.Log(nameof(MapFlow),"VolumeUpdate total", sw.ElapsedMilliseconds);
         }
         catch(Exception e)
         {
@@ -205,8 +366,6 @@
 
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow),"ToggleAgent total", sw.ElapsedMilliseconds);
-
-        await InvokeAsync(StateHasChanged);
     }
 
     private void TimeFrameChanged(int value)
@@ -244,7 +403,7 @@
         var count = Bars.Count;
         if (count == 0) return;
 
-        // Range contempla todas as barras = sem filtro: manter grÃ¡fico atual (volume jÃ¡ condizente com todo o perÃ­odo).
+        // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
         var isFullRange = newRange.Start == 0 && newRange.End >= count - 1;
         if (isFullRange)
         {
@@ -264,18 +423,366 @@
         }
     }
 
+    private void GenerateChart()
+    {
+        if (EChart is null) return;
+        var swTotal = Stopwatch.StartNew();
+
+        //var swBars = Stopwatch.StartNew();
+        var hasCurrentBarInBars = Bars.Any(b => b.Date == CurrentBar.Date);
+        var includeCurrentBar = CurrentBar.Date != default && !hasCurrentBarInBars;
+        var barsKey = (Bars.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
+        List<Bars> bars;
+        if (_cachedBarsSnapshot != null && _lastBarsSnapshotCacheKey == barsKey)
+        {
+            bars = _cachedBarsSnapshot;
+        }
+        else
+        {
+            bars = new List<Bars>(Bars.Count);
+            foreach (var bar in Bars)
+                bars.Add(bar);
+
+            if (includeCurrentBar)
+                bars.Add(CurrentBar);
+
+            bars = bars.GroupBy(b => b.Date).Select(g => g.First()).OrderBy(b => b.Date).ToList();
+            _cachedBarsSnapshot = bars;
+            _lastBarsSnapshotCacheKey = barsKey;
+        }
+        //swBars.Stop();
+        //HelperPerformanceConfig.Log(nameof(MapFlowGraph), "GenerateChart RawDataBar", swBars.ElapsedMilliseconds);
+
+        if (bars.Count == 0) return;
+
+        var swLimites = Stopwatch.StartNew();
+        double barsMin = double.PositiveInfinity;
+        double barsMax = double.NegativeInfinity;
+        foreach (var b in bars)
+        {
+            var low = (double)b.Low;
+            var high = (double)b.High;
+            if (low < barsMin) barsMin = low;
+            if (high > barsMax) barsMax = high;
+        }
+
+        // Fonte efetiva: sem filtro = VolumeLevels (tempo real); com filtro = snapshot do intervalo do slider.
+        IList<VolumeLevel> effectiveLevels = _volumeFilterActive && _filteredVolumeLevels != null
+            ? _filteredVolumeLevels
+            : VolumeLevels;
+        var effectiveVolumeVersion = _volumeFilterActive ? _filteredVolumeDataVersion : _volumeDataVersion;
+
+        // Atualizar cache de volume/delta quando a versão mudar ou quando há dados e o cache está vazio (ex.: primeira carga).
+        var volumeNeedsRefresh = _lastVolumeDataVersion != effectiveVolumeVersion
+            || (effectiveLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
+        if (volumeNeedsRefresh)
+        {
+            _cachedMaxVolume = 0;
+            _cachedMaxDelta = 0;
+            _cachedVolumeMinPrice = double.PositiveInfinity;
+            _cachedVolumeMaxPrice = double.NegativeInfinity;
+            _cachedPriceStep = 1.0;
+
+            if (effectiveLevels.Count >= 2)
+                _cachedPriceStep = Math.Abs(effectiveLevels[1].Price - effectiveLevels[0].Price);
+
+            var deltaProfileCache = new List<object[]>(effectiveLevels.Count);
+            var volumeProfileCache = new List<object[]>(effectiveLevels.Count);
+            foreach (var v in effectiveLevels)
+            {
+                var total = (double)v.Total;
+                var absDelta = Math.Abs((double)v.Delta);
+                var price = (double)v.Price;
+                if (total > _cachedMaxVolume) _cachedMaxVolume = total;
+                if (absDelta > _cachedMaxDelta) _cachedMaxDelta = absDelta;
+                if (price < _cachedVolumeMinPrice) _cachedVolumeMinPrice = price;
+                if (price > _cachedVolumeMaxPrice) _cachedVolumeMaxPrice = price;
+
+                deltaProfileCache.Add(new object[] { absDelta, v.Price, _cachedPriceStep, v.Delta });
+                volumeProfileCache.Add(new object[] { v.Total, v.Price, _cachedPriceStep });
+            }
+
+            _cachedDeltaProfileData = deltaProfileCache;
+            _cachedVolumeProfileData = volumeProfileCache;
+            _lastVolumeDataVersion = effectiveVolumeVersion;
+        }
+
+        double actualMin = barsMin;
+        double actualMax = barsMax;
+        if (!double.IsPositiveInfinity(_cachedVolumeMinPrice) && _cachedVolumeMinPrice < actualMin)
+            actualMin = _cachedVolumeMinPrice;
+        if (!double.IsNegativeInfinity(_cachedVolumeMaxPrice) && _cachedVolumeMaxPrice > actualMax)
+            actualMax = _cachedVolumeMaxPrice;
+
+        if (double.IsInfinity(actualMin) || double.IsInfinity(actualMax)) return;
+        double range = actualMax - actualMin;
+        if (range <= 0) range = Math.Max(1.0, Math.Abs(actualMax) * 0.01);
+
+        double paddingFactor = 0.25;
+        double minPrice = actualMin - (range * paddingFactor);
+        double maxPrice = actualMax + (range * paddingFactor);
+        swLimites.Stop();
+        //LogPerf("GenerateChart Limites", swLimites.ElapsedMilliseconds);
+
+        var swDados = Stopwatch.StartNew();
+        var maxVolume = _cachedMaxVolume;
+        var maxDelta = _cachedMaxDelta;
+        List<string> categoryData;
+        List<object[]> values;
+        if (_cachedCategoryData != null && _lastBarsCacheKey == barsKey)
+        {
+            categoryData = _cachedCategoryData;
+            values = _cachedCandleValues!;
+        }
+        else
+        {
+            categoryData = new List<string>(bars.Count);
+            values = new List<object[]>(bars.Count);
+            foreach (var row in bars)
+            {
+                categoryData.Add(row.Date.ToString("dd/MM HH:mm"));
+                values.Add(new object[] { row.Open, row.Close, row.Low, row.High });
+            }
+            _lastBarsCacheKey = barsKey;
+            _cachedCategoryData = categoryData;
+            _cachedCandleValues = values;
+        }
+        swDados.Stop();
+        //LogPerf("GenerateChart Dados eixo", swDados.ElapsedMilliseconds);
+
+        var swEixos = Stopwatch.StartNew();
+        ChartOptions.XAxisList = new List<XAxis>
+        {
+            new XAxis
+            {
+                Type = AxisType.Category,
+                Data = categoryData, BoundaryGap = true,
+                Max = categoryData.Count > 0 ? (int)(categoryData.Count / 0.75) : 100 ,
+                AxisPointer = new AxisPointer { Show = true},
+            }, // X[0]
+
+            new XAxis // X[1]: Volume Total (Direita - Invertido)
+            {
+                Type = AxisType.Value, Show = false, Inverse = true, Min = 0,
+                Max = maxVolume > 0 ? maxVolume * 4 : 10000,
+                AxisPointer = new AxisPointer { Show = false },
+            },
+
+            new XAxis // X[2]: Delta (Esquerda - Normal)
+            {
+                Type = AxisType.Value, Show = false, Inverse = false, Min = 0,
+                Max = maxDelta > 0 ? maxDelta * 4 : 10000, // Escala proporcional ao delta
+                AxisPointer = new AxisPointer { Show = false },
+            }
+        };
+
+        // 3. EIXOS Y (labels apenas inteiros; linhas de guia com opacidade reduzida)
+        // _yAxisLabelInt e _splitLineGuides são campos readonly — não recriados a cada render.
+        ChartOptions.YAxisList = new List<YAxis>
+        {
+            new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true }, AxisLabel = _yAxisLabelInt, SplitLine = _splitLineGuides },
+            new YAxis { Type = AxisType.Value, Position = LeftOrRight.Right, Min = minPrice, Max = maxPrice, AxisLabel = _yAxisLabelInt, SplitLine = _splitLineGuides }
+        };
+        swEixos.Stop();
+        //LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
+
+        var swJs = Stopwatch.StartNew();
+        var jsKey = (BubbleSize, BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta);
+        NumberArrayOrFunction symbolSizeFunction;
+        JavascriptFunction volumeProfileFunction;
+        JavascriptFunction deltaprofileFunction;
+        if (_jsFunctionCacheValid && _jsFunctionCacheKey == jsKey)
+        {
+            symbolSizeFunction = _cachedSymbolSizeFunction!;
+            volumeProfileFunction = _cachedVolumeProfileFunction!;
+            deltaprofileFunction = _cachedDeltaProfileFunction!;
+        }
+        else
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            symbolSizeFunction = new NumberArrayOrFunction(new JavascriptFunction($@"function (v) {{ return v[2] * {BubbleSize.ToString(inv)} * {(BubbleVisible ? 1 : 0)}; }}"));
+            volumeProfileFunction = new JavascriptFunction(@"
+                    function (params, api) {
+                        var volumeVal = api.value(0);
+                        var priceVal = api.value(1);
+                        var stepVal = api.value(2);
+
+                        var start = api.coord([0, priceVal]);
+                        var end = api.coord([volumeVal* " + ProfileSizeH.ToString(inv) + @", priceVal]);
+
+                        var size = api.size([0, stepVal]);
+                        var barHeight = size[1] * " + ProfileSizeV.ToString(inv) + @";
+
+                        var isPoc = Math.abs(volumeVal - " + maxVolume.ToString(inv) + @") < 0.5;
+
+                        return {
+                            type: 'rect',
+                            shape: {
+                                x: end[0],
+                                y: start[1] - barHeight / 2,
+                                width: start[0] - end[0],
+                                height: barHeight
+                            },
+                            style: api.style({
+                                fill: isPoc ? 'rgba(255, 100, 0, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")' : 'rgba(100, 150, 250, " + (ProfileOpacity * (ProfileVisible ? 1 : 0)).ToString(inv) + @")',
+                                stroke: 'rgba(100, 150, 250, " + ((ProfileOpacity * (ProfileVisible ? 1 : 0)) - 0.2).ToString(inv) + @")'
+                            })
+                        };
+                    }
+                ");
+            deltaprofileFunction = new JavascriptFunction(@"
+                    function (params, api) {
+                        var deltaAbs = api.value(0);
+                        var priceVal = api.value(1);
+                        var stepVal = api.value(2);
+                        var rawDelta = api.value(3);
+
+                        var start = api.coord([0, priceVal]);
+                        var end = api.coord([deltaAbs, priceVal]);
+
+                        var size = api.size([0, stepVal]);
+                        var barHeight = size[1] * " + DeltaSizeV.ToString(inv) + @";
+
+                        return {
+                            type: 'rect',
+                            shape: {
+                                x: start[0],
+                                y: start[1] - barHeight / 2,
+                                width: (end[0] - start[0]) * " + DeltaSizeH.ToString(inv) + @",
+                                height: barHeight
+                            },
+                            style: api.style({
+                                fill: rawDelta >= 0 ? 'rgba(50, 50, 255, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(inv) + @")' : 'rgba(255, 50, 50, " + (DeltaOpacity * (DeltaVisible ? 1 : 0)).ToString(inv) + @")',
+                                stroke: rawDelta >= 0 ? 'rgba(50, 50, 255, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(inv) + @")' : 'rgba(255, 50, 50, " + ((DeltaOpacity * (DeltaVisible ? 1 : 0)) - 0.2).ToString(inv) + @")'
+                            })
+                        };
+                    }
+                ");
+            _jsFunctionCacheKey = jsKey;
+            _cachedSymbolSizeFunction = symbolSizeFunction;
+            _cachedVolumeProfileFunction = volumeProfileFunction;
+            _cachedDeltaProfileFunction = deltaprofileFunction;
+            _jsFunctionCacheValid = true;
+        }
+        swJs.Stop();
+        //LogPerf("GenerateChart Funcoes JS", swJs.ElapsedMilliseconds);
+
+        var swBubbles = Stopwatch.StartNew();
+        if (_lastBubbleDataVersion != _bubbleDataVersion)
+        {
+            var selectedAgents = new HashSet<Ticks2.Agents?>(SelectedAgents);
+            var redList = new List<(DateTime Time, object[] Data)>();
+            var blueList = new List<(DateTime Time, object[] Data)>();
+            foreach (var e in Bubbles)
+            {
+                if (!selectedAgents.Contains(e.Agent)) continue;
+                var arr = new object[] {
+                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
+                    e.Price,
+                    e.Amount,
+                    e.Agent?.Description() ?? "Desconhecido"
+            };
+                if (e.ActionType == Ticks2.ActionType.Sale)
+                    redList.Add((e.Time, arr));
+                else if (e.ActionType == Ticks2.ActionType.Buy)
+                    blueList.Add((e.Time, arr));
+            }
+            redList.Sort((a, b) => a.Time.CompareTo(b.Time));
+            blueList.Sort((a, b) => a.Time.CompareTo(b.Time));
+            _cachedRedBubbleData = redList.ConvertAll(x => x.Data);
+            _cachedBlueBubbleData = blueList.ConvertAll(x => x.Data);
+            _lastBubbleDataVersion = _bubbleDataVersion;
+        }
+        var redBubbleData = _cachedRedBubbleData ?? new List<object[]>();
+        var blueBubbleData = _cachedBlueBubbleData ?? new List<object[]>();
+        swBubbles.Stop();
+        //LogPerf("GenerateChart Bubbles", swBubbles.ElapsedMilliseconds);
+
+        //var swSeries = Stopwatch.StartNew();
+        var deltaProfileData = _cachedDeltaProfileData ?? new List<object[]>();
+        var volumeProfileData = _cachedVolumeProfileData ?? new List<object[]>();
+
+        // --- Detecção de mudanças por tipo de série ---
+        // No modo notMerge:false (merge), o ECharts mantém no canvas as séries que NÃO forem enviadas.
+        // Só enviamos uma série quando o dado dela realmente mudou desde o último render.
+        bool jsFunctionChanged = _lastRenderedJsKey != jsKey;
+        if (jsFunctionChanged) _lastRenderedJsKey = jsKey;
+
+        bool candleDataChanged = _forceFullRedraw || _lastRenderedCandleKey != barsKey;
+        bool volumeDataChanged = _forceFullRedraw || _lastRenderedVolumeVersion != effectiveVolumeVersion || jsFunctionChanged;
+        bool bubbleDataChanged = _forceFullRedraw || _lastRenderedBubbleVersion != _bubbleDataVersion || jsFunctionChanged;
+
+        // Rebuild de objetos de série apenas quando necessário
+        if (candleDataChanged)
+        {
+            _cachedCandleSeriesObj = new CandlestickSeries
+            {
+                Name = "Candle",
+                Data = values,
+                Z = 2,
+                Clip = false, // Evita que o candle inteiro suma ao dar zoom quando as bordas (high/low) saem da área visível
+                ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#ffffff", BorderColor0 = "#ffffff" }
+            };
+            _lastRenderedCandleKey = barsKey;
+        }
+
+        if (bubbleDataChanged)
+        {
+            _cachedRedBubbleSeriesObj = new ScatterSeries { Name = "Aggressive Red", Data = redBubbleData, SymbolSize = symbolSizeFunction, Z = 3, ItemStyle = new ItemStyle { Color = ColorSeller, Opacity = BubbleOpacity, BorderColor = ColorSeller, BorderWidth = 1 } };
+            _cachedBlueBubbleSeriesObj = new ScatterSeries { Name = "Aggressive Blue", Data = blueBubbleData, SymbolSize = symbolSizeFunction, Z = 3, ItemStyle = new ItemStyle { Color = ColorBuyer, Opacity = BubbleOpacity, BorderColor = ColorBuyer, BorderWidth = 1 } };
+            _lastRenderedBubbleVersion = _bubbleDataVersion;
+        }
+
+        if (volumeDataChanged)
+        {
+            _cachedDeltaSeriesObj = new CustomSeries { Name = "Delta Profile", XAxisIndex = 2, YAxisIndex = 1, Z = 0, Data = deltaProfileData, RenderItem = deltaprofileFunction };
+            _cachedVolumeSeriesObj = new CustomSeries { Name = "Volume Profile", XAxisIndex = 1, YAxisIndex = 1, Z = 0, Data = volumeProfileData, RenderItem = volumeProfileFunction };
+            _lastRenderedVolumeVersion = effectiveVolumeVersion;
+        }
+
+        // === Envio seletivo por comprimento de array ===
+        // Ordem: [0]Candle  [1]RedBubble  [2]BlueBubble  [3]DeltaProfile  [4]VolumeProfile
+        //
+        // ECharts merge mode (notMerge padrão = false) atualiza APENAS os índices
+        // fornecidos e deixa os demais intactos NO CANVAS, sem re-renderizar.
+        //
+        // Casos:
+        //   só candle mudou          ? envia [candle]           (índices 1-4 intactos ? Delta/Volume NÃO re-renderizados)
+        //   candle + bubbles         ? envia [candle,red,blue]  (índices 3-4 intactos ? Delta/Volume NÃO re-renderizados)
+        //   volume mudou (qualquer)  ? envia todos os 5         (update completo, evento raro)
+        var seriesList = new List<ISeries>(5);
+        seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
+
+        if (bubbleDataChanged)
+        {
+            seriesList.Add(_cachedRedBubbleSeriesObj ?? new ScatterSeries { Name = "Aggressive Red" }); // [1]
+            seriesList.Add(_cachedBlueBubbleSeriesObj ?? new ScatterSeries { Name = "Aggressive Blue" }); // [2]
+        }
+
+        if (volumeDataChanged)
+        {
+            seriesList.Add(_cachedDeltaSeriesObj ?? new CustomSeries { Name = "Delta Profile" }); // [3]
+            seriesList.Add(_cachedVolumeSeriesObj ?? new CustomSeries { Name = "Volume Profile" }); // [4]
+        }
+
+        ChartOptions.Series = seriesList;
+        _forceFullRedraw = false;
+
+        //swSeries.Stop();
+        swTotal.Stop();
+        //HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart Series", swSeries.ElapsedMilliseconds);
+        HelperPerformanceConfig.Log(nameof(MapFlow), "GenerateChart total", swTotal.ElapsedMilliseconds);
+    }
+
 }
 
 @* --- INTERFACE --- *@
 <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
-    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-        <MudTooltip Text="ConfiguraÃ§Ãµes">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => openDrawer = !openDrawer" />
-        </MudTooltip>
+    <MapFlowBar @ref=MapFlowBar _cachecount="@_cachecount" @bind-openDrawer=@openDrawer>
         <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="() => {}" Disabled/>
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="() => { }" Disabled />
         </MudTooltip>
-    </MudStack>
+    </MapFlowBar>
     <B3WM.Client.Components.HubClient @ref=HubClient
         OnCandleSeriesChange="NewBar" 
         OnCurrentBarChange="NewCurrentBar"
@@ -325,7 +832,7 @@
                         <MudListItem Dense="true">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Range</MudText>
-                                <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} â†’ {IndexEndToDateStringBars(_dateRange)}")</MudText>
+                                <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} ? {IndexEndToDateStringBars(_dateRange)}")</MudText>
                             </MudStack>
                             <MudExRangeSlider T="int"
                                               Value="_dateRange"
@@ -452,6 +959,34 @@
                                 </MudStack>
                             </MudSlider>
                         </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Palette" Text="Colors" Expanded=false>
+                            <NestedList>
+                                <MudListItem Dense="true">
+                                    <MudStack Row Spacing="2" Justify="Justify.SpaceEvenly" AlignItems="AlignItems.Center">
+                                        <MudColorPicker 
+                                            Label="Buy" 
+                                            ColorPickerView="ColorPickerView.Spectrum"
+                                            ShowModeSwitch=false
+                                            ShowSliders=true
+                                            ShowAlpha=false
+                                            @bind-Text="ColorBuyer"/>
+                                        <div style="width:32px; height:32px; background-color: @(ColorBuyer);" class="mr-2"></div>
+                                    </MudStack>
+                                </MudListItem>
+
+                                <MudListItem Dense="true">
+                                    <MudStack Row Spacing="2" Justify="Justify.SpaceEvenly" AlignItems="AlignItems.Center">
+                                        <MudColorPicker Label="Sell"
+                                            ColorPickerView="ColorPickerView.Spectrum"
+                                            ShowModeSwitch=false
+                                            ShowSliders=true
+                                            ShowAlpha=false
+                                            @bind-Text="ColorSeller" />
+                                        <div style="width:32px; height:32px; background-color: @(ColorSeller);" class="mr-2"></div>
+                                    </MudStack>
+                                </MudListItem>
+                            </NestedList>
+                        </MudListItem>
                         <MudListItem Icon="@Icons.Material.Filled.People" Text="Agents" Expanded=true>
                             <NestedList>
                                 <MudList Dense T="Ticks2.Agents?" ReadOnly=true Class="ml-3">
@@ -488,32 +1023,11 @@
 
 
     </MudDrawer>
-    <MapFlowGraph 
-        SelectedAgents="@SelectedAgents" 
-        Bubbles="@Bubbles" 
-        Bars="@Bars"
-        VolumeLevels="@VolumeLevels"
-        CurrentBar="@CurrentBar"
-        ThresholdBubble="@ThresholdBubble" 
-        TimeFrame="@TimeFrame"
-        BubbleOpacity=BubbleOpacity
-        BubbleSize=BubbleSize
-        BubbleVisible=BubbleVisible
-        DeltaOpacity=DeltaOpacity
-        DeltaSizeH=DeltaSizeH
-        DeltaSizeV=DeltaSizeV
-        DeltaVisible=DeltaVisible
-        ProfileOpacity=ProfileOpacity
-        ProfileSizeH=ProfileSizeH
-        ProfileSizeV=ProfileSizeV
-        ProfileVisible=ProfileVisible
-        _barsDataVersion=_barsDataVersion
-        _bubbleDataVersion=_bubbleDataVersion
-        _currentBarVersion=_currentBarVersion
-        _filteredVolumeDataVersion=_filteredVolumeDataVersion
-        _filteredVolumeLevels="@_filteredVolumeLevels"
-        _volumeFilterActive=_volumeFilterActive
-        _volumeDataVersion=_volumeDataVersion
-        ></MapFlowGraph>
+    <Vizor.ECharts.EChart @ref="EChart"
+                          Renderer="Vizor.ECharts.ChartRenderer.Canvas"
+                          Options="ChartOptions"
+                          Width="auto"
+                          Height="800px"
+                          DataLoader="GenerateChart" />
 
 </MudDrawerContainer>                   

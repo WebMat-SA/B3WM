@@ -25,14 +25,12 @@ namespace B3WM.Client.Services
 
         private PeriodicTimer? _timer;
 
-        private bool NotifyQueueCount { get; set; }
-
         private int _queueCount { get; set; }
+        private string _queueTime { get; set; }
 
-        public void Init(int throtlingms = 200, int bubbleThreshold = 125, bool _notifyqueue = true)
+        public void Init(int throtlingms = 200, int bubbleThreshold = 125)
         {
             _bubbleThreshold = bubbleThreshold;
-            NotifyQueueCount = _notifyqueue;
 
             _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
             _ = RunLoop();
@@ -41,7 +39,9 @@ namespace B3WM.Client.Services
         {
             while (await _timer!.WaitForNextTickAsync())
             {
-                if (NotifyQueueCount) OnQueueCount?.Invoke(this, _queueCount);
+                OnQueueCount?.Invoke(this, _queueCount);
+                OnQueueTime?.Invoke(this, _queueTime);
+                
             }
         }
 
@@ -52,8 +52,6 @@ namespace B3WM.Client.Services
             _queue.Enqueue(ticks);
 
             _ = ProcessQueueAsync();
-
-            OnQueueTime?.Invoke(this, ticks.Last().Time.ToString("HH:mm:ss"));
         }
 
         private Task ProcessQueueAsync()
@@ -69,6 +67,7 @@ namespace B3WM.Client.Services
                     var swTicks = Stopwatch.StartNew();
                     var sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
                     _queueCount = sortedTicks.Count;
+                    _queueTime = sortedTicks.Last().Time.ToString("HH:mm:ss");
 
                     foreach (var t in sortedTicks)
                     {
@@ -171,13 +170,6 @@ namespace B3WM.Client.Services
         public void Dispose()
         {
             _cts.Cancel();
-        }
-
-        public void ToggleNotifyQueue()
-        {
-            _queueCount = 0;
-            OnQueueCount?.Invoke(this, _queueCount);
-            NotifyQueueCount = !NotifyQueueCount;
         }
     }
 }
