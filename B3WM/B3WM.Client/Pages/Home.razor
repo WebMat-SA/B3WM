@@ -3,21 +3,21 @@
 
 @page "/"
 
-<MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@(() => ShowMessage("Hello, World!"))">
+@* <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@(() => ShowMessage("Hello, World!"))">
     Click Me
-</MudButton>
+</MudButton> *@
 
-@foreach(var item in ticks)
+@* @foreach(var item in ticks)
 {
     <p>@item.TrydID</p>
-}
+} *@
 
 @code {
-    ICollection<Ticks2> ticks = new List<Ticks2>();
+    // ICollection<Ticks2> ticks = new List<Ticks2>();
 
-    public void ShowMessage(string message)
-    {
-        // Display the message in a dialog or console
-        Console.WriteLine(message);
-    }
+    // public void ShowMessage(string message)
+    // {
+    //     // Display the message in a dialog or console
+    //     Console.WriteLine(message);
+    // }
 }

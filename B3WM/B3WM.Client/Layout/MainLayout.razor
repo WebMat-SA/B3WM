@@ -1,5 +1,4 @@
 ﻿@inherits LayoutComponentBase;
-@inject IAccountService AccountService;
 
 <MudThemeProvider IsDarkMode=true />
 <MudDialogProvider />
@@ -22,15 +21,5 @@
 
 
 @code{
-    protected override void OnAfterRender(bool firstRender)
-    {
-        if (firstRender)
-        {
-            //AccountService.UpdateScreen += StateHasChanged;
-            OAccountService Observer = new OAccountService(AccountService);
-            Observer.ActionNext += (() => InvokeAsync(() => StateHasChanged()));
-        }
 
-        base.OnAfterRender(firstRender);
-    }
 }

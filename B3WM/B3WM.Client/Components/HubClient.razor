@@ -9,7 +9,6 @@
 @using System.Threading.Channels
 @using System.Timers
 @inject NavigationManager Navigation
-@inject IndexedDbStorageAccessor indexedDbStorage
 @inherits Components.PersistentComponentBase
 @implements IAsyncDisposable
 @using BlazorWorker.WorkerBackgroundService
@@ -627,14 +626,6 @@
                             <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableDataHelper" ThumbIcon="@(HelperPerformanceConfig.EnableDataHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableDataHelper == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Data Helper
-                                </MudText>
-                            </MudSwitch>
-                        </MudListItem>
-
-                        <MudListItem Dense="true">
-                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableIndexedDbStorage" ThumbIcon="@(HelperPerformanceConfig.EnableIndexedDbStorage == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableIndexedDbStorage == true ? Color.Success : Color.Error)">
-                                <MudText Typo="Typo.caption" Class="ml-4">
-                                    IndexedDBStorage
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>

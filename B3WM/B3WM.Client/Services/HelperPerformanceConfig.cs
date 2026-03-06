@@ -21,9 +21,6 @@ namespace B3WM.Client.Services
         /// <summary>Quando true, DataHelper imprime [Perf] no console.</summary>
         public static bool EnableDataHelper { get; set; } = false;
 
-        /// <summary>Quando true, IndexedDbStorageAccessor imprime [Perf] no console.</summary>
-        public static bool EnableIndexedDbStorage { get; set; } = false;
-
         /// <summary>Quando true, MapFlow imprime [Perf] no console.</summary>
         public static bool EnableMapFlow { get; set; } = false;
 
@@ -49,7 +46,6 @@ namespace B3WM.Client.Services
             nameof(VolumeHelper) => EnableVolumeHelper,
             nameof(BubbleHelper) => EnableBubbleHelper,
             nameof(DataHelper) => EnableDataHelper,
-            nameof(IndexedDbStorageAccessor) => EnableIndexedDbStorage,
             nameof(MapFlow) => EnableMapFlow,
             nameof(HubClient) => EnableHubClient,
             nameof(MainHelper) => EnableMainHelper,
