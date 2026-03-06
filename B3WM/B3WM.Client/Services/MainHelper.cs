@@ -142,8 +142,6 @@ namespace B3WM.Client.Services
             EnableVolumeFormer = enable;
         }
 
-        public List<VolumeLevel> VolumeGetSnapshot(DateTime? from, DateTime? to) => _volume.GetSnapshot(from,to);
-
         public void Enqueue(string dataString)
         {
             var sw = Stopwatch.StartNew();

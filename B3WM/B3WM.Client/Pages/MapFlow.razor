@@ -61,7 +61,8 @@
 
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
 
-    int? _cachecount { get; set; }
+    public int? _cachecount { get; set; }
+    public DateTime? _lastCacheCountUpdate { get; set; }
 
     private Vizor.ECharts.EChart? EChart;
 
@@ -74,9 +75,7 @@
     private bool _volumeFilterActive { get; set; }
     private List<VolumeLevel>? _filteredVolumeLevels { get; set; }
 
-
     private HubClient? HubClient { get; set; }
-    private MapFlowBar? MapFlowBar { get; set; }
 
     private List<Bars> Bars { get; set; } = new List<Bars>();
     private Bars CurrentBar { get; set; } = new Bars();
@@ -296,7 +295,10 @@
             return; 
         }
 
-        if (EChart != null) await EChart.UpdateAsync(true);
+        if (EChart != null)
+        {
+            _ = GenerateChart();
+        }
 
 
         sw.Stop();
@@ -314,7 +316,7 @@
         Bubbles.Add(data);
         _bubbleDataVersion++;
         sw.Stop();
-        HelperPerformanceConfig.Log(nameof(MapFlow),"NewBubble total", sw.ElapsedMilliseconds);
+        //HelperPerformanceConfig.Log(nameof(MapFlow),"NewBubble total", sw.ElapsedMilliseconds);
 
         return Task.CompletedTask;
         //await InvokeAsync(StateHasChanged);
@@ -327,9 +329,7 @@
             var sw = Stopwatch.StartNew();
             VolumeLevels = volumes as List<VolumeLevel> ?? volumes.ToList();
             _volumeDataVersion++;
-            //InvalidateChart(bypassSuppression: true); // live: sempre atualiza (rate-limited 600ms)
             sw.Stop();
-            //HelperPerformanceConfig.Log(nameof(MapFlow),"VolumeUpdate total", sw.ElapsedMilliseconds);
         }
         catch(Exception e)
         {
@@ -423,10 +423,12 @@
         }
     }
 
-    private void GenerateChart()
+    private async Task GenerateChart()
     {
-        if (EChart is null) return;
+        if (EChart is null) return ;
         var swTotal = Stopwatch.StartNew();
+
+        _lastCacheCountUpdate = DateTime.Now;
 
         //var swBars = Stopwatch.StartNew();
         var hasCurrentBarInBars = Bars.Any(b => b.Date == CurrentBar.Date);
@@ -453,7 +455,7 @@
         //swBars.Stop();
         //HelperPerformanceConfig.Log(nameof(MapFlowGraph), "GenerateChart RawDataBar", swBars.ElapsedMilliseconds);
 
-        if (bars.Count == 0) return;
+        if (bars.Count == 0) return ;
 
         var swLimites = Stopwatch.StartNew();
         double barsMin = double.PositiveInfinity;
@@ -514,7 +516,7 @@
         if (!double.IsNegativeInfinity(_cachedVolumeMaxPrice) && _cachedVolumeMaxPrice > actualMax)
             actualMax = _cachedVolumeMaxPrice;
 
-        if (double.IsInfinity(actualMin) || double.IsInfinity(actualMax)) return;
+        if (double.IsInfinity(actualMin) || double.IsInfinity(actualMax)) return ;
         double range = actualMax - actualMin;
         if (range <= 0) range = Math.Max(1.0, Math.Abs(actualMax) * 0.01);
 
@@ -771,25 +773,31 @@
         //swSeries.Stop();
         swTotal.Stop();
         //HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart Series", swSeries.ElapsedMilliseconds);
-        HelperPerformanceConfig.Log(nameof(MapFlow), "GenerateChart total", swTotal.ElapsedMilliseconds);
-    }
+        //HelperPerformanceConfig.Log(nameof(MapFlow), "GenerateChart total", swTotal.ElapsedMilliseconds);
 
+        await EChart.UpdateAsync(false);
+    }
 }
 
 @* --- INTERFACE --- *@
 <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
-    <MapFlowBar @ref=MapFlowBar _cachecount="@_cachecount" @bind-openDrawer=@openDrawer>
+    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+        <MudTooltip Text="Configurações">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
+        </MudTooltip>
         <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="() => { }" Disabled />
         </MudTooltip>
-    </MapFlowBar>
+    </MudStack>
     <B3WM.Client.Components.HubClient @ref=HubClient
         OnCandleSeriesChange="NewBar" 
         OnCurrentBarChange="NewCurrentBar"
         OnVolumeUpdate="VolumeUpdate" 
         OnNewBubble="NewBubble"
         TimeFrame="TimeFrame"
-        BubbleThreshold="ThresholdBubble" />
+        BubbleThreshold="ThresholdBubble"
+        CacheCount="_cachecount"
+        LastCacheCount="_lastCacheCountUpdate" />
     @*<MudOverlay Visible="_isLoadingFromIndexedDb" ZIndex="10" Class="d-flex align-center justify-center" DarkBackground=true Absolute=true>
         <MudStack Row Spacing="3" Class="px-3 py-2" AlignItems="AlignItems.Center" Style="background-color:darkorange;">
             <MudProgressCircular Size="Size.Small" Indeterminate="@(_loadingProgress == 0)" Value="@_loadingProgress" />
@@ -1028,6 +1036,6 @@
                           Options="ChartOptions"
                           Width="auto"
                           Height="800px"
-                          DataLoader="GenerateChart" />
+                          />
 
 </MudDrawerContainer>                   

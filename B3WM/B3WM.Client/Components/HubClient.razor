@@ -81,6 +81,11 @@
     [Parameter, PersistState]
     public bool EnableSaveTicksToIndexedDb { get; set; } = false;
 
+    [Parameter]
+    public int? CacheCount { get; set; }
+
+    [Parameter]
+    public DateTime? LastCacheCount { get; set; }
 
 
     [PersistState]
@@ -144,9 +149,9 @@
     private IWorker? MainWorker;
     private IWorkerBackgroundService<MainHelper>? MainService { get; set; }
 
-    public int ThrottlingCandleMs = 500;
-    public int ThrottlingBubbleMs = 250;
-    public int ThrottlingVolumeMs = 250;
+    public int ThrottlingCandleMs = 350;
+    public int ThrottlingBubbleMs = 300;
+    public int ThrottlingVolumeMs = 300;
 
     private int _bubbleQueue;
     private int _volumeQueue;
@@ -265,9 +270,9 @@
                 _ = OnNewBubble?.Invoke(data);
 
                 sw.Stop();
-                HelperPerformanceConfig.Log(nameof(HubClient), "Bubble_OnNewBubble",
-                    sw.ElapsedMilliseconds,
-                    $"Received new bubble at {DateTime.Now:HH:mm:ss.fff}");
+                // HelperPerformanceConfig.Log(nameof(HubClient), "Bubble_OnNewBubble",
+                //     sw.ElapsedMilliseconds,
+                //     $"Received new bubble at {DateTime.Now:HH:mm:ss.fff}");
             });
 
         MainService.RegisterEventListenerAsync(nameof(MainHelper.Bubble_OnQueueCount),
@@ -329,6 +334,8 @@
                 //cria variavel para enviar os dados uma unica vez para o worker, evitando múltiplas chamadas ao método RunAsync e consequentemente melhorando a performance
                 string allCompactData = string.Empty;
 
+                var dequeued = _channelToDo.Reader.Count;
+
                 while (_channelToDo.Reader.TryRead(out byte[]? _data))
                 {
                     if (_data == null) continue;
@@ -343,12 +350,12 @@
                     await MainService.RunAsync(s => s.Enqueue(allCompactData));
 
                     swTotal.Stop();
-                    HelperPerformanceConfig.Log(nameof(HubClient), "RunLoop.Work()", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
+                    HelperPerformanceConfig.Log(nameof(HubClient), "RunLoop.SendingToWebWorker()", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
                 }
 
                 await Task.Delay(10);
                 sw.Stop();
-                HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Reameaning {_channelToDo.Reader.Count}");
+                HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
             }
         }
         catch (OperationCanceledException e )
@@ -376,19 +383,19 @@
 
     public async Task<List<VolumeLevel>> GetVolumeSnapshot(DateTime? from, DateTime? to)
     {
+        return new();
+
         var sw = Stopwatch.StartNew();
 
-        if (MainService == null)
-            return new();
-
-        var result = await MainService.RunAsync<List<VolumeLevel>>(s => s.VolumeGetSnapshot(from, to));
+        //if (MainService == null)
+        //var result = await MainService.RunAsync<List<VolumeLevel>>(s => s.VolumeGetSnapshot(from, to));
 
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(HubClient), "VolumeGetSnapshot",
             sw.ElapsedMilliseconds,
             $"Received volume snapshot from {from} to {to} at {DateTime.Now:HH:mm:ss.fff}");
 
-        return result ?? new();
+        //return result ?? new();
     }
 
 
@@ -442,37 +449,43 @@
 }
 
 <MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
-    <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left">
+    <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Placement="Placement.Left" Arrow >
         <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@(_counter % 100)" OnClick="() => _counter = 0">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="() => openDrawer = !openDrawer" />
         </MudBadge>
     </MudTooltip>
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
     <div style="margin-right: 65px">
-        <MudTooltip Text="@($"Last Received (Local time): {_lastUpdateBarReceived?.ToString("HH:mm:ss")}")" Placement="Placement.Left">
+        <MudTooltip Text="@($"SignalR ping (Local Time)")" Arrow>
             <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@($"{_lastUpdateBarReceived?.ToString("HH: mm: ss")} ↓ ")">
                 <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
             </MudBadge>
         </MudTooltip>
     </div>
-
-    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
     <div style="margin-right: 65px">
-        <MudTooltip Text="@($"Candle Queue: {_candleQueue}\nLast Time: {_candleTimeQueue}")" Placement="Placement.Left">
+        <MudTooltip Text="@($"Graph update")" Arrow>
+            <MudBadge Color="@(CacheCount < 100 ? (CacheCount <= 2) ? MudBlazor.Color.Success : MudBlazor.Color.Warning : MudBlazor.Color.Error)" Overlap=true Bordered=true Content="@($"{LastCacheCount?.ToString("HH:mm:ss")} | {CacheCount.ToString()}")">
+                <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.ScreenshotMonitor" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
+    <div style="margin-right: 68px">
+        <MudTooltip Text="@($"Candle (Background)")" Arrow>
             <MudBadge Color="GetBadgeColor(_candleTimeQueue)" Overlap=true Bordered=true Content="@($" {_candleTimeQueue} | {_candleQueue.ToString()}")">
                 <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
             </MudBadge>
         </MudTooltip>
     </div>
-    <div style="margin-right: 65px">
-        <MudTooltip Text="@($"Bubble Queue: {_bubbleQueue}\nLast Time: {_bubbleTimeQueue}")" Placement="Placement.Left">
+    <div style="margin-right: 68px">
+        <MudTooltip Text="@($"Bubble (Background)")" Arrow>
             <MudBadge Color="GetBadgeColor(_bubbleTimeQueue)" Overlap=true Bordered=true Content="@($" {_bubbleTimeQueue} | {_bubbleQueue.ToString()}")">
                 <MudIcon Icon="@Icons.Material.Filled.BubbleChart" Size="Size.Small" />
             </MudBadge>
         </MudTooltip>
     </div>
-    <div style="margin-right: 65px">
-        <MudTooltip Text="@($"Volume Queue: {_volumeQueue}\nLast Time: {_volumeTimeQueue}")" Placement="Placement.Left">
+    <div style="margin-right: 68px">
+        <MudTooltip Text="@($"Volume (Background)")" Arrow>
             <MudBadge Color="GetBadgeColor(_volumeTimeQueue)" Overlap=true Bordered=true Content="@($" {_volumeTimeQueue} | {_volumeQueue.ToString()}")">
                 <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" />
             </MudBadge>

@@ -145,6 +145,10 @@ namespace B3WM.Client.Services
             {
                 var sw = Stopwatch.StartNew();
                 OnClosedBars?.Invoke(this, new[] { barToEmit });
+
+                //fazer aqui logica de envio para banco de dados interno (indexedb)
+
+
                 sw.Stop();
             }
         }
