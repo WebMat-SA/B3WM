@@ -1,5 +1,6 @@
 ﻿@using B3WM.Shared.Entity
 @using Vizor.ECharts;
+@inject IMagicIndexedDb _MagicDb
 
 @page "/"
 
@@ -13,6 +14,14 @@
 } *@
 
 @code {
+
+    // protected override async Task OnInitializedAsync()
+    // {
+    //     IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
+
+    //     await base.OnInitializedAsync();
+    // }
+
     // ICollection<Ticks2> ticks = new List<Ticks2>();
 
     // public void ShowMessage(string message)

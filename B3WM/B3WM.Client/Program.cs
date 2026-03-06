@@ -2,6 +2,7 @@ using B3WM.Client.Components;
 using B3WM.Client.Services;
 using Blazored.SessionStorage;
 using BlazorWorker.Core;
+using Magic.IndexedDb;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Extensions;
 using MudBlazor.Services;
@@ -26,7 +27,8 @@ namespace B3WM.Client
             // Add BlazorWorker services
             builder.Services.AddWorkerFactory();
 
-
+            // Add magic indexedb - Default safe message limit for WASM applications
+            builder.Services.AddMagicBlazorDB(BlazorInteropMode.WASM, builder.HostEnvironment.IsDevelopment());
 
             var culture = new CultureInfo("pt-BR");
 

@@ -1,4 +1,4 @@
-@using System.Diagnostics
+Ôªø@using System.Diagnostics
 @using System.Linq
 @using B3WM.Client.Components
 @using B3WM.Client.Model
@@ -94,7 +94,7 @@
     private DateTime _lastLoadingProgressUpdate = DateTime.MinValue;
     private const int LoadingProgressThrottleMs = 80; // reduz re-renders durante carregamento
 
-    // Objetos est·ticos de eixo (nunca mudam entre renders)
+    // Objetos est√°ticos de eixo (nunca mudam entre renders)
     private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
     private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
 
@@ -112,15 +112,15 @@
             Top = "10",
             ContainLabel = true
         },
-        // Ajuste do DataZoom para n„o afetar o eixo de volume (XAxisIndex 1)
+        // Ajuste do DataZoom para n√£o afetar o eixo de volume (XAxisIndex 1)
         DataZoom = new List<Vizor.ECharts.IDataZoom>
         {
             // --- ZOOM HORIZONTAL (Tempo) ---
             new Vizor.ECharts.InsideDataZoom { XAxisIndex = new [] { 0.0 } },
             //new Vizor.ECharts.SliderDataZoom { XAxisIndex = new[] { 0.0 }, Top = "92%" },
 
-            // --- ZOOM VERTICAL (PreÁo) ---
-            // Inside permite usar o Scroll do mouse sobre o gr·fico para dar zoom no preÁo
+            // --- ZOOM VERTICAL (Pre√ßo) ---
+            // Inside permite usar o Scroll do mouse sobre o gr√°fico para dar zoom no pre√ßo
             new Vizor.ECharts.InsideDataZoom { YAxisIndex = new[] { 0.0, 1.0 } },
             // Slider adiciona aquela barra lateral para controle preciso (opcional)
             //new Vizor.ECharts.SliderDataZoom { YAxisIndex = new[] { 0.0, 1.0 }, Left = "1%" }
@@ -129,7 +129,7 @@
         Tooltip = new Tooltip
         {
             // Mudamos para Item para que ele Priorize o objeto sob o mouse,
-            // mas ainda consiga mostrar informaÁıes do eixo se configurado.
+            // mas ainda consiga mostrar informa√ß√µes do eixo se configurado.
             Trigger = TooltipTrigger.Item,
             AxisPointer = new AxisPointer
             {
@@ -144,7 +144,7 @@
                 function (params) {
                     if (!params) return '';
 
-                    // 1. L”GICA PARA BOLHAS (Aggressive)
+                    // 1. L√ìGICA PARA BOLHAS (Aggressive)
                     if (params.seriesName && params.seriesName.includes('Aggressive')) {
                         var time = params.data[0];
                         var price = params.data[1];
@@ -156,11 +156,11 @@
                                     <b style='color:${color}'>${agent}</b>
                                 </div>
                                 Qtd: <b>${amount}</b><br/>
-                                PreÁo: <b>${price}</b><br/>
+                                Pre√ßo: <b>${price}</b><br/>
                                 Hora: ${time}`;
                     }
 
-                    // 2. L”GICA PARA CANDLES (d = [Open, Close, Low, High] - Ìndice 0,1,2,3)
+                    // 2. L√ìGICA PARA CANDLES (d = [Open, Close, Low, High] - √≠ndice 0,1,2,3)
                     if (params.seriesName === 'Candle') {
                         var d = params.data;
                         var color = d[2] >= d[1] ? '#00fa9a' : '#ff4500';
@@ -168,8 +168,8 @@
                         return `<b>${params.name}</b><br/>
                                 Abertura: ${d[1]}<br/>
                                 Fechamento: ${d[2]}<br/>
-                                MÌnima: ${d[3]}<br/>
-                                M·xima: ${d[4]}<br/>
+                                M√≠nima: ${d[3]}<br/>
+                                M√°xima: ${d[4]}<br/>
                                 Amplitude: ${d[4]-d[3]}`;
                     }
 
@@ -179,7 +179,7 @@
         }
     };
 
-    // Objetos de sÈrie cacheados (recriados apenas quando dado muda)
+    // Objetos de s√©rie cacheados (recriados apenas quando dado muda)
     private CandlestickSeries? _cachedCandleSeriesObj;
     private CustomSeries? _cachedDeltaSeriesObj;
     private CustomSeries? _cachedVolumeSeriesObj;
@@ -202,10 +202,10 @@
     private List<object[]>? _cachedDeltaProfileData;
     private List<object[]>? _cachedVolumeProfileData;
 
-    // === Envio seletivo de sÈries (merge mode) ===
-    // Controla quais sÈries realmente mudaram desde o ˙ltimo render.
-    // No modo notMerge:false, ECharts mantÈm as sÈries n„o enviadas intactas no canvas.
-    private bool _forceFullRedraw = true; // true no primeiro render e apÛs mudanÁa de TimeFrame
+    // === Envio seletivo de s√©ries (merge mode) ===
+    // Controla quais s√©ries realmente mudaram desde o √∫ltimo render.
+    // No modo notMerge:false, ECharts mant√©m as s√©ries n√£o enviadas intactas no canvas.
+    private bool _forceFullRedraw = true; // true no primeiro render e ap√≥s mudan√ßa de TimeFrame
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
     private int _lastRenderedVolumeVersion = -1;
     private int _lastRenderedBubbleVersion = -1;
@@ -260,7 +260,7 @@
             }
             else
             {
-                // CÛpia defensiva: armazenar nossa prÛpria inst‚ncia para n„o depender da referÍncia do callback.
+                // C√≥pia defensiva: armazenar nossa pr√≥pria inst√¢ncia para n√£o depender da refer√™ncia do callback.
                 Bars.Add(CloneBar(bar));
                 _barsDataVersion++;
             }
@@ -287,7 +287,7 @@
 
         if (_cachecount >= 2)
         {
-            //notifica somente o filho, para n„o dar gargalo de renderizar o gr·fico (que È mais pesado) a cada atualizaÁ„o de barra, j· que o gr·fico sÛ precisa ser atualizado quando as barras histÛricas mudam ou quando o usu·rio interage com o filtro de volume.
+            //notifica somente o filho, para n√£o dar gargalo de renderizar o gr√°fico (que √© mais pesado) a cada atualiza√ß√£o de barra, j√° que o gr√°fico s√≥ precisa ser atualizado quando as barras hist√≥ricas mudam ou quando o usu√°rio interage com o filtro de volume.
             //if (MapFlowBar != null) await MapFlowBar.NotifyChanges();
 
             HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar skipped UI update", sw.ElapsedMilliseconds);
@@ -371,18 +371,12 @@
     {
         TimeFrame = value;
 
-        Bars = new List<Bars>();
-        CurrentBar = new Bars();
-
         //HubClient?.RemountCandles(TimeFrame);
     }
 
     private void ThresholdBubbleChanged(int value)
     {
         ThresholdBubble = value;
-        Bubbles = new List<Bubble>();
-        _bubbleDataVersion++;
-        _allBubbleAgents.Clear();
 
         //HubClient?.RemountBubbles(ThresholdBubble);
     }
@@ -402,7 +396,7 @@
         var count = Bars.Count;
         if (count == 0) return;
 
-        // Range contempla todas as barras = sem filtro: manter gr·fico atual (volume j· condizente com todo o perÌodo).
+        // Range contempla todas as barras = sem filtro: manter gr√°fico atual (volume j√° condizente com todo o per√≠odo).
         var isFullRange = newRange.Start == 0 && newRange.End >= count - 1;
         if (isFullRange)
         {
@@ -473,7 +467,7 @@
             : VolumeLevels;
         var effectiveVolumeVersion = _volumeFilterActive ? _filteredVolumeDataVersion : _volumeDataVersion;
 
-        // Atualizar cache de volume/delta quando a vers„o mudar ou quando h· dados e o cache est· vazio (ex.: primeira carga).
+        // Atualizar cache de volume/delta quando a vers√£o mudar ou quando h√° dados e o cache est√° vazio (ex.: primeira carga).
         var volumeNeedsRefresh = _lastVolumeDataVersion != effectiveVolumeVersion
             || (effectiveLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
         if (volumeNeedsRefresh)
@@ -578,7 +572,7 @@
         };
 
         // 3. EIXOS Y (labels apenas inteiros; linhas de guia com opacidade reduzida)
-        // _yAxisLabelInt e _splitLineGuides s„o campos readonly ó n„o recriados a cada render.
+        // _yAxisLabelInt e _splitLineGuides s√£o campos readonly ‚Äî n√£o recriados a cada render.
         ChartOptions.YAxisList = new List<YAxis>
         {
             new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice, Max = maxPrice, Silent = true, AxisPointer = new AxisPointer { Show = true }, AxisLabel = _yAxisLabelInt, SplitLine = _splitLineGuides },
@@ -703,9 +697,9 @@
         var deltaProfileData = _cachedDeltaProfileData ?? new List<object[]>();
         var volumeProfileData = _cachedVolumeProfileData ?? new List<object[]>();
 
-        // --- DetecÁ„o de mudanÁas por tipo de sÈrie ---
-        // No modo notMerge:false (merge), o ECharts mantÈm no canvas as sÈries que N√O forem enviadas.
-        // SÛ enviamos uma sÈrie quando o dado dela realmente mudou desde o ˙ltimo render.
+        // --- Detec√ß√£o de mudan√ßas por tipo de s√©rie ---
+        // No modo notMerge:false (merge), o ECharts mant√©m no canvas as s√©ries que N√ÉO forem enviadas.
+        // S√≥ enviamos uma s√©rie quando o dado dela realmente mudou desde o √∫ltimo render.
         bool jsFunctionChanged = _lastRenderedJsKey != jsKey;
         if (jsFunctionChanged) _lastRenderedJsKey = jsKey;
 
@@ -713,7 +707,7 @@
         bool volumeDataChanged = _forceFullRedraw || _lastRenderedVolumeVersion != effectiveVolumeVersion || jsFunctionChanged;
         bool bubbleDataChanged = _forceFullRedraw || _lastRenderedBubbleVersion != _bubbleDataVersion || jsFunctionChanged;
 
-        // Rebuild de objetos de sÈrie apenas quando necess·rio
+        // Rebuild de objetos de s√©rie apenas quando necess√°rio
         if (candleDataChanged)
         {
             _cachedCandleSeriesObj = new CandlestickSeries
@@ -721,7 +715,7 @@
                 Name = "Candle",
                 Data = values,
                 Z = 2,
-                Clip = false, // Evita que o candle inteiro suma ao dar zoom quando as bordas (high/low) saem da ·rea visÌvel
+                Clip = false, // Evita que o candle inteiro suma ao dar zoom quando as bordas (high/low) saem da √°rea vis√≠vel
                 ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#ffffff", BorderColor0 = "#ffffff" }
             };
             _lastRenderedCandleKey = barsKey;
@@ -744,12 +738,12 @@
         // === Envio seletivo por comprimento de array ===
         // Ordem: [0]Candle  [1]RedBubble  [2]BlueBubble  [3]DeltaProfile  [4]VolumeProfile
         //
-        // ECharts merge mode (notMerge padr„o = false) atualiza APENAS os Ìndices
+        // ECharts merge mode (notMerge padr√£o = false) atualiza APENAS os √≠ndices
         // fornecidos e deixa os demais intactos NO CANVAS, sem re-renderizar.
         //
         // Casos:
-        //   sÛ candle mudou          ? envia [candle]           (Ìndices 1-4 intactos ? Delta/Volume N√O re-renderizados)
-        //   candle + bubbles         ? envia [candle,red,blue]  (Ìndices 3-4 intactos ? Delta/Volume N√O re-renderizados)
+        //   s√≥ candle mudou          ? envia [candle]           (√≠ndices 1-4 intactos ? Delta/Volume N√ÉO re-renderizados)
+        //   candle + bubbles         ? envia [candle,red,blue]  (√≠ndices 3-4 intactos ? Delta/Volume N√ÉO re-renderizados)
         //   volume mudou (qualquer)  ? envia todos os 5         (update completo, evento raro)
         var seriesList = new List<ISeries>(5);
         seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
@@ -781,7 +775,7 @@
 @* --- INTERFACE --- *@
 <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
     <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-        <MudTooltip Text="ConfiguraÁıes">
+        <MudTooltip Text="Configura√ß√µes">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
         </MudTooltip>
         <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
@@ -839,7 +833,7 @@
                         <MudListItem Dense="true">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Range</MudText>
-                                <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} ? {IndexEndToDateStringBars(_dateRange)}")</MudText>
+                                <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} ‚Üí {IndexEndToDateStringBars(_dateRange)}")</MudText>
                             </MudStack>
                             <MudExRangeSlider T="int"
                                               Value="_dateRange"

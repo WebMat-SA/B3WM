@@ -11,7 +11,6 @@
     <ProjectReference Include="..\B3WM.Client\B3WM.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.12" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.9" />
-    <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
