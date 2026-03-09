@@ -1,3 +1,4 @@
+using B3WM.Client.Model;
 using B3WM.Shared.Entity;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -8,13 +9,23 @@ namespace B3WM.Client.Services
     public class VolumeHelper : IDisposable
     {
         public event EventHandler<int>? OnQueueCount;
-        public event EventHandler<List<VolumeLevel>>? OnVolumeUpdate;
+        public event EventHandler<VolumeLevelStorageItem>? OnVolumeUpdate;
         public event EventHandler<string>? OnQueueTime;
 
         private readonly ConcurrentQueue<Ticks2[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
 
         private readonly ConcurrentDictionary<double, VolumeLevel> _volumes = new();
+
+        private VolumeLevelStorageItem _currentSnapshot = new VolumeLevelStorageItem
+        {
+            Date = DateTime.Now,
+            Symbol = string.Empty,
+            TimeFrame = 0,
+            Volumes = new List<VolumeLevel>()
+        };
+
+        private bool intraDayAdded { get; set; } = false;
 
         private int _queueCount { get; set; }
         private string? _queueTime { get; set; }
@@ -37,9 +48,9 @@ namespace B3WM.Client.Services
             }
         }
 
-        public List<VolumeLevel> GetSnapshot()
+        public VolumeLevelStorageItem GetSnapshot()
         {
-            return _volumes.Values
+            _currentSnapshot.Volumes = _volumes.Values
                 .OrderBy(v => v.Price)
                 .Select(v => new VolumeLevel
                 {
@@ -49,6 +60,8 @@ namespace B3WM.Client.Services
                     SellVolume = v.SellVolume
                 })
                 .ToList();
+
+            return _currentSnapshot;
         }
 
         public void Enqueue(Ticks2[] ticks)
@@ -148,6 +161,32 @@ namespace B3WM.Client.Services
         public void Dispose()
         {
             _cts.Cancel();
+        }
+
+        public void AddIntradayVolume(List<VolumeLevel> volumes)
+        {
+
+            //quer dizer que já adicionou
+            if (intraDayAdded) return;
+
+            foreach(var item in volumes)
+            {
+                _volumes.AddOrUpdate(
+                    item.Price,
+                    price =>
+                    {
+                        return item;
+                    },
+                    (price, existing) =>
+                    {
+                        existing.Total += item.Total;
+                        existing.SellVolume += item.SellVolume;
+                        existing.BuyVolume += item.BuyVolume;
+
+                        return existing;
+                    }
+                );
+            }
         }
     }
 }

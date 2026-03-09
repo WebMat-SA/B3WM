@@ -1,3 +1,4 @@
+using B3WM.Client.Model;
 using B3WM.Shared.Entity;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -7,7 +8,7 @@ namespace B3WM.Client.Services
 {
     public class BubbleHelper : IDisposable
     {
-        public event EventHandler<Bubble>? OnNewBubble;
+        public event EventHandler<BubbleStorageItem>? OnNewBubble;
         public event EventHandler<int>? OnQueueCount;
         public event EventHandler<string>? OnQueueTime;
 
@@ -22,6 +23,7 @@ namespace B3WM.Client.Services
         private Ticks2.ActionType? _runningStarter = null;
         private double _lastPrice = 0;
         private DateTime _lastTime;
+        private string _lastSymbol;
 
         private PeriodicTimer? _timer;
 
@@ -101,6 +103,7 @@ namespace B3WM.Client.Services
         private void ProcessTick(Ticks2 t)
         {
             Ticks2.Agents? aggressor = null;
+            _lastSymbol = t.Symbol;
 
             if (t.Starter == Ticks2.ActionType.Buy)
                 aggressor = t.Buyer;
@@ -142,13 +145,14 @@ namespace B3WM.Client.Services
             {
                 try
                 {
-                    var bubble = new Bubble
+                    var bubble = new BubbleStorageItem
                     {
                         Price = _lastPrice,
-                        Agent = _runningAgent,
+                        Agent = (int)_runningAgent,
                         Amount = _runningSum, // 🔥 agora envia o TOTAL acumulado
-                        Time = _lastTime,
-                        ActionType = _runningStarter
+                        Date = _lastTime,
+                        ActionType = _runningStarter ?? default,
+                        Symbol = _lastSymbol
                     };
 
                     var sw = Stopwatch.StartNew();

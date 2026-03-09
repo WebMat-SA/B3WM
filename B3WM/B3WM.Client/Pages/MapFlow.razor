@@ -12,12 +12,16 @@
 @using MudBlazor.Extensions.Components.ObjectEdit
 @using Vizor.ECharts
 @inherits Components.PersistentComponentBase
+@inject IMagicIndexedDb _MagicDb
 
 @page "/map-flow"
 
 @code {
     protected override string PersistenceKey => $"{nameof(MapFlow)}_state";
     protected override bool ContinuousSave => true;
+
+    [CascadingParameter]
+    public string Symbol { get; set; }
 
     [PersistState]
     public int TimeFrame { get; set; } = 2;
@@ -63,6 +67,8 @@
     public int? _cachecount { get; set; }
     public DateTime? _lastCacheCountUpdate { get; set; }
 
+    public bool isDataLoadedFromDb { get; set; } = false;
+
     private Vizor.ECharts.EChart? EChart;
 
 
@@ -76,10 +82,10 @@
 
     private HubClient? HubClient { get; set; }
 
-    private List<Bars> Bars { get; set; } = new List<Bars>();
-    private Bars CurrentBar { get; set; } = new Bars();
+    private List<BarStorageItem> BarStorageItem { get; set; } = new List<BarStorageItem>();
+    private BarStorageItem CurrentBar { get; set; } = new BarStorageItem();
 
-    private List<Bubble> Bubbles { get; set; } = new List<Bubble>();
+    private List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
     private List<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
 
     [PersistState]
@@ -88,18 +94,12 @@
     private HashSet<Ticks2.Agents?> _allBubbleAgents { get; set; } = new();
     private List<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
 
-    private bool _isLoadingFromIndexedDb;
-    private int _loadingProgress; // 0-100 ou total de ticks processados (opcional)
-    private string _loadingStatus = string.Empty;
-    private DateTime _lastLoadingProgressUpdate = DateTime.MinValue;
-    private const int LoadingProgressThrottleMs = 80; // reduz re-renders durante carregamento
-
     // Objetos estáticos de eixo (nunca mudam entre renders)
     private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
     private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
 
-    private IList<Bubble> RawDataBubbleBlue => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains(q.Agent)).OrderBy(q => q.Time).ToList();
-    private IList<Bubble> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains(q.Agent)).OrderBy(q => q.Time).ToList();
+    private IList<BubbleStorageItem> RawDataBubbleBlue => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains((Ticks2.Agents)q.Agent)).OrderBy(q => q.Date).ToList();
+    private IList<BubbleStorageItem> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains((Ticks2.Agents)q.Agent)).OrderBy(q => q.Date).ToList();
 
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
@@ -219,16 +219,15 @@
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsCacheKey;
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsSnapshotCacheKey;
 
-    private List<Bars>? _cachedBarsSnapshot;
+    private List<BarStorageItem>? _cachedBarsSnapshot;
     private List<string>? _cachedCategoryData;
     private List<object[]>? _cachedCandleValues;
 
-
     private int _lastVolumeDataVersion = -1;
 
-    private static Bars CloneBar(Bars bar)
+    private static BarStorageItem CloneBar(BarStorageItem bar)
     {
-        return new Bars
+        return new BarStorageItem
         {
             Date = bar.Date,
             Open = bar.Open,
@@ -239,16 +238,16 @@
         };
     }
 
-    public async Task NewBar(IEnumerable<Bars> bars)
+    public Task NewBar(IEnumerable<BarStorageItem> bars)
     {
-        var count = Bars.Count;
+        var count = BarStorageItem.Count;
         var isFullRange = count > 0 && _dateRange.End >= count - 1;
 
         var sw = Stopwatch.StartNew();
         foreach (var bar in bars)
         {
             if (bar == null || bar.Date == default) continue;
-            var existing = Bars.FirstOrDefault(b => b.Date == bar.Date);
+            var existing = BarStorageItem.FirstOrDefault(b => b.Date == bar.Date);
             if (existing != null)
             {
                 existing.Open = bar.Open;
@@ -261,22 +260,22 @@
             else
             {
                 // Cópia defensiva: armazenar nossa própria instância para não depender da referência do callback.
-                Bars.Add(CloneBar(bar));
+                BarStorageItem.Add(CloneBar(bar));
                 _barsDataVersion++;
             }
         }
 
         if (isFullRange)
         {
-            _dateRange = new MudExRange<int>(_dateRange.Start, Bars.Count);
-            await ApplyVolumeFilter(_dateRange);
+            _dateRange = new MudExRange<int>(_dateRange.Start, BarStorageItem.Count);
+            ApplyVolumeFilter(_dateRange);
         }
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(MapFlow), "NewBar total", sw.ElapsedMilliseconds);
-
+        return Task.CompletedTask;
     }
 
-    public async Task NewCurrentBar(Bars bar)
+    public Task NewCurrentBar(BarStorageItem bar)
     {
         var sw = Stopwatch.StartNew();
 
@@ -291,7 +290,7 @@
             //if (MapFlowBar != null) await MapFlowBar.NotifyChanges();
 
             HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar skipped UI update", sw.ElapsedMilliseconds);
-            return; 
+            return Task.CompletedTask;
         }
 
         if (EChart != null)
@@ -304,14 +303,14 @@
         HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar total", sw.ElapsedMilliseconds);
 
 
-        //return Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
-    public Task NewBubble(Bubble data)
+    public Task NewBubble(BubbleStorageItem data)
     {
         var sw = Stopwatch.StartNew();
-        if (_allBubbleAgents.Add(data.Agent) && !SelectedAgents.Contains(data.Agent))
-            SelectedAgents.Add(data.Agent);
+        if (_allBubbleAgents.Add((Ticks2.Agents)data.Agent) && !SelectedAgents.Contains((Ticks2.Agents)data.Agent))
+            SelectedAgents.Add((Ticks2.Agents)data.Agent);
         Bubbles.Add(data);
         _bubbleDataVersion++;
         sw.Stop();
@@ -321,12 +320,12 @@
         //await InvokeAsync(StateHasChanged);
     }
 
-    public Task VolumeUpdate(IEnumerable<VolumeLevel> volumes)
+    public Task VolumeUpdate(VolumeLevelStorageItem volumes)
     {
         try{
 
             var sw = Stopwatch.StartNew();
-            VolumeLevels = volumes as List<VolumeLevel> ?? volumes.ToList();
+            VolumeLevels = volumes.Volumes as List<VolumeLevel> ?? volumes.Volumes.ToList();
             _volumeDataVersion++;
             sw.Stop();
         }
@@ -352,7 +351,7 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task ToggleAgent(Ticks2.Agents? agent)
+    private void ToggleAgent(Ticks2.Agents? agent)
     {
         var sw = Stopwatch.StartNew();
         var list = SelectedAgents.ToList();
@@ -381,41 +380,6 @@
         //HubClient?.RemountBubbles(ThresholdBubble);
     }
 
-    private string IndexEndToDateStringBars(IRange<int> range)
-    {
-        return $" {Bars.ElementAtOrDefault(range.End)?.Date:dd/MM HH:mm}";
-    }
-    private string IndexStartToDateStringBars(IRange<int> range)
-    {
-        return $"{Bars.ElementAtOrDefault(range.Start)?.Date:dd/MM HH:mm}";
-    }
-    private async Task ApplyVolumeFilter(IRange<int> newRange)
-    {
-        _dateRange = newRange;
-
-        var count = Bars.Count;
-        if (count == 0) return;
-
-        // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
-        var isFullRange = newRange.Start == 0 && newRange.End >= count - 1;
-        if (isFullRange)
-        {
-            _volumeFilterActive = false;
-            _filteredVolumeLevels = null;
-        }
-        else
-        {
-            var startBar = Bars.ElementAtOrDefault(newRange.Start);
-            var endBar = Bars.ElementAtOrDefault(newRange.End);
-            if (startBar != null && endBar != null && HubClient != null)
-            {
-                _filteredVolumeLevels = await HubClient.GetVolumeSnapshot(startBar.Date, endBar.Date) ?? new List<VolumeLevel>();
-                _volumeFilterActive = true;
-                _filteredVolumeDataVersion++;
-            }
-        }
-    }
-
     private async Task GenerateChart()
     {
         if (EChart is null) return ;
@@ -424,18 +388,18 @@
         _lastCacheCountUpdate = DateTime.Now;
 
         //var swBars = Stopwatch.StartNew();
-        var hasCurrentBarInBars = Bars.Any(b => b.Date == CurrentBar.Date);
-        var includeCurrentBar = CurrentBar.Date != default && !hasCurrentBarInBars;
-        var barsKey = (Bars.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
-        List<Bars> bars;
+        var hasCurrentBarInBars = CurrentBar != null && BarStorageItem.Any(b => b.Date == CurrentBar.Date);
+        var includeCurrentBar = !hasCurrentBarInBars && CurrentBar != null && CurrentBar.Date != default;
+        var barsKey = (BarStorageItem.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
+        List<BarStorageItem> bars;
         if (_cachedBarsSnapshot != null && _lastBarsSnapshotCacheKey == barsKey)
         {
             bars = _cachedBarsSnapshot;
         }
         else
         {
-            bars = new List<Bars>(Bars.Count);
-            foreach (var bar in Bars)
+            bars = new List<BarStorageItem>(BarStorageItem.Count);
+            foreach (var bar in BarStorageItem)
                 bars.Add(bar);
 
             if (includeCurrentBar)
@@ -670,17 +634,17 @@
             var blueList = new List<(DateTime Time, object[] Data)>();
             foreach (var e in Bubbles)
             {
-                if (!selectedAgents.Contains(e.Agent)) continue;
+                if (!selectedAgents.Contains((Ticks2.Agents)e.Agent)) continue;
                 var arr = new object[] {
-                    e.Time.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
+                    e.Date.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
                     e.Price,
                     e.Amount,
-                    e.Agent?.Description() ?? "Desconhecido"
-            };
+                    ((Ticks2.Agents?)e.Agent)?.Description() ?? "Desconhecido"
+                };
                 if (e.ActionType == Ticks2.ActionType.Sale)
-                    redList.Add((e.Time, arr));
+                    redList.Add((e.Date, arr));
                 else if (e.ActionType == Ticks2.ActionType.Buy)
-                    blueList.Add((e.Time, arr));
+                    blueList.Add((e.Date, arr));
             }
             redList.Sort((a, b) => a.Time.CompareTo(b.Time));
             blueList.Sort((a, b) => a.Time.CompareTo(b.Time));
@@ -770,6 +734,78 @@
 
         await EChart.UpdateAsync(false);
     }
+
+    public async Task LoadFromDB()
+    {
+        if (isDataLoadedFromDb) return;
+
+        isDataLoadedFromDb = true;
+
+        var sw = Stopwatch.StartNew();
+
+        IMagicQuery<BarStorageItem> barsQuery = await _MagicDb.Query<BarStorageItem>();
+        IMagicQuery<BubbleStorageItem> bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
+
+        Bubbles = await bubbleQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.Symbol == Symbol).ToListAsync();
+        _bubbleDataVersion++;
+
+        var bars = await barsQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.TimeFrame == TimeFrame && q.Symbol == Symbol).ToListAsync();
+        BarStorageItem = bars.OrderByDescending(q => q.Date).ToList();
+        _barsDataVersion++;
+
+        var _volumeLevels = BarStorageItem.Where(q => q.Date.Date == DateTime.Today).OrderByDescending(e=>e.Date).FirstOrDefault();
+
+        if (_volumeLevels != null && _volumeLevels.VolumeLevel != null && _volumeLevels.VolumeLevel.Any() && HubClient != null)
+        {
+            HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Seding volume levels to helper");
+            await HubClient.SetVolumeIntraday(_volumeLevels.VolumeLevel);
+        }
+
+        await GenerateChart();
+
+        sw.Stop();
+        HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Loaded From DB {DateTime.Now:HH:mm:ss}");
+    }
+
+    private string IndexEndToDateStringBars(IRange<int> range)
+    {
+        return $" {BarStorageItem.ElementAtOrDefault(range.End)?.Date:dd/MM HH:mm}";
+    }
+    private string IndexStartToDateStringBars(IRange<int> range)
+    {
+        return $"{BarStorageItem.ElementAtOrDefault(range.Start)?.Date:dd/MM HH:mm}";
+    }
+    private void ApplyVolumeFilter(IRange<int> newRange)
+    {
+
+
+        ///refazer aqui...
+
+        _dateRange = newRange;
+
+        var count = BarStorageItem.Count;
+        if (count == 0) return;
+
+        // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
+        var isFullRange = newRange.Start == 0 && newRange.End >= count - 1;
+        if (isFullRange)
+        {
+            _volumeFilterActive = false;
+            _filteredVolumeLevels = null;
+        }
+        else
+        {
+            var startBar = BarStorageItem.ElementAtOrDefault(newRange.Start);
+            var endBar = BarStorageItem.ElementAtOrDefault(newRange.End);
+            if (startBar != null && endBar != null && HubClient != null)
+            {
+                //_filteredVolumeLevels = await HubClient.GetVolumeSnapshot(startBar.Date, endBar.Date) ?? new List<VolumeLevel>();
+                //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(BarStorageItem, startBar.Date, endBar.Date);
+                _volumeFilterActive = true;
+                _filteredVolumeDataVersion++;
+            }
+        }
+    }
 }
 
 @* --- INTERFACE --- *@
@@ -779,7 +815,7 @@
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
         </MudTooltip>
         <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="() => { }" Disabled />
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
         </MudTooltip>
     </MudStack>
     <B3WM.Client.Components.HubClient @ref=HubClient
@@ -830,7 +866,7 @@
             <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
                     <NestedList>
-                        <MudListItem Dense="true">
+                        <MudListItem Dense="true" Disabled>
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Range</MudText>
                                 <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} → {IndexEndToDateStringBars(_dateRange)}")</MudText>
@@ -840,10 +876,10 @@
                                               ValueChanged="ApplyVolumeFilter"
                                               AllowWholeRangeDrag
                                               Size="Size.Small"
-                                              SizeRange="@(new MudExRange<int>(0, Math.Max(0, Bars.Count - 1)))"
+                                              SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count - 1)))"
                                               ToEndStringFunc="IndexEndToDateStringBars"
                                               ToStartStringFunc="IndexStartToDateStringBars"
-                                              Class="pr-5 mr-5" Disabled="@(Bars.Count <= 2)" />
+                                              Class="pr-5 mr-5" Disabled="@(BarStorageItem.Count <= 2 || true)"/>
                         </MudListItem>
 
                         @* Deltas *@
@@ -1007,7 +1043,7 @@
 
                                         <MudListItem Dense="true">
 
-                                            <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="async (bool c) => await ToggleAgent(agent)">
+                                            <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)">
                                                 <MudText Typo="Typo.caption">
                                                     @agent.Description() (@((int)agent))
                                                 </MudText>

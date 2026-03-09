@@ -1,3 +1,4 @@
+using B3WM.Client.Model;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
 using BlazorWorker.WorkerBackgroundService;
@@ -11,8 +12,8 @@ namespace B3WM.Client.Services
 {
     public class CandleHelper : IDisposable
     {
-        public event EventHandler<IEnumerable<Bars>>? OnClosedBars;
-        public event EventHandler<Bars?>? OnUpdateLastBar;
+        public event EventHandler<IEnumerable<BarStorageItem>>? OnClosedBars;
+        public event EventHandler<BarStorageItem?>? OnUpdateLastBar;
         public event EventHandler<int>? OnQueueCount;
         public event EventHandler<string>? OnQueueTime;
 
@@ -22,7 +23,7 @@ namespace B3WM.Client.Services
         private readonly CancellationTokenSource _cts = new();
 
         private readonly object _lock = new();
-        private Bars? _currentBar;
+        private BarStorageItem? _currentBar;
 
         private PeriodicTimer? _timer;
 
@@ -38,7 +39,7 @@ namespace B3WM.Client.Services
             _ = RunLoop();
         }
 
-        public Bars? GetCurrentBarSnapshot()
+        public BarStorageItem? GetCurrentBarSnapshot()
         {
             lock (_lock)
             {
@@ -68,14 +69,6 @@ namespace B3WM.Client.Services
             _ = ProcessQueueAsync();
 
             //return Task.CompletedTask;
-        }
-
-        /// <summary>Processa ticks de forma síncrona (para load do IndexedDB). Emite barras fechadas via callback. Não usa fila.</summary>
-        public void ProcessTicksSync(IReadOnlyList<Ticks2> ticks)
-        {
-            if (ticks == null || ticks.Count == 0) return;
-            foreach (var t in ticks.OrderBy(x => x.Time))
-                ProcessTick(t);
         }
 
         private Task ProcessQueueAsync()
@@ -117,13 +110,13 @@ namespace B3WM.Client.Services
         {
             var candleStart = t.Time.GetCandleStart(_timeFrameMinutes);
 
-            Bars? barToEmit = null;
+            BarStorageItem? barToEmit = null;
 
             lock (_lock)
             {
                 if (_currentBar == null)
                 {
-                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume);
+                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
                     return;
                 }
 
@@ -131,7 +124,7 @@ namespace B3WM.Client.Services
                 {
                     // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
                     barToEmit = CloneBar(_currentBar);
-                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume);
+                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
                 }
                 else if (candleStart == _currentBar.Date)
                 {
@@ -146,40 +139,41 @@ namespace B3WM.Client.Services
                 var sw = Stopwatch.StartNew();
                 OnClosedBars?.Invoke(this, new[] { barToEmit });
 
-                //fazer aqui logica de envio para banco de dados interno (indexedb)
-
-
                 sw.Stop();
             }
         }
 
-        private Bars CloneBar(Bars bar)
+        private BarStorageItem CloneBar(BarStorageItem bar)
         {
-            return new Bars
+            return new BarStorageItem
             {
                 Date = bar.Date,
                 Open = bar.Open,
                 High = bar.High,
                 Low = bar.Low,
                 Close = bar.Close,
-                Volume = bar.Volume
+                Volume = bar.Volume,
+                Symbol = bar.Symbol,
+                TimeFrame = bar.TimeFrame,
             };
         }
 
-        private Bars CreateNewBar(DateTime start, double price, long volume)
+        private BarStorageItem CreateNewBar(DateTime start, double price, long volume, string symbol)
         {
-            return new Bars
+            return new BarStorageItem
             {
                 Date = start,
                 Open = price,
                 High = price,
                 Low = price,
                 Close = price,
-                Volume = volume
+                Volume = volume,
+                Symbol = symbol,
+                TimeFrame = _timeFrameMinutes
             };
         }
 
-        private void UpdateBar(Bars bar, double price, long volume)
+        private void UpdateBar(BarStorageItem bar, double price, long volume)
         {
             if (price > bar.High) bar.High = price;
             if (price < bar.Low) bar.Low = price;

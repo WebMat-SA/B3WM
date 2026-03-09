@@ -1,50 +1,65 @@
-using System.Text.Json.Serialization;
 using B3WM.Shared.Entity;
+using Magic.IndexedDb;
+using Magic.IndexedDb.SchemaAnnotations;
+using System.Text.Json.Serialization;
+using static B3WM.Client.Model.BarStorageItem;
 
 namespace B3WM.Client.Model
 {
     /// <summary>
     /// Barras para IndexedDB com timeframe. KeyPath "id" (case-sensitive).
     /// </summary>
-    public class BarStorageItem
+    public class BarStorageItem : MagicTableTool<BarStorageItem>, IMagicTable<DbSets>
     {
-        [JsonPropertyName("id")]
-        public string Id { get; set; } = string.Empty;
+        public static readonly IndexedDbSet DataBase = IndexDbContext.DataBase;
 
-        [JsonPropertyName("date")]
-        public string Date { get; set; } = string.Empty;
+        public List<IMagicCompoundIndex> GetCompoundIndexes() =>
+        new List<IMagicCompoundIndex>() {
+            CreateCompoundIndex(x => x.TimeFrame, x => x.Date, x => x.Symbol)
+        };
 
-        [JsonPropertyName("open")]
+        public IMagicCompoundKey GetKeys() =>
+            CreateCompoundKey(x => x.Symbol,
+                x => x.TimeFrame,
+                x => x.Date);
+        //CreatePrimaryKey(x => x.Id, true); // Auto-incrementing primary key
+
+        public string GetTableName() => "Bars";
+        public IndexedDbSet GetDefaultDatabase() => IndexDbContext.DataBase;
+
+        public DbSets Databases { get; } = new();
+        public sealed class DbSets
+        {
+            public readonly IndexedDbSet BarStorageItem = IndexDbContext.DataBase;
+        }
+
+        [MagicName("Date")]
+        public DateTime Date { get; set; }
+
+        [MagicName("Symbol")]
+        public string Symbol { get; set; }
+
+        //InMinutes
+        [MagicName("TimeFrame")]
+        public int TimeFrame { get; set; }
+
+        [MagicName("Open")]
         public double Open { get; set; }
 
-        [JsonPropertyName("high")]
+        [MagicName("High")]
         public double High { get; set; }
 
-        [JsonPropertyName("low")]
+        [MagicName("Low")]
         public double Low { get; set; }
 
-        [JsonPropertyName("close")]
+        [MagicName("Close")]
         public double Close { get; set; }
 
-        [JsonPropertyName("volume")]
+        [MagicName("Volume")]
         public long Volume { get; set; }
 
-        [JsonPropertyName("timeframe")]
-        public int Timeframe { get; set; }
+        [MagicName("VolumeLevel")]
+        public List<VolumeLevel>? VolumeLevel { get; set; }
 
-        public static BarStorageItem FromBar(Bars bar, int timeframe)
-        {
-            return new BarStorageItem
-            {
-                Id = $"{timeframe}_{bar.Date.Ticks}",
-                Date = bar.Date.ToString("o"),
-                Open = bar.Open,
-                High = bar.High,
-                Low = bar.Low,
-                Close = bar.Close,
-                Volume = bar.Volume,
-                Timeframe = timeframe
-            };
-        }
     }
 }

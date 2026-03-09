@@ -19,6 +19,7 @@ namespace B3WM.Shared.Entity
         public Agents Buyer { get; set; }
         public Agents Seller { get; set; }
         public ActionType Starter { get; set; }
+        public string Symbol { get; set; }
 
         public override string ToString()
         {
@@ -370,19 +371,19 @@ namespace B3WM.Shared.Entity
         {
             [Display(Description = "Compra")]
             [Description("Compra")]
-            Buy,
+            Buy = 1,
             [Display(Description = "Venda")]
             [Description("Venda")]
-            Sale,
+            Sale = 2,
             [Display(Description = "Leilão")]
             [Description("Leilão")]
-            Auction,
+            Auction = 3,
             [Display(Description = "Direto")]
             [Description("Direto")]
-            Cross,
+            Cross = 4,
             [Display(Description = "RLP")]
             [Description("RLP")]
-            RLP,
+            RLP = 5,
         }
 
         //public static bool CheckAnomaly(IDictionary<Agents, int> balanceByAgents, double multiplierSame, double multiplierOther, ActionType starter)

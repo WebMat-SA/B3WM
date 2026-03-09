@@ -1,12 +1,19 @@
-﻿@using B3WM.Shared.Entity
-@using Vizor.ECharts;
+﻿@using B3WM.Client.Model
+@using B3WM.Shared.Entity
+@using System.Diagnostics
+@using BlazorWorker.BackgroundServiceFactory
+@using BlazorWorker.Core
+@using BlazorWorker.WorkerBackgroundService
+@using Microsoft.AspNetCore.SignalR.Client
 @inject IMagicIndexedDb _MagicDb
+@inject IWorkerFactory workerFactory
+@inject NavigationManager Navigation
 
 @page "/"
 
-@* <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@(() => ShowMessage("Hello, World!"))">
+<MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@(() => Test())">
     Click Me
-</MudButton> *@
+</MudButton>
 
 @* @foreach(var item in ticks)
 {
@@ -14,6 +21,47 @@
 } *@
 
 @code {
+    //var db = await _MagicDb.Database(IndexDbContext.BarStorageItem);
+    public required IMagicQuery<BarStorageItem> barsQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        //var db = await _MagicDb.Database(IndexDbContext.BarStorageItem);
+        barsQuery = await _MagicDb.Query<BarStorageItem>();
+
+        await base.OnInitializedAsync();
+    }
+
+    private async Task Test()
+    {
+        var sw = Stopwatch.StartNew();
+
+        //var exist = await barsQuery.FirstOrDefaultAsync(q => q.Date == DateTime.Today && q.TimeFrame == 2 && q.Symbol == "WINJ26");
+
+        // if (exist == null)
+        // {
+        //     await barsQuery.AddAsync(new BarStorageItem
+        //     {
+        //         Symbol = "WINJ26",
+        //         TimeFrame = 2,
+        //         Open = 150.25d,
+        //         High = 151.00d,
+        //         Low = 149.75d,
+        //         Close = 150.50d,
+        //         Volume = 1000000,
+        //         Date = DateTime.Today
+        //     });
+        // }
+        // else
+        // {
+        //     exist.Close = 2d;
+
+        //     await barsQuery.UpdateAsync(exist);
+        // }
+        sw.Stop();
+
+        HelperPerformanceConfig.Log("Log", "AddDb", sw.ElapsedMilliseconds);
+    }
 
     // protected override async Task OnInitializedAsync()
     // {

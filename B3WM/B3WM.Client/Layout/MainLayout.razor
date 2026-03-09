@@ -8,13 +8,22 @@
 <MudLayout>
     <PageTitle>B³ WM</PageTitle>
     <MudAppBar Elevation="0" Dense>
-        <MudMenu Dense Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
-            <MudMenuItem Href="/">Home</MudMenuItem>
-            <MudMenuItem Href="/times-and-trades">Times and Trades</MudMenuItem>
-            <MudMenuItem Href="/map-flow">MapFlow</MudMenuItem>
-        </MudMenu>
+        <MudStack Spacing="0" Style="width:100%" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Row>
+            <MudMenu Dense Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
+                <MudMenuItem Href="/">Home</MudMenuItem>
+                <MudMenuItem Href="/times-and-trades">Times and Trades</MudMenuItem>
+                <MudMenuItem Href="/map-flow">MapFlow</MudMenuItem>
+            </MudMenu>
+            <MudText Typo="Typo.caption">@Symbol</MudText>
+        </MudStack>
     </MudAppBar>
     <MudMainContent Style="max-height: calc(94vh - var(--mud-appbar-height))">
-        @Body
+        <CascadingValue TValue="string" Value="Symbol">
+            @Body
+        </CascadingValue>
     </MudMainContent>
 </MudLayout>
+
+@code{
+    public string Symbol { get; set; } = "WINJ26";
+}

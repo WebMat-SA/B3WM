@@ -120,7 +120,8 @@ namespace B3WM.Client.Services
                         Volume = volume,
                         Buyer = (Ticks2.Agents)buyerInt,
                         Seller = (Ticks2.Agents)sellerInt,
-                        Starter = ParseStarter(starters, i)
+                        Starter = ParseStarter(starters, i),
+                        Symbol = parameters[0]
                     };
 
                     ticksQueue.Add(tick);

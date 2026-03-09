@@ -35,6 +35,7 @@ namespace ExtractorTryd.Services
         {
             hubConnection = new HubConnectionBuilder()
                 .WithUrl("https://localhost:5001/api/datahub")
+                .WithAutomaticReconnect()
                 .Build();
 
             hubConnection.StartAsync().Wait();
@@ -77,69 +78,72 @@ namespace ExtractorTryd.Services
                 {
                     socket.Connect(Dns.GetHostAddresses("127.0.0.1"), 12002);
 
+                    //Console.Write("Initializing list... ");
+
                     foreach (var item in ativos)
                     {
+
                         string str = $@"NEGS$S|{item}#";
                         socket.Send(Encoding.ASCII.GetBytes(str));
                     }
 
-                    MemoryStream buffer = new MemoryStream();
-                    byte[] readBuffer = new byte[8192];
+                    byte[] data = new byte[0];
+
+                    //Console.WriteLine("Finalizing list...");
 
                     while (!stoppingToken.IsCancellationRequested)
                     {
-                        if (hubConnection.State == HubConnectionState.Disconnected)
-                            StartHubConnection();
+                        if (stoppingToken.IsCancellationRequested) { SendUnsubscribe(socket); break; }
+                        if (hubConnection.State == HubConnectionState.Disconnected) StartHubConnection();
 
-                        int bytesRead = socket.Receive(readBuffer);
+                        byte[] chunk = new byte[8192];
 
-                        if (bytesRead <= 0)
+                        int r = socket.Receive(chunk);
+
+                        if (r <= 0)
+                        {
+                            Task.Delay(250).Wait();
                             continue;
+                        }
 
-                        buffer.Write(readBuffer, 0, bytesRead);
+                        // append only the received bytes
+                        if (r < chunk.Length)
+                        {
+                            var received = new byte[r];
+                            Array.Copy(chunk, 0, received, 0, r);
+                            data = data.Concat(received).ToArray();
+                        }
+                        else
+                        {
+                            data = data.Concat(chunk).ToArray();
+                        }
 
-                        ProcessBuffer(buffer, worker);
+                        // process all complete messages delimited by '#'
+                        int indexSharp;
+                        while ((indexSharp = Array.IndexOf(data, (byte)35)) >= 0)
+                        {
+                            var messageBytes = new byte[indexSharp];
+                            Array.Copy(data, 0, messageBytes, 0, indexSharp);
+
+                            // remove processed part and the '#'
+                            var remaining = new byte[data.Length - indexSharp - 1];
+                            if (remaining.Length > 0)
+                                Array.Copy(data, indexSharp + 1, remaining, 0, remaining.Length);
+                            data = remaining;
+
+                            Decode(messageBytes, worker);
+                        }
+
+                        Task.Delay(250).Wait();
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception expt)
             {
-                Console.WriteLine(ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// Processa o buffer procurando delimitador '#'
-        /// </summary>
-        private static void ProcessBuffer(MemoryStream buffer, BackgroundWorker worker)
-        {
-            byte[] data = buffer.ToArray();
-
-            int start = 0;
-
-            for (int i = 0; i < data.Length; i++)
-            {
-                if (data[i] == (byte)'#')
-                {
-                    int length = i - start;
-
-                    if (length > 0)
-                    {
-                        byte[] message = new byte[length];
-                        Buffer.BlockCopy(data, start, message, 0, length);
-
-                        Decode(message, worker);
-                    }
-
-                    start = i + 1;
-                }
+                Console.WriteLine(expt.Message);
             }
 
-            if (start > 0)
-            {
-                buffer.SetLength(0);
-                buffer.Write(data, start, data.Length - start);
-            }
+            Task.Delay(10000).Wait();
         }
 
         public static void Decode(byte[] data, BackgroundWorker worker)
