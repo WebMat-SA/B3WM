@@ -6,7 +6,7 @@
 @using BlazorWorker.WorkerBackgroundService
 @using Microsoft.AspNetCore.SignalR.Client
 @inject IMagicIndexedDb _MagicDb
-@inject IWorkerFactory workerFactory
+@* @inject IWorkerFactory workerFactory *@
 @inject NavigationManager Navigation
 
 @page "/"
@@ -27,7 +27,7 @@
     protected override async Task OnInitializedAsync()
     {
         //var db = await _MagicDb.Database(IndexDbContext.BarStorageItem);
-        barsQuery = await _MagicDb.Query<BarStorageItem>();
+        //barsQuery = await _MagicDb.Query<BarStorageItem>();
 
         await base.OnInitializedAsync();
     }

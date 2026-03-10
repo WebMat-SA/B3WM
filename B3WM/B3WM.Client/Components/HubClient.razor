@@ -220,25 +220,31 @@
 
     public async Task CreateWorkers()
     {
-        HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
+        try{
 
-        if (MainWorker == null)
-            MainWorker = await workerFactory.CreateAsync();
+            HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
 
-        if (MainService != null)
-            return;
+            if (MainWorker == null)
+                MainWorker = await workerFactory.CreateAsync();
 
-        MainService = await MainWorker.CreateBackgroundServiceAsync<MainHelper>();
+            if (MainService != null)
+                return;
 
-        RegisterCandleEvents();
-        RegisterBubbleEvents();
-        RegisterVolumeEvents();
+            MainService = await MainWorker.CreateBackgroundServiceAsync<MainHelper>();
 
-        await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer));
-        await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer));
-        await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
+            RegisterCandleEvents();
+            RegisterBubbleEvents();
+            RegisterVolumeEvents();
 
-        HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
+            await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer));
+            await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer));
+            await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
+
+            HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
+        }catch (Exception e)
+        {
+            HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"Error: {e.Message}");
+        }
     }
 
     #region Candle
@@ -798,9 +804,7 @@
             <MudList T="string" Dense ReadOnly>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.Storage" Expanded=true>
                     <AvatarContent>
-                        <MudTooltip Text="@hubConnection?.State.ToString()">
-                            <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Storage" />
-                        </MudTooltip>
+                        <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.Storage" />
                     </AvatarContent>
                     <ChildContent>
                         <MudText Typo="Typo.caption">Data base</MudText>
