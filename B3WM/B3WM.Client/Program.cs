@@ -2,7 +2,7 @@ using B3WM.Client.Components;
 using B3WM.Client.Services;
 using Blazored.SessionStorage;
 using BlazorWorker.Core;
-using BlazorWorker.Extensions.JSRuntime;
+//using BlazorWorker.Extensions.JSRuntime;
 using Magic.IndexedDb;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Extensions;

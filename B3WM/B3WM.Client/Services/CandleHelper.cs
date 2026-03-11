@@ -1,12 +1,8 @@
 using B3WM.Client.Model;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
-using BlazorWorker.WorkerBackgroundService;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Linq;
-using System.Runtime.Serialization;
-using Vizor.ECharts;
 
 namespace B3WM.Client.Services
 {

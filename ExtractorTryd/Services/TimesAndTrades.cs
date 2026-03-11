@@ -46,20 +46,34 @@ namespace ExtractorTryd.Services
         /// </summary>
         public static async Task WorkChannel()
         {
-            while (await _channelToDo.Reader.WaitToReadAsync())
+            while (true)
             {
-                using (var ms = new MemoryStream())
+                try
                 {
-                    while (_channelToDo.Reader.TryRead(out var data))
+                    while (await _channelToDo.Reader.WaitToReadAsync())
                     {
-                        ms.Write(data, 0, data.Length);
-                    }
+                        using (var ms = new MemoryStream())
+                        {
+                            while (_channelToDo.Reader.TryRead(out var data))
+                            {
+                                ms.Write(data, 0, data.Length);
+                            }
 
-                    if (hubConnection != null &&
-                        hubConnection.State == HubConnectionState.Connected)
-                    {
-                        await hubConnection.SendAsync("SendDataTnT", ms.ToArray());
+                            if (hubConnection != null &&
+                                hubConnection.State == HubConnectionState.Connected)
+                            {
+                                await hubConnection.SendAsync("SendDataTnT", ms.ToArray());
+                            }
+                            else
+                            {
+                                StartHubConnection();
+                            }
+                        }
                     }
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
                 }
             }
         }

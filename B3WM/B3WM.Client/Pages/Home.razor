@@ -1,80 +1,42 @@
-﻿@using B3WM.Client.Model
-@using B3WM.Shared.Entity
-@using System.Diagnostics
-@using BlazorWorker.BackgroundServiceFactory
-@using BlazorWorker.Core
-@using BlazorWorker.WorkerBackgroundService
+﻿@using BlazorWorker.BackgroundServiceFactory
+@using BlazorWorker.Core 
+@using BlazorWorker.WorkerBackgroundService 
 @using Microsoft.AspNetCore.SignalR.Client
-@inject IMagicIndexedDb _MagicDb
-@* @inject IWorkerFactory workerFactory *@
+@using System.Diagnostics
 @inject NavigationManager Navigation
+@inject IWorkerFactory workerFactory
 
 @page "/"
 
-<MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="@(() => Test())">
-    Click Me
-</MudButton>
+<MudButton OnClick="Init">Start Hub</MudButton>
 
-@* @foreach(var item in ticks)
-{
-    <p>@item.TrydID</p>
-} *@
+@text
 
-@code {
-    //var db = await _MagicDb.Database(IndexDbContext.BarStorageItem);
-    public required IMagicQuery<BarStorageItem> barsQuery { get; set; }
+@code{
+
+
+    public string text { get; set; } = string.Empty;
+
+    private IWorker? MainWorker;
+    private IWorkerBackgroundService<HubClientWorker>? MainService { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
-        //var db = await _MagicDb.Database(IndexDbContext.BarStorageItem);
-        //barsQuery = await _MagicDb.Query<BarStorageItem>();
 
-        await base.OnInitializedAsync();
+
+        if (MainWorker == null)
+            MainWorker = await workerFactory.CreateAsync();
+
     }
 
-    private async Task Test()
+    public async void Init()
     {
-        var sw = Stopwatch.StartNew();
+        if (MainService != null)
+            await MainService.RunAsync(e => e.Init(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, 500));
 
-        //var exist = await barsQuery.FirstOrDefaultAsync(q => q.Date == DateTime.Today && q.TimeFrame == 2 && q.Symbol == "WINJ26");
-
-        // if (exist == null)
-        // {
-        //     await barsQuery.AddAsync(new BarStorageItem
-        //     {
-        //         Symbol = "WINJ26",
-        //         TimeFrame = 2,
-        //         Open = 150.25d,
-        //         High = 151.00d,
-        //         Low = 149.75d,
-        //         Close = 150.50d,
-        //         Volume = 1000000,
-        //         Date = DateTime.Today
-        //     });
-        // }
-        // else
-        // {
-        //     exist.Close = 2d;
-
-        //     await barsQuery.UpdateAsync(exist);
-        // }
-        sw.Stop();
-
-        HelperPerformanceConfig.Log("Log", "AddDb", sw.ElapsedMilliseconds);
+        Console.WriteLine("Initi worker");
     }
 
-    // protected override async Task OnInitializedAsync()
-    // {
-    //     IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
+    
 
-    //     await base.OnInitializedAsync();
-    // }
-
-    // ICollection<Ticks2> ticks = new List<Ticks2>();
-
-    // public void ShowMessage(string message)
-    // {
-    //     // Display the message in a dialog or console
-    //     Console.WriteLine(message);
-    // }
 }

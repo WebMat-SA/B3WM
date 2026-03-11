@@ -2,7 +2,6 @@
 @using B3WM.Client.Services
 @using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
-@using Microsoft.AspNetCore.SignalR.Client
 @using System.Text
 @using System.Collections.Concurrent
 @using System.Diagnostics
@@ -13,7 +12,7 @@
 @implements IAsyncDisposable
 @using BlazorWorker.WorkerBackgroundService
 @using BlazorWorker.BackgroundServiceFactory
-@using BlazorWorker.Core
+@using BlazorWorker.Core 
 @inject IWorkerFactory workerFactory
 @inject IMagicIndexedDb _MagicDb
 
@@ -73,7 +72,7 @@
     }
 
     [Parameter, PersistState]
-    public bool EnableBook { get; set; } = true;
+    public bool EnableBook { get; set; } = false;
 
     [Parameter, PersistState]
     public bool EnableTimesAndTradesSimple { get; set; } = false;
@@ -145,13 +144,11 @@
         }
     }
 
-    public bool IsConnected =>
-        hubConnection?.State == HubConnectionState.Connected;
-
     public bool WorkerOn => MainService != null;
 
     private IWorker? MainWorker;
     private IWorkerBackgroundService<MainHelper>? MainService { get; set; }
+    private IWorkerBackgroundService<HubClientWorker>? HubService { get; set; }
 
     public required IMagicQuery<BarStorageItem> barsQuery { get; set; }
     public required IMagicQuery<BubbleStorageItem> bubbleQuery { get; set; }
@@ -168,8 +165,6 @@
     private string? _volumeTimeQueue;
     private string? _candleTimeQueue;
 
-    public HubConnection? hubConnection;
-
     public DateTime? _lastUpdateBarReceived { get; set; }
 
     private VolumeLevelStorageItem? _lastVolumeLevel { get; set; }
@@ -182,17 +177,6 @@
     protected override async Task OnInitializedAsync()
     {
 
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/api/datahub"))
-            .WithAutomaticReconnect()
-            .Build();
-
-        hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
-        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
-        //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
-
-        await hubConnection.StartAsync();
-
         barsQuery = await _MagicDb.Query<BarStorageItem>();
         bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
 
@@ -204,6 +188,9 @@
     {
         if (firstRender)
         {
+            await CreateWorkers();
+
+            await CreateHubWorkers();
 
             _ = LoopSendWorker();
 
@@ -211,7 +198,6 @@
 
             _ = LoopAddBubble();
 
-            await CreateWorkers();
 
         }
 
@@ -241,7 +227,88 @@
             await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
+
+
+            if (HubService != null)
+                return;
+
+            HubService = await MainWorker.CreateBackgroundServiceAsync<HubClientWorker>();
+
+            await HubService!.RegisterEventListenerAsync(nameof(HubClientWorker.Notify),
+                (object? s, IEnumerable<byte[]> datas) =>
+                {
+                    var sw = Stopwatch.StartNew();
+
+                    if (!EnableTimesAndTrades) return;
+
+
+                    //debug de velocidade e confirmação de dados
+                    _counter += datas.Count();
+
+                    foreach(var data in datas)
+                        _ = _channelToDo.Writer.WriteAsync(data);
+
+                    _lastUpdateBarReceived = DateTime.Now;
+
+                    sw.Stop();
+                    HelperPerformanceConfig.Log("Log", "Notify",
+                        sw.ElapsedMilliseconds,
+                        $"Received new data at {DateTime.Now:HH:mm:ss.fff}");
+                });
+
+            if (HubService != null)
+                await HubService.RunAsync(e => e.Init(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, 200));
+
+
         }catch (Exception e)
+        {
+            HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"Error: {e.Message}");
+        }
+    }
+
+    public async Task CreateHubWorkers()
+    {
+        try
+        {
+
+            HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkersHub", 0, $"{MainService != null}");
+
+            if (MainWorker == null)
+                MainWorker = await workerFactory.CreateAsync();
+
+            if (HubService != null)
+                return;
+
+            HubService = await MainWorker.CreateBackgroundServiceAsync<HubClientWorker>();
+
+            await HubService!.RegisterEventListenerAsync(nameof(HubClientWorker.Notify),
+                (object? s, IEnumerable<byte[]> datas) =>
+                {
+                    var sw = Stopwatch.StartNew();
+
+                    if (!EnableTimesAndTrades) return;
+
+
+                    //debug de velocidade e confirmação de dados
+                    _counter += datas.Count();
+
+                    foreach (var data in datas)
+                        _ = _channelToDo.Writer.WriteAsync(data);
+
+                    _lastUpdateBarReceived = DateTime.Now;
+
+                    sw.Stop();
+                    HelperPerformanceConfig.Log("Log", "Notify",
+                        sw.ElapsedMilliseconds,
+                        $"Received new data at {DateTime.Now:HH:mm:ss.fff}");
+                });
+
+            if (HubService != null)
+                await HubService.RunAsync(e => e.Init(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, 200));
+
+
+        }
+        catch (Exception e)
         {
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"Error: {e.Message}");
         }
@@ -405,7 +472,7 @@
 
                 await Task.Delay(10);
                 sw.Stop();
-                //HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
+                HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
             }
         }
         catch (OperationCanceledException e )
@@ -561,22 +628,6 @@
         }
     }
 
-    private void OnReceiveTNT(byte[] data)
-    {
-        if (data == null || data.Length == 0) return;
-
-        if (!EnableTimesAndTrades) return;
-
-
-        //debug de velocidade e confirmação de dados
-        _counter++;
-
-        _ = _channelToDo.Writer.WriteAsync(data);
-
-        _lastUpdateBarReceived = DateTime.Now;
-
-    }
-
     public int GetCacheCount()
     {
         //HelperPerformanceConfig.Log(nameof(HubClient), "GetCacheCount", 0, $"Current cache count: {_channelToDo.Reader.Count} at {DateTime.Now:HH:mm:ss.fff}");
@@ -613,12 +664,6 @@
 
         if (MainWorker != null)
             await MainWorker.DisposeAsync();
-
-
-        if (hubConnection is not null)
-        {
-            await hubConnection.DisposeAsync();
-        }
 
         _channelToDo.Writer.Complete();
 
@@ -657,10 +702,8 @@
 <MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
 
     
-    <MudTooltip Text="@($"{hubConnection?.State.ToString()} : {_counter}")" Arrow Placement="Placement.Start">
-        <MudBadge Color=Color.Info Overlap=true Bordered=true Content="@(_counter % 100)" OnClick="() => _counter = 0">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Wifi" Color="IsConnected? Color.Success: Color.Error" OnClick="() => openDrawer = !openDrawer" />
-        </MudBadge>
+    <MudTooltip Text="@($"Engines")" Arrow Placement="Placement.Start">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Engineering" OnClick="() => openDrawer = !openDrawer" />
     </MudTooltip>
 
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
@@ -777,7 +820,7 @@
             </MudList>
         </MudPaper>
 
-        <MudPaper Class="p-1" Outlined Elevation="0">
+        @* <MudPaper Class="p-1" Outlined Elevation="0">
             <MudList T="string" Dense ReadOnly>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.Wifi" Expanded=true>
                     <AvatarContent>
@@ -798,7 +841,7 @@
                     </NestedList>
                 </MudListItem>
             </MudList>
-        </MudPaper>
+        </MudPaper> *@
 
         <MudPaper Class="p-1" Outlined Elevation="0">
             <MudList T="string" Dense ReadOnly>
