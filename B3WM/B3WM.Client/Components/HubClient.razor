@@ -88,7 +88,7 @@
 
 
     [PersistState]
-    public bool EnableCandleFormer { get; set; }
+    public bool EnableCandleFormer { get; set; } = true;
 
     public async Task EnableCandleFormerChanged(bool value)
     {
@@ -107,7 +107,7 @@
     }
 
     [PersistState]
-    public bool EnableVolumeFormer { get; set; }
+    public bool EnableVolumeFormer { get; set; } = true;
 
     public async Task EnableVolumeFormerChanged(bool value)
     {
@@ -125,7 +125,7 @@
     }
 
     [PersistState]
-    public bool EnableBubbleFormer { get; set; }
+    public bool EnableBubbleFormer { get; set; } = true;
 
     [PersistState]
     public bool FakingData { get; set; } = false;
@@ -253,7 +253,7 @@
                     _lastUpdateBarReceived = DateTime.Now;
 
                     sw.Stop();
-                    HelperPerformanceConfig.Log("Log", "Notify",
+                    HelperPerformanceConfig.Log(nameof(HubClient), "Notify",
                         sw.ElapsedMilliseconds,
                         $"Received new data at {DateTime.Now:HH:mm:ss.fff}");
                 });
