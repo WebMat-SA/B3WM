@@ -148,6 +148,8 @@
 
     private IWorker? MainWorker;
     private IWorkerBackgroundService<MainHelper>? MainService { get; set; }
+    //cada worker é um js criado, logo um webworker diferenta
+    private IWorker? MainHubWorker;
     private IWorkerBackgroundService<HubClientWorker>? HubService { get; set; }
 
     public required IMagicQuery<BarStorageItem> barsQuery { get; set; }
@@ -273,13 +275,13 @@
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkersHub", 0, $"{MainService != null}");
 
-            if (MainWorker == null)
-                MainWorker = await workerFactory.CreateAsync();
+            if (MainHubWorker == null)
+                MainHubWorker = await workerFactory.CreateAsync();
 
             if (HubService != null)
                 return;
 
-            HubService = await MainWorker.CreateBackgroundServiceAsync<HubClientWorker>();
+            HubService = await MainHubWorker.CreateBackgroundServiceAsync<HubClientWorker>();
 
             await HubService!.RegisterEventListenerAsync(nameof(HubClientWorker.Notify),
                 (object? s, IEnumerable<byte[]> datas) =>
