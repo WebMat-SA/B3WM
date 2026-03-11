@@ -7,8 +7,11 @@ namespace B3WM.Services
     {
         public async Task SendDataTnT(byte[] data)
         {
-            await Clients.All.ReceiveTnT(data);
-            Console.WriteLine(data.Count());
+            if (data != null && data.Length > 0)
+            {
+                await Clients.All.ReceiveTnT(data);
+                Console.WriteLine(data.Count());
+            }
         }
 
         public async Task SendDataBook(byte[] data)

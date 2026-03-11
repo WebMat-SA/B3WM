@@ -33,6 +33,8 @@ namespace ExtractorTryd.Services
 
         public static void StartHubConnection()
         {
+            if (hubConnection != null) hubConnection.DisposeAsync();
+
             hubConnection = new HubConnectionBuilder()
                 .WithUrl("https://localhost:5001/api/datahub")
                 .WithAutomaticReconnect()
@@ -48,21 +50,27 @@ namespace ExtractorTryd.Services
         {
             while (true)
             {
+                StartHubConnection();
+
                 try
                 {
                     while (await _channelToDo.Reader.WaitToReadAsync())
                     {
+                        int count = 0;
+
                         using (var ms = new MemoryStream())
                         {
-                            while (_channelToDo.Reader.TryRead(out var data))
+                            while (_channelToDo.Reader.TryRead(out var data) && count < 10)
                             {
                                 ms.Write(data, 0, data.Length);
+                                count++;
                             }
 
                             if (hubConnection != null &&
                                 hubConnection.State == HubConnectionState.Connected)
                             {
                                 await hubConnection.SendAsync("SendDataTnT", ms.ToArray());
+                                await Task.Delay(250);
                             }
                             else
                             {
