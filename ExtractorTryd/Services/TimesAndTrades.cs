@@ -24,6 +24,8 @@ namespace ExtractorTryd.Services
 
         public static string[] ativos { get; set; } = new string[] { "WINJ26" };
 
+        public static string url { get; set; }
+
         public static readonly Channel<byte[]> _channelToDo =
             Channel.CreateBounded<byte[]>(new BoundedChannelOptions(5000)
             {
@@ -36,7 +38,7 @@ namespace ExtractorTryd.Services
             if (hubConnection != null) hubConnection.DisposeAsync();
 
             hubConnection = new HubConnectionBuilder()
-                .WithUrl("https://localhost:5001/api/datahub")
+                .WithUrl(url)
                 .WithAutomaticReconnect()
                 .Build();
 
@@ -86,11 +88,12 @@ namespace ExtractorTryd.Services
             }
         }
 
-        public static void Start(CancellationToken stoppingToken, BackgroundWorker worker, string[] _ativos)
+        public static void Start(CancellationToken stoppingToken, BackgroundWorker worker, string[] _ativos, string _url)
         {
             try
             {
                 ativos = _ativos;
+                url = _url;
 
                 StartHubConnection();
 

@@ -230,38 +230,6 @@
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
 
-
-            if (HubService != null)
-                return;
-
-            HubService = await MainWorker.CreateBackgroundServiceAsync<HubClientWorker>();
-
-            await HubService!.RegisterEventListenerAsync(nameof(HubClientWorker.Notify),
-                (object? s, IEnumerable<byte[]> datas) =>
-                {
-                    var sw = Stopwatch.StartNew();
-
-                    if (!EnableTimesAndTrades) return;
-
-
-                    //debug de velocidade e confirmação de dados
-                    _counter += datas.Count();
-
-                    foreach(var data in datas)
-                        _ = _channelToDo.Writer.WriteAsync(data);
-
-                    _lastUpdateBarReceived = DateTime.Now;
-
-                    sw.Stop();
-                    HelperPerformanceConfig.Log(nameof(HubClient), "Notify",
-                        sw.ElapsedMilliseconds,
-                        $"Received new data at {DateTime.Now:HH:mm:ss.fff}");
-                });
-
-            if (HubService != null)
-                await HubService.RunAsync(e => e.Init(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, 200));
-
-
         }catch (Exception e)
         {
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"Error: {e.Message}");
@@ -300,9 +268,6 @@
                     _lastUpdateBarReceived = DateTime.Now;
 
                     sw.Stop();
-                    HelperPerformanceConfig.Log("Log", "Notify",
-                        sw.ElapsedMilliseconds,
-                        $"Received new data at {DateTime.Now:HH:mm:ss.fff}");
                 });
 
             if (HubService != null)

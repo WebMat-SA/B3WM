@@ -26,19 +26,11 @@ namespace ExtractorTryd
     public partial class MainWindow : Window
     {
         public string Symbol { get; set; } = "WINJ26";
+        public string Url { get; set; } = "https://localhost:5001/api/datahub";
 
         BackgroundWorker workerTnT = new BackgroundWorker();
         CancellationTokenSource SourceTnT { get; set; }
         CancellationToken TokenTnT { get; set; }
-
-
-        BackgroundWorker workerBk = new BackgroundWorker();
-        CancellationTokenSource SourceBk { get; set; }
-        CancellationToken TokenBk { get; set; }
-
-        BackgroundWorker workerTntS = new BackgroundWorker();
-        CancellationTokenSource SourceTntS { get; set; }
-        CancellationToken TokenTntS { get; set; }
 
 
         public MainWindow()
@@ -84,7 +76,7 @@ namespace ExtractorTryd
                     break;
                 }
 
-                TimesAndTrades.Start(TokenTnT, workerTnT,new string[] { Symbol });
+                TimesAndTrades.Start(TokenTnT, workerTnT,new string[] { Symbol }, Url);
 
                 Task.Delay(1000).Wait();
             }
