@@ -52,7 +52,7 @@ namespace B3WM.Client.Services
         {
             try
             {
-                HelperPerformanceConfig.Log("Log", "INIT HUB ",
+                HelperPerformanceConfig.Log(nameof(HubClientWorker), "INIT HUB ",
                         0,
                         $"Init {url}");
 
@@ -77,7 +77,7 @@ namespace B3WM.Client.Services
             }
             catch (Exception ex)
             {
-                HelperPerformanceConfig.Log("Log", "Erro",
+                HelperPerformanceConfig.Log(nameof(HubClientWorker), "Erro",
                         0,
                         $"Init {ex.Message}");
             }
@@ -88,9 +88,9 @@ namespace B3WM.Client.Services
 
             if (data == null || data.Length == 0) return;
 
-            HelperPerformanceConfig.Log("Log", "OnReceiveTNT",
+            HelperPerformanceConfig.Log(nameof(HubClientWorker), "OnReceiveTNT",
                     0,
-                    $"Received new data at {DateTime.Now:HH:mm:ss.fff}");
+                    $"Received new data lenght: {data.Length}");
 
             _ = _channelToDo.Writer.WriteAsync(data);
 

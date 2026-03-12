@@ -48,7 +48,7 @@ namespace B3WM.Client.Services
             }
             catch (Exception ex)
             {
-                HelperPerformanceConfig.Log("Log", nameof(MainHelper), 0, $"Error initializing MainHelper: {ex.Message}");
+                HelperPerformanceConfig.Log(nameof(MainHelper), nameof(MainHelper), 0, $"Error initializing MainHelper: {ex.Message}");
             }
         }
 
@@ -109,7 +109,7 @@ namespace B3WM.Client.Services
             EnableBubbleFormer = _enableBubbleFormer;
             _bubble.Init(throtlingms, bubbleThreshold);
 
-            HelperPerformanceConfig.Log("Log", nameof(InitBubble), 0, "Bubble helper initialized");
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitBubble), 0, "Bubble helper initialized");
         }
 
         public void InitVolume(int throtlingms = 200, bool _enableVolumeFormer = true)
@@ -117,7 +117,7 @@ namespace B3WM.Client.Services
             EnableVolumeFormer = _enableVolumeFormer;
             _volume.Init(throtlingms);
 
-            HelperPerformanceConfig.Log("Log", nameof(InitVolume), 0, "Volume helper initialized");
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitVolume), 0, "Volume helper initialized");
         }
         private void _volume_OnQueueTime(object? sender, string e)
         {

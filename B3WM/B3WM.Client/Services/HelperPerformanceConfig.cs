@@ -28,6 +28,9 @@ namespace B3WM.Client.Services
         /// <summary>Quando true, HubClient imprime [Perf] no console.</summary>
         public static bool EnableHubClient { get; set; } = false;
 
+        /// <summary> Quando true, HubClientWorker imprime [Perf] no console. </summary>
+        public static bool EnableHubClientWorker { get; set; } = true;
+
         /// <summary>Quando true, MainHelper imprime [Perf] no console.</summary>
         public static bool EnableMainHelper { get; set; } = false;
 
@@ -53,6 +56,7 @@ namespace B3WM.Client.Services
             nameof(MapFlow) => EnableMapFlow,
             nameof(HubClient) => EnableHubClient,
             nameof(MainHelper) => EnableMainHelper,
+            nameof(HubClientWorker) => EnableHubClientWorker,
             nameof(Magic) => EnableMagicDb,
             "Log" => true,
             _ => false
