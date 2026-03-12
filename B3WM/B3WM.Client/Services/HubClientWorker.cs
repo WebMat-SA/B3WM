@@ -21,18 +21,28 @@ namespace B3WM.Client.Services
             {
                 while (await periodicTimer.WaitForNextTickAsync(cts.Token))
                 {
-                    if (Notify != null)
+                    try
                     {
-                        var list = new List<byte[]>();
 
-                        while (_channelToDo.Reader.TryRead(out byte[]? _data)) 
+                        if (Notify != null)
                         {
-                            if (_data == null) continue;
+                            var list = new List<byte[]>();
+                            int count = 0;
 
-                            list.Add(_data); 
+                            while (_channelToDo.Reader.TryRead(out byte[]? _data) && count < 10)
+                            {
+                                if (_data == null) continue;
+
+                                list.Add(_data);
+                                count++;
+                            }
+
+                            Notify.Invoke(this, list);
                         }
-
-                        Notify.Invoke(this, list);
+                    }
+                    catch (Exception ex)
+                    {
+                        HelperPerformanceConfig.Log(nameof(HubClientWorker), nameof(RunTimerAsync), 0, $"{ex.Message}");
                     }
                 }
             }

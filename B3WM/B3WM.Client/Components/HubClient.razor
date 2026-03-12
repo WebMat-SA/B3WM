@@ -420,11 +420,14 @@
 
                 var dequeued = _channelToDo.Reader.Count;
 
-                while (_channelToDo.Reader.TryRead(out byte[]? _data))
+                int count = 0;
+
+                while (_channelToDo.Reader.TryRead(out byte[]? _data) && count<10)
                 {
                     if (_data == null) continue;
 
                     allCompactData += Encoding.UTF8.GetString(_data);
+                    count++;
                 }
 
                 if (MainService != null)
@@ -437,7 +440,7 @@
                     //HelperPerformanceConfig.Log(nameof(HubClient), "RunLoop.SendingToWebWorker()", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
                 }
 
-                await Task.Delay(10);
+                //await Task.Delay(10);
                 sw.Stop();
                 HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
             }
@@ -504,7 +507,7 @@
 
                 sw.Stop();
                 HelperPerformanceConfig.Log(nameof(HubClient), "LoopAddBar", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
-                await Task.Delay(5000);
+                //await Task.Delay(5000);
             }
         }
         catch (OperationCanceledException e)
@@ -584,7 +587,7 @@
 
                     sw.Stop();
                     HelperPerformanceConfig.Log(nameof(HubClient), "LoopAddBubble", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
-                    await Task.Delay(5000);
+                    //await Task.Delay(5000);
                 }
             }
             catch (OperationCanceledException e)
@@ -826,6 +829,7 @@
                                     Faking Data (true = não salvar no banco)
                                 </MudText>
                             </MudSwitch>
+                            
                         </MudListItem>
                     </NestedList>
                 </MudListItem>
@@ -886,6 +890,14 @@
                             <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableHubClient" ThumbIcon="@(HelperPerformanceConfig.EnableHubClient == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableHubClient == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Hub Client
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableHubClientWorker" ThumbIcon="@(HelperPerformanceConfig.EnableHubClientWorker == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableHubClientWorker == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Hub Client Worker
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>

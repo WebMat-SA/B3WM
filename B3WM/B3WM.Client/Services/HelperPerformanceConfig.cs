@@ -26,10 +26,10 @@ namespace B3WM.Client.Services
         public static bool EnableMapFlow { get; set; } = false;
 
         /// <summary>Quando true, HubClient imprime [Perf] no console.</summary>
-        public static bool EnableHubClient { get; set; } = false;
+        public static bool EnableHubClient { get; set; } = true;
 
         /// <summary> Quando true, HubClientWorker imprime [Perf] no console. </summary>
-        public static bool EnableHubClientWorker { get; set; } = true;
+        public static bool EnableHubClientWorker { get; set; } = false;
 
         /// <summary>Quando true, MainHelper imprime [Perf] no console.</summary>
         public static bool EnableMainHelper { get; set; } = false;

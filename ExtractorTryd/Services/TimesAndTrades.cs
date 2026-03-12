@@ -103,64 +103,77 @@ namespace ExtractorTryd.Services
                 {
                     socket.Connect(Dns.GetHostAddresses("127.0.0.1"), 12002);
 
-                    //Console.Write("Initializing list... ");
-
                     foreach (var item in ativos)
                     {
-
                         string str = $@"NEGS$S|{item}#";
                         socket.Send(Encoding.ASCII.GetBytes(str));
                     }
 
-                    byte[] data = new byte[0];
+                    // buffer reutilizável
+                    byte[] buffer = new byte[1024 * 1024]; // 1MB
+                    int bufferLength = 0;
 
-                    //Console.WriteLine("Finalizing list...");
+                    byte[] chunk = new byte[8192];
 
                     while (!stoppingToken.IsCancellationRequested)
                     {
-                        if (stoppingToken.IsCancellationRequested) { SendUnsubscribe(socket); break; }
-                        if (hubConnection.State == HubConnectionState.Disconnected) StartHubConnection();
-
-                        byte[] chunk = new byte[8192];
+                        if (hubConnection.State == HubConnectionState.Disconnected)
+                            StartHubConnection();
 
                         int r = socket.Receive(chunk);
 
                         if (r <= 0)
                         {
-                            Task.Delay(250).Wait();
+                            Thread.Sleep(50);
                             continue;
                         }
 
-                        // append only the received bytes
-                        if (r < chunk.Length)
+                        Console.WriteLine($"[Socket] Received chunk: {r} bytes");
+
+                        // copia o chunk para o buffer principal
+                        Buffer.BlockCopy(chunk, 0, buffer, bufferLength, r);
+                        bufferLength += r;
+
+                        Console.WriteLine($"[Buffer] Current size: {bufferLength} bytes");
+
+                        int messageStart = 0;
+
+                        for (int i = 0; i < bufferLength; i++)
                         {
-                            var received = new byte[r];
-                            Array.Copy(chunk, 0, received, 0, r);
-                            data = data.Concat(received).ToArray();
+                            if (buffer[i] == (byte)'#')
+                            {
+                                int messageLength = i - messageStart;
+
+                                if (messageLength > 0)
+                                {
+                                    byte[] messageBytes = new byte[messageLength];
+
+                                    Buffer.BlockCopy(buffer, messageStart, messageBytes, 0, messageLength);
+
+                                    Console.WriteLine($"[Decode] Message size: {messageLength} bytes");
+
+                                    Decode(messageBytes, worker);
+                                }
+
+                                messageStart = i + 1;
+                            }
                         }
-                        else
+
+                        // move o restante não processado para o início
+                        if (messageStart > 0)
                         {
-                            data = data.Concat(chunk).ToArray();
+                            int remaining = bufferLength - messageStart;
+
+                            if (remaining > 0)
+                                Buffer.BlockCopy(buffer, messageStart, buffer, 0, remaining);
+
+                            bufferLength = remaining;
                         }
 
-                        // process all complete messages delimited by '#'
-                        int indexSharp;
-                        while ((indexSharp = Array.IndexOf(data, (byte)35)) >= 0)
-                        {
-                            var messageBytes = new byte[indexSharp];
-                            Array.Copy(data, 0, messageBytes, 0, indexSharp);
-
-                            // remove processed part and the '#'
-                            var remaining = new byte[data.Length - indexSharp - 1];
-                            if (remaining.Length > 0)
-                                Array.Copy(data, indexSharp + 1, remaining, 0, remaining.Length);
-                            data = remaining;
-
-                            Decode(messageBytes, worker);
-                        }
-
-                        Task.Delay(250).Wait();
+                        Thread.Sleep(1);
                     }
+
+                    SendUnsubscribe(socket);
                 }
             }
             catch (Exception expt)
@@ -168,7 +181,7 @@ namespace ExtractorTryd.Services
                 Console.WriteLine(expt.Message);
             }
 
-            Task.Delay(10000).Wait();
+            Thread.Sleep(10000);
         }
 
         public static void Decode(byte[] data, BackgroundWorker worker)
@@ -177,7 +190,7 @@ namespace ExtractorTryd.Services
 
             _channelToDo.Writer.TryWrite(data);
 
-            string textData = Encoding.UTF8.GetString(data);
+            string textData = $"Sending {data.Length} bytes ({data.Length / 1024.0:F2} KB)";
 
             worker.ReportProgress(Counter, textData);
         }

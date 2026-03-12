@@ -289,7 +289,7 @@
             //notifica somente o filho, para não dar gargalo de renderizar o gráfico (que é mais pesado) a cada atualização de barra, já que o gráfico só precisa ser atualizado quando as barras históricas mudam ou quando o usuário interage com o filtro de volume.
             //if (MapFlowBar != null) await MapFlowBar.NotifyChanges();
 
-            HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar skipped UI update", sw.ElapsedMilliseconds);
+            HelperPerformanceConfig.Log(nameof(MapFlow), "NewCurrentBar skipped UI update", sw.ElapsedMilliseconds, $"HubClient.ChannelTOdo: {_cachecount}");
             return Task.CompletedTask;
         }
 
