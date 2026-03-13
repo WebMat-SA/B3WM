@@ -34,22 +34,30 @@
                 <SelectColumn T="ImportData" DisabledFunc="x=>x.Processed || x.Processing" />
                 <PropertyColumn Property="x => x.File.Name" Title="Nome" Editable="false" InitialDirection="SortDirection.Ascending">
                     <CellTemplate>
+                        <MudStack Row Justify="Justify.SpaceBetween" Spacing="0">
                         @context.Item.File?.Name
+                        @if (context.Item.Processed)
+                        {
+                            <MudTooltip Text="Processado com sucesso">
+                                <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                            </MudTooltip>
+                        }
+                        </MudStack>
                     </CellTemplate>
                 </PropertyColumn>
-                <PropertyColumn Property="x => x.File" Title="Tamanho" Editable="false" InitialDirection="SortDirection.Ascending">
+                <PropertyColumn Property="x => x.MbSize" Title="Tamanho" Editable="false" InitialDirection="SortDirection.Ascending">
                     <CellTemplate>
                         @context.Item.MbSize Mb
                     </CellTemplate>
                 </PropertyColumn>
                 <PropertyColumn Property="x => x.Symbol" Title="Papel" Editable="true">
                     <EditTemplate>
-                        <MudTextField @bind-Value="context.Item.Symbol" @onclick:stopPropagation="true" />
+                        <MudTextField @bind-Value="context.Item.Symbol" @onclick:stopPropagation="true" Disabled="context.Item.Processing || context.Item.Processed" />
                     </EditTemplate>
                 </PropertyColumn>
                 <PropertyColumn Property="x => x.Date" Title="Data de referência" Editable="true">
                     <EditTemplate>
-                        <MudDatePicker @bind-Date="context.Item.Date" @onclick:stopPropagation="true" />
+                        <MudDatePicker @bind-Date="context.Item.Date" @onclick:stopPropagation="true" ShowToolbar="false" Elevation="0" Disabled="context.Item.Processing || context.Item.Processed" />
                     </EditTemplate>
                 </PropertyColumn>
 
@@ -57,8 +65,15 @@
                     <EditTemplate>
                         <MudStack Row Spacing="1" Justify="Justify.Center">
                             <MudTooltip Text="Remover item da lista">
-                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" OnClick="@(() => RemoveFileAsync(context.Item))" />
+                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" Disabled="@(context.Item.Processing)" OnClick="@(() => RemoveFileAsync(context.Item))" />
                             </MudTooltip>
+                            <MudTooltip Text="Processar item">
+                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Hexagon" Disabled="@(context.Item.Processing || context.Item.Processed)" OnClick="@(() => ProcessItemAsync(context.Item))" />
+                            </MudTooltip>
+                            @if (context.Item.Processing)
+                            {
+                                <MudProgressCircular Indeterminate Size="Size.Small"></MudProgressCircular>
+                            }
                         </MudStack>
                     </EditTemplate>
                 </TemplateColumn>
@@ -66,7 +81,7 @@
 
             <PagerContent>
 
-                <MudStack Row Justify="Justify.SpaceBetween" Class="pa-2 w-100">
+                <MudStack Row Justify="Justify.FlexStart" Spacing="2" Class="pa-2 w-100">
 
                     @* <MudText Typo="Typo.body2">
                         Selecionados: <b>@(_selectedDataImports?.Count ?? 0)</b>
@@ -76,9 +91,18 @@
                                Color="Color.Primary"
                                Disabled="@(!(_selectedDataImports?.Any(q=>!q.Processed && !q.Processing) ?? false))"
                                StartIcon="@Icons.Material.Filled.Hexagon"
-                               OnClick="ProcessFileAsync">
+                               OnClick="ProcessAllFileAsync" Style="min-width: 150px;">
 
                         Processar
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Error"
+                               Disabled="@(!(_selectedDataImports?.Any(q=> !q.Processing) ?? false))"
+                               StartIcon="@Icons.Material.Filled.Delete"
+                               OnClick="RemoveAllFileAsync" Style="min-width: 150px;">
+
+                        Remover
                     </MudButton>
 
                 </MudStack>
@@ -101,48 +125,101 @@
     private MudFileUpload<IReadOnlyList<IBrowserFile>> _fileUploadMultiple = default!;
     private HashSet<ImportData>? _selectedDataImports { get; set; }
 
+    private void SyncFiles()
+    {
+        // arquivos ainda presentes no upload
+        var currentFiles = _browserFiles.ToHashSet();
+
+        // remove itens cujo arquivo não existe mais
+        _files.RemoveAll(x => !currentFiles.Contains(x.File));
+
+        // adiciona novos arquivos que ainda não existem
+        foreach (var file in _browserFiles)
+        {
+            if (!_files.Any(x => x.File == file))
+            {
+                _files.Add(new ImportData
+                {
+                    File = file,
+                    Date = ImportData.TryExtractDateFromFileName(file.Name),
+                    Symbol = ImportData.TryExtractSymbolFromFileName(file.Name, Symbol)
+                });
+            }
+        }
+    }
+
+
+    private Task OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
+    {
+        if (files == null || files.Count == 0)
+            return Task.CompletedTask;
+
+        _browserFiles = files;
+
+        SyncFiles();
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ProcessAllFileAsync()
+    {
+        if (_selectedDataImports == null) return;
+
+        foreach (var item in _selectedDataImports)
+        {
+            _ = ProcessItemAsync(item);
+        }
+    }
+
+    private async Task ProcessItemAsync(ImportData item)
+    {
+        item.Processing = true;
+
+        await Task.Delay(5000); // simulação
+
+        item.Processing = false;
+        item.Processed = true;
+
+        if (_selectedDataImports?.Contains(item) == true)
+        {
+            _selectedDataImports = new HashSet<ImportData>(
+                _selectedDataImports.Where(x => x != item)
+            );
+        }
+        StateHasChanged();
+    }
+
+    private async Task RemoveAllFileAsync()
+    {
+        if (_selectedDataImports is null || _selectedDataImports.Count == 0)
+            return;
+
+        var items = _selectedDataImports.ToList();
+
+        // Remove do componente upload
+        foreach (var item in items)
+            await _fileUploadMultiple.RemoveFileAsync(item.File);
+
+        // Atualiza fonte de dados
+        _browserFiles = _browserFiles
+            .Where(f => !items.Any(i => i.File == f))
+            .ToList();
+
+        _selectedDataImports.Clear();
+
+        SyncFiles();
+    }
+
     private async Task RemoveFileAsync(ImportData item)
     {
         await _fileUploadMultiple.RemoveFileAsync(item.File);
-        _files.Remove(item);
-    }
 
-    private async void OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
-    {
-        if (files == null || files.Count <= 0)
-            return;
+        // Atualiza fonte
+        _browserFiles = _browserFiles
+            .Where(f => f != item.File)
+            .ToList();
 
-        //limpa seleção
-        _selectedDataImports?.Clear();
-
-        _files = files.Select(f => new ImportData
-        {
-            File = f,
-            Date = ImportData.TryExtractDateFromFileName(f.Name),
-            Symbol = ImportData.TryExtractSymbolFromFileName(f.Name,Symbol)
-        }).ToList();
-    }
-
-    private async Task ProcessFileAsync()
-    {
-
-        foreach(var item in _selectedDataImports)
-        {
-            item.Processing = true;
-
-            // 👉 Aqui você pode:
-            // - Ler CSV
-            // - Enviar para API
-            // - Validar conteúdo
-            // - Usar item.Date
-
-            await Task.Delay(5000); // simulação
-
-            item.Processing = false;
-            item.Processed = true;
-
-            await RemoveFileAsync(item);
-        }
+        SyncFiles();
     }
 
     // quick filter - filter globally across multiple columns with the same input

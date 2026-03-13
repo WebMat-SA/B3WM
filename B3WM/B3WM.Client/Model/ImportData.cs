@@ -13,7 +13,7 @@ namespace B3WM.Client.Model
         public bool Processing { get; set; } = false;
         public bool Processed { get; set; } = false;
 
-        public bool CanDelete => !Processed || !Processing;
+        public bool CanDelete => !Processed && !Processing;
         public long MbSize => File == null ? 0 : File.Size / (long)1024;
 
         public static DateTime TryExtractDateFromFileName(string fileName)
