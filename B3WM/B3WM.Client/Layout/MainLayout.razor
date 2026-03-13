@@ -10,9 +10,10 @@
     <MudAppBar Elevation="0" Dense>
         <MudStack Spacing="0" Style="width:100%" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Row>
             <MudMenu Dense Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
-                <MudMenuItem Href="/">Home</MudMenuItem>
-                <MudMenuItem Href="/times-and-trades">Times and Trades</MudMenuItem>
-                <MudMenuItem Href="/map-flow">MapFlow</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Home" Href="/">Home</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.List" Href="/times-and-trades">Times and Trades</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.CandlestickChart" Href="/map-flow">MapFlow</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.LabelImportant" Href="/imports">Imports</MudMenuItem>
             </MudMenu>
             <MudText Typo="Typo.caption">@Symbol</MudText>
         </MudStack>

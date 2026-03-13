@@ -1,0 +1,159 @@
+﻿@page "/imports"
+@using B3WM.Client.Model
+@using B3WM.Shared.Extensions
+
+<MudGrid>
+    <MudItem md="12">
+        <MudStack Row Wrap="Wrap.Wrap" Spacing="8" AlignItems="AlignItems.Center" Justify="Justify.Center">
+            <MudText Typo="Typo.h6">Arquivos </MudText>
+            <MudFileUpload @ref="_fileUploadMultiple"
+               T="IReadOnlyList<IBrowserFile>"
+               Files="_browserFiles"
+               FilesChanged="OnFilesChanged"
+               Accept=".csv"
+               AppendMultipleFiles
+               SelectedTemplate="@(files => builder => { })" />
+
+        </MudStack>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudDataGrid MultiSelection=true EditMode="DataGridEditMode.Cell" T="ImportData" Items=_files
+                     Filterable="true" QuickFilter="@_quickFilter" Elevation="0" @bind-SelectedItems="_selectedDataImports" ReadOnly="false"
+                     Dense="true">
+            <ToolBarContent>
+                    @* <MudText Typo="Typo.h6">Arquivos</MudText> *@
+                    <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start" Immediate="true"
+                        AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                    <MudSpacer /> 
+                    <MudSpacer /> 
+                    <MudSpacer /> 
+            </ToolBarContent>
+
+            <Columns>
+                <SelectColumn T="ImportData" DisabledFunc="x=>x.Processed || x.Processing" />
+                <PropertyColumn Property="x => x.File.Name" Title="Nome" Editable="false" InitialDirection="SortDirection.Ascending">
+                    <CellTemplate>
+                        @context.Item.File?.Name
+                    </CellTemplate>
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.File" Title="Tamanho" Editable="false" InitialDirection="SortDirection.Ascending">
+                    <CellTemplate>
+                        @context.Item.MbSize Mb
+                    </CellTemplate>
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.Symbol" Title="Papel" Editable="true">
+                    <EditTemplate>
+                        <MudTextField @bind-Value="context.Item.Symbol" @onclick:stopPropagation="true" />
+                    </EditTemplate>
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.Date" Title="Data de referência" Editable="true">
+                    <EditTemplate>
+                        <MudDatePicker @bind-Date="context.Item.Date" @onclick:stopPropagation="true" />
+                    </EditTemplate>
+                </PropertyColumn>
+
+                <TemplateColumn>
+                    <EditTemplate>
+                        <MudStack Row Spacing="1" Justify="Justify.Center">
+                            <MudTooltip Text="Remover item da lista">
+                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" OnClick="@(() => RemoveFileAsync(context.Item))" />
+                            </MudTooltip>
+                        </MudStack>
+                    </EditTemplate>
+                </TemplateColumn>
+            </Columns>
+
+            <PagerContent>
+
+                <MudStack Row Justify="Justify.SpaceBetween" Class="pa-2 w-100">
+
+                    @* <MudText Typo="Typo.body2">
+                        Selecionados: <b>@(_selectedDataImports?.Count ?? 0)</b>
+                    </MudText> *@
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(!(_selectedDataImports?.Any(q=>!q.Processed && !q.Processing) ?? false))"
+                               StartIcon="@Icons.Material.Filled.Hexagon"
+                               OnClick="ProcessFileAsync">
+
+                        Processar
+                    </MudButton>
+
+                </MudStack>
+
+            </PagerContent>
+            
+        </MudDataGrid>
+    </MudItem>
+</MudGrid>
+
+@code
+{
+    [CascadingParameter]
+    public string Symbol { get; set; }
+
+    private string _searchString;
+
+    public List<ImportData> _files { get; set; } = new();
+    private IReadOnlyList<IBrowserFile> _browserFiles = [];
+    private MudFileUpload<IReadOnlyList<IBrowserFile>> _fileUploadMultiple = default!;
+    private HashSet<ImportData>? _selectedDataImports { get; set; }
+
+    private async Task RemoveFileAsync(ImportData item)
+    {
+        await _fileUploadMultiple.RemoveFileAsync(item.File);
+        _files.Remove(item);
+    }
+
+    private async void OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
+    {
+        if (files == null || files.Count <= 0)
+            return;
+
+        //limpa seleção
+        _selectedDataImports?.Clear();
+
+        _files = files.Select(f => new ImportData
+        {
+            File = f,
+            Date = ImportData.TryExtractDateFromFileName(f.Name),
+            Symbol = ImportData.TryExtractSymbolFromFileName(f.Name,Symbol)
+        }).ToList();
+    }
+
+    private async Task ProcessFileAsync()
+    {
+
+        foreach(var item in _selectedDataImports)
+        {
+            item.Processing = true;
+
+            // 👉 Aqui você pode:
+            // - Ler CSV
+            // - Enviar para API
+            // - Validar conteúdo
+            // - Usar item.Date
+
+            await Task.Delay(5000); // simulação
+
+            item.Processing = false;
+            item.Processed = true;
+
+            await RemoveFileAsync(item);
+        }
+    }
+
+    // quick filter - filter globally across multiple columns with the same input
+    private Func<ImportData, bool> _quickFilter => x =>
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+
+        if (x.File != null && x.File.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    };
+}
