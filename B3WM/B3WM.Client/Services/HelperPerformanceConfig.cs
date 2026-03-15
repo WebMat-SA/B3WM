@@ -37,6 +37,9 @@ namespace B3WM.Client.Services
         /// <summary>Quando true, DbMagic imprime [Perf] no console.</summary>
         public static bool EnableMagicDb { get; set; } = false;
 
+        /// <summary>Quando true, Import imprime [Perf] no console.</summary>
+        public static bool EnableImport { get; set; } = true;
+
         internal static void Log(string helperName, string operation, long elapsedMs, string? extra = null)
         {
             if (!IsEnabled(helperName)) return;
@@ -58,6 +61,7 @@ namespace B3WM.Client.Services
             nameof(MainHelper) => EnableMainHelper,
             nameof(HubClientWorker) => EnableHubClientWorker,
             nameof(Magic) => EnableMagicDb,
+            nameof(Import) => EnableImport,
             "Log" => true,
             _ => false
         };

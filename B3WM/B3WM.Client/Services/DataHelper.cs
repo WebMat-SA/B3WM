@@ -1,3 +1,4 @@
+using B3WM.Client.Pages;
 using B3WM.Shared.Entity;
 using System.Diagnostics;
 using System.Globalization;
@@ -25,27 +26,17 @@ namespace B3WM.Client.Services
         private readonly string _textData;
         private static int _timesAndTradesSequence = 0;
         private static int _bookSequence = 0;
-        //private static readonly ConditionalWeakTable<byte[], CachedTicks> TimesAndTradesCache = new();
 
-        //private sealed class CachedTicks
-        //{
-        //    public CachedTicks(List<Ticks2> ticks)
-        //    {
-        //        Ticks = ticks;
-        //    }
-
-        //    public List<Ticks2> Ticks { get; }
-        //}
-
-        //public DataHelper(byte[] data)
-        //{
-        //    _data = data;
-        //}
         public DataHelper(string data)
         {
             _textData = data;
         }
 
+        /// <summary>
+        /// Convesão do TimesAndTrades vindos do RTD/DDE
+        /// </summary>
+        /// <param name="isSimpleTrade">Se estiver usando a opção de trades simples (somente o ultimo trade do rtd) então marcar isso como verdadeiro</param>
+        /// <returns>Uma Lista de Ticks2 já convertidos</returns>
         public ICollection<Ticks2> TimesAndTrades(bool isSimpleTrade = false)
         {
             var sw = Stopwatch.StartNew();
@@ -131,6 +122,10 @@ namespace B3WM.Client.Services
             return ticksQueue;
         }
 
+        /// <summary>
+        /// Convesão do Book de ofertas vindos do RTD/DDE
+        /// </summary>
+        /// <returns>Uma Lista de BookItem já convertidos</returns>
         public List<BookItem> Book()
         {
             var sw = Stopwatch.StartNew();
@@ -264,6 +259,106 @@ namespace B3WM.Client.Services
             if (starterValue == SellerStarter) return Ticks2.ActionType.Sale;
             if (starterValue == CrossStarter) return Ticks2.ActionType.Cross;
             return Ticks2.ActionType.Auction;
+        }
+
+
+
+        public static async IAsyncEnumerable<Ticks2> ParseTicks2FromCsv(
+            Stream csvStream,
+            DateTime date,
+            string symbol)
+        {
+            //var list = new List<Ticks2>();
+
+            using var reader = new StreamReader(csvStream, Encoding.UTF8);
+
+            // Ignora primeira linha (título)
+            await reader.ReadLineAsync();
+
+            // Ignora cabeçalho
+            await reader.ReadLineAsync();
+
+            string? line;
+            int counter = 0;
+
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                var parts = ParseCsvLine(line);
+
+                if (parts.Length < 7)
+                    continue;
+
+                var tick = new Ticks2
+                {
+                    Time = date.Date + TimeSpan.Parse(parts[0]),
+
+                    Volume = int.Parse(parts[1].Replace(".","")),
+
+                    Value = double.Parse(
+                        parts[2],
+                        CultureInfo.GetCultureInfo("pt-BR")
+                    ),
+
+                    TrydID = int.Parse(parts[3]),
+
+                    Buyer = ParseAgent(parts[4]),
+                    Seller = ParseAgent(parts[5]),
+
+                    Starter = ParseActionType(parts[6]),
+
+                    Symbol = symbol
+                };
+
+                counter++;
+                HelperPerformanceConfig.Log(nameof(Import), "Enqueue CSV", counter, "");
+
+                //list.Add(tick);
+                yield return tick;
+            }
+
+            //return list;
+        }
+
+        private static string[] ParseCsvLine(string line)
+        {
+            return line
+                .Split("\",\"")
+                .Select(p => p.Trim('"'))
+                .ToArray();
+        }
+
+        private static Ticks2.Agents ParseAgent(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return 0;
+
+            // Ex: "093-Nova Futura"
+            var codeStr = value.Split('-')[0];
+
+            if (int.TryParse(codeStr, out int code) &&
+                Enum.IsDefined(typeof(Ticks2.Agents), code))
+            {
+                return (Ticks2.Agents)code;
+            }
+
+            return 0; // desconhecido
+        }
+
+        private static Ticks2.ActionType ParseActionType(string value)
+        {
+            return value switch
+            {
+                "Compra" => Ticks2.ActionType.Buy,
+                "Venda" => Ticks2.ActionType.Sale,
+                "Leilão" => Ticks2.ActionType.Auction,
+                "Direto" => Ticks2.ActionType.Cross,
+                "RLP" => Ticks2.ActionType.RLP,
+                _ => 0
+            };
         }
     }
 }

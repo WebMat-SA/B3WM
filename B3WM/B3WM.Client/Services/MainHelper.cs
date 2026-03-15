@@ -1,4 +1,5 @@
 ﻿using B3WM.Client.Model;
+using B3WM.Client.Pages;
 using B3WM.Shared.Entity;
 
 using System.Diagnostics;
@@ -163,15 +164,35 @@ namespace B3WM.Client.Services
 
             // Parse único: todos os helpers e subscribers recebem a mesma lista
             var ticks = new DataHelper(dataString).TimesAndTrades().ToArray();
+
+            Enqueue(ticks);
+
+            sw.Stop();
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
+        }
+
+        public void EnqueueFromCsv(string ticksString)
+        {
+            var sw = Stopwatch.StartNew();
+
+            //parse do json
+            var ticks = System.Text.Json.JsonSerializer.Deserialize<Ticks2[]>(ticksString);
+
+            if (ticks != null) Enqueue(ticks);
+
+            sw.Stop();
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
+        }
+
+        private void Enqueue(Ticks2[] ticks)
+        {
             if (ticks.Length == 0) return;
 
             if (EnableCandleFormer) _candle.Enqueue(ticks);
             if (EnableBubbleFormer) _bubble.Enqueue(ticks);
             if (EnableVolumeFormer) _volume.Enqueue(ticks);
-
-            sw.Stop();
-            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
         }
+
 
         public void SetVolumeIntraday(string Jsonvolumes)
         {

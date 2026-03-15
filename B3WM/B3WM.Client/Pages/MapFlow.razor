@@ -14,7 +14,7 @@
 @inherits Components.PersistentComponentBase
 @inject IMagicIndexedDb _MagicDb
 
-@page "/map-flow"
+@page "/"
 
 @code {
     protected override string PersistenceKey => $"{nameof(MapFlow)}_state";
@@ -824,18 +824,7 @@
         OnVolumeUpdate="VolumeUpdate" 
         OnNewBubble="NewBubble"
         TimeFrame="TimeFrame"
-        BubbleThreshold="ThresholdBubble"
-        CacheCount="_cachecount"
-        LastCacheCount="_lastCacheCountUpdate" />
-    @*<MudOverlay Visible="_isLoadingFromIndexedDb" ZIndex="10" Class="d-flex align-center justify-center" DarkBackground=true Absolute=true>
-        <MudStack Row Spacing="3" Class="px-3 py-2" AlignItems="AlignItems.Center" Style="background-color:darkorange;">
-            <MudProgressCircular Size="Size.Small" Indeterminate="@(_loadingProgress == 0)" Value="@_loadingProgress" />
-            @if (!string.IsNullOrEmpty(_loadingStatus))
-            {
-                <MudText Typo="Typo.body2" Class="text-center">@_loadingStatus</MudText>
-            }
-        </MudStack>
-    </MudOverlay>*@
+        BubbleThreshold="ThresholdBubble" />
 </MudStack>
 
 
@@ -1060,11 +1049,13 @@
 
 
     </MudDrawer>
-    <Vizor.ECharts.EChart @ref="EChart"
-                          Renderer="Vizor.ECharts.ChartRenderer.Canvas"
-                          Options="ChartOptions"
-                          Width="auto"
-                          Height="800px"
-                          />
-
-</MudDrawerContainer>                   
+    <div style="width:auto; height:86vh;  overflow:hidden;">
+        <Vizor.ECharts.EChart @ref="EChart"
+                              Renderer="Vizor.ECharts.ChartRenderer.Canvas"
+                              Options="ChartOptions"
+                              Width="auto"
+                              Height="900px"
+                              @key="@($"chart_{Symbol}")" />
+    </div>
+</MudDrawerContainer>   
+<Import ThresholdBubble="ThresholdBubble" TimeFrame="TimeFrame" NotifyNewBars="NewBar" ></Import>

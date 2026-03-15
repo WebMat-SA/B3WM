@@ -80,13 +80,6 @@
     [Parameter, PersistState]
     public bool EnableSaveTicksToIndexedDb { get; set; } = false;
 
-    [Parameter]
-    public int? CacheCount { get; set; }
-
-    [Parameter]
-    public DateTime? LastCacheCount { get; set; }
-
-
     [PersistState]
     public bool EnableCandleFormer { get; set; } = true;
 
@@ -681,13 +674,6 @@
         <MudTooltip Text="@($"SignalR ping (Local Time)")" Arrow>
             <MudBadge Color="Color.Info" Overlap=true Bordered=true Content="@($"{_lastUpdateBarReceived?.ToString("HH: mm: ss")} ↓ ")">
                 <MudIcon Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" />
-            </MudBadge>
-        </MudTooltip>
-    </div>
-    <div style="margin-right: 65px">
-        <MudTooltip Text="@($"Graph update")" Arrow>
-            <MudBadge Color="@(CacheCount < 100 ? (CacheCount <= 2) ? MudBlazor.Color.Success : MudBlazor.Color.Warning : MudBlazor.Color.Error)" Overlap=true Bordered=true Content="@($"{LastCacheCount?.ToString("HH:mm:ss")} | {CacheCount.ToString()}")">
-                <MudIcon Size="Size.Small" Icon="@Icons.Material.Filled.ScreenshotMonitor" />
             </MudBadge>
         </MudTooltip>
     </div>
