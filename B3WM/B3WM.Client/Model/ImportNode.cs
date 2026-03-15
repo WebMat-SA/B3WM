@@ -4,6 +4,7 @@ using B3WM.Shared.Entity;
 using BlazorWorker.BackgroundServiceFactory;
 using BlazorWorker.Core;
 using BlazorWorker.WorkerBackgroundService;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -14,6 +15,9 @@ namespace B3WM.Client.Model
 {
     public class ImportNode
     {
+        public Func<BarStorageItem, Task> NewBar { get; private set; }
+        public Func<BubbleStorageItem, Task> NewBubble { get; private set; }
+
         public IBrowserFile File { get; set; } = default!;
         public DateTime? Date { get; set; } = DateTime.Today;
         public string? Symbol { get; set; }
@@ -22,7 +26,7 @@ namespace B3WM.Client.Model
         public bool Processed { get; set; } = false;
 
         public bool CanDelete => !Processed && !Processing;
-        public long MbSize => File == null ? 0 : File.Size / (long)1024;
+        public long MbSize => File == null ? 0 : File.Size / (long)(1024 * 1024);
 
         public static DateTime TryExtractDateFromFileName(string fileName)
         {
@@ -78,13 +82,17 @@ namespace B3WM.Client.Model
         public IWorkerFactory workerFactory { get; private set; }
 
         public decimal Progress { get; private set; }
+        public DateTime? Start { get; private set; }
 
-        public ImportNode(IBrowserFile _file, DateTime _date, string _symbol, IWorkerFactory _workerFactory)
+        public ImportNode(IBrowserFile _file, DateTime _date, string _symbol, IWorkerFactory _workerFactory, Func<BarStorageItem, Task> newBar, Func<BubbleStorageItem, Task> newBubble)
         {
             File = _file;
             Date = _date;
             Symbol = _symbol;
             workerFactory = _workerFactory;
+
+            NewBar = newBar;
+            NewBubble = newBubble;
         }
 
         public async Task CreateWorkers(int _timeFrame, int _bubbleThreshold)
@@ -106,8 +114,8 @@ namespace B3WM.Client.Model
                 RegisterBubbleEvents();
                 RegisterVolumeEvents();
 
-                await MainService.RunAsync(s => s.InitCandle(int.MaxValue, _timeFrame, true));
-                await MainService.RunAsync(s => s.InitBubble(int.MaxValue, _bubbleThreshold, true));
+                await MainService.RunAsync(s => s.InitCandle(int.MaxValue, _timeFrame, true, true));
+                await MainService.RunAsync(s => s.InitBubble(int.MaxValue, _bubbleThreshold, true, true));
                 await MainService.RunAsync(s => s.InitVolume(2000, true));
 
                 HelperPerformanceConfig.Log(nameof(Import), "CreateWorkers", 0, $"{MainService != null}");
@@ -123,18 +131,19 @@ namespace B3WM.Client.Model
         private void RegisterCandleEvents()
         {
             MainService!.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnClosedBars),
-                async (object? s, IEnumerable<BarStorageItem> data) =>
+                async (object? s, BarStorageItem data) =>
                 {
                     var sw = Stopwatch.StartNew();
 
-                    foreach (var bar in data)
-                    {
-                        //vincula o volume no candle
-                        bar.VolumeLevel = _lastVolumeLevel?.Volumes;
+                    //vincula o volume no candle
+                    data.VolumeLevel = _lastVolumeLevel?.Volumes;
 
-                        //enqueeu
-                        Bars.Enqueue(bar);
-                    }
+                    //notiifca o pai
+                    if (NewBar != null) await NewBar.Invoke(data);
+
+                    //enqueeu
+                    Bars.Enqueue(data);
+                    
 
 
                     sw.Stop();
@@ -149,9 +158,11 @@ namespace B3WM.Client.Model
         private void RegisterBubbleEvents()
         {
             MainService!.RegisterEventListenerAsync(nameof(MainHelper.Bubble_OnNewBubble),
-                (object? s, BubbleStorageItem data) =>
+                async (object? s, BubbleStorageItem data) =>
                 {
                     var sw = Stopwatch.StartNew();
+
+                    if (NewBubble != null) await NewBubble.Invoke(data);
 
                     Bubbles.Enqueue(data);
 
@@ -186,16 +197,18 @@ namespace B3WM.Client.Model
 
         public async Task Process(int _timeFrame, int _bubbleThreshold)
         {
+            Start = DateTime.Now;
+
             await CreateWorkers(_timeFrame, _bubbleThreshold);
 
-            using (var stream = File.OpenReadStream(long.MaxValue))
+            using (var stream = File.OpenReadStream(1024 * 1024 * 1024))
             {
                 if (MainService != null)
                 {
                     var swTotal = Stopwatch.StartNew();
 
                     int count = 0;
-                    int batch = 50000;
+                    int batch = 1000;
                     List<Ticks2> batchList = new();
 
                     //fazer batch do envio aqui
@@ -206,7 +219,7 @@ namespace B3WM.Client.Model
 
                         if (batchList.Count >= batch)
                         {
-                            var jsonData = System.Text.Json.JsonSerializer.Serialize(batchList.ToArray());
+                            var jsonData = System.Text.Json.JsonSerializer.Serialize(batchList);
 
                             //Console.WriteLine(jsonData);
 

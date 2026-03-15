@@ -111,6 +111,10 @@ namespace B3WM.Client.Services
         {
             bool? isBuyAggression = null;
 
+            //não contabilizar volumes de leilão
+            if (t.Starter == Ticks2.ActionType.Auction)
+                return;
+
             if (t.Starter == Ticks2.ActionType.Buy)
                 isBuyAggression = true;
             else if (t.Starter == Ticks2.ActionType.Sale)

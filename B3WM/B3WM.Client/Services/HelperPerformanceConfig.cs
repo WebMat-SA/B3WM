@@ -17,7 +17,7 @@ namespace B3WM.Client.Services
         public static bool EnableVolumeHelper { get; set; } = false;
 
         /// <summary>Quando true, BubbleHelper imprime [Perf] no console.</summary>
-        public static bool EnableBubbleHelper { get; set; } = false;
+        public static bool EnableBubbleHelper { get; set; } = true;
 
         /// <summary>Quando true, DataHelper imprime [Perf] no console.</summary>
         public static bool EnableDataHelper { get; set; } = false;
@@ -26,7 +26,7 @@ namespace B3WM.Client.Services
         public static bool EnableMapFlow { get; set; } = false;
 
         /// <summary>Quando true, HubClient imprime [Perf] no console.</summary>
-        public static bool EnableHubClient { get; set; } = true;
+        public static bool EnableHubClient { get; set; } = false;
 
         /// <summary> Quando true, HubClientWorker imprime [Perf] no console. </summary>
         public static bool EnableHubClientWorker { get; set; } = false;
@@ -38,7 +38,7 @@ namespace B3WM.Client.Services
         public static bool EnableMagicDb { get; set; } = false;
 
         /// <summary>Quando true, Import imprime [Perf] no console.</summary>
-        public static bool EnableImport { get; set; } = true;
+        public static bool EnableImport { get; set; } = false;
 
         internal static void Log(string helperName, string operation, long elapsedMs, string? extra = null)
         {

@@ -314,7 +314,7 @@ namespace B3WM.Client.Services
                 };
 
                 counter++;
-                HelperPerformanceConfig.Log(nameof(Import), "Enqueue CSV", counter, "");
+                HelperPerformanceConfig.Log(nameof(Import), "Enqueue CSV", counter, $"{tick.ToString()}");
 
                 //list.Add(tick);
                 yield return tick;
@@ -350,13 +350,13 @@ namespace B3WM.Client.Services
 
         private static Ticks2.ActionType ParseActionType(string value)
         {
-            return value switch
+            return value[0] switch
             {
-                "Compra" => Ticks2.ActionType.Buy,
-                "Venda" => Ticks2.ActionType.Sale,
-                "Leilão" => Ticks2.ActionType.Auction,
-                "Direto" => Ticks2.ActionType.Cross,
-                "RLP" => Ticks2.ActionType.RLP,
+                'C' => Ticks2.ActionType.Buy,
+                'V' => Ticks2.ActionType.Sale,
+                'L' => Ticks2.ActionType.Auction,
+                'D' => Ticks2.ActionType.Cross,
+                'R' => Ticks2.ActionType.RLP,
                 _ => 0
             };
         }

@@ -9,7 +9,7 @@ namespace B3WM.Client.Services
     public class MainHelper : IDisposable
     {
         private CandleHelper _candle = new();
-        public event EventHandler<IEnumerable<BarStorageItem>>? Candle_OnClosedBars;
+        public event EventHandler<BarStorageItem>? Candle_OnClosedBars;
         public event EventHandler<BarStorageItem?>? Candle_OnUpdateLastBar;
         public event EventHandler<int>? Candle_OnQueueCount;
         public event EventHandler<string>? Candle_OnQueueTime;
@@ -85,9 +85,9 @@ namespace B3WM.Client.Services
             if (Candle_OnQueueCount != null) Candle_OnQueueCount.Invoke(this, e);
         }
 
-        private void _candle_OnClosedBars(object? sender, IEnumerable<BarStorageItem> e)
+        private void _candle_OnClosedBars(object? sender, BarStorageItem e)
         {
-            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_candle_OnClosedBars), 0, $"Closed bars received: {e.Count()}");
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_candle_OnClosedBars), 0, $"Closed bars received: {e.Date}");
             if (Candle_OnClosedBars != null) Candle_OnClosedBars.Invoke(this, e);
         }
 
@@ -97,18 +97,18 @@ namespace B3WM.Client.Services
             if (Candle_OnUpdateLastBar != null) Candle_OnUpdateLastBar.Invoke(this, e);
         }
 
-        public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _enableCandleFormer = true)
+        public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _enableCandleFormer = true, bool _isReverseData = false)
         {
             EnableCandleFormer = _enableCandleFormer;
-            _candle.Init(throtlingms, timeFrame);
+            _candle.Init(throtlingms, timeFrame, _isReverseData);
 
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitCandle), 0, "Candle helper initialized");
         }
 
-        public void InitBubble(int throtlingms = 200, int bubbleThreshold = 125, bool _enableBubbleFormer = true)
+        public void InitBubble(int throtlingms = 200, int bubbleThreshold = 125, bool _enableBubbleFormer = true, bool _isReverseData = false)
         {
             EnableBubbleFormer = _enableBubbleFormer;
-            _bubble.Init(throtlingms, bubbleThreshold);
+            _bubble.Init(throtlingms, bubbleThreshold, _isReverseData);
 
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitBubble), 0, "Bubble helper initialized");
         }
@@ -176,12 +176,12 @@ namespace B3WM.Client.Services
             var sw = Stopwatch.StartNew();
 
             //parse do json
-            var ticks = System.Text.Json.JsonSerializer.Deserialize<Ticks2[]>(ticksString);
+            var ticks = System.Text.Json.JsonSerializer.Deserialize<List<Ticks2>>(ticksString);
 
-            if (ticks != null) Enqueue(ticks);
+            if (ticks != null) Enqueue(ticks.ToArray());
 
             sw.Stop();
-            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks?.Count}");
         }
 
         private void Enqueue(Ticks2[] ticks)

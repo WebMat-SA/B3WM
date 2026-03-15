@@ -1,7 +1,9 @@
 ﻿@page "/imports"
 @using B3WM.Client.Model
 @using BlazorWorker.Core
+@using System.Diagnostics
 @inject IWorkerFactory workerFactory
+@inject IMagicIndexedDb _MagicDb
 
 <MudGrid>
     <MudItem md="12">
@@ -21,7 +23,7 @@
     <MudItem xs="12">
         <MudDataGrid MultiSelection=true EditMode="DataGridEditMode.Cell" T="ImportNode" Items=_files
                      Filterable="true" QuickFilter="@_quickFilter" Elevation="0" @bind-SelectedItems="_selectedDataImports" ReadOnly="false"
-                     Dense="true">
+                     Dense="true" Style="overflow:hidden;">
             <ToolBarContent>
                     @* <MudText Typo="Typo.h6">Arquivos</MudText> *@
                     <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start" Immediate="true"
@@ -65,6 +67,18 @@
                         <MudDatePicker @bind-Date="context.Item.Date" @onclick:stopPropagation="true" ShowToolbar="false" Elevation="0" Disabled="context.Item.Processing || context.Item.Processed" />
                     </EditTemplate>
                 </PropertyColumn>
+                <PropertyColumn Property="x => x.Progress" Editable="false" Sortable="false" Filterable="false" Hideable="false">
+                    <CellTemplate>
+                        <MudStack Row AlignItems="AlignItems.End" Justify="Justify.FlexEnd" Spacing="2">
+                            <MudChip Label="true" Size="Size.Small">
+                                @context.Item.Start?.ToString("dd/MM/yyyy HH:mm:ss")
+                            </MudChip>
+                            <MudChip Label="true" Size="Size.Small">
+                                @context.Item.Progress
+                            </MudChip>
+                        </MudStack>
+                    </CellTemplate>
+                </PropertyColumn>
 
                 <TemplateColumn>
                     <EditTemplate>
@@ -73,10 +87,10 @@
                                 <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" Disabled="@(context.Item.Processing)" OnClick="@(() => RemoveFileAsync(context.Item))" />
                             </MudTooltip>
                             <MudTooltip Text="Processar item">
-                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Hexagon" Disabled="@(context.Item.Processing || context.Item.Processed)" OnClick="@(() => ProcessItemAsync(context.Item))" />
+                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Input" Disabled="@(context.Item.Processing || context.Item.Processed)" OnClick="@(() => ProcessItemAsync(context.Item))" />
                             </MudTooltip>
-                            <MudTooltip Text="Enviar para o grafico">
-                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.AutoGraph" Disabled="@(!context.Item.Processed && !context.Item.Processing)" OnClick="@(() => SendToGraphItemAsync(context.Item))" />
+                            <MudTooltip Text="Salvar no banco de dados">
+                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Save" Disabled="@(!context.Item.Processed && !context.Item.Processing)" OnClick="@(() => SendToDataBaseItemAsync(context.Item))" />
                             </MudTooltip>
                             <MudTooltip Text="Debug (Console)">
                                 <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Construction" Disabled="@(!context.Item.Processed && !context.Item.Processing)" OnClick="@(() => context.Item.PrintDebug())" />
@@ -107,7 +121,7 @@
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
                                Disabled="@(!(_selectedDataImports?.Any(q=>!q.Processed && !q.Processing) ?? false))"
-                               StartIcon="@Icons.Material.Filled.Hexagon"
+                               StartIcon="@Icons.Material.Filled.Input"
                                OnClick="ProcessAllFileAsync" Style="min-width: 150px;">
 
                         Processar
@@ -116,10 +130,10 @@
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
                                Disabled="@((_selectedDataImports?.Any(q=>!q.Processed && !q.Processing) ?? true))"
-                               StartIcon="@Icons.Material.Filled.Hexagon"
-                               OnClick="SendToGraphAllAsync" Style="min-width: 150px;">
+                               StartIcon="@Icons.Material.Filled.Save"
+                               OnClick="SendToDataBaseAllAsync" Style="min-width: 150px;">
 
-                        Grafico
+                        Salvar
                     </MudButton>
 
                 </MudStack>
@@ -141,7 +155,10 @@
     public int ThresholdBubble { get; set; }
 
     [Parameter]
-    public Func<IEnumerable<BarStorageItem>, Task> NotifyNewBars { get; set; } = default!;
+    public Func<BarStorageItem, Task> NotifyNewBars { get; set; } = default!;
+
+    [Parameter]
+    public Func<BubbleStorageItem, Task> NotifyNewBubbles { get; set; } = default!;
 
     // quick filter - filter globally across multiple columns with the same input
     private Func<ImportNode, bool> _quickFilter => x =>
@@ -179,7 +196,10 @@
                     file,
                     ImportNode.TryExtractDateFromFileName(file.Name),
                     ImportNode.TryExtractSymbolFromFileName(file.Name, Symbol),
-                    workerFactory));
+                    workerFactory,
+                    async (barItem) => { if (NotifyNewBars != null) await NotifyNewBars.Invoke(barItem); },
+                    async (bubbleItem) => { if (NotifyNewBubbles != null) await NotifyNewBubbles.Invoke(bubbleItem); }
+                ));
             }
         }
     }
@@ -200,7 +220,7 @@
     {
         if (_selectedDataImports == null) return;
 
-        foreach (var item in _selectedDataImports)
+        foreach (var item in _selectedDataImports.Where(q=>!q.Processed && !q.Processing))
         {
             _ = ProcessItemAsync(item);
         }
@@ -258,18 +278,62 @@
         SyncFiles();
     }
 
-    private async Task SendToGraphAllAsync()
+    private async Task SendToDataBaseAllAsync()
     {
         if (_selectedDataImports == null) return;
 
-        foreach (var item in _selectedDataImports)
+        foreach (var item in _selectedDataImports.Where(q=>q.Processed))
         {
-            _ = SendToGraphItemAsync(item);
+            _ = SendToDataBaseItemAsync(item);
         }
     }
 
-    private async Task SendToGraphItemAsync(ImportNode item)
+    private async Task SendToDataBaseItemAsync(ImportNode item)
     {
-        if (NotifyNewBars != null) await NotifyNewBars.Invoke(item.Bars.ToList());
+        var barsQuery = await _MagicDb.Query<BarStorageItem>();
+        var bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
+
+
+        if (barsQuery != null)
+        {
+            var swTotal = Stopwatch.StartNew();
+            try
+            {
+                //verificar se o update dá add automatico
+                await barsQuery.UpdateRangeAsync(item.Bars.ToList());
+            }
+            catch (Exception e)
+            {
+                HelperPerformanceConfig.Log(
+                    nameof(Import),
+                    nameof(SendToDataBaseItemAsync),
+                    0, e.Message
+                );
+            }
+            swTotal.Stop();
+            HelperPerformanceConfig.Log(nameof(Import), nameof(SendToDataBaseItemAsync), swTotal.ElapsedMilliseconds, $"Bars: {item.Bars.Count}");
+        }
+
+
+        if (bubbleQuery != null)
+        {
+            var swTotal = Stopwatch.StartNew();
+            try
+            {
+
+                await bubbleQuery.UpdateRangeAsync(item.Bubbles.ToList());
+            }
+            catch (Exception e)
+            {
+                HelperPerformanceConfig.Log(
+                    nameof(Import),
+                    nameof(SendToDataBaseItemAsync),
+                    0, e.Message
+                );
+            }
+
+            swTotal.Stop();
+            HelperPerformanceConfig.Log(nameof(Import), nameof(SendToDataBaseItemAsync), swTotal.ElapsedMilliseconds, $"Bubbles: {item.Bubbles.Count}");
+        }
     }
 }

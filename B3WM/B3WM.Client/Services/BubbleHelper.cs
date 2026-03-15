@@ -17,6 +17,8 @@ namespace B3WM.Client.Services
 
         private int _bubbleThreshold { get; set; }
 
+        private bool _reverseTimeData { get; set; } = false;
+
         // 🔥 Estado contínuo
         private int _runningSum = 0;
         private Ticks2.Agents? _runningAgent = null;
@@ -30,9 +32,11 @@ namespace B3WM.Client.Services
         private int _queueCount { get; set; }
         private string _queueTime { get; set; }
 
-        public void Init(int throtlingms = 200, int bubbleThreshold = 125)
+        public void Init(int throtlingms = 200, int bubbleThreshold = 125, bool isReverse = false)
         {
             _bubbleThreshold = bubbleThreshold;
+
+            _reverseTimeData = isReverse;
 
             _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
             _ = RunLoop();
@@ -67,7 +71,15 @@ namespace B3WM.Client.Services
                 {
 
                     var swTicks = Stopwatch.StartNew();
-                    var sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
+
+                    IList<Ticks2> sortedTicks = new List<Ticks2>();
+
+                    //os dados estão em ordem crescente de tempo
+                    if (!_reverseTimeData)
+                        sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
+                    else
+                        sortedTicks = ticks.OrderByDescending(x => x.Time).ToList();
+
                     _queueCount = sortedTicks.Count;
                     _queueTime = sortedTicks.Last().Time.ToString("HH:mm:ss");
 
@@ -105,10 +117,15 @@ namespace B3WM.Client.Services
             Ticks2.Agents? aggressor = null;
             _lastSymbol = t.Symbol;
 
+            //ignorar ticks de leilão
+            if (t.Starter == Ticks2.ActionType.Auction)
+                return;
+
             if (t.Starter == Ticks2.ActionType.Buy)
                 aggressor = t.Buyer;
             else if (t.Starter == Ticks2.ActionType.Sale)
                 aggressor = t.Seller;
+
 
             // se não há agressor claro → finaliza sequência
             if (aggressor == null)
@@ -158,6 +175,12 @@ namespace B3WM.Client.Services
                     var sw = Stopwatch.StartNew();
                     OnNewBubble?.Invoke(this, bubble);
                     sw.Stop();
+
+                    HelperPerformanceConfig.Log(
+                        nameof(BubbleHelper),
+                        "NewBubble",
+                        sw.ElapsedMilliseconds,
+                        $"{bubble.Agent} : {bubble.Price}");
                 }
                 catch (Exception ex)
                 {

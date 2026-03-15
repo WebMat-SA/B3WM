@@ -8,12 +8,13 @@ namespace B3WM.Client.Services
 {
     public class CandleHelper : IDisposable
     {
-        public event EventHandler<IEnumerable<BarStorageItem>>? OnClosedBars;
+        public event EventHandler<BarStorageItem>? OnClosedBars;
         public event EventHandler<BarStorageItem?>? OnUpdateLastBar;
         public event EventHandler<int>? OnQueueCount;
         public event EventHandler<string>? OnQueueTime;
 
         private int _timeFrameMinutes;
+        private bool _reverseTimeData { get; set; } = false;
 
         private readonly ConcurrentQueue<Ticks2[]> _queue = new();
         private readonly CancellationTokenSource _cts = new();
@@ -27,9 +28,11 @@ namespace B3WM.Client.Services
 
         private string _queueTime { get; set; }
 
-        public void Init(int throtlingms = 200, int timeFrame = 5)
+        public void Init(int throtlingms = 200, int timeFrame = 5, bool isReverse = false)
         {
             _timeFrameMinutes = timeFrame;
+
+            _reverseTimeData = isReverse;
 
             _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throtlingms));
             _ = RunLoop();
@@ -77,7 +80,13 @@ namespace B3WM.Client.Services
 
                 while (_queue.TryDequeue(out var ticks))
                 {
-                    var sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
+                    IList<Ticks2> sortedTicks = new List<Ticks2>();
+
+                    //os dados estão em ordem crescente de tempo
+                    if (!_reverseTimeData)
+                        sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
+                    else
+                        sortedTicks = ticks.OrderByDescending(x => x.Time).ToList();
 
                     _queueCount = sortedTicks.Count;
                     _queueTime = sortedTicks.Last().Time.ToString("HH:mm:ss");
@@ -116,7 +125,7 @@ namespace B3WM.Client.Services
                     return;
                 }
 
-                if (candleStart > _currentBar.Date)
+                if (candleStart > _currentBar.Date && !_reverseTimeData)
                 {
                     // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
                     barToEmit = CloneBar(_currentBar);
@@ -126,14 +135,19 @@ namespace B3WM.Client.Services
                 {
                     UpdateBar(_currentBar, t.Value, t.Volume);
                 }
-                // candleStart < _currentBar.Date: tick do passado (ordem inversa/atrasado), ignorar
+                else if (candleStart < _currentBar.Date && _reverseTimeData)
+                {
+                    // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
+                    barToEmit = CloneBar(_currentBar);
+                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
+                }
             }
 
             // Emitir fora do lock; usamos só a cópia já feita.
             if (barToEmit != null)
             {
                 var sw = Stopwatch.StartNew();
-                OnClosedBars?.Invoke(this, new[] { barToEmit });
+                OnClosedBars?.Invoke(this, barToEmit);
 
                 sw.Stop();
             }

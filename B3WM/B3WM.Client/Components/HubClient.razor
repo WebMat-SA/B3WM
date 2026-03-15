@@ -27,7 +27,7 @@
     public bool openDrawer { get; set; } = false;
 
     [Parameter]
-    public Func<IEnumerable<BarStorageItem>, Task> OnCandleSeriesChange { get; set; } = default!;
+    public Func<BarStorageItem, Task> OnCandleSeriesChange { get; set; } = default!;
 
     [Parameter]
     public Func<IEnumerable<BookItem>, Task> OnBookChange { get; set; } = default!;
@@ -217,8 +217,8 @@
             RegisterBubbleEvents();
             RegisterVolumeEvents();
 
-            await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer));
-            await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer));
+            await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer, false));
+            await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer, false));
             await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
@@ -278,7 +278,7 @@
     private void RegisterCandleEvents()
     {
         MainService!.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnClosedBars),
-            async (object? s, IEnumerable<BarStorageItem> data) =>
+            async (object? s, BarStorageItem data) =>
             {
                 var sw = Stopwatch.StartNew();
 
@@ -633,25 +633,23 @@
         await base.DisposeAsync();
     }
 
-    public async Task<IEnumerable<BarStorageItem>> AddBarsOnDB(IEnumerable<BarStorageItem> bars)
+    public async Task<BarStorageItem> AddBarsOnDB(BarStorageItem bar)
     {
-        if (FakingData) return bars;
+        if (FakingData) return bar;
 
-        if (bars == null || !bars.Any()) return new List<BarStorageItem>();
+        if (bar == null) return new BarStorageItem();
         var sw = Stopwatch.StartNew();
 
-        foreach(var bar in bars)
-        {
-            //vincula o volume no candle
-            bar.VolumeLevel = _lastVolumeLevel?.Volumes;
+        //vincula o volume no candle
+        bar.VolumeLevel = _lastVolumeLevel?.Volumes;
 
-            await _channelBarStorage.Writer.WriteAsync(bar);
-        }
+        await _channelBarStorage.Writer.WriteAsync(bar);
+        
 
         sw.Stop();
-        HelperPerformanceConfig.Log(nameof(Magic), nameof(AddBarsOnDB), sw.ElapsedMilliseconds, $"Added {bars.Count()} bars to IndexedDB at {DateTime.Now:HH:mm:ss.fff}");
+        HelperPerformanceConfig.Log(nameof(Magic), nameof(AddBarsOnDB), sw.ElapsedMilliseconds, $"Added {bar.Date} bars to IndexedDB at {DateTime.Now:HH:mm:ss.fff}");
 
-        return bars;
+        return bar;
     }
 
     public async Task AddBubleOnDB(BubbleStorageItem bubble)
@@ -900,6 +898,14 @@
                             <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableMagicDb" ThumbIcon="@(HelperPerformanceConfig.EnableMagicDb == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableMagicDb == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Magic Db
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableImport" ThumbIcon="@(HelperPerformanceConfig.EnableImport == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableImport == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Import
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>

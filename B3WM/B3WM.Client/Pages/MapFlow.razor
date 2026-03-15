@@ -64,6 +64,8 @@
 
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
 
+    private MudExRange<int> _bubbleSizeRange { get; set; } = new MudExRange<int>(0, 5000);
+
     public int? _cachecount { get; set; }
     public DateTime? _lastCacheCountUpdate { get; set; }
 
@@ -186,7 +188,7 @@
     private ScatterSeries? _cachedRedBubbleSeriesObj;
     private ScatterSeries? _cachedBlueBubbleSeriesObj;
 
-    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _jsFunctionCacheKey;
+    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _jsFunctionCacheKey;
     private bool _jsFunctionCacheValid;
     private NumberArrayOrFunction? _cachedSymbolSizeFunction;
     private JavascriptFunction? _cachedVolumeProfileFunction;
@@ -209,7 +211,7 @@
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
     private int _lastRenderedVolumeVersion = -1;
     private int _lastRenderedBubbleVersion = -1;
-    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta) _lastRenderedJsKey = default;
+    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _lastRenderedJsKey = default;
 
 
     private int _lastBubbleDataVersion = -1;
@@ -238,32 +240,32 @@
         };
     }
 
-    public Task NewBar(IEnumerable<BarStorageItem> bars)
+    public Task NewBar(BarStorageItem bar)
     {
         var count = BarStorageItem.Count;
         var isFullRange = count > 0 && _dateRange.End >= count - 1;
 
         var sw = Stopwatch.StartNew();
-        foreach (var bar in bars)
+
+        if (bar == null || bar.Date == default) return Task.CompletedTask;
+
+        var existing = BarStorageItem.FirstOrDefault(b => b.Date == bar.Date);
+        if (existing != null)
         {
-            if (bar == null || bar.Date == default) continue;
-            var existing = BarStorageItem.FirstOrDefault(b => b.Date == bar.Date);
-            if (existing != null)
-            {
-                existing.Open = bar.Open;
-                existing.High = bar.High;
-                existing.Low = bar.Low;
-                existing.Close = bar.Close;
-                existing.Volume = bar.Volume;
-                _barsDataVersion++;
-            }
-            else
-            {
-                // Cópia defensiva: armazenar nossa própria instância para não depender da referência do callback.
-                BarStorageItem.Add(CloneBar(bar));
-                _barsDataVersion++;
-            }
+            existing.Open = bar.Open;
+            existing.High = bar.High;
+            existing.Low = bar.Low;
+            existing.Close = bar.Close;
+            existing.Volume = bar.Volume;
+            _barsDataVersion++;
         }
+        else
+        {
+            // Cópia defensiva: armazenar nossa própria instância para não depender da referência do callback.
+            BarStorageItem.Add(CloneBar(bar));
+            _barsDataVersion++;
+        }
+
 
         if (isFullRange)
         {
@@ -546,7 +548,7 @@
         //LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
 
         var swJs = Stopwatch.StartNew();
-        var jsKey = (BubbleSize, BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta);
+        var jsKey = (BubbleSize, BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End);
         NumberArrayOrFunction symbolSizeFunction;
         JavascriptFunction volumeProfileFunction;
         JavascriptFunction deltaprofileFunction;
@@ -559,7 +561,24 @@
         else
         {
             var inv = System.Globalization.CultureInfo.InvariantCulture;
-            symbolSizeFunction = new NumberArrayOrFunction(new JavascriptFunction($@"function (v) {{ return v[2] * {BubbleSize.ToString(inv)} * {(BubbleVisible ? 1 : 0)}; }}"));
+            symbolSizeFunction = new NumberArrayOrFunction(new JavascriptFunction($@"
+                function (v) {{
+                    var min = {_bubbleSizeRange.Start.ToString(inv)};
+                    var max = {_bubbleSizeRange.End.ToString(inv)};
+                    var result = v[2];
+
+                    if (result < min){{
+                        result = min;
+                    }}else if (result > max){{
+                        result = max;
+                    }}
+
+                    // 'result' already contains the computed numeric size. Return it
+                    // directly (or 0 when bubbles are hidden). Removing the invalid
+                    // 'format invariant' token which produced a malformed JS snippet.
+
+                    return result * {BubbleSize.ToString(inv)} * {(BubbleVisible ? 1 : 0)};
+                }}"));
             volumeProfileFunction = new JavascriptFunction(@"
                     function (params, api) {
                         var volumeVal = api.value(0);
@@ -640,7 +659,7 @@
                     e.Price,
                     e.Amount,
                     ((Ticks2.Agents?)e.Agent)?.Description() ?? "Desconhecido"
-                };
+    };
                 if (e.ActionType == Ticks2.ActionType.Sale)
                     redList.Add((e.Date, arr));
                 else if (e.ActionType == Ticks2.ActionType.Buy)
@@ -806,27 +825,36 @@
             }
         }
     }
+
+    private async void BubbleSizeRangeChange(IRange<int> range)
+    {
+        if (range.Start > ThresholdBubble)
+            range = new MudExRange<int>(ThresholdBubble, range.End);
+        else if (range.End < ThresholdBubble)
+            range = new MudExRange<int>(range.Start, ThresholdBubble);
+
+        _bubbleSizeRange = new MudExRange<int>(range.Start, range.End);
+    }
 }
 
 @* --- INTERFACE --- *@
-<MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
-    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-        <MudTooltip Text="Configurações">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
-        </MudTooltip>
-        <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
-        </MudTooltip>
+    <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
+        <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+            <MudTooltip Text="Configurações">
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
+            </MudTooltip>
+            <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
+            </MudTooltip>
+        </MudStack>
+        <B3WM.Client.Components.HubClient @ref=HubClient
+            OnCandleSeriesChange="NewBar" 
+            OnCurrentBarChange="NewCurrentBar"
+            OnVolumeUpdate="VolumeUpdate" 
+            OnNewBubble="NewBubble"
+            TimeFrame="TimeFrame"
+            BubbleThreshold="ThresholdBubble" />
     </MudStack>
-    <B3WM.Client.Components.HubClient @ref=HubClient
-        OnCandleSeriesChange="NewBar" 
-        OnCurrentBarChange="NewCurrentBar"
-        OnVolumeUpdate="VolumeUpdate" 
-        OnNewBubble="NewBubble"
-        TimeFrame="TimeFrame"
-        BubbleThreshold="ThresholdBubble" />
-</MudStack>
-
 
 <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
     <MudDrawer Open="openDrawer" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
@@ -969,6 +997,20 @@
                                 </MudStack>
                             </MudSlider>
                         </MudListItem>
+                        <MudListItem>
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Min/Max Size By Amount</MudText>
+                                <MudText Typo="Typo.caption">@($"{_bubbleSizeRange.Start} → {_bubbleSizeRange.End}")</MudText>
+                            </MudStack>
+                            <MudExRangeSlider T="int"
+                                              Value="_bubbleSizeRange"
+                                              ValueChanged="BubbleSizeRangeChange"
+                                              AllowWholeRangeDrag
+                                              Size="Size.Small"
+                                              StepLength="25"
+                                              SizeRange="@(new MudExRange<int>(0,5000))"
+                                              Class="pr-5 mr-5"/>
+                        </MudListItem>
                         <MudListItem Dense="true">
                             <MudSlider Size="Size.Small" @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
@@ -1049,13 +1091,13 @@
 
 
     </MudDrawer>
-    <div style="width:auto; height:86vh;  overflow:hidden;">
+    <div style="width:auto; height:70vh;  overflow:hidden;">
         <Vizor.ECharts.EChart @ref="EChart"
                               Renderer="Vizor.ECharts.ChartRenderer.Canvas"
                               Options="ChartOptions"
                               Width="auto"
-                              Height="900px"
+                              Height="600px"
                               @key="@($"chart_{Symbol}")" />
     </div>
 </MudDrawerContainer>   
-<Import ThresholdBubble="ThresholdBubble" TimeFrame="TimeFrame" NotifyNewBars="NewBar" ></Import>
+<Import ThresholdBubble="ThresholdBubble" TimeFrame="TimeFrame" NotifyNewBars="NewBar" NotifyNewBubbles="NewBubble" ></Import>
