@@ -133,7 +133,7 @@ namespace B3WM.Client.Services
                 }
                 else if (candleStart == _currentBar.Date)
                 {
-                    UpdateBar(_currentBar, t.Value, t.Volume);
+                    UpdateBar(_currentBar, t.Value, t.Volume, _reverseTimeData);
                 }
                 else if (candleStart < _currentBar.Date && _reverseTimeData)
                 {
@@ -183,12 +183,14 @@ namespace B3WM.Client.Services
             };
         }
 
-        private void UpdateBar(BarStorageItem bar, double price, long volume)
+        private void UpdateBar(BarStorageItem bar, double price, long volume, bool isReverseMode)
         {
             if (price > bar.High) bar.High = price;
             if (price < bar.Low) bar.Low = price;
 
-            bar.Close = price;
+            if (!isReverseMode) bar.Close = price;
+            else bar.Open = price;
+
             bar.Volume += volume;
         }
 
