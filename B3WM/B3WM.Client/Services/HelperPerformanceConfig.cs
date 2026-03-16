@@ -17,7 +17,7 @@ namespace B3WM.Client.Services
         public static bool EnableVolumeHelper { get; set; } = false;
 
         /// <summary>Quando true, BubbleHelper imprime [Perf] no console.</summary>
-        public static bool EnableBubbleHelper { get; set; } = true;
+        public static bool EnableBubbleHelper { get; set; } = false;
 
         /// <summary>Quando true, DataHelper imprime [Perf] no console.</summary>
         public static bool EnableDataHelper { get; set; } = false;

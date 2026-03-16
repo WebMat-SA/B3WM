@@ -25,12 +25,12 @@
                      Filterable="true" QuickFilter="@_quickFilter" Elevation="0" @bind-SelectedItems="_selectedDataImports" ReadOnly="false"
                      Dense="true" Style="overflow:hidden;">
             <ToolBarContent>
-                    @* <MudText Typo="Typo.h6">Arquivos</MudText> *@
-                    <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start" Immediate="true"
-                        AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-                    <MudSpacer /> 
-                    <MudSpacer /> 
-                    <MudSpacer /> 
+                @* <MudText Typo="Typo.h6">Arquivos</MudText> *@
+                <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start" Immediate="true"
+                    AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                <MudSpacer /> 
+                <MudSpacer /> 
+                <MudTimePicker Label="A partir de (regressivo)" Editable="true" @bind-Time="_time" />
             </ToolBarContent>
 
             <Columns>
@@ -173,6 +173,7 @@
     };
 
     private string _searchString;
+    private TimeSpan? _time { get; set; } = null;
 
     public List<ImportNode> _files { get; set; } = new();
     private IReadOnlyList<IBrowserFile> _browserFiles = [];
@@ -231,7 +232,7 @@
         item.Processing = true;
 
         //aguarda o processamento
-        await item.Process(TimeFrame, ThresholdBubble);
+        await item.Process(TimeFrame, ThresholdBubble, _time);
 
         item.Processing = false;
         item.Processed = true;

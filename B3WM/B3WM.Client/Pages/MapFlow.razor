@@ -838,23 +838,23 @@
 }
 
 @* --- INTERFACE --- *@
-    <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position: relative;">
-        <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-            <MudTooltip Text="Configurações">
-                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
-            </MudTooltip>
-            <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
-            </MudTooltip>
-        </MudStack>
-        <B3WM.Client.Components.HubClient @ref=HubClient
-            OnCandleSeriesChange="NewBar" 
-            OnCurrentBarChange="NewCurrentBar"
-            OnVolumeUpdate="VolumeUpdate" 
-            OnNewBubble="NewBubble"
-            TimeFrame="TimeFrame"
-            BubbleThreshold="ThresholdBubble" />
+<MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 pt-3" Row Style="position:relative;">
+    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+        <MudTooltip Text="Configurações">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; }" />
+        </MudTooltip>
+        <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
+        </MudTooltip>
     </MudStack>
+    <B3WM.Client.Components.HubClient @ref=HubClient
+        OnCandleSeriesChange="NewBar" 
+        OnCurrentBarChange="NewCurrentBar"
+        OnVolumeUpdate="VolumeUpdate" 
+        OnNewBubble="NewBubble"
+        TimeFrame="TimeFrame"
+        BubbleThreshold="ThresholdBubble" />
+</MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
     <MudDrawer Open="openDrawer" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">

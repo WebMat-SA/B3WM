@@ -266,7 +266,8 @@ namespace B3WM.Client.Services
         public static async IAsyncEnumerable<Ticks2> ParseTicks2FromCsv(
             Stream csvStream,
             DateTime date,
-            string symbol)
+            string symbol,
+            TimeSpan? StartAtTick = null)
         {
             //var list = new List<Ticks2>();
 
@@ -316,7 +317,10 @@ namespace B3WM.Client.Services
                 counter++;
                 HelperPerformanceConfig.Log(nameof(Import), "Enqueue CSV", counter, $"{tick.ToString()}");
 
-                //list.Add(tick);
+                //jumpa para o filtro de tempo
+                if (StartAtTick != null && tick.Time.TimeOfDay > StartAtTick)
+                    continue;
+
                 yield return tick;
             }
 

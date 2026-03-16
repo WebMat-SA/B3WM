@@ -195,7 +195,7 @@ namespace B3WM.Client.Model
 
         #endregion
 
-        public async Task Process(int _timeFrame, int _bubbleThreshold)
+        public async Task Process(int _timeFrame, int _bubbleThreshold, TimeSpan? startAt)
         {
             Start = DateTime.Now;
 
@@ -212,7 +212,7 @@ namespace B3WM.Client.Model
                     List<Ticks2> batchList = new();
 
                     //fazer batch do envio aqui
-                    await foreach (var tick in DataHelper.ParseTicks2FromCsv(stream, Date ?? DateTime.Today, Symbol ?? "UNKNOWN"))
+                    await foreach (var tick in DataHelper.ParseTicks2FromCsv(stream, Date ?? DateTime.Today, Symbol ?? "UNKNOWN", startAt))
                     {
                         batchList.Add(tick);
                         count++;
