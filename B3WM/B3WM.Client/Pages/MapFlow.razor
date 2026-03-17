@@ -57,6 +57,31 @@
     [PersistState]
     public string ColorSeller { get; set; } = "#b49696";
 
+    int __bubbleSizeRange_Max;
+    [PersistState]
+    public int _bubbleSizeRange_Max { 
+        get => __bubbleSizeRange_Max;
+        set
+        {
+            Console.WriteLine(_bubbleSizeRange_Min + " - " + _bubbleSizeRange_Max);
+            __bubbleSizeRange_Max = value;
+            _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
+        }
+    }
+
+    int __bubbleSizeRange_Min;
+    [PersistState]
+    public int _bubbleSizeRange_Min {
+        get => __bubbleSizeRange_Min;
+        set
+        {
+            Console.WriteLine(_bubbleSizeRange_Min + " - " + _bubbleSizeRange_Max);
+            __bubbleSizeRange_Min = value;
+            _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
+        }
+    
+    }
+
     public bool openDrawer { get; set; } = false;
 
     private static bool _logPerformance = true;
@@ -706,8 +731,66 @@
             // Add a highlighted horizontal dashed line and a right-side label for the last traded price
             try
             {
-                // Compose a markLine entry that draws a horizontal dashed line at the last price
-                // and shows a right-aligned label with the numeric value.
+                var markLineEntries = new List<object>
+                {
+                    new {
+                        // yAxis positions the horizontal line at the given value
+                        yAxis = lastPrice,
+                        // disable animation for the static guide
+                        animation = true,
+                        // also explicitly ensure per-item symbol fields are none/zero (defensive)
+                        symbol = new[] { "none" },
+                        symbolSize = new[] { 0 },
+                        // per-line label configuration
+                        // configure label to be vertically centered on the axis column
+                        label = new {
+                            show = true,
+                            position = "end",
+                            distance = 0,
+                            // use ECharts accepted values: 'middle' vertically
+                            verticalAlign = "middle",
+                            align = "left",
+                            // white text on red background
+                            color = "#444444",
+                            backgroundColor = "#aaaaaa",
+                            padding = new[] { 2, 6, 2, 6 },
+                            borderRadius = 4,
+                            // formatter can be a JS function; use the wrapper type to emit raw JS
+                            formatter = new JavascriptFunction($"function() {{ return '{lastPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)}'; }}")
+                        },
+                        // per-line style (override top-level if needed)
+                        lineStyle = new {
+                            type = "dashed",
+                            color = "#aaaaaa",
+                            width = 1
+                        }
+                    }
+                };
+
+                // vertical separators between different days
+                for (int i = 1; i < bars.Count; i++)
+                {
+                    if (bars[i].Date.Date != bars[i - 1].Date.Date)
+                    {
+                        // use xAxis category value to position vertical separator at the bar index
+                        markLineEntries.Add(new {
+                        xAxis = categoryData.Count > i ? categoryData[i] : (object)i,
+                            animation = false,
+                            symbol = new[] { "none", "none" },
+                            symbolSize = new[] { 0, 0 },
+                            label = new { show = false },
+                            lineStyle = new {
+                                type = "solid",
+                                color = "rgba(200,200,200,0.18)",
+                                width = 1
+                            }
+                        });
+                    }
+                }
+
+
+                // // Compose a markLine entry that draws a horizontal dashed line at the last price
+                // // and shows a right-aligned label with the numeric value.
                 _cachedCandleSeriesObj.MarkLine = new MarkLine
                 {
                     Silent = true,
@@ -716,42 +799,9 @@
                     SymbolSize = 0,
                     // Data can be an array of objects understood by ECharts. We provide a simple anonymous object
                     // with yAxis value and a nested label and lineStyle for that single line.
-                    Data = new object[]
-                    {
-                        new {
-                            // yAxis positions the horizontal line at the given value
-                            yAxis = lastPrice,
-                            // disable animation for the static guide
-                            animation = true,
-                            // also explicitly ensure per-item symbol fields are none/zero (defensive)
-                            symbol = new[] { "none" },
-                            symbolSize = new[] { 0 },
-                            // per-line label configuration
-                            // configure label to be vertically centered on the axis column
-                            label = new {
-                                show = true,
-                                position = "end",
-                                distance = 0,
-                                // use ECharts accepted values: 'middle' vertically
-                                verticalAlign = "middle",
-                                align = "left",
-                                // white text on red background
-                                color = "#444444",
-                                backgroundColor = "#aaaaaa",
-                                padding = new[] { 2, 6, 2, 6 },
-                                borderRadius = 4,
-                                // formatter can be a JS function; use the wrapper type to emit raw JS
-                                formatter = new JavascriptFunction($"function() {{ return '{lastPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)}'; }}")
-                            },
-                            // per-line style (override top-level if needed)
-                            lineStyle = new {
-                                type = "dashed",
-                                color = "#aaaaaa",
-                                width = 1
-                            }
-                        }
-                    }
+                    Data = markLineEntries.ToArray()
                 };
+
             }
             catch
             {
@@ -888,6 +938,9 @@
             range = new MudExRange<int>(ThresholdBubble, range.End);
         else if (range.End < ThresholdBubble)
             range = new MudExRange<int>(range.Start, ThresholdBubble);
+
+        __bubbleSizeRange_Max = range.End;
+        __bubbleSizeRange_Min = range.Start;
 
         _bubbleSizeRange = new MudExRange<int>(range.Start, range.End);
     }
