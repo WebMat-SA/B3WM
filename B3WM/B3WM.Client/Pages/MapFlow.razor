@@ -774,14 +774,14 @@
                     {
                         // use xAxis category value to position vertical separator at the bar index
                         markLineEntries.Add(new {
-                        xAxis = categoryData.Count > i ? categoryData[i] : (object)i,
+                            xAxis = i-1,
                             animation = false,
-                            symbol = new[] { "none", "none" },
-                            symbolSize = new[] { 0, 0 },
+                            symbol = new[] { "none" },
+                            symbolSize = new[] { 0 },
                             label = new { show = false },
                             lineStyle = new {
                                 type = "solid",
-                                color = "rgba(200,200,200,0.18)",
+                                color = "rgba(200,200,200,0.15)",
                                 width = 1
                             }
                         });

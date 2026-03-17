@@ -89,14 +89,14 @@
                             <MudTooltip Text="Remover item da lista">
                                 <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" Disabled="@(context.Item.Processing)" OnClick="@(() => RemoveFileAsync(context.Item))" />
                             </MudTooltip>
-                            <MudTooltip Text="Processar item">
-                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Input" Disabled="@(context.Item.Processing || context.Item.Processed)" OnClick="@(() => ProcessItemAsync(context.Item))" />
-                            </MudTooltip>
                             <MudTooltip Text="Salvar no banco de dados">
                                 <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Save" Disabled="@(!context.Item.Processed && !context.Item.Processing)" OnClick="@(() => SendToDataBaseItemAsync(context.Item))" />
                             </MudTooltip>
                             <MudTooltip Text="Debug (Console)">
                                 <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Construction" Disabled="@(!context.Item.Processed && !context.Item.Processing)" OnClick="@(() => context.Item.PrintDebug())" />
+                            </MudTooltip>
+                            <MudTooltip Text="Processar item">
+                                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Input" Disabled="@(context.Item.Processing || context.Item.Processed)" OnClick="@(() => ProcessItemAsync(context.Item))" />
                             </MudTooltip>
                         </MudStack>
                     </EditTemplate>
