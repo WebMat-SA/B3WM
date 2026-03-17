@@ -40,7 +40,7 @@
                         <MudStack Row Justify="Justify.SpaceBetween" Spacing="0">
                             @if (context.Item.Processing)
                             {
-                                <MudProgressCircular Indeterminate Size="Size.Small"></MudProgressCircular>
+                                <MudProgressCircular Indeterminate Size="Size.Small" Style="max-width: 22px; max-height: 22px;"></MudProgressCircular>
                             }
                             @context.Item.File?.Name
                             @if (context.Item.Processed)
@@ -64,7 +64,7 @@
                 </PropertyColumn>
                 <PropertyColumn Property="x => x.Date" Title="Data de referência" Editable="true">
                     <EditTemplate>
-                        <MudDatePicker @bind-Date="context.Item.Date" @onclick:stopPropagation="true" ShowToolbar="false" Elevation="0" Disabled="context.Item.Processing || context.Item.Processed" />
+                        <MudDatePicker IconSize="Size.Small" @bind-Date="context.Item.Date" @onclick:stopPropagation="true" ShowToolbar="false" Elevation="0" Disabled="context.Item.Processing || context.Item.Processed" />
                     </EditTemplate>
                 </PropertyColumn>
                 <PropertyColumn Property="x => x.Progress" Editable="false" Sortable="false" Filterable="false" Hideable="false">
