@@ -210,24 +210,35 @@ namespace B3WM.Client.Model
                     int count = 0;
                     int batch = 1000;
                     List<Ticks2> batchList = new();
-
-                    //fazer batch do envio aqui
-                    await foreach (var tick in DataHelper.ParseTicks2FromCsv(stream, Date ?? DateTime.Today, Symbol ?? "UNKNOWN", startAt))
+                    try
                     {
-                        batchList.Add(tick);
-                        count++;
 
-                        if (batchList.Count >= batch)
+                        //fazer batch do envio aqui
+                        await foreach (var tick in DataHelper.ParseTicks2FromCsv(stream, Date ?? DateTime.Today, Symbol ?? "UNKNOWN", startAt))
                         {
-                            var jsonData = System.Text.Json.JsonSerializer.Serialize(batchList);
+                            batchList.Add(tick);
+                            count++;
 
-                            //Console.WriteLine(jsonData);
+                            if (batchList.Count >= batch)
+                            {
+                                var jsonData = System.Text.Json.JsonSerializer.Serialize(batchList);
 
-                            await MainService.RunAsync(s => s.EnqueueFromCsv(jsonData));
+                                //Console.WriteLine(jsonData);
 
-                            batchList.Clear();
-                            Progress = (decimal)count ;
+                                await MainService.RunAsync(s => s.EnqueueFromCsv(jsonData));
+
+                                batchList.Clear();
+                                Progress = (decimal)count;
+
+                                // ⭐ COOPERAÇÃO COM WASM
+                                if (count % 10000 == 0)
+                                    await Task.Yield();
+                            }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(ex.ToString());
                     }
 
                     //ultimo envio

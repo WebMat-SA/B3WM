@@ -281,48 +281,52 @@ namespace B3WM.Client.Services
 
             string? line;
             int counter = 0;
-
-            while ((line = await reader.ReadLineAsync()) != null)
+            try
             {
 
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                var parts = ParseCsvLine(line);
-
-                if (parts.Length < 7)
-                    continue;
-
-                var tick = new Ticks2
+                while ((line = await reader.ReadLineAsync()) != null)
                 {
-                    Time = date.Date + TimeSpan.Parse(parts[0]),
 
-                    Volume = int.Parse(parts[1].Replace(".","")),
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
 
-                    Value = double.Parse(
-                        parts[2],
-                        CultureInfo.GetCultureInfo("pt-BR")
-                    ),
+                    var parts = ParseCsvLine(line);
 
-                    TrydID = int.Parse(parts[3]),
+                    if (parts.Length < 7)
+                        continue;
 
-                    Buyer = ParseAgent(parts[4]),
-                    Seller = ParseAgent(parts[5]),
+                    var tick = new Ticks2
+                    {
+                        Time = date.Date + TimeSpan.Parse(parts[0]),
 
-                    Starter = ParseActionType(parts[6]),
+                        Volume = int.Parse(parts[1].Replace(".", "")),
 
-                    Symbol = symbol
-                };
+                        Value = double.Parse(
+                            parts[2],
+                            CultureInfo.GetCultureInfo("pt-BR")
+                        ),
 
-                counter++;
-                HelperPerformanceConfig.Log(nameof(Import), "Enqueue CSV", counter, $"{tick.ToString()}");
+                        TrydID = int.Parse(parts[3]),
 
-                //jumpa para o filtro de tempo
-                if (StartAtTick != null && tick.Time.TimeOfDay > StartAtTick)
-                    continue;
+                        Buyer = ParseAgent(parts[4]),
+                        Seller = ParseAgent(parts[5]),
 
-                yield return tick;
+                        Starter = ParseActionType(parts[6]),
+
+                        Symbol = symbol
+                    };
+
+                    counter++;
+                    //HelperPerformanceConfig.Log(nameof(Import), "Enqueue CSV", counter, $"{tick.ToString()}");
+
+                    //jumpa para o filtro de tempo
+                    if (StartAtTick != null && tick.Time.TimeOfDay > StartAtTick)
+                        continue;
+
+                    yield return tick;
+                }
             }
+            finally { Console.WriteLine("Finalizou arquivo!!! OU Erro"); }
 
             //return list;
         }
