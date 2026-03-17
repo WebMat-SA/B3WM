@@ -79,7 +79,7 @@
             __bubbleSizeRange_Min = value;
             _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
         }
-    
+
     }
 
     public bool openDrawer { get; set; } = false;
@@ -125,8 +125,8 @@
     private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
     private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
 
-    private IList<BubbleStorageItem> RawDataBubbleBlue => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains((Ticks2.Agents)q.Agent)).OrderBy(q => q.Date).ToList();
-    private IList<BubbleStorageItem> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains((Ticks2.Agents)q.Agent)).OrderBy(q => q.Date).ToList();
+    // private IList<BubbleStorageItem> RawDataBubbleBlue => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains((Ticks2.Agents)q.Agent) && q.Amount >= ThresholdBubble).OrderBy(q => q.Date).ToList();
+    // private IList<BubbleStorageItem> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains((Ticks2.Agents)q.Agent) && q.Amount >= ThresholdBubble).OrderBy(q => q.Date).ToList();
 
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
@@ -213,7 +213,7 @@
     private ScatterSeries? _cachedRedBubbleSeriesObj;
     private ScatterSeries? _cachedBlueBubbleSeriesObj;
 
-    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _jsFunctionCacheKey;
+    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _jsFunctionCacheKey;
     private bool _jsFunctionCacheValid;
     private NumberArrayOrFunction? _cachedSymbolSizeFunction;
     private JavascriptFunction? _cachedVolumeProfileFunction;
@@ -236,7 +236,7 @@
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
     private int _lastRenderedVolumeVersion = -1;
     private int _lastRenderedBubbleVersion = -1;
-    private (double BubbleSize, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _lastRenderedJsKey = default;
+    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _lastRenderedJsKey = default;
 
 
     private int _lastBubbleDataVersion = -1;
@@ -403,7 +403,7 @@
     private void ThresholdBubbleChanged(int value)
     {
         ThresholdBubble = value;
-
+        _bubbleDataVersion++;
         //HubClient?.RemountBubbles(ThresholdBubble);
     }
 
@@ -573,7 +573,7 @@
         //LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
 
         var swJs = Stopwatch.StartNew();
-        var jsKey = (BubbleSize, BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End);
+        var jsKey = (BubbleSize,ThresholdBubble ,BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End);
         NumberArrayOrFunction symbolSizeFunction;
         JavascriptFunction volumeProfileFunction;
         JavascriptFunction deltaprofileFunction;
@@ -678,7 +678,8 @@
             var blueList = new List<(DateTime Time, object[] Data)>();
             foreach (var e in Bubbles)
             {
-                if (!selectedAgents.Contains((Ticks2.Agents)e.Agent)) continue;
+                //ignora filtros de agentes e bubbles menores que a threshold setada
+                if (!selectedAgents.Contains((Ticks2.Agents)e.Agent) || e.Amount < ThresholdBubble) continue;
                 var arr = new object[] {
                     e.Date.GetCandleStart(TimeFrame).ToString("dd/MM HH:mm"),
                     e.Price,
@@ -871,7 +872,7 @@
         IMagicQuery<BarStorageItem> barsQuery = await _MagicDb.Query<BarStorageItem>();
         IMagicQuery<BubbleStorageItem> bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
 
-        Bubbles = await bubbleQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.Symbol == Symbol).ToListAsync();
+        Bubbles = await bubbleQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.Symbol == Symbol && q.Amount >= ThresholdBubble).ToListAsync();
         _bubbleDataVersion++;
 
         var bars = await barsQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.TimeFrame == TimeFrame && q.Symbol == Symbol).ToListAsync();
@@ -966,7 +967,7 @@
 </MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
-    <MudDrawer Open="openDrawer" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
+    <MudDrawer Open="openDrawer" Height="86vh" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
         @* TIMEFRAME *@
         <MudPaper Class="p-1" Outlined Elevation="0">
             <MudList T="string" Dense>
@@ -1200,12 +1201,12 @@
 
 
     </MudDrawer>
-    <div style="width:auto; height:80vh;  overflow:hidden;">
+    <div style="width:auto; height:86vh;  overflow:hidden;">
         <Vizor.ECharts.EChart @ref="EChart"
                               Renderer="Vizor.ECharts.ChartRenderer.Canvas"
                               Options="ChartOptions"
                               Width="auto"
-                              Height="785px"
+                              Height="800px"
                               @key="@($"chart_{Symbol}")" />
     </div>
 </MudDrawerContainer>   
