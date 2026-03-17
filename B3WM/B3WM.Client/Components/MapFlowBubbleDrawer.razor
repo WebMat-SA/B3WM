@@ -1,0 +1,166 @@
+﻿@using B3WM.Client.Model
+@using B3WM.Shared.Entity
+@using B3WM.Shared.Extensions
+@inject IJSRuntime JS
+@inherits Components.PersistentComponentBase
+
+@code {
+    protected override string PersistenceKey => $"{nameof(MapFlowBubbleDrawer)}_state";
+    protected override bool ContinuousSave => true;
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter, EditorRequired]
+    public required List<BubbleStorageItem> Bubbles { get; set; }
+
+    [Parameter]
+    public int ThresholdBubble { get; set; }
+
+    [Parameter]
+    public List<Ticks2.Agents?> SelectedAgents { get; set; }
+
+    [Parameter]
+    public string BuyColor { get; set; }
+
+    [Parameter]
+    public string SaleColor { get; set; }
+
+    /// <summary>
+    /// abrir para pai atualizar forçado, para não pesar o rerender do grafico no mapflow
+    /// </summary>
+    public void ForceUpdate()
+    {
+        StateHasChanged();
+    }
+
+    [PersistState]
+    public bool Amount { get; set; } = true;
+
+    [PersistState]
+    public bool Agents { get; set; } = true;
+
+    [PersistState]
+    public bool Sound { get; set; } = true;
+
+    List<BubbleStorageItem> _bubbles => Bubbles
+        .Where(q => !Amount || q.Amount >= ThresholdBubble)
+        .Where(q => !Agents || SelectedAgents.Contains((Ticks2.Agents?)q.Agent))
+        .OrderByDescending(e => e.Date)
+        .Take(45)
+        .ToList();
+
+    // track seen items so we can notify when new ones matching the filters arrive
+    HashSet<string> _seenKeys = new();
+    bool _initialized = false;
+
+    string MakeKey(BubbleStorageItem b) => $"{b.Date.Ticks}_{b.Agent}_{(int)b.ActionType}_{b.Price}_{b.Symbol}";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // compute current filtered list and their keys
+        var current = _bubbles;
+        var currentKeys = current.Select(MakeKey).ToList();
+
+        if (firstRender)
+        {
+            // initialize seen keys but don't notify on first load
+            _seenKeys = new HashSet<string>(currentKeys);
+            _initialized = true;
+            return;
+        }
+
+        var newKeys = currentKeys.Except(_seenKeys).ToList();
+        if (_initialized && Sound && newKeys.Any())
+        {
+            try
+            {
+                await PlayNotificationSoundAsync();
+            }
+            catch
+            {
+                // ignore JS errors for audio
+            }
+        }
+
+        // update seen keys for next render
+        _seenKeys = new HashSet<string>(currentKeys);
+        _initialized = true;
+    }
+
+    ValueTask PlayNotificationSoundAsync()
+    {
+        // Use WebAudio oscillator via eval to play a short beep. Keep small gain to avoid loudness.
+        //var script = "(function(){try{var ctx=new (window.AudioContext||window.webkitAudioContext)();var o=ctx.createOscillator();var g=ctx.createGain();o.type='sine';o.frequency.value=880;g.gain.value=0.03;o.connect(g);g.connect(ctx.destination);o.start();setTimeout(function(){o.stop();ctx.close();},150);return true;}catch(e){return false;}})()";
+        var script = @"(function(){
+            try{
+              var ctx=new (window.AudioContext||window.webkitAudioContext)();
+              var o=ctx.createOscillator();
+              var g=ctx.createGain();
+
+              o.type='sawtooth';          // sine, square, triangle, sawtooth
+              o.frequency.value=850;  // tom
+              g.gain.value=0.15;      // volume (0–1)
+
+              o.connect(g);
+              g.connect(ctx.destination);
+
+              o.start();
+              setTimeout(function(){
+                o.stop();
+                ctx.close();
+              }, 750);                // duração maior
+
+              return true;
+            }catch(e){return false;}
+            })()";
+        
+        return JS.InvokeVoidAsync("eval", script);
+    }
+}
+
+<MudDrawer Open="Open" Height="86vh" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent">
+    
+    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+        <MudList ReadOnly=true Dense T="string">
+            <MudListItem Dense="true" T="string" Icon="@Icons.Material.Filled.FilterAlt">
+                <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption">Notificação de Bubbles</MudText>
+                    <MudStack Row Justify="Justify.FlexEnd" Spacing="1">
+                        <MudTooltip Text="@($"Quantidade: {ThresholdBubble} ({(Amount ? "Ligado" : "Desligado")})")">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.StackedBarChart" OnClick="() => Amount =! Amount" Color="@(Amount ? Color.Info : Color.Default)"/>
+                        </MudTooltip>
+
+                        <MudTooltip Text="@($"Agents ({(Agents ? "Ligado" : "Desligado")})")">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.People" OnClick="() => Agents = !Agents" Color="@(Agents? Color.Info: Color.Default)" />
+                        </MudTooltip>
+
+                        <MudTooltip Text="@($"Notificações Sonoras ({(Sound ? "Ligado" : "Desligado")})")">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => Sound = !Sound" Color="@(Sound? Color.Info: Color.Default)" />
+                        </MudTooltip>
+                    </MudStack>
+                </MudStack>
+            </MudListItem>
+            <Virtualize TItem=BubbleStorageItem Items="_bubbles" Context="bubble">
+                @{
+                    var color = (bubble.ActionType == Ticks2.ActionType.Buy) ? BuyColor : SaleColor;
+                }
+                <MudListItem Dense="true" T="string">
+                    <MudStack AlignItems="AlignItems.Center" Row Justify="Justify.SpaceBetween">
+                        <!-- Left group: first and second item stay together on the left -->
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                            <MudChip Label="true" Text="@bubble.Date.ToString("HH:mm:ss")" Size="Size.Small"/>
+                            <MudText Typo="Typo.caption">@(((Ticks2.Agents?)bubble.Agent)?.Description()) </MudText>
+                        </MudStack>
+
+                        <!-- Last item stays on the right because parent uses SpaceBetween -->
+                        <MudTooltip Text="@(bubble.ActionType == Ticks2.ActionType.Buy ? "Compra" : "Venda")">
+                            <MudChip Label="true" Text="@bubble.Amount.ToString("0")" Size="Size.Small" Style="@($"background-color: {color}")" />
+                        </MudTooltip>
+                    </MudStack>
+                </MudListItem>
+            </Virtualize>
+        </MudList>
+    </MudPaper>
+    
+</MudDrawer>
