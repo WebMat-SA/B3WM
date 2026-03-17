@@ -83,6 +83,7 @@ namespace B3WM.Client.Model
 
         public decimal Progress { get; private set; }
         public DateTime? Start { get; private set; }
+        public DateTime? LastUpdate { get; private set; }
 
         public ImportNode(IBrowserFile _file, DateTime _date, string _symbol, IWorkerFactory _workerFactory, Func<BarStorageItem, Task> newBar, Func<BubbleStorageItem, Task> newBubble)
         {
@@ -216,6 +217,8 @@ namespace B3WM.Client.Model
                         //fazer batch do envio aqui
                         await foreach (var tick in DataHelper.ParseTicks2FromCsv(stream, Date ?? DateTime.Today, Symbol ?? "UNKNOWN", startAt))
                         {
+                            LastUpdate = DateTime.Now;
+
                             batchList.Add(tick);
                             count++;
 

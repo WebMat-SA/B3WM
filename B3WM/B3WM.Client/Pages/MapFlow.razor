@@ -693,6 +693,8 @@
         // Rebuild de objetos de série apenas quando necessário
         if (candleDataChanged)
         {
+            var lastPrice = includeCurrentBar && CurrentBar != null ? CurrentBar.Close : bars.Last().Close;
+
             _cachedCandleSeriesObj = new CandlestickSeries
             {
                 Name = "Candle",
@@ -701,6 +703,60 @@
                 Clip = false, // Evita que o candle inteiro suma ao dar zoom quando as bordas (high/low) saem da área visível
                 ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#ffffff", BorderColor0 = "#ffffff" }
             };
+            // Add a highlighted horizontal dashed line and a right-side label for the last traded price
+            try
+            {
+                // Compose a markLine entry that draws a horizontal dashed line at the last price
+                // and shows a right-aligned label with the numeric value.
+                _cachedCandleSeriesObj.MarkLine = new MarkLine
+                {
+                    Silent = true,
+                    // ensure endpoints do not render symbols at the MarkLine level
+                    Symbol = null,
+                    SymbolSize = 0,
+                    // Data can be an array of objects understood by ECharts. We provide a simple anonymous object
+                    // with yAxis value and a nested label and lineStyle for that single line.
+                    Data = new object[]
+                    {
+                        new {
+                            // yAxis positions the horizontal line at the given value
+                            yAxis = lastPrice,
+                            // disable animation for the static guide
+                            animation = true,
+                            // also explicitly ensure per-item symbol fields are none/zero (defensive)
+                            symbol = new[] { "none" },
+                            symbolSize = new[] { 0 },
+                            // per-line label configuration
+                            // configure label to be vertically centered on the axis column
+                            label = new {
+                                show = true,
+                                position = "end",
+                                distance = 0,
+                                // use ECharts accepted values: 'middle' vertically
+                                verticalAlign = "middle",
+                                align = "left",
+                                // white text on red background
+                                color = "#444444",
+                                backgroundColor = "#aaaaaa",
+                                padding = new[] { 2, 6, 2, 6 },
+                                borderRadius = 4,
+                                // formatter can be a JS function; use the wrapper type to emit raw JS
+                                formatter = new JavascriptFunction($"function() {{ return '{lastPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)}'; }}")
+                            },
+                            // per-line style (override top-level if needed)
+                            lineStyle = new {
+                                type = "dashed",
+                                color = "#aaaaaa",
+                                width = 1
+                            }
+                        }
+                    }
+                };
+            }
+            catch
+            {
+                // If something goes wrong (types or serialization), degrade silently.
+            }
             _lastRenderedCandleKey = barsKey;
         }
 
@@ -1091,12 +1147,12 @@
 
 
     </MudDrawer>
-    <div style="width:auto; height:70vh;  overflow:hidden;">
+    <div style="width:auto; height:80vh;  overflow:hidden;">
         <Vizor.ECharts.EChart @ref="EChart"
                               Renderer="Vizor.ECharts.ChartRenderer.Canvas"
                               Options="ChartOptions"
                               Width="auto"
-                              Height="600px"
+                              Height="725px"
                               @key="@($"chart_{Symbol}")" />
     </div>
 </MudDrawerContainer>   

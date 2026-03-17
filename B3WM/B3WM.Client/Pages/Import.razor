@@ -74,6 +74,9 @@
                                 @context.Item.Start?.ToString("dd/MM/yyyy HH:mm:ss")
                             </MudChip>
                             <MudChip Label="true" Size="Size.Small">
+                                @context.Item.LastUpdate?.ToString("dd/MM/yyyy HH:mm:ss")
+                            </MudChip>
+                            <MudChip Label="true" Size="Size.Small">
                                 @context.Item.Progress
                             </MudChip>
                         </MudStack>
