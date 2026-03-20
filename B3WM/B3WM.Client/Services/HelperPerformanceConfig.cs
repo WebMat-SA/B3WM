@@ -1,4 +1,5 @@
 using B3WM.Client.Components;
+using B3WM.Client.Model;
 using B3WM.Client.Pages;
 using Magic.IndexedDb;
 
@@ -23,7 +24,7 @@ namespace B3WM.Client.Services
         public static bool EnableDataHelper { get; set; } = false;
 
         /// <summary>Quando true, MapFlow imprime [Perf] no console.</summary>
-        public static bool EnableMapFlow { get; set; } = false;
+        public static bool EnableMapFlow { get; set; } = true;
 
         /// <summary>Quando true, HubClient imprime [Perf] no console.</summary>
         public static bool EnableHubClient { get; set; } = false;
@@ -38,7 +39,7 @@ namespace B3WM.Client.Services
         public static bool EnableMagicDb { get; set; } = false;
 
         /// <summary>Quando true, Import imprime [Perf] no console.</summary>
-        public static bool EnableImport { get; set; } = false;
+        public static bool EnableImport { get; set; } = true;
 
         internal static void Log(string helperName, string operation, long elapsedMs, string? extra = null)
         {
@@ -62,6 +63,8 @@ namespace B3WM.Client.Services
             nameof(HubClientWorker) => EnableHubClientWorker,
             nameof(Magic) => EnableMagicDb,
             nameof(Import) => EnableImport,
+            nameof(HubImport) => EnableImport,
+            nameof(ImportNode) => EnableImport,
             "Log" => true,
             _ => false
         };

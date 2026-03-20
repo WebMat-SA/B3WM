@@ -1,15 +1,20 @@
-﻿using B3WM.Client.Pages;
+﻿using B3WM.Client.Components;
+using B3WM.Client.Pages;
 using B3WM.Client.Services;
 using B3WM.Shared.Entity;
+using B3WM.Shared.Interfaces;
 using BlazorWorker.BackgroundServiceFactory;
 using BlazorWorker.Core;
 using BlazorWorker.WorkerBackgroundService;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.SignalR.Client;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using TagLib.NonContainer;
+using static System.Net.WebRequestMethods;
 
 namespace B3WM.Client.Model
 {
@@ -71,6 +76,9 @@ namespace B3WM.Client.Model
         private IWorker? MainWorker;
         private IWorkerBackgroundService<MainHelper>? MainService { get; set; }
 
+        private IWorker? MainHubWorker;
+        private IWorkerBackgroundService<HubImport>? HubService { get; set; }
+
         //candles, controle para enviar pra tela principal
         public ConcurrentQueue<BarStorageItem> Bars { get; set; } = new();
         //bubbles, controle para enviar para tela principal
@@ -81,11 +89,15 @@ namespace B3WM.Client.Model
 
         public IWorkerFactory workerFactory { get; private set; }
 
+        public HttpClient Http { get; private set; }
+
+        string connectionID { get; set; }
+
         public decimal Progress { get; private set; }
         public DateTime? Start { get; private set; }
         public DateTime? LastUpdate { get; private set; }
 
-        public ImportNode(IBrowserFile _file, DateTime _date, string _symbol, IWorkerFactory _workerFactory, Func<BarStorageItem, Task> newBar, Func<BubbleStorageItem, Task> newBubble)
+        public ImportNode(IBrowserFile _file, DateTime _date, string _symbol, IWorkerFactory _workerFactory, Func<BarStorageItem, Task> newBar, Func<BubbleStorageItem, Task> newBubble, HttpClient http)
         {
             File = _file;
             Date = _date;
@@ -94,6 +106,44 @@ namespace B3WM.Client.Model
 
             NewBar = newBar;
             NewBubble = newBubble;
+            Http = http;
+        }
+
+        public async Task<string> CreateHubWorkers(string url)
+        {
+            try
+            {
+
+                HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkersHub", 0, $"{MainService != null}");
+
+                if (MainHubWorker == null)
+                    MainHubWorker = await workerFactory.CreateAsync();
+
+                if (HubService != null)
+                    return connectionID;
+
+                HubService = await MainHubWorker.CreateBackgroundServiceAsync<HubImport>();
+
+                await HubService!.RegisterEventListenerAsync(nameof(HubImport.Notify),
+                    (object? s, IEnumerable<string[]> datas) =>
+                    {
+                        var sw = Stopwatch.StartNew();
+
+                        _ = OnReceiveCsvLines(datas);
+
+                        sw.Stop();
+                    });
+
+                if (HubService != null)
+                    connectionID = await HubService.RunAsync(e => e.Init(url, 5000));
+
+                return connectionID;
+            }
+            catch (Exception e)
+            {
+                HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"Error: {e.Message}");
+                return connectionID;
+            }
         }
 
         public async Task CreateWorkers(int _timeFrame, int _bubbleThreshold)
@@ -115,8 +165,8 @@ namespace B3WM.Client.Model
                 RegisterBubbleEvents();
                 RegisterVolumeEvents();
 
-                await MainService.RunAsync(s => s.InitCandle(int.MaxValue, _timeFrame, true, true));
-                await MainService.RunAsync(s => s.InitBubble(int.MaxValue, _bubbleThreshold, true, true));
+                await MainService.RunAsync(s => s.InitCandle(int.MaxValue, _timeFrame, true));
+                await MainService.RunAsync(s => s.InitBubble(int.MaxValue, _bubbleThreshold, true));
                 await MainService.RunAsync(s => s.InitVolume(2000, true));
 
                 HelperPerformanceConfig.Log(nameof(Import), "CreateWorkers", 0, $"{MainService != null}");
@@ -133,7 +183,7 @@ namespace B3WM.Client.Model
         {
             MainService!.RegisterEventListenerAsync(nameof(MainHelper.Candle_OnClosedBars),
                 async (object? s, BarStorageItem data) =>
-                {
+                {   
                     var sw = Stopwatch.StartNew();
 
                     //vincula o volume no candle
@@ -145,12 +195,10 @@ namespace B3WM.Client.Model
                     //enqueeu
                     Bars.Enqueue(data);
                     
-
-
                     sw.Stop();
-                    // HelperPerformanceConfig.Log(nameof(Import), "Candle_OnClosedBars",
-                    //     sw.ElapsedMilliseconds,
-                    //     $"Received new closed bars at {DateTime.Now:HH:mm:ss.fff}");
+                    HelperPerformanceConfig.Log(nameof(Import), "Candle_OnClosedBars",
+                        sw.ElapsedMilliseconds,
+                        $"Received new closed bars at {DateTime.Now:HH:mm:ss.fff}");
                 });
         }
         #endregion
@@ -196,65 +244,68 @@ namespace B3WM.Client.Model
 
         #endregion
 
-        public async Task Process(int _timeFrame, int _bubbleThreshold, TimeSpan? startAt)
+        public async Task Process(int _timeFrame, int _bubbleThreshold, string url)
         {
             Start = DateTime.Now;
 
             await CreateWorkers(_timeFrame, _bubbleThreshold);
 
-            using (var stream = File.OpenReadStream(1024 * 1024 * 1024))
+            var connectionID = await CreateHubWorkers(url);
+
+            if (string.IsNullOrEmpty(connectionID))
+                throw new Exception("SignalR não conectado");
+
+            using var stream = File.OpenReadStream(long.MaxValue);
+
+            using var content = new MultipartFormDataContent();
+
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+
+            content.Add(fileContent, "file", File.Name);
+
+            var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                "api/process/process"
+            );
+
+            request.Content = content;
+
+            HelperPerformanceConfig.Log(nameof(ImportNode), nameof(Process), 0, connectionID);
+
+            request.Headers.Add(
+                "X-ConnectionId",
+                connectionID
+            );
+
+            var response = await Http.SendAsync(request);
+
+            Console.WriteLine(response.StatusCode);
+        }
+
+        int count = 0;
+
+        private async Task OnReceiveCsvLines(IEnumerable<string[]> listData)
+        {
+
+            if (listData == null || listData.Count() == 0) return;
+
+            if (MainService != null)
             {
-                if (MainService != null)
-                {
-                    var swTotal = Stopwatch.StartNew();
+                var swTotal = Stopwatch.StartNew();
 
-                    int count = 0;
-                    int batch = 1000;
-                    List<Ticks2> batchList = new();
-                    try
-                    {
 
-                        //fazer batch do envio aqui
-                        await foreach (var tick in DataHelper.ParseTicks2FromCsv(stream, Date ?? DateTime.Today, Symbol ?? "UNKNOWN", startAt))
-                        {
-                            LastUpdate = DateTime.Now;
+                var jsonData = System.Text.Json.JsonSerializer.Serialize(listData);
 
-                            batchList.Add(tick);
-                            count++;
+                _ = MainService.RunAsync(s => s.EnqueueFromCsv(jsonData, Date ?? DateTime.Today, Symbol ?? "Desconhecido"));
 
-                            if (batchList.Count >= batch)
-                            {
-                                var jsonData = System.Text.Json.JsonSerializer.Serialize(batchList);
-
-                                //Console.WriteLine(jsonData);
-
-                                await MainService.RunAsync(s => s.EnqueueFromCsv(jsonData));
-
-                                batchList.Clear();
-                                Progress = (decimal)count;
-
-                                // ⭐ COOPERAÇÃO COM WASM
-                                if (count % 10000 == 0)
-                                    await Task.Yield();
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine(ex.ToString());
-                    }
-
-                    //ultimo envio
-                    var jsonDataLast = System.Text.Json.JsonSerializer.Serialize(batchList.ToArray());
-
-                    Console.WriteLine(jsonDataLast);
-
-                    await MainService.RunAsync(s => s.EnqueueFromCsv(jsonDataLast));
-
-                    swTotal.Stop();
-                    //HelperPerformanceConfig.Log(nameof(HubClient), "RunLoop.SendingToWebWorker()", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
-                }
+                count++;
+                Progress = (decimal)count;
+                swTotal.Stop();
+                HelperPerformanceConfig.Log(nameof(ImportNode), "RunLoop.ReceivingFromServer()", swTotal.ElapsedMilliseconds, $"{listData.Count()}");
             }
+
         }
 
         public void PrintDebug()

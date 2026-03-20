@@ -30,5 +30,21 @@ namespace B3WM.Services
         {
             await Clients.All.ReceiveTnTSimple(data);
         }
+
+        public async Task SendDataCSVTNT(string[] data)
+        {
+            if (data != null && data.Length > 0)
+            {
+                await Clients.All.ReceiveCsvLines(data);
+
+                var sizeBytes = data.Length;
+                var sizeKb = sizeBytes / 1024.0;
+                var sizeMb = sizeKb / 1024.0;
+
+                Console.WriteLine($"Message size: {sizeBytes} bytes | {sizeKb:F2} KB | {sizeMb:F4} MB");
+
+                //Console.WriteLine(data.Count());
+            }
+        }
     }
 }

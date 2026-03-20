@@ -3,6 +3,8 @@ using B3WM.Client.Pages;
 using B3WM.Shared.Entity;
 
 using System.Diagnostics;
+using System.Globalization;
+using Vizor.ECharts;
 
 namespace B3WM.Client.Services
 {
@@ -97,18 +99,18 @@ namespace B3WM.Client.Services
             if (Candle_OnUpdateLastBar != null) Candle_OnUpdateLastBar.Invoke(this, e);
         }
 
-        public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _enableCandleFormer = true, bool _isReverseData = false)
+        public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _enableCandleFormer = true)
         {
             EnableCandleFormer = _enableCandleFormer;
-            _candle.Init(throtlingms, timeFrame, _isReverseData);
+            _candle.Init(throtlingms, timeFrame);
 
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitCandle), 0, "Candle helper initialized");
         }
 
-        public void InitBubble(int throtlingms = 200, int bubbleThreshold = 125, bool _enableBubbleFormer = true, bool _isReverseData = false)
+        public void InitBubble(int throtlingms = 200, int bubbleThreshold = 125, bool _enableBubbleFormer = true)
         {
             EnableBubbleFormer = _enableBubbleFormer;
-            _bubble.Init(throtlingms, bubbleThreshold, _isReverseData);
+            _bubble.Init(throtlingms, bubbleThreshold);
 
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitBubble), 0, "Bubble helper initialized");
         }
@@ -171,17 +173,66 @@ namespace B3WM.Client.Services
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
         }
 
-        public void EnqueueFromCsv(string ticksString)
+        public void EnqueueFromCsv(string ticksString, DateTime Date, string Symbol)
         {
             var sw = Stopwatch.StartNew();
 
             //parse do json
-            var ticks = System.Text.Json.JsonSerializer.Deserialize<List<Ticks2>>(ticksString);
+            var listData = System.Text.Json.JsonSerializer.Deserialize<IEnumerable<string[]>>(ticksString);
 
-            if (ticks != null) Enqueue(ticks.ToArray());
+            if (listData == null) return;
+
+            List<Ticks2> batchList = new();
+            try
+            {
+                foreach (var data in listData)
+                {
+                    foreach (var line in data)
+                    {
+                        var parts = DataHelper.ParseCsvLine(line);
+
+                        if (parts.Length < 7)
+                            continue;
+
+                        if (!TimeSpan.TryParse(parts[0], out var time))
+                            continue;
+
+
+                        var tick = new Ticks2
+                        {
+                            Time = Date.Date + TimeSpan.Parse(parts[0]),
+
+                            Volume = int.Parse(parts[1].Replace(".", "")),
+
+                            Value = double.Parse(
+                                parts[2],
+                                CultureInfo.GetCultureInfo("pt-BR")
+                            ),
+
+                            TrydID = int.Parse(parts[3]),
+
+                            Buyer = DataHelper.ParseAgent(parts[4]),
+                            Seller = DataHelper.ParseAgent(parts[5]),
+
+                            Starter = DataHelper.ParseActionType(parts[6]),
+
+                            Symbol = Symbol ?? "Desconhecido"
+                        };
+
+                        batchList.Add(tick);
+                        
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+            }
+
+            if (batchList != null) Enqueue(batchList.ToArray());
 
             sw.Stop();
-            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks?.Count}");
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {batchList?.Count}");
         }
 
         private void Enqueue(Ticks2[] ticks)

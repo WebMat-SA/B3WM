@@ -1,9 +1,10 @@
-﻿@page "/imports"
-@using B3WM.Client.Model
+﻿@using B3WM.Client.Model
 @using BlazorWorker.Core
 @using System.Diagnostics
 @inject IWorkerFactory workerFactory
 @inject IMagicIndexedDb _MagicDb
+@inject HttpClient Http
+@inject NavigationManager Navigation
 
 <MudGrid>
     <MudItem md="12">
@@ -30,7 +31,6 @@
                     AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                 <MudSpacer /> 
                 <MudSpacer /> 
-                <MudTimePicker Label="A partir de (regressivo)" @bind-Time="_time" />
             </ToolBarContent>
 
             <Columns>
@@ -176,7 +176,6 @@
     };
 
     private string _searchString;
-    private TimeSpan? _time { get; set; } = null;
 
     public List<ImportNode> _files { get; set; } = new();
     private IReadOnlyList<IBrowserFile> _browserFiles = [];
@@ -202,7 +201,8 @@
                     ImportNode.TryExtractSymbolFromFileName(file.Name, Symbol),
                     workerFactory,
                     async (barItem) => { if (NotifyNewBars != null) await NotifyNewBars.Invoke(barItem); },
-                    async (bubbleItem) => { if (NotifyNewBubbles != null) await NotifyNewBubbles.Invoke(bubbleItem); }
+                    async (bubbleItem) => { if (NotifyNewBubbles != null) await NotifyNewBubbles.Invoke(bubbleItem); },
+                    Http
                 ));
             }
         }
@@ -235,7 +235,7 @@
         item.Processing = true;
 
         //aguarda o processamento
-        await item.Process(TimeFrame, ThresholdBubble, _time);
+        await item.Process(TimeFrame, ThresholdBubble, Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri);
 
         item.Processing = false;
         item.Processed = true;

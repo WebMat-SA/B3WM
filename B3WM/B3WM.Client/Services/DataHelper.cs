@@ -331,7 +331,7 @@ namespace B3WM.Client.Services
             //return list;
         }
 
-        private static string[] ParseCsvLine(string line)
+        public static string[] ParseCsvLine(string line)
         {
             return line
                 .Split("\",\"")
@@ -339,7 +339,7 @@ namespace B3WM.Client.Services
                 .ToArray();
         }
 
-        private static Ticks2.Agents ParseAgent(string value)
+        public static Ticks2.Agents ParseAgent(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
                 return 0;
@@ -356,7 +356,7 @@ namespace B3WM.Client.Services
             return 0; // desconhecido
         }
 
-        private static Ticks2.ActionType ParseActionType(string value)
+        public static Ticks2.ActionType ParseActionType(string value)
         {
             return value[0] switch
             {

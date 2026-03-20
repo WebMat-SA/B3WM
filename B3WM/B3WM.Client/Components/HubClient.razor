@@ -217,8 +217,8 @@
             RegisterBubbleEvents();
             RegisterVolumeEvents();
 
-            await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer, false));
-            await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer, false));
+            await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer));
+            await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer));
             await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");

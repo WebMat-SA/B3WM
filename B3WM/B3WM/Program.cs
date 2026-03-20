@@ -2,6 +2,7 @@ using B3WM.Client.Pages;
 using B3WM.Client.Services;
 using B3WM.Components;
 using B3WM.Services;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
 using MudBlazor.Services;
 
@@ -12,6 +13,18 @@ namespace B3WM
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+
+            builder.WebHost.ConfigureKestrel(options =>
+            {
+                options.Limits.MaxRequestBodySize = long.MaxValue;
+            });
+
+            builder.Services.Configure<FormOptions>(options =>
+            {
+                options.MultipartBodyLengthLimit = long.MaxValue;
+            });
+
 
             // Only enable WebAssembly interactive components (client-side rendering)
             builder.Services.AddRazorComponents()
@@ -43,7 +56,11 @@ namespace B3WM
             });
 
 
-            builder.Services.AddSignalR();
+            builder.Services.AddSignalR(options =>
+            {
+                options.MaximumReceiveMessageSize = 1024 * 1024;
+                options.StreamBufferCapacity = 100;
+            });
 
             builder.Services.AddResponseCompression(opts =>
             {
@@ -94,7 +111,8 @@ namespace B3WM
             
 
 #if DEBUG
-            builder.WebHost.UseUrls("https://localhost:5001");
+            builder.WebHost.UseUrls("https://localhost:5002",
+                "https://0.0.0.0:5002");
 #endif
 
             app.Map("/null", () => DateTime.Now.ToString());

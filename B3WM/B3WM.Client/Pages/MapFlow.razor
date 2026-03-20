@@ -63,7 +63,6 @@
         get => __bubbleSizeRange_Max;
         set
         {
-            Console.WriteLine(_bubbleSizeRange_Min + " - " + _bubbleSizeRange_Max);
             __bubbleSizeRange_Max = value;
             _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
         }
@@ -75,7 +74,6 @@
         get => __bubbleSizeRange_Min;
         set
         {
-            Console.WriteLine(_bubbleSizeRange_Min + " - " + _bubbleSizeRange_Max);
             __bubbleSizeRange_Min = value;
             _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
         }
@@ -1219,4 +1217,7 @@
                               @key="@($"chart_{Symbol}")" />
     </div>
 </MudDrawerContainer>   
-<Import ThresholdBubble="ThresholdBubble" TimeFrame="TimeFrame" NotifyNewBars="NewBar" NotifyNewBubbles="NewBubble" ></Import>
+<Import ThresholdBubble="ThresholdBubble" 
+    TimeFrame="TimeFrame" 
+    NotifyNewBars="NewBar" 
+    NotifyNewBubbles="NewBubble" ></Import>
