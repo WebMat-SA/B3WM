@@ -1,7 +1,11 @@
-﻿using B3WM.Services;
+﻿using B3WM.Client.Services;
+using B3WM.Services;
+using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using MudBlazor.Charts;
+using System.Globalization;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace B3WM.Controllers
@@ -17,9 +21,9 @@ namespace B3WM.Controllers
             this.hub = hub;
         }
 
-        [HttpPost]
+        [HttpPost("{Symbol}/{Date}/{startTime}/{endTime}")]
         [RequestSizeLimit(long.MaxValue)]
-        public async Task<IActionResult> Process(IFormFile file,[FromHeader(Name = "X-ConnectionId")] string connectionId)
+        public async Task<IActionResult> Process(IFormFile file,[FromHeader(Name = "X-ConnectionId")] string connectionId,string Symbol, DateTime Date, TimeSpan startTime, TimeSpan endTime)
         {
             if (file == null || file.Length == 0)
                 return BadRequest("Arquivo inválido");
@@ -30,7 +34,7 @@ namespace B3WM.Controllers
                 await file.CopyToAsync(fs);
 
             // 🔥 dispara processamento em background
-            _ = Task.Run(() => ProcessFile(tempPath, connectionId));
+            _ = Task.Run(() => ProcessFile(tempPath, connectionId, Symbol, Date,startTime, endTime));
 
             // ✔️ retorna imediatamente
             return Ok(new
@@ -39,24 +43,39 @@ namespace B3WM.Controllers
             });
         }
 
-        private async Task ProcessFile(string path, string connectionId)
+        private async Task ProcessFile(string path, string connectionId,string Symbol, DateTime Date, TimeSpan startTime, TimeSpan endTime)
         {
             try
             {
-                var batch = new List<string>(150);
+                const int batchSize = 1000;
+
+                var batch = new List<Ticks2>(batchSize);
 
                 foreach (var linha in FileHelper.ReadLinesReverse(path))
                 {
                     if (!linha.StartsWith("\""))
                         continue;
 
-                    batch.Add(linha);
+                    Console.WriteLine(linha);
 
-                    if (batch.Count >= 150)
+                    //converte para tick
+                    var tick2 = ConvertToTick2(linha, Date, Symbol);
+
+                    //verifica se ticks estão dentro do time
+                    if (tick2 == null || tick2.Time.TimeOfDay <= startTime || tick2.Time.TimeOfDay >= endTime)
+                        continue;
+
+                    //converte para tick2
+                    batch.Add(tick2);
+
+                    if (batch.Count >= batchSize)
                     {
-                        await hub.Clients.Client(connectionId).ReceiveCsvLines(batch.ToArray());
 
-                        Console.WriteLine(linha);
+                        var jsonData = System.Text.Json.JsonSerializer.Serialize(batch);
+
+                        await hub.Clients.Client(connectionId).ReceiveCsvLines(jsonData);
+
+                        
 
                         batch.Clear();
                     }
@@ -65,7 +84,10 @@ namespace B3WM.Controllers
                 // envia resto
                 if (batch.Count > 0)
                 {
-                    await hub.Clients.Client(connectionId).ReceiveCsvLines(batch.ToArray());
+
+                    var jsonData = System.Text.Json.JsonSerializer.Serialize(batch);
+
+                    await hub.Clients.Client(connectionId).ReceiveCsvLines(jsonData);
                 }
             }
             catch (Exception ex)
@@ -76,6 +98,43 @@ namespace B3WM.Controllers
             {
                 System.IO.File.Delete(path);
             }
+
+
+        }
+
+        private Ticks2 ConvertToTick2(string line, DateTime Date, string Symbol)
+        {
+            var parts = DataHelper.ParseCsvLine(line);
+
+            if (parts.Length < 7)
+                return null;
+
+            if (!TimeSpan.TryParse(parts[0], out var time))
+                return null;
+
+
+            return new Ticks2
+            {
+                Time = Date.Date + TimeSpan.Parse(parts[0]),
+
+                Volume = int.Parse(parts[1].Replace(".", "")),
+
+                Value = double.Parse(
+                    parts[2],
+                    CultureInfo.GetCultureInfo("pt-BR")
+                ),
+
+                TrydID = int.Parse(parts[3]),
+
+                Buyer = DataHelper.ParseAgent(parts[4]),
+                Seller = DataHelper.ParseAgent(parts[5]),
+
+                Starter = DataHelper.ParseActionType(parts[6]),
+
+                Symbol = Symbol ?? "Desconhecido"
+            };
+
+            
         }
     }
 }

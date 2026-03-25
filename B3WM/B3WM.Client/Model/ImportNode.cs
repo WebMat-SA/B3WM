@@ -125,17 +125,17 @@ namespace B3WM.Client.Model
                 HubService = await MainHubWorker.CreateBackgroundServiceAsync<HubImport>();
 
                 await HubService!.RegisterEventListenerAsync(nameof(HubImport.Notify),
-                    (object? s, IEnumerable<string[]> datas) =>
+                    (object? s, string jsonData) =>
                     {
                         var sw = Stopwatch.StartNew();
 
-                        _ = OnReceiveCsvLines(datas);
+                        _ = OnReceiveCsvLines(jsonData);
 
                         sw.Stop();
                     });
 
                 if (HubService != null)
-                    connectionID = await HubService.RunAsync(e => e.Init(url, 5000));
+                    connectionID = await HubService.RunAsync(e => e.Init(url, 1000));
 
                 return connectionID;
             }
@@ -244,7 +244,7 @@ namespace B3WM.Client.Model
 
         #endregion
 
-        public async Task Process(int _timeFrame, int _bubbleThreshold, string url)
+        public async Task Process(int _timeFrame, int _bubbleThreshold, string url, TimeSpan? startTime, TimeSpan? endTime)
         {
             Start = DateTime.Now;
 
@@ -265,9 +265,15 @@ namespace B3WM.Client.Model
 
             content.Add(fileContent, "file", File.Name);
 
+            var urlRequest =
+                $"api/process/process/{Symbol}/" +
+                $"{Date:yyyy-MM-dd}/" +
+                $"{(startTime ?? new TimeSpan(0,0,0)):hh\\:mm\\:ss}/" +
+                $"{(endTime ?? new TimeSpan(23,59,59)):hh\\:mm\\:ss}";
+
             var request = new HttpRequestMessage(
                 HttpMethod.Post,
-                "api/process/process"
+                urlRequest
             );
 
             request.Content = content;
@@ -286,24 +292,21 @@ namespace B3WM.Client.Model
 
         int count = 0;
 
-        private async Task OnReceiveCsvLines(IEnumerable<string[]> listData)
+        private async Task OnReceiveCsvLines(string jsonListData)
         {
 
-            if (listData == null || listData.Count() == 0) return;
+            if (string.IsNullOrEmpty(jsonListData)) return;
 
             if (MainService != null)
             {
                 var swTotal = Stopwatch.StartNew();
 
-
-                var jsonData = System.Text.Json.JsonSerializer.Serialize(listData);
-
-                _ = MainService.RunAsync(s => s.EnqueueFromCsv(jsonData, Date ?? DateTime.Today, Symbol ?? "Desconhecido"));
+                _ = MainService.RunAsync(s => s.EnqueueFromCsv(jsonListData, Date ?? DateTime.Today, Symbol ?? "Desconhecido"));
 
                 count++;
                 Progress = (decimal)count;
                 swTotal.Stop();
-                HelperPerformanceConfig.Log(nameof(ImportNode), "RunLoop.ReceivingFromServer()", swTotal.ElapsedMilliseconds, $"{listData.Count()}");
+                HelperPerformanceConfig.Log(nameof(ImportNode), "RunLoop.ReceivingFromServer()", swTotal.ElapsedMilliseconds, $"{jsonListData.Length}");
             }
 
         }

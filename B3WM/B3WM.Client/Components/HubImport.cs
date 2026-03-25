@@ -11,9 +11,9 @@ namespace B3WM.Client.Components
         public HubConnection? hubConnection;
         public PeriodicTimer? periodicTimer;
         private CancellationTokenSource cts = new CancellationTokenSource();
-        public readonly Channel<string[]> _channelToDo = Channel.CreateBounded<string[]>(new BoundedChannelOptions(1000) { SingleReader = true, SingleWriter = false });
+        public readonly Channel<string> _channelToDo = Channel.CreateBounded<string>(new BoundedChannelOptions(1000) { SingleReader = true, SingleWriter = false });
 
-        public event EventHandler<IEnumerable<string[]>>? Notify;
+        public event EventHandler<string>? Notify;
 
         private async Task RunTimerAsync()
         {
@@ -26,18 +26,12 @@ namespace B3WM.Client.Components
 
                         if (Notify != null)
                         {
-                            var list = new List<string[]>();
-                            int count = 0;
-
-                            while (_channelToDo.Reader.TryRead(out string[]? _data) && count <= 10)
+                            while (_channelToDo.Reader.TryRead(out string? _data) )
                             {
                                 if (_data == null) continue;
 
-                                list.Add(_data);
-                                count++;
+                                Notify.Invoke(this, _data);
                             }
-
-                            Notify.Invoke(this, list);
                         }
                     }
                     catch (Exception ex)
@@ -78,7 +72,7 @@ namespace B3WM.Client.Components
                .WithAutomaticReconnect()
                .Build();
 
-                hubConnection.On<string[]>(nameof(IDataHubClient.ReceiveCsvLines), OnReceiveTNT);
+                hubConnection.On<string>(nameof(IDataHubClient.ReceiveCsvLines), OnReceiveTNT);
                 //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
                 //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
@@ -97,7 +91,7 @@ namespace B3WM.Client.Components
             }
         }
 
-        private void OnReceiveTNT(string[] data)
+        private void OnReceiveTNT(string data)
         {
 
             if (data == null || data.Length == 0) return;

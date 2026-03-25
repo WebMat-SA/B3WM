@@ -26,6 +26,9 @@
 
     public bool openDrawer { get; set; } = false;
 
+    [CascadingParameter]
+    public string Symbol { get; set; }
+
     [Parameter]
     public Func<BarStorageItem, Task> OnCandleSeriesChange { get; set; } = default!;
 
@@ -264,7 +267,7 @@
                 });
 
             if (HubService != null)
-                await HubService.RunAsync(e => e.Init(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, 200));
+                await HubService.RunAsync(e => e.Init(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, 200, Symbol));
 
 
         }

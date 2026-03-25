@@ -80,6 +80,11 @@
 
     }
 
+    [PersistState]
+    public TimeSpan? _startTime { get; set; } = new TimeSpan(0, 0, 0);
+    [PersistState]
+    public TimeSpan? _endTime { get; set; } = new TimeSpan(23, 59, 59);
+
     public bool openDrawer { get; set; } = false;
     public bool openDrawerBubbleNotify { get; set; } = false;
 
@@ -427,7 +432,7 @@
         else
         {
             bars = new List<BarStorageItem>(BarStorageItem.Count);
-            foreach (var bar in BarStorageItem)
+            foreach (var bar in BarStorageItem.Where(q=> q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime))
                 bars.Add(bar);
 
             if (includeCurrentBar)
@@ -873,10 +878,10 @@
         IMagicQuery<BarStorageItem> barsQuery = await _MagicDb.Query<BarStorageItem>();
         IMagicQuery<BubbleStorageItem> bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
 
-        Bubbles = await bubbleQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.Symbol == Symbol && q.Amount >= ThresholdBubble).ToListAsync();
+        Bubbles = await bubbleQuery.Where(q => q.Date >= DateTime.Today.AddDays(-10) && q.Symbol == Symbol && q.Amount >= ThresholdBubble).Where(q => q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime).ToListAsync();
         _bubbleDataVersion++;
 
-        var bars = await barsQuery.Where(q => q.Date >= DateTime.Today.AddDays(-3) && q.TimeFrame == TimeFrame && q.Symbol == Symbol).ToListAsync();
+        var bars = await barsQuery.Where(q => q.Date >= DateTime.Today.AddDays(-10) && q.TimeFrame == TimeFrame && q.Symbol == Symbol).Where(q => q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime).ToListAsync();
         BarStorageItem = bars.OrderByDescending(q => q.Date).ToList();
         _barsDataVersion++;
 
@@ -962,6 +967,10 @@
         <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
         </MudTooltip>
+    </MudStack>
+    <MudStack Row AlignItems="AlignItems.Center">
+        <MudTimePicker @bind-Time="_startTime" Label="Horário de Início" IconSize="Size.Small" />
+        <MudTimePicker @bind-Time="_endTime" Label="Horário de Término" IconSize="Size.Small" />
     </MudStack>
     <B3WM.Client.Components.HubClient @ref=HubClient
         OnCandleSeriesChange="NewBar" 

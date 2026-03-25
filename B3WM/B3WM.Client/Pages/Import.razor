@@ -6,6 +6,207 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
+@code
+{
+    [CascadingParameter]
+    public string Symbol { get; set; }
+
+    [Parameter, EditorRequired]
+    public int TimeFrame { get; set; }
+
+    [Parameter, EditorRequired]
+    public int ThresholdBubble { get; set; }
+
+    [Parameter]
+    public Func<BarStorageItem, Task> NotifyNewBars { get; set; } = default!;
+
+    [Parameter]
+    public Func<BubbleStorageItem, Task> NotifyNewBubbles { get; set; } = default!;
+
+    // quick filter - filter globally across multiple columns with the same input
+    private Func<ImportNode, bool> _quickFilter => x =>
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+
+        if (x.File != null && x.File.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    };
+
+    private string _searchString;
+
+    private TimeSpan? _startTime { get; set; } = new TimeSpan(0, 0, 0);
+    private TimeSpan? _endTime { get; set; } = new TimeSpan(23, 59, 59);
+
+
+    public List<ImportNode> _files { get; set; } = new();
+    private IReadOnlyList<IBrowserFile> _browserFiles = [];
+    private MudFileUpload<IReadOnlyList<IBrowserFile>> _fileUploadMultiple = default!;
+    private HashSet<ImportNode>? _selectedDataImports { get; set; }
+
+    private void SyncFiles()
+    {
+        // arquivos ainda presentes no upload
+        var currentFiles = _browserFiles.ToHashSet();
+
+        // remove itens cujo arquivo não existe mais
+        _files.RemoveAll(x => !currentFiles.Contains(x.File));
+
+        // adiciona novos arquivos que ainda não existem
+        foreach (var file in _browserFiles)
+        {
+            if (!_files.Any(x => x.File == file))
+            {
+                _files.Add(new ImportNode(
+                    file,
+                    ImportNode.TryExtractDateFromFileName(file.Name),
+                    ImportNode.TryExtractSymbolFromFileName(file.Name, Symbol),
+                    workerFactory,
+                    async (barItem) => { if (NotifyNewBars != null) await NotifyNewBars.Invoke(barItem); },
+                    async (bubbleItem) => { if (NotifyNewBubbles != null) await NotifyNewBubbles.Invoke(bubbleItem); },
+                    Http
+                ));
+            }
+        }
+    }
+
+    private Task OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
+    {
+        if (files == null || files.Count == 0)
+            return Task.CompletedTask;
+
+        _browserFiles = files;
+
+        SyncFiles();
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ProcessAllFileAsync()
+    {
+        if (_selectedDataImports == null) return;
+
+        foreach (var item in _selectedDataImports.Where(q => !q.Processed && !q.Processing))
+        {
+            _ = ProcessItemAsync(item);
+        }
+    }
+
+    private async Task ProcessItemAsync(ImportNode item)
+    {
+        item.Processing = true;
+
+        //aguarda o processamento
+        await item.Process(TimeFrame, ThresholdBubble, Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri, _startTime, _endTime);
+
+        item.Processing = false;
+        item.Processed = true;
+
+        if (_selectedDataImports?.Contains(item) == true)
+        {
+            _selectedDataImports = new HashSet<ImportNode>(
+                _selectedDataImports.Where(x => x != item)
+            );
+        }
+        StateHasChanged();
+    }
+
+    private async Task RemoveAllFileAsync()
+    {
+        if (_selectedDataImports is null || _selectedDataImports.Count == 0)
+            return;
+
+        var items = _selectedDataImports.ToList();
+
+        // Remove do componente upload
+        foreach (var item in items)
+            await _fileUploadMultiple.RemoveFileAsync(item.File);
+
+        // Atualiza fonte de dados
+        _browserFiles = _browserFiles
+            .Where(f => !items.Any(i => i.File == f))
+            .ToList();
+
+        _selectedDataImports.Clear();
+
+        SyncFiles();
+    }
+
+    private async Task RemoveFileAsync(ImportNode item)
+    {
+        await _fileUploadMultiple.RemoveFileAsync(item.File);
+
+        // Atualiza fonte
+        _browserFiles = _browserFiles
+            .Where(f => f != item.File)
+            .ToList();
+
+        SyncFiles();
+    }
+
+    private async Task SendToDataBaseAllAsync()
+    {
+        if (_selectedDataImports == null) return;
+
+        foreach (var item in _selectedDataImports.Where(q => q.Processed))
+        {
+            _ = SendToDataBaseItemAsync(item);
+        }
+    }
+
+    private async Task SendToDataBaseItemAsync(ImportNode item)
+    {
+        var barsQuery = await _MagicDb.Query<BarStorageItem>();
+        var bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
+
+
+        if (barsQuery != null)
+        {
+            var swTotal = Stopwatch.StartNew();
+            try
+            {
+                //verificar se o update dá add automatico
+                await barsQuery.UpdateRangeAsync(item.Bars.ToList());
+            }
+            catch (Exception e)
+            {
+                HelperPerformanceConfig.Log(
+                    nameof(Import),
+                    nameof(SendToDataBaseItemAsync),
+                    0, e.Message
+                );
+            }
+            swTotal.Stop();
+            HelperPerformanceConfig.Log(nameof(Import), nameof(SendToDataBaseItemAsync), swTotal.ElapsedMilliseconds, $"Bars: {item.Bars.Count}");
+        }
+
+
+        if (bubbleQuery != null)
+        {
+            var swTotal = Stopwatch.StartNew();
+            try
+            {
+
+                await bubbleQuery.UpdateRangeAsync(item.Bubbles.ToList());
+            }
+            catch (Exception e)
+            {
+                HelperPerformanceConfig.Log(
+                    nameof(Import),
+                    nameof(SendToDataBaseItemAsync),
+                    0, e.Message
+                );
+            }
+
+            swTotal.Stop();
+            HelperPerformanceConfig.Log(nameof(Import), nameof(SendToDataBaseItemAsync), swTotal.ElapsedMilliseconds, $"Bubbles: {item.Bubbles.Count}");
+        }
+    }
+}
+
+
 <MudGrid>
     <MudItem md="12">
         <MudStack Row Wrap="Wrap.Wrap" Spacing="8" AlignItems="AlignItems.Center" Justify="Justify.Center">
@@ -31,6 +232,8 @@
                     AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                 <MudSpacer /> 
                 <MudSpacer /> 
+                <MudTimePicker @bind-Time="_startTime" Label="Horário de Início" />
+                <MudTimePicker @bind-Time="_endTime" Label="Horário de Término" />
             </ToolBarContent>
 
             <Columns>
@@ -146,198 +349,3 @@
         </MudDataGrid>
     </MudItem>
 </MudGrid>
-@code
-{
-    [CascadingParameter]
-    public string Symbol { get; set; }
-
-    [Parameter, EditorRequired]
-    public int TimeFrame { get; set; }
-
-    [Parameter, EditorRequired]
-    public int ThresholdBubble { get; set; }
-
-    [Parameter]
-    public Func<BarStorageItem, Task> NotifyNewBars { get; set; } = default!;
-
-    [Parameter]
-    public Func<BubbleStorageItem, Task> NotifyNewBubbles { get; set; } = default!;
-
-    // quick filter - filter globally across multiple columns with the same input
-    private Func<ImportNode, bool> _quickFilter => x =>
-    {
-        if (string.IsNullOrWhiteSpace(_searchString))
-            return true;
-
-        if (x.File != null && x.File.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
-    };
-
-    private string _searchString;
-
-    public List<ImportNode> _files { get; set; } = new();
-    private IReadOnlyList<IBrowserFile> _browserFiles = [];
-    private MudFileUpload<IReadOnlyList<IBrowserFile>> _fileUploadMultiple = default!;
-    private HashSet<ImportNode>? _selectedDataImports { get; set; }
-
-    private void SyncFiles()
-    {
-        // arquivos ainda presentes no upload
-        var currentFiles = _browserFiles.ToHashSet();
-
-        // remove itens cujo arquivo não existe mais
-        _files.RemoveAll(x => !currentFiles.Contains(x.File));
-
-        // adiciona novos arquivos que ainda não existem
-        foreach (var file in _browserFiles)
-        {
-            if (!_files.Any(x => x.File == file))
-            {
-                _files.Add(new ImportNode(
-                    file,
-                    ImportNode.TryExtractDateFromFileName(file.Name),
-                    ImportNode.TryExtractSymbolFromFileName(file.Name, Symbol),
-                    workerFactory,
-                    async (barItem) => { if (NotifyNewBars != null) await NotifyNewBars.Invoke(barItem); },
-                    async (bubbleItem) => { if (NotifyNewBubbles != null) await NotifyNewBubbles.Invoke(bubbleItem); },
-                    Http
-                ));
-            }
-        }
-    }
-
-    private Task OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
-    {
-        if (files == null || files.Count == 0)
-            return Task.CompletedTask;
-
-        _browserFiles = files;
-
-        SyncFiles();
-
-        return Task.CompletedTask;
-    }
-
-    private async Task ProcessAllFileAsync()
-    {
-        if (_selectedDataImports == null) return;
-
-        foreach (var item in _selectedDataImports.Where(q=>!q.Processed && !q.Processing))
-        {
-            _ = ProcessItemAsync(item);
-        }
-    }
-
-    private async Task ProcessItemAsync(ImportNode item)
-    {
-        item.Processing = true;
-
-        //aguarda o processamento
-        await item.Process(TimeFrame, ThresholdBubble, Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri);
-
-        item.Processing = false;
-        item.Processed = true;
-
-        if (_selectedDataImports?.Contains(item) == true)
-        {
-            _selectedDataImports = new HashSet<ImportNode>(
-                _selectedDataImports.Where(x => x != item)
-            );
-        }
-        StateHasChanged();
-    }
-
-    private async Task RemoveAllFileAsync()
-    {
-        if (_selectedDataImports is null || _selectedDataImports.Count == 0)
-            return;
-
-        var items = _selectedDataImports.ToList();
-
-        // Remove do componente upload
-        foreach (var item in items)
-            await _fileUploadMultiple.RemoveFileAsync(item.File);
-
-        // Atualiza fonte de dados
-        _browserFiles = _browserFiles
-            .Where(f => !items.Any(i => i.File == f))
-            .ToList();
-
-        _selectedDataImports.Clear();
-
-        SyncFiles();
-    }
-
-    private async Task RemoveFileAsync(ImportNode item)
-    {
-        await _fileUploadMultiple.RemoveFileAsync(item.File);
-
-        // Atualiza fonte
-        _browserFiles = _browserFiles
-            .Where(f => f != item.File)
-            .ToList();
-
-        SyncFiles();
-    }
-
-    private async Task SendToDataBaseAllAsync()
-    {
-        if (_selectedDataImports == null) return;
-
-        foreach (var item in _selectedDataImports.Where(q=>q.Processed))
-        {
-            _ = SendToDataBaseItemAsync(item);
-        }
-    }
-
-    private async Task SendToDataBaseItemAsync(ImportNode item)
-    {
-        var barsQuery = await _MagicDb.Query<BarStorageItem>();
-        var bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
-
-
-        if (barsQuery != null)
-        {
-            var swTotal = Stopwatch.StartNew();
-            try
-            {
-                //verificar se o update dá add automatico
-                await barsQuery.UpdateRangeAsync(item.Bars.ToList());
-            }
-            catch (Exception e)
-            {
-                HelperPerformanceConfig.Log(
-                    nameof(Import),
-                    nameof(SendToDataBaseItemAsync),
-                    0, e.Message
-                );
-            }
-            swTotal.Stop();
-            HelperPerformanceConfig.Log(nameof(Import), nameof(SendToDataBaseItemAsync), swTotal.ElapsedMilliseconds, $"Bars: {item.Bars.Count}");
-        }
-
-
-        if (bubbleQuery != null)
-        {
-            var swTotal = Stopwatch.StartNew();
-            try
-            {
-
-                await bubbleQuery.UpdateRangeAsync(item.Bubbles.ToList());
-            }
-            catch (Exception e)
-            {
-                HelperPerformanceConfig.Log(
-                    nameof(Import),
-                    nameof(SendToDataBaseItemAsync),
-                    0, e.Message
-                );
-            }
-
-            swTotal.Stop();
-            HelperPerformanceConfig.Log(nameof(Import), nameof(SendToDataBaseItemAsync), swTotal.ElapsedMilliseconds, $"Bubbles: {item.Bubbles.Count}");
-        }
-    }
-}

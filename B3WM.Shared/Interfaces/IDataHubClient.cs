@@ -11,6 +11,6 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveTnT(byte[] data);
         Task ReceiveBook(byte[] data);
         Task ReceiveTnTSimple(byte[] data);
-        Task ReceiveCsvLines(string[] data);
+        Task ReceiveCsvLines(string data);
     }
 }

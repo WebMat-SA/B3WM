@@ -5,11 +5,11 @@ namespace B3WM.Services
 {
     public class DataHub : Hub<IDataHubClient>
     {
-        public async Task SendDataTnT(byte[] data)
+        public async Task SendDataTnT(byte[] data, string group)
         {
-            if (data != null && data.Length > 0)
+            if (data != null && data.Length > 0 && !string.IsNullOrEmpty(group))
             {
-                await Clients.All.ReceiveTnT(data);
+                await Clients.Group(group).ReceiveTnT(data);
 
                 var sizeBytes = data.Length;
                 var sizeKb = sizeBytes / 1024.0;
@@ -31,20 +31,10 @@ namespace B3WM.Services
             await Clients.All.ReceiveTnTSimple(data);
         }
 
-        public async Task SendDataCSVTNT(string[] data)
+        public async Task JoinGroup(string group)
         {
-            if (data != null && data.Length > 0)
-            {
-                await Clients.All.ReceiveCsvLines(data);
-
-                var sizeBytes = data.Length;
-                var sizeKb = sizeBytes / 1024.0;
-                var sizeMb = sizeKb / 1024.0;
-
-                Console.WriteLine($"Message size: {sizeBytes} bytes | {sizeKb:F2} KB | {sizeMb:F4} MB");
-
-                //Console.WriteLine(data.Count());
-            }
+            await Groups.AddToGroupAsync(Context.ConnectionId, group);
         }
+
     }
 }

@@ -58,7 +58,7 @@ namespace B3WM.Client.Services
         }
 
 
-        public async void Init(string url, int throtlingms = 200)
+        public async void Init(string url, int throtlingms = 200, string Symbol = null)
         {
             try
             {
@@ -83,6 +83,8 @@ namespace B3WM.Client.Services
                 //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
                 await hubConnection.StartAsync();
+
+                if (!string.IsNullOrEmpty(Symbol)) await hubConnection.SendAsync("JoinGroup", Symbol);
 
             }
             catch (Exception ex)

@@ -71,7 +71,7 @@ namespace ExtractorTryd.Services
                             if (hubConnection != null &&
                                 hubConnection.State == HubConnectionState.Connected)
                             {
-                                await hubConnection.SendAsync("SendDataTnT", ms.ToArray());
+                                await hubConnection.SendAsync("SendDataTnT", ms.ToArray(), ativos[0]);
                                 await Task.Delay(250);
                             }
                             else
