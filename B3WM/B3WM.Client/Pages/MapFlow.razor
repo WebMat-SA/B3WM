@@ -130,9 +130,6 @@
     private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
     private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
 
-    // private IList<BubbleStorageItem> RawDataBubbleBlue => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Buy && SelectedAgents.Contains((Ticks2.Agents)q.Agent) && q.Amount >= ThresholdBubble).OrderBy(q => q.Date).ToList();
-    // private IList<BubbleStorageItem> RawDataBubbleRed => Bubbles.Where(q => q.ActionType == Ticks2.ActionType.Sale && SelectedAgents.Contains((Ticks2.Agents)q.Agent) && q.Amount >= ThresholdBubble).OrderBy(q => q.Date).ToList();
-
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
     {

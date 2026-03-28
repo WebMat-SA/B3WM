@@ -12,7 +12,11 @@
             <MudMenu Dense Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
                 <MudMenuItem Icon="@Icons.Material.Filled.CandlestickChart" Href="/">MapFlow</MudMenuItem>
             </MudMenu>
-            <MudText Typo="Typo.caption">@Symbol</MudText>
+            @* <MudText Typo="Typo.caption">@Symbol</MudText> *@
+            <MudSelect T="string" @bind-Value="Symbol" IconSize="Size.Small" FullWidth="false" Dense="true" FitContent="true">
+                <MudSelectItem Value="@("WDOJ26")" >WDOJ26</MudSelectItem>
+                <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>
+            </MudSelect>
         </MudStack>
     </MudAppBar>
     <MudMainContent>

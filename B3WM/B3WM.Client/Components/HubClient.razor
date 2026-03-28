@@ -26,6 +26,8 @@
 
     public bool openDrawer { get; set; } = false;
 
+    string _symbol;
+
     [CascadingParameter]
     public string Symbol { get; set; }
 
@@ -186,10 +188,6 @@
     {
         if (firstRender)
         {
-            await CreateWorkers();
-
-            await CreateHubWorkers();
-
             _ = LoopSendWorker();
 
             _ = LoopAddBar();
@@ -647,7 +645,7 @@
         bar.VolumeLevel = _lastVolumeLevel?.Volumes;
 
         await _channelBarStorage.Writer.WriteAsync(bar);
-        
+
 
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(Magic), nameof(AddBarsOnDB), sw.ElapsedMilliseconds, $"Added {bar.Date} bars to IndexedDB at {DateTime.Now:HH:mm:ss.fff}");
@@ -661,6 +659,17 @@
 
         await _channelBubbleStorage.Writer.WriteAsync(bubble);
     }
+
+    public async Task StartSymbol()
+    {
+        if (MainService != null) await MainService.DisposeAsync();
+        if (MainWorker != null) await MainWorker.DisposeAsync();
+        await CreateWorkers();
+
+        if (HubService != null) await HubService.DisposeAsync();
+        if (MainHubWorker != null) await MainHubWorker.DisposeAsync();
+        await CreateHubWorkers();
+    }
 }
 
 <MudStack Row AlignItems="AlignItems.Center" Reverse Spacing="1">
@@ -668,6 +677,10 @@
     
     <MudTooltip Text="@($"Engines")" Arrow Placement="Placement.Start">
         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Engineering" OnClick="() => openDrawer = !openDrawer" />
+    </MudTooltip>
+
+    <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartSymbol" />
     </MudTooltip>
 
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
