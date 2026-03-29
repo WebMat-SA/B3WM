@@ -883,7 +883,7 @@
         //   só candle mudou          ? envia [candle]           (índices 1-4 intactos ? Delta/Volume NÃO re-renderizados)
         //   candle + bubbles         ? envia [candle,red,blue]  (índices 3-4 intactos ? Delta/Volume NÃO re-renderizados)
         //   volume mudou (qualquer)  ? envia todos os 5         (update completo, evento raro)
-        var seriesList = new List<ISeries>(9);
+        var seriesList = new List<ISeries>(7);
         seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
 
         if (bubbleDataChanged)
@@ -904,8 +904,8 @@
         {
             var upBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
             var downBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
-            var upAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
-            var downAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            //var upAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            //var downAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
 
             foreach (var s in StructureStorageItem)
             {
@@ -921,8 +921,8 @@
                     {
                         upBorderVals[idx] = s.UpBorder;
                         downBorderVals[idx] = s.DownBorder;
-                        upAuxBorderVals[idx] = s.UpAuxBorder;
-                        downAuxBorderVals[idx] = s.DownAuxBorder;
+                        //upAuxBorderVals[idx] = s.UpAuxBorder;
+                        //downAuxBorderVals[idx] = s.DownAuxBorder;
                     }
                 }
                 catch
@@ -934,8 +934,8 @@
             // Add line series (dashed) - no symbols so they render as continuous dotted lines
             seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorder", Data = upBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0)  } });
             seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorder", Data = downBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0) } });
-            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = upAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
-            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = downAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
+            //seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = upAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
+            //seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = downAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
         }
 
         ChartOptions.Series = seriesList;
