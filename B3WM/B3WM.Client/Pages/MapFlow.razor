@@ -28,6 +28,15 @@
     [PersistState]
     public int ThresholdBubble { get; set; } = 250;
     [PersistState]
+    public double StructureRangeUpd { get; set; } = 500;
+
+    [PersistState]
+    public bool StructureVisible { get; set; } = true;
+    [PersistState]
+    public double StructureOpacity { get; set; } = 0.3;
+
+
+    [PersistState]
     public double BubbleSize { get; set; } = 0.1;
     [PersistState]
     public double BubbleOpacity { get; set; } = 0.3;
@@ -119,6 +128,8 @@
 
     private List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
     private List<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
+
+    private List<StructureStorageItem> StructureStorageItem { get; set; } = new List<StructureStorageItem>();
 
     [PersistState]
     private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
@@ -364,6 +375,12 @@
             Console.WriteLine("VolumeUpdate Error" + e.Message);
         }
 
+        return Task.CompletedTask;
+    }
+
+    public Task NewStructure(StructureStorageItem structure)
+    {
+        StructureStorageItem.Add(structure);
         return Task.CompletedTask;
     }
 
@@ -768,7 +785,35 @@
                             color = "#aaaaaa",
                             width = 1
                         }
-                    }
+                    },
+                    // new
+                    // {
+                    //     yAxis = StructureStorageItem.Last().UpBorder, 
+                    //     xAxis = categoryData.Count-1,
+                    //     animation = false,
+                    //     symbol = new[] { "none" },
+                    //     symbolSize = new[] { 0 },
+                    //     labelStyle = new
+                    //     {
+                    //         Type = "dotted",
+                    //         color = "#55aaaa",
+                    //         width = 1
+                    //     }
+                    // },
+                    // new
+                    // {
+                    //     yAxis = StructureStorageItem.Last().DownBorder,
+                    //     xAxis = categoryData.Count-1,
+                    //     animation = false,
+                    //     symbol = new[] { "none" },
+                    //     symbolSize = new[] { 0 },
+                    //     labelStyle = new
+                    //     {
+                    //         Type = "dotted",
+                    //         color = "#55aaaa",
+                    //         width = 1
+                    //     }
+                    // }
                 };
 
                 // vertical separators between different days
@@ -838,7 +883,7 @@
         //   só candle mudou          ? envia [candle]           (índices 1-4 intactos ? Delta/Volume NÃO re-renderizados)
         //   candle + bubbles         ? envia [candle,red,blue]  (índices 3-4 intactos ? Delta/Volume NÃO re-renderizados)
         //   volume mudou (qualquer)  ? envia todos os 5         (update completo, evento raro)
-        var seriesList = new List<ISeries>(5);
+        var seriesList = new List<ISeries>(9);
         seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
 
         if (bubbleDataChanged)
@@ -851,6 +896,46 @@
         {
             seriesList.Add(_cachedDeltaSeriesObj ?? new CustomSeries { Name = "Delta Profile" }); // [3]
             seriesList.Add(_cachedVolumeSeriesObj ?? new CustomSeries { Name = "Volume Profile" }); // [4]
+        }
+
+        // --- Optional dotted lines for Structure borders (Up/Down and Aux) ---
+        // Build aligned arrays matching categoryData indices so lines draw over the candles
+        if (StructureStorageItem != null && StructureStorageItem.Count > 0)
+        {
+            var upBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            var downBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            var upAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            var downAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+
+            foreach (var s in StructureStorageItem)
+            {
+                try
+                {
+                    if (s == null) continue;
+                    if (!string.Equals(s.Symbol, Symbol)) continue;
+                    if (s.TimeFrame != TimeFrame) continue;
+
+                    var key = s.Date.ToString("dd/MM HH:mm");
+                    var idx = categoryData.IndexOf(key);
+                    if (idx >= 0)
+                    {
+                        upBorderVals[idx] = s.UpBorder;
+                        downBorderVals[idx] = s.DownBorder;
+                        upAuxBorderVals[idx] = s.UpAuxBorder;
+                        downAuxBorderVals[idx] = s.DownAuxBorder;
+                    }
+                }
+                catch
+                {
+                    // ignore malformed entries and keep minimal changes
+                }
+            }
+
+            // Add line series (dashed) - no symbols so they render as continuous dotted lines
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorder", Data = upBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0)  } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorder", Data = downBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0) } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = upAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = downAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
         }
 
         ChartOptions.Series = seriesList;
@@ -894,6 +979,12 @@
 
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Loaded From DB {DateTime.Now:HH:mm:ss}");
+    }
+
+    public async Task StructureRangeChange(double value)
+    {
+        StructureRangeUpd = value;
+        await HubClient.SetStructureMinDistance(value);
     }
 
     private string IndexEndToDateStringBars(IRange<int> range)
@@ -975,7 +1066,9 @@
         OnVolumeUpdate="VolumeUpdate" 
         OnNewBubble="NewBubble"
         TimeFrame="TimeFrame"
-        BubbleThreshold="ThresholdBubble" />
+        BubbleThreshold="ThresholdBubble"
+        MinDistanceStructureUpd="StructureRangeUpd"
+        OnNewStructure="NewStructure"/>
 </MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
@@ -1098,6 +1191,38 @@
                 </MudListItem>
             </MudList>
 
+        </MudPaper>
+
+        @* STRUCTURES *@
+        <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+            <MudList T="string" Dense>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Structure" Expanded=true>
+                    <NestedList>
+                        <MudListItem Dense="true" OnClick="() => StructureVisible = !StructureVisible">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                <MudSwitch @bind-Value="StructureVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                            </MudStack>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSlider Size="Size.Small" @bind-Value="@StructureOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Opacity</MudText>
+                                    <MudText Typo="Typo.caption">@StructureOpacity.ToString("P2")</MudText>
+                                </MudStack>
+                            </MudSlider>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSlider Size="Size.Small" Value="@StructureRangeUpd" ValueChanged="StructureRangeChange" Step="0.5" Min=0.0 Max=3000 T=@double Variant="Variant.Filled">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Range to Update</MudText>
+                                    <MudText Typo="Typo.caption">@StructureRangeUpd.ToString("0.0")</MudText>
+                                </MudStack>
+                            </MudSlider>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
         </MudPaper>
 
         @* BUBBLES E AGENTS *@

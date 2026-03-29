@@ -47,10 +47,16 @@
     public int BubbleThreshold { get; set; } = 125;
 
     [Parameter]
+    public double MinDistanceStructureUpd { get; set; } = 250;
+
+    [Parameter]
     public Func<BubbleStorageItem, Task> OnNewBubble { get; set; } = default!;
 
     [Parameter]
     public Func<BarStorageItem, Task> OnCurrentBarChange { get; set; } = default!;
+
+    [Parameter]
+    public Func<StructureStorageItem, Task> OnNewStructure { get; set; } = default!;
 
     [Parameter]
     public int TimeFrame { get; set; } = 5;
@@ -126,6 +132,25 @@
     public bool EnableBubbleFormer { get; set; } = true;
 
     [PersistState]
+    public bool EnableStructureFormer { get; set; } = true;
+
+    public async Task EnableStructureFormerChanged(bool value)
+    {
+        EnableStructureFormer = value;
+        if (EnableStructureFormer)
+        {
+            _EnableTimesAndTrades = true; //depende de TimesAndTrades
+            EnableCandleFormer = true; //depende de candlehelper
+        }
+
+        if (MainService != null)
+        {
+            await MainService.RunAsync(s => s.SetEnableStructureFormer(EnableStructureFormer));
+            HelperPerformanceConfig.Log(nameof(HubClient), "EnableStructureFormer", 0, $"EnableStructureFormer changed to {value} at {DateTime.Now:HH:mm:ss.fff}");
+        }
+    }
+
+    [PersistState]
     public bool FakingData { get; set; } = false;
 
     public async Task EnableBubbleFormerChanged(bool value)
@@ -156,14 +181,19 @@
     public int ThrottlingCandleMs = 425;
     public int ThrottlingBubbleMs = 1000;
     public int ThrottlingVolumeMs = 425;
+    public int ThrottlingStructureMs = 5000;
 
     private int _bubbleQueue;
     private int _volumeQueue;
     private int _candleQueue;
+    private int _structureQueue;
+    private int _structureVolumeQueue;
 
     private string? _bubbleTimeQueue;
     private string? _volumeTimeQueue;
     private string? _candleTimeQueue;
+    private string? _structureTimeQueue;
+    private string? _structureVolumeTimeQueue;
 
     public DateTime? _lastUpdateBarReceived { get; set; }
 
@@ -193,8 +223,6 @@
             _ = LoopAddBar();
 
             _ = LoopAddBubble();
-
-
         }
 
         await base.OnAfterRenderAsync(firstRender);
@@ -217,10 +245,12 @@
             RegisterCandleEvents();
             RegisterBubbleEvents();
             RegisterVolumeEvents();
+            RegisterStructureEvents();
 
             await MainService.RunAsync(s => s.InitCandle(ThrottlingCandleMs, TimeFrame, EnableCandleFormer));
             await MainService.RunAsync(s => s.InitBubble(ThrottlingBubbleMs, BubbleThreshold, EnableBubbleFormer));
             await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
+            await MainService.RunAsync(s => s.InitStructure(ThrottlingStructureMs, MinDistanceStructureUpd, EnableStructureFormer));
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
 
@@ -394,6 +424,42 @@
         var jsonVolumes = System.Text.Json.JsonSerializer.Serialize(volumes);
 
         await MainService.RunAsync(s => s.SetVolumeIntraday(jsonVolumes));
+    }
+    #endregion
+
+
+    #region Structure
+    private void RegisterStructureEvents()
+    {
+        MainService!.RegisterEventListenerAsync(nameof(MainHelper.Structure_OnQueueCount),
+            (object? s, int data) =>
+            {
+                _structureQueue = data;
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Structure_OnNewStructure),
+            (object? s, StructureStorageItem data) =>
+            {
+                var sw = Stopwatch.StartNew();
+
+                _ = OnNewStructure?.Invoke(data);
+
+                sw.Stop();
+            });
+
+        MainService.RegisterEventListenerAsync(nameof(MainHelper.Structure_OnQueueTime),
+            (object? s, string data) =>
+            {
+                _structureTimeQueue = data;
+            });
+    }
+
+    public async Task SetStructureMinDistance(double minDistance)
+    {
+        if (MainService == null)
+            return;
+
+        await MainService.RunAsync(s => s.SetMinDistanceStrucure(minDistance));
     }
     #endregion
 
@@ -660,8 +726,12 @@
         await _channelBubbleStorage.Writer.WriteAsync(bubble);
     }
 
+
+    private bool _started { get; set; } = false;
     public async Task StartSymbol()
     {
+        _started = true;
+
         if (MainService != null) await MainService.DisposeAsync();
         if (MainWorker != null) await MainWorker.DisposeAsync();
         await CreateWorkers();
@@ -680,7 +750,7 @@
     </MudTooltip>
 
     <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
-        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartSymbol" />
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartSymbol" Disabled="_started" />
     </MudTooltip>
 
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
@@ -710,6 +780,20 @@
         <MudTooltip Text="@($"Volume (Background)")" Arrow>
             <MudBadge Color="GetBadgeColor(_volumeTimeQueue)" Overlap=true Bordered=true Content="@($" {_volumeTimeQueue} | {_volumeQueue.ToString()}")">
                 <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+    <div style="margin-right: 68px">
+        <MudTooltip Text="@($"Structure (Background)")" Arrow>
+            <MudBadge Color="GetBadgeColor(_structureTimeQueue)" Overlap=true Bordered=true Content="@($" {_structureTimeQueue} | {_structureQueue.ToString()}")">
+                <MudIcon Icon="@Icons.Material.Filled.StackedLineChart" Size="Size.Small" />
+            </MudBadge>
+        </MudTooltip>
+    </div>
+    <div style="margin-right: 68px">
+        <MudTooltip Text="@($"Volume Structure (Background)")" Arrow>
+            <MudBadge Color="GetBadgeColor(_structureVolumeTimeQueue)" Overlap=true Bordered=true Content="@($" {_structureVolumeTimeQueue} | {_structureVolumeQueue.ToString()}")">
+                <MudIcon Icon="@Icons.Material.Filled.Polyline" Size="Size.Small" />
             </MudBadge>
         </MudTooltip>
     </div>
@@ -775,6 +859,13 @@
                             <MudSwitch Size="Size.Small" T="bool" Value="EnableVolumeFormer" ValueChanged="EnableVolumeFormerChanged" ThumbIcon="@(EnableVolumeFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableVolumeFormer == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Formação de Volume Inspector
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" T="bool" Value="EnableStructureFormer" ValueChanged="EnableStructureFormerChanged" ThumbIcon="@(EnableStructureFormer == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(EnableStructureFormer == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Formação de Estruturas
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>
@@ -874,6 +965,14 @@
                             <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableDataHelper" ThumbIcon="@(HelperPerformanceConfig.EnableDataHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableDataHelper == true ? Color.Success : Color.Error)">
                                 <MudText Typo="Typo.caption" Class="ml-4">
                                     Data Helper
+                                </MudText>
+                            </MudSwitch>
+                        </MudListItem>
+
+                        <MudListItem Dense="true">
+                            <MudSwitch Size="Size.Small" @bind-Value="HelperPerformanceConfig.EnableStructureHelper" ThumbIcon="@(HelperPerformanceConfig.EnableStructureHelper == true ? Icons.Material.Filled.Done : Icons.Material.Filled.Close)" ThumbIconColor="@(HelperPerformanceConfig.EnableStructureHelper == true ? Color.Success : Color.Error)">
+                                <MudText Typo="Typo.caption" Class="ml-4">
+                                    Structure Helper
                                 </MudText>
                             </MudSwitch>
                         </MudListItem>

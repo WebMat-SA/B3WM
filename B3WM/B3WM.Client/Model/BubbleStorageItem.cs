@@ -1,7 +1,5 @@
-using B3WM.Shared.Entity;
 using Magic.IndexedDb;
 using Magic.IndexedDb.SchemaAnnotations;
-using System.Text.Json.Serialization;
 using static B3WM.Client.Model.BubbleStorageItem;
 using static B3WM.Shared.Entity.Ticks2;
 
