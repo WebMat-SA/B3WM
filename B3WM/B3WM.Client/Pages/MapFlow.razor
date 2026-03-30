@@ -29,11 +29,18 @@
     public int ThresholdBubble { get; set; } = 250;
     [PersistState]
     public double StructureRangeUpd { get; set; } = 500;
+    [PersistState]
+    public double StructureVolumeNormalizer { get; set; } = 0.2;
 
     [PersistState]
     public bool StructureVisible { get; set; } = true;
     [PersistState]
     public double StructureOpacity { get; set; } = 0.3;
+
+    [PersistState]
+    public bool StructureVolumeVisible { get; set; } = true;
+    [PersistState]
+    public double StructureVolumeOpacity { get; set; } = 0.3;
 
 
     [PersistState]
@@ -130,6 +137,7 @@
     private List<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
 
     private List<StructureStorageItem> StructureStorageItem { get; set; } = new List<StructureStorageItem>();
+    private StructureVolumeStorageItem StructureVolumeStorageItem { get; set; } = new StructureVolumeStorageItem();
 
     [PersistState]
     private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
@@ -139,7 +147,7 @@
 
     // Objetos estáticos de eixo (nunca mudam entre renders)
     private readonly AxisLabel _yAxisLabelInt = new AxisLabel { Show = true, Color = "#aaa", Formatter = new JavascriptFunction("function(value) { return Math.round(value); }") };
-    private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.10)" } };
+    private readonly SplitLine _splitLineGuides = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128, 128, 128, 0.02)" } };
 
 
     private Vizor.ECharts.ChartOptions ChartOptions = new()
@@ -381,6 +389,12 @@
     public Task NewStructure(StructureStorageItem structure)
     {
         StructureStorageItem.Add(structure);
+        return Task.CompletedTask;
+    }
+
+    public Task NewStructureVolume(StructureVolumeStorageItem structure)
+    {
+        StructureVolumeStorageItem = structure;
         return Task.CompletedTask;
     }
 
@@ -785,36 +799,62 @@
                             color = "#aaaaaa",
                             width = 1
                         }
-                    },
-                    // new
-                    // {
-                    //     yAxis = StructureStorageItem.Last().UpBorder, 
-                    //     xAxis = categoryData.Count-1,
-                    //     animation = false,
-                    //     symbol = new[] { "none" },
-                    //     symbolSize = new[] { 0 },
-                    //     labelStyle = new
-                    //     {
-                    //         Type = "dotted",
-                    //         color = "#55aaaa",
-                    //         width = 1
-                    //     }
-                    // },
-                    // new
-                    // {
-                    //     yAxis = StructureStorageItem.Last().DownBorder,
-                    //     xAxis = categoryData.Count-1,
-                    //     animation = false,
-                    //     symbol = new[] { "none" },
-                    //     symbolSize = new[] { 0 },
-                    //     labelStyle = new
-                    //     {
-                    //         Type = "dotted",
-                    //         color = "#55aaaa",
-                    //         width = 1
-                    //     }
-                    // }
+                    }
                 };
+
+                HelperPerformanceConfig.Log(nameof(StructureVolumeHelper), nameof(GenerateChart), 0, $"{System.Text.Json.JsonSerializer.Serialize(StructureVolumeStorageItem)}");
+
+                if (StructureVolumeStorageItem != null)
+                {
+                    //picos
+                    if (StructureVolumeStorageItem.Peaks != null && StructureVolumeStorageItem.Peaks.Count > 0)
+                    {
+                        foreach (var peak in StructureVolumeStorageItem.Peaks)
+                        {
+                            markLineEntries.Add(
+                                new {
+                                    yAxis = peak.Price,
+                                    animation = true,
+                                    symbol = new [] {"none"},
+                                    symbolSize = new [] { 0 },
+                                    lineStyle = new
+                                    {
+                                        type = "dotted",
+                                        color = "#00ff00",
+                                        width = 1, //aqui antes eram inteiros, estou testando doubles
+                                        opacity = StructureVolumeOpacity * (StructureVolumeVisible ? 1 : 0)
+                                    },
+                                    label = new { show = false }
+                                }
+                            );
+                        }
+                    }
+
+                    //vales
+                    if (StructureVolumeStorageItem.Valleys != null && StructureVolumeStorageItem.Valleys.Count > 0)
+                    {
+                        foreach (var peak in StructureVolumeStorageItem.Valleys)
+                        {
+                            markLineEntries.Add(
+                                new
+                                {
+                                    yAxis = peak.Price,
+                                    animation = false,
+                                    symbol = new[] { "none" },
+                                    symbolSize = new[] { 0 },
+                                    lineStyle = new
+                                    {
+                                        type = "dotted",
+                                        color = "#ff00ff",
+                                        width = 1, //aqui antes eram inteiros, estou testando doubles
+                                        opacity = StructureVolumeOpacity * (StructureVolumeVisible ? 1 : 0)
+                                    },
+                                    label = new { show = false }
+                                }
+                            );
+                        }
+                    }
+                }
 
                 // vertical separators between different days
                 for (int i = 1; i < bars.Count; i++)
@@ -984,7 +1024,13 @@
     public async Task StructureRangeChange(double value)
     {
         StructureRangeUpd = value;
-        await HubClient.SetStructureMinDistance(value);
+        if (HubClient != null) await HubClient.SetStructureMinDistance(value);
+    }
+
+    public async Task StructureAlphaChange(double value)
+    {
+        StructureVolumeNormalizer = value;
+        if (HubClient != null) await HubClient.SetStructureAlpha(value);
     }
 
     private string IndexEndToDateStringBars(IRange<int> range)
@@ -1068,7 +1114,9 @@
         TimeFrame="TimeFrame"
         BubbleThreshold="ThresholdBubble"
         MinDistanceStructureUpd="StructureRangeUpd"
-        OnNewStructure="NewStructure"/>
+        OnNewStructure="NewStructure"
+        AlphaStructureVolume="StructureVolumeNormalizer"
+        OnNewStructureVolume="NewStructureVolume"/>
 </MudStack>
 
 <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
@@ -1185,6 +1233,13 @@
                                         </MudStack>
                                     </MudSlider>
                                 </MudListItem>
+
+                                <MudListItem Dense="true">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Console</MudText>
+                                        <MudIconButton OnClick="() => Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(VolumeLevels))" Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small"/>
+                                    </MudStack>
+                                </MudListItem>
                             </NestedList>
                         </MudListItem>
                     </NestedList>
@@ -1196,29 +1251,60 @@
         @* STRUCTURES *@
         <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
             <MudList T="string" Dense>
-                <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Structure" Expanded=true>
+                <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Structure" Expanded=false>
                     <NestedList>
-                        <MudListItem Dense="true" OnClick="() => StructureVisible = !StructureVisible">
-                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                <MudText Typo="Typo.body2">Show on Chart</MudText>
-                                <MudSwitch @bind-Value="StructureVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
-                            </MudStack>
+                        <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Price" Expanded=false>
+                            <NestedList>
+                                <MudListItem Dense="true" OnClick="() => StructureVisible = !StructureVisible">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                        <MudSwitch @bind-Value="StructureVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@StructureOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Opacity</MudText>
+                                            <MudText Typo="Typo.caption">@StructureOpacity.ToString("P2")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" Value="@StructureRangeUpd" ValueChanged="StructureRangeChange" Step="0.5" Min=0.0 Max=3000 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Range to Update</MudText>
+                                            <MudText Typo="Typo.caption">@StructureRangeUpd.ToString("0.0")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+                            </NestedList>
                         </MudListItem>
-                        <MudListItem Dense="true">
-                            <MudSlider Size="Size.Small" @bind-Value="@StructureOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
-                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                    <MudText Typo="Typo.body2">Opacity</MudText>
-                                    <MudText Typo="Typo.caption">@StructureOpacity.ToString("P2")</MudText>
-                                </MudStack>
-                            </MudSlider>
-                        </MudListItem>
-                        <MudListItem Dense="true">
-                            <MudSlider Size="Size.Small" Value="@StructureRangeUpd" ValueChanged="StructureRangeChange" Step="0.5" Min=0.0 Max=3000 T=@double Variant="Variant.Filled">
-                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                    <MudText Typo="Typo.body2">Range to Update</MudText>
-                                    <MudText Typo="Typo.caption">@StructureRangeUpd.ToString("0.0")</MudText>
-                                </MudStack>
-                            </MudSlider>
+
+                        <MudListItem Dense=true Icon="@Icons.Material.Filled.Polyline" Text="Volume" Expanded=false>
+                            <NestedList>
+                                <MudListItem Dense="true" OnClick="() => StructureVolumeVisible = !StructureVolumeVisible">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                        <MudSwitch @bind-Value="StructureVolumeVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" @bind-Value="@StructureVolumeOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Opacity</MudText>
+                                            <MudText Typo="Typo.caption">@StructureVolumeOpacity.ToString("P2")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small" Value="@StructureVolumeNormalizer" ValueChanged="StructureAlphaChange" Step="0.001" Min=0.0 Max=1 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Normalizer</MudText>
+                                            <MudText Typo="Typo.caption">@StructureVolumeNormalizer.ToString("0.000")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
+                            </NestedList>
                         </MudListItem>
                     </NestedList>
                 </MudListItem>

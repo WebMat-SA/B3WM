@@ -31,10 +31,16 @@ namespace B3WM.Client.Services
         public event EventHandler<int>? Structure_OnQueueCount;
         public event EventHandler<string>? Structure_OnQueueTime;
 
+        private StructureVolumeHelper _structureVolume = new();
+        public event EventHandler<StructureVolumeStorageItem>? StructureVolume_OnNewStructure;
+        public event EventHandler<int>? StructureVolume_OnQueueCount;
+        public event EventHandler<string>? StructureVolume_OnQueueTime;
+
         private bool EnableCandleFormer { get; set; }
         private bool EnableVolumeFormer { get;set; }
         private bool EnableBubbleFormer { get; set; }
         private bool EnableStructureFormer { get; set; }
+        private bool EnableStructureVolumeFormer { get; set; }
 
         public MainHelper()
         {
@@ -58,6 +64,10 @@ namespace B3WM.Client.Services
                 _structure.OnQueueTime += _structure_OnQueueTime;
                 _structure.OnStructureChange += _structure_OnNewStructure;
 
+                _structureVolume.OnQueueCount += _structureVolume_OnQueueCount;
+                _structureVolume.OnQueueTime += _structureVolume_OnQueueTime;
+                _structureVolume.OnStructureChange += _structureVolume_OnNewStructure;
+
             }
             catch (Exception ex)
             {
@@ -70,6 +80,9 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_volume_OnVolumeUpdate), 0, $"Volume update received: {e.Date} levels");
             if (Volume_OnVolumeUpdate != null) Volume_OnVolumeUpdate.Invoke(this, e);
+
+            if (EnableStructureVolumeFormer)
+                _ = _structureVolume.Enqueu(e);
         }
 
         private void _bubble_OnNewBubble(object? sender, BubbleStorageItem e)
@@ -97,6 +110,12 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structure_OnNewStructure), 0, $"Structure updated: {e}");
             if (Structure_OnNewStructure != null) Structure_OnNewStructure.Invoke(this, e);
+        }
+
+        private void _structureVolume_OnNewStructure(object? sender, StructureVolumeStorageItem? e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureVolume_OnNewStructure), 0, $"Structure updated: {e}");
+            if (StructureVolume_OnNewStructure != null) StructureVolume_OnNewStructure.Invoke(this, e);
         }
 
         #region Init
@@ -132,6 +151,14 @@ namespace B3WM.Client.Services
 
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitStructure), 0, "Structure helper initialized");
         }
+
+        public void InitStructureVolume(int throtlingms = 5000, double alpha = 0.2,bool _enableStructureFormer = true)
+        {
+            EnableStructureVolumeFormer = _enableStructureFormer;
+            _structureVolume.Init(throtlingms, alpha);
+
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitStructureVolume), 0, "Structure helper initialized");
+        }
         #endregion
 
         #region Queue Count
@@ -154,6 +181,11 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structure_OnQueueCount), 0, $"Structure queue count: {e}");
             if (Structure_OnQueueCount != null) Structure_OnQueueCount.Invoke(this, e);
+        }
+        private void _structureVolume_OnQueueCount(object? sender, int e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureVolume_OnQueueCount), 0, $"Structure Volume queue count: {e}");
+            if (StructureVolume_OnQueueCount != null) StructureVolume_OnQueueCount.Invoke(this, e);
         }
         #endregion
 
@@ -180,6 +212,12 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structure_OnQueueTime), 0, $"Structure queue time: {e}");
             if (Structure_OnQueueTime != null) Structure_OnQueueTime.Invoke(this, e);
+        }
+
+        private void _structureVolume_OnQueueTime(object? sender, string e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureVolume_OnQueueTime), 0, $"Structure Volume queue time: {e}");
+            if (StructureVolume_OnQueueTime != null) StructureVolume_OnQueueTime.Invoke(this, e);
         }
         #endregion
 
@@ -208,6 +246,12 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(SetEnableStructureFormer), 0, $"Structure former enabled: {enable}");
             EnableStructureFormer = enable;
+        }
+
+        public void SetEnableStructureVolumeFormer(bool enable)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(SetEnableStructureVolumeFormer), 0, $"Structure Volume former enabled: {enable}");
+            EnableStructureVolumeFormer = enable;
         }
 
         #endregion
@@ -259,6 +303,11 @@ namespace B3WM.Client.Services
         public void SetMinDistanceStrucure(double minDistanceUpdateBorder)
         {
             _structure.SetMinDistance(minDistanceUpdateBorder);
+        }
+
+        public void SetFttStructureVolume(double _alpha)
+        {
+            _structureVolume.SetFftStrength(_alpha);
         }
 
         public void Dispose()
