@@ -224,6 +224,7 @@
     public DateTime? _lastUpdateBarReceived { get; set; }
 
     private VolumeLevelStorageItem? _lastVolumeLevel { get; set; }
+    private StructureStorageItem? _lastVolumeStructure { get; set; }
 
     public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1000){ SingleReader = true, SingleWriter = false});
 
@@ -471,6 +472,8 @@
                 var sw = Stopwatch.StartNew();
 
                 _ = OnNewStructure?.Invoke(data);
+
+                _lastVolumeStructure = data;
 
                 sw.Stop();
             });
@@ -772,6 +775,7 @@
 
         //vincula o volume no candle
         bar.VolumeLevel = _lastVolumeLevel?.Volumes;
+        bar.Structure = _lastVolumeStructure;
 
         await _channelBarStorage.Writer.WriteAsync(bar);
 
@@ -790,7 +794,7 @@
     }
 
 
-    private bool _started { get; set; } = false;
+    public bool _started { get; set; } = false;
     public async Task StartSymbol()
     {
         _started = true;
@@ -810,10 +814,6 @@
     
     <MudTooltip Text="@($"Engines")" Arrow Placement="Placement.Start">
         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Engineering" OnClick="() => openDrawer = !openDrawer" />
-    </MudTooltip>
-
-    <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
-        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartSymbol" Disabled="_started" />
     </MudTooltip>
 
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
@@ -863,6 +863,11 @@
     <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
     <MudTooltip Text="Atualizar contadores" Placement="Placement.Start" Arrow>
         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Thermostat" OnClick="StateHasChanged" />
+    </MudTooltip>
+
+    <MudDivider Vertical Class="mx-2" FlexItem="true" DividerType="DividerType.Middle" />
+    <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartSymbol" Disabled="_started" Color="@(_started ? Color.Default : Color.Warning)" />
     </MudTooltip>
 </MudStack>
 

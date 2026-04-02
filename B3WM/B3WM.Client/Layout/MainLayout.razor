@@ -7,25 +7,7 @@
 
 <MudLayout>
     <PageTitle>B³ WM</PageTitle>
-    <MudAppBar Elevation="0" Dense>
-        <MudStack Spacing="0" Style="width:100%" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Row>
-            <MudMenu Dense Icon="@Icons.Material.Filled.Menu" AriaLabel="Menu">
-                <MudMenuItem Icon="@Icons.Material.Filled.CandlestickChart" Href="/">MapFlow</MudMenuItem>
-            </MudMenu>
-            @* <MudText Typo="Typo.caption">@Symbol</MudText> *@
-            <MudSelect T="string" @bind-Value="Symbol" IconSize="Size.Small" FullWidth="false" Dense="true" FitContent="true">
-                <MudSelectItem Value="@("WDOJ26")" >WDOJ26</MudSelectItem>
-                <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>
-            </MudSelect>
-        </MudStack>
-    </MudAppBar>
     <MudMainContent>
-        <CascadingValue TValue="string" Value="Symbol">
-            @Body
-        </CascadingValue>
+        @Body
     </MudMainContent>
 </MudLayout>
-
-@code{
-    public string Symbol { get; set; } = "WDOJ26";
-}

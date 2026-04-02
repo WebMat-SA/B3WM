@@ -17,11 +17,10 @@
 @page "/"
 
 @code {
-    protected override string PersistenceKey => $"{nameof(MapFlow)}_state";
+    protected override string PersistenceKey => $"{nameof(MapFlow)}_{Symbol.Substring(0,3)}_state";
     protected override bool ContinuousSave => true;
 
-    [CascadingParameter]
-    public string Symbol { get; set; }
+    public string Symbol { get; set; } = "WINJ26";
 
     [PersistState]
     public int TimeFrame { get; set; } = 2;
@@ -1000,14 +999,40 @@
         IMagicQuery<BarStorageItem> barsQuery = await _MagicDb.Query<BarStorageItem>();
         IMagicQuery<BubbleStorageItem> bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
 
-        Bubbles = await bubbleQuery.Where(q => q.Date >= DateTime.Today.AddDays(-10) && q.Symbol == Symbol && q.Amount >= ThresholdBubble).Where(q => q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime).ToListAsync();
-        _bubbleDataVersion++;
+        // Buscar bubbles e candles do dia atual. Se não houver registros, buscar retroativamente
+        // até um limite (30 dias) e carregar apenas o dia encontrado.
+        const int daysBackLimit = 30;
 
-        var bars = await barsQuery.Where(q => q.Date >= DateTime.Today.AddDays(-10) && q.TimeFrame == TimeFrame && q.Symbol == Symbol).Where(q => q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime).ToListAsync();
-        BarStorageItem = bars.OrderByDescending(q => q.Date).ToList();
-        _barsDataVersion++;
+        for (int d = 0; d <= daysBackLimit; d++)
+        {
+            var day = DateTime.Today.AddDays(-d);
+            var dayStart = day.Date;
+            var dayEnd = dayStart.AddDays(1);
 
-        var _volumeLevels = BarStorageItem.Where(q => q.Date.Date == DateTime.Today).OrderByDescending(e=>e.Date).FirstOrDefault();
+            var bubblesForDay = await bubbleQuery
+                .Where(q => q.Date >= dayStart && q.Date < dayEnd && q.Symbol == Symbol && q.Amount >= ThresholdBubble)
+                //.Where(q => q.Date >= _startTime && q.Date <= _endTime)
+                .ToListAsync();
+
+            var barsForDay = await barsQuery
+                .Where(q => q.Date >= dayStart && q.Date < dayEnd && q.TimeFrame == TimeFrame && q.Symbol == Symbol)
+                //.Where(q => q.Date >= _startTime && q.Date <= _endTime)
+                .ToListAsync();
+
+            if ((bubblesForDay != null && bubblesForDay.Count > 0) || (barsForDay != null && barsForDay.Count > 0))
+            {
+                Bubbles = bubblesForDay ?? new List<BubbleStorageItem>();
+                _bubbleDataVersion++;
+
+                BarStorageItem = barsForDay.OrderByDescending(q => q.Date).ToList();
+                _barsDataVersion++;
+
+                break; // carregou um dia válido -> sair do loop
+            }
+        }
+
+        // Selecionar o último bar carregado (se houver) para enviar volume levels ao HubClient
+        var _volumeLevels = BarStorageItem.Where(j=>j.VolumeLevel != null).OrderByDescending(q=>q.VolumeLevel.Count).ThenByDescending(e => e.Date).FirstOrDefault();
 
         if (_volumeLevels != null && _volumeLevels.VolumeLevel != null && _volumeLevels.VolumeLevel.Any() && HubClient != null)
         {
@@ -1043,8 +1068,6 @@
     }
     private void ApplyVolumeFilter(IRange<int> newRange)
     {
-
-
         ///refazer aqui...
 
         _dateRange = newRange;
@@ -1085,39 +1108,61 @@
 
         _bubbleSizeRange = new MudExRange<int>(range.Start, range.End);
     }
+
+    private async void SymbolChange(string value)
+    {
+        Symbol = value;
+        // openDrawer = false;
+        // openDrawerBubbleNotify = false;
+        await base.ForceReload();
+        // if (HubClient != null) HubClient._started = false; // forçar re-subscribe com novo symbol
+        StateHasChanged();
+    }
 }
 
-@* --- INTERFACE --- *@
-<MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="px-5 py-3" Row Style="position:relative;">
-    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-        <MudTooltip Text="Configurações">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; openDrawerBubbleNotify = false; }" />
-        </MudTooltip>
-        <MudTooltip Text="Notificações de bubbles">
-            <MudBadge Color="MudBlazor.Color.Transparent" Icon="@Icons.Material.Filled.BubbleChart" Overlap="true" Bordered="true">
-                <MudIconButton Size="Size.Small" Icon="@(MapFlowBubbleDrawer?.Sound == true ? Icons.Material.Filled.NotificationsActive : Icons.Material.Filled.Notifications)" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; }" />
-            </MudBadge>
-        </MudTooltip>
-        <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) />
-        </MudTooltip>
+<MudAppBar Elevation="0" Dense>
+        @* --- INTERFACE --- *@
+    <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Row Style="width:100%">
+        <CascadingValue Value="Symbol">
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                <MudTooltip Text="Configurações">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; openDrawerBubbleNotify = false; }" />
+                </MudTooltip>
+                <MudTooltip Text="Notificações de bubbles">
+                    <MudBadge Color="MudBlazor.Color.Transparent" Icon="@Icons.Material.Filled.BubbleChart" Overlap="true" Bordered="true">
+                        <MudIconButton Size="Size.Small" Icon="@(MapFlowBubbleDrawer?.Sound == true ? Icons.Material.Filled.NotificationsActive : Icons.Material.Filled.Notifications)" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; }" />
+                    </MudBadge>
+                </MudTooltip>
+            </MudStack>
+            <MudStack Row AlignItems="AlignItems.Center">
+                <MudTimePicker @bind-Time="_startTime" Label="Horário de Início" IconSize="Size.Small" AdornmentColor="MudBlazor.Color.Info"/>
+                <MudTimePicker @bind-Time="_endTime" Label="Horário de Término" IconSize="Size.Small" AdornmentColor="MudBlazor.Color.Info" />
+            </MudStack>
+            <MudStack Row AlignItems="AlignItems.Center">
+                <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) Color="MudBlazor.Color.Surface" />
+                </MudTooltip>
+                <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChange" IconSize="Size.Small" FullWidth="false" Label="Symbol" AdornmentColor="MudBlazor.Color.Warning" AdornmentIcon="@Icons.Material.Filled.EuroSymbol" Dense="true" FitContent="true" Disabled="HubClient == null || HubClient._started">
+                    <MudSelectItem Value="@("WDOJ26")">WDOJ26</MudSelectItem>
+                    <MudSelectItem Value="@("WDOK26")">WDOK26</MudSelectItem>
+                    <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>
+                    <MudSelectItem Value="@("WINK26")">WINK26</MudSelectItem>
+                </MudSelect>
+                <B3WM.Client.Components.HubClient @ref=HubClient
+                    OnCandleSeriesChange="NewBar" 
+                    OnCurrentBarChange="NewCurrentBar"
+                    OnVolumeUpdate="VolumeUpdate" 
+                    OnNewBubble="NewBubble"
+                    TimeFrame="TimeFrame"
+                    BubbleThreshold="ThresholdBubble"
+                    MinDistanceStructureUpd="StructureRangeUpd"
+                    OnNewStructure="NewStructure"
+                    AlphaStructureVolume="StructureVolumeNormalizer"
+                    OnNewStructureVolume="NewStructureVolume"/>
+            </MudStack>
+        </CascadingValue>
     </MudStack>
-    <MudStack Row AlignItems="AlignItems.Center">
-        <MudTimePicker @bind-Time="_startTime" Label="Horário de Início" IconSize="Size.Small" />
-        <MudTimePicker @bind-Time="_endTime" Label="Horário de Término" IconSize="Size.Small" />
-    </MudStack>
-    <B3WM.Client.Components.HubClient @ref=HubClient
-        OnCandleSeriesChange="NewBar" 
-        OnCurrentBarChange="NewCurrentBar"
-        OnVolumeUpdate="VolumeUpdate" 
-        OnNewBubble="NewBubble"
-        TimeFrame="TimeFrame"
-        BubbleThreshold="ThresholdBubble"
-        MinDistanceStructureUpd="StructureRangeUpd"
-        OnNewStructure="NewStructure"
-        AlphaStructureVolume="StructureVolumeNormalizer"
-        OnNewStructureVolume="NewStructureVolume"/>
-</MudStack>
+</MudAppBar>
 
 <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
     <MudDrawer Open="openDrawer" Height="86vh" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
@@ -1146,7 +1191,7 @@
             <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
                     <NestedList>
-                        <MudListItem Dense="true" Disabled>
+                        <MudListItem Dense="true">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Range</MudText>
                                 <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} → {IndexEndToDateStringBars(_dateRange)}")</MudText>
@@ -1424,7 +1469,9 @@
 
 
     </MudDrawer>
-    <MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="SelectedAgents" ThresholdBubble="ThresholdBubble" />
+    <CascadingValue Value="Symbol">
+        <MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="SelectedAgents" ThresholdBubble="ThresholdBubble" />
+    </CascadingValue>
     <div style="width:auto; height:86vh;  overflow:hidden;">
         <Vizor.ECharts.EChart @ref="EChart"
                               Renderer="Vizor.ECharts.ChartRenderer.Canvas"
@@ -1434,7 +1481,7 @@
                               @key="@($"chart_{Symbol}")" />
     </div>
 </MudDrawerContainer>   
-<Import ThresholdBubble="ThresholdBubble" 
+@* <Import ThresholdBubble="ThresholdBubble" 
     TimeFrame="TimeFrame" 
     NotifyNewBars="NewBar" 
-    NotifyNewBubbles="NewBubble" ></Import>
+    NotifyNewBubbles="NewBubble" ></Import> *@

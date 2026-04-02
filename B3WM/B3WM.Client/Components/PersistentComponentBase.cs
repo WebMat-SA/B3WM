@@ -19,11 +19,8 @@ namespace B3WM.Client.Components
 
         protected override async Task OnInitializedAsync()
         {
-            // Restaura estado salvo
-            await StateService.RestoreAsync(this, PersistenceKey);
-
-            // Cria snapshot inicial
-            _lastSnapshot = StateService.CreateSnapshot(this);
+            //Load
+            await ForceReload();
 
             // Inicia loop
             _cts = new CancellationTokenSource();
@@ -35,6 +32,15 @@ namespace B3WM.Client.Components
         protected void MarkDirty()
         {
             _dirty = true;
+        }
+
+        public async Task ForceReload()
+        {
+            // Restaura estado salvo
+            await StateService.RestoreAsync(this, PersistenceKey);
+
+            // Cria snapshot inicial
+            _lastSnapshot = StateService.CreateSnapshot(this);
         }
 
         private async Task RunPersistenceLoop(CancellationToken token)

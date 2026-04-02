@@ -134,6 +134,9 @@ namespace B3WM.Client.Services
 
             if (OnStructureChange != null) OnStructureChange.Invoke(this, _lastStructure);
 
+            _queueCount = 0;
+            _queueTime = DateTime.Now.ToString("HH:mm:ss");
+
             return Task.CompletedTask;
         }
 
