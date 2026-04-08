@@ -13,7 +13,7 @@ namespace B3WM.Client.Services
         public HubConnection? hubConnection;
         public PeriodicTimer? periodicTimer;
         private CancellationTokenSource cts = new CancellationTokenSource();
-        public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1000) { SingleReader = true, SingleWriter = false });
+        public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
 
         private async Task RunTimerAsync()
         {

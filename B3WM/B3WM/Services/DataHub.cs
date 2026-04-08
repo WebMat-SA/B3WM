@@ -15,7 +15,7 @@ namespace B3WM.Services
                 var sizeKb = sizeBytes / 1024.0;
                 var sizeMb = sizeKb / 1024.0;
 
-                Console.WriteLine($"Message size: {sizeBytes} bytes | {sizeKb:F2} KB | {sizeMb:F4} MB");
+                Console.WriteLine($"{group} | Message size: {sizeBytes} bytes | {sizeKb:F2} KB | {sizeMb:F4} MB");
 
                 //Console.WriteLine(data.Count());
             }

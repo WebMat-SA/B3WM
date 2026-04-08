@@ -27,9 +27,49 @@ namespace B3WM.Client.Services
             HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"Init => minDist:{minDistanceUpdateBorder}");
         }
 
-        public void SetMinDistance(double minDistanceUpdateBorder)
+        public bool calculatingNewDistance { get; set; }
+
+        public async Task<List<StructureStorageItem>> SetMinDistance(double minDistanceUpdateBorder, string jsonListBars)
         {
-            _minDistanceUpdateBorder = minDistanceUpdateBorder;
+            if (jsonListBars == null)
+                return new();
+
+
+            List<StructureStorageItem> structures = new List<StructureStorageItem>();
+
+            calculatingNewDistance = true;
+            try
+            {
+                _minDistanceUpdateBorder = minDistanceUpdateBorder;
+                _lastStructure = null;
+
+                HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(SetMinDistance), 0, $"SetMinDistance => minDist:{minDistanceUpdateBorder} | jsonListBars: {jsonListBars}");
+
+                List<BarStorageItem> bars = System.Text.Json.JsonSerializer.Deserialize<List<BarStorageItem>>(jsonListBars);
+
+                foreach(var bar in bars.OrderBy(e=>e.Date))
+                {
+                    await OnNewBar(bar);
+
+                    structures.Add(new StructureStorageItem() {
+                        Date = _lastStructure.Date,
+                        DownAuxBorder = _lastStructure.DownAuxBorder,
+                        UpAuxBorder = _lastStructure.UpAuxBorder,
+                        DownBorder = _lastStructure.DownBorder,
+                        UpBorder = _lastStructure.UpBorder,
+                        Symbol = _lastStructure.Symbol,
+                        TimeFrame = _lastStructure.TimeFrame,
+                    });
+                }
+            }
+            finally
+            {
+                calculatingNewDistance = false;
+            }
+
+            HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(SetMinDistance), 0, $"_lastStructure: {structures.Count}");
+
+            return structures;
         }
 
         private async Task RunLoop()
@@ -66,7 +106,7 @@ namespace B3WM.Client.Services
                     DownAuxBorder = newBar.Low
                 };
 
-                HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"First _lastStructure: {_lastStructure.ToString()}");
+                HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"First _lastStructure: {_lastStructure.ToString()}");
 
                 if (OnStructureChange != null) OnStructureChange.Invoke(this, _lastStructure);
 
@@ -81,7 +121,7 @@ namespace B3WM.Client.Services
             double virtualSameUpAuxBorder = Math.Max(_lastStructure.UpAuxBorder, newBar.High);
             double virtualSameDownAuxBorder = Math.Min(_lastStructure.DownAuxBorder, newBar.Low);
 
-            HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"MinDist:{_minDistanceUpdateBorder} | Diff Up|Close: {virtualSameUpAuxBorder - newBar.Close}");
+            //HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"MinDist:{_minDistanceUpdateBorder} | Diff Up|Close: {virtualSameUpAuxBorder - newBar.Close}");
 
             //se houve um distanciamento entre a borda superior e o preço (rebotando para baixo)
             if (virtualSameUpAuxBorder - newBar.Close >= _minDistanceUpdateBorder && expectBuyDrop)
@@ -100,7 +140,7 @@ namespace B3WM.Client.Services
                 isSizeChanger = true;
             }
 
-            HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"MinDist:{_minDistanceUpdateBorder} | Diff Down|Close: {newBar.Close - virtualSameDownAuxBorder}");
+            //HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"MinDist:{_minDistanceUpdateBorder} | Diff Down|Close: {newBar.Close - virtualSameDownAuxBorder}");
 
             //se houve um distanciamento entre a borda inferior e o preço (rebotando para cima)
             if (newBar.Close - virtualSameDownAuxBorder >= _minDistanceUpdateBorder && expectSellDrop && !isSizeChanger)
@@ -121,16 +161,9 @@ namespace B3WM.Client.Services
             _lastStructure.DownAuxBorder = Math.Min(_lastStructure.DownAuxBorder, newBar.Low);
 
             isSizeChanger = false;
-            //if (resetAuxDown)
-            //    if (newBar.Close > _lastStructure.DownBorder) _lastStructure.DownAuxBorder = newBar.Low;
-            //    else _lastStructure.DownAuxBorder = virtualSameDownAuxBorder;
 
-            //if (resetAuxUp)
-            //    if (newBar.Close < _lastStructure.UpBorder) _lastStructure.UpAuxBorder = newBar.High;
-            //    else _lastStructure.UpAuxBorder = virtualSameUpAuxBorder;
-
-            HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"UpAuxBorder: {_lastStructure.UpAuxBorder.ToString("0.00")} | UpBorder: {_lastStructure.UpBorder.ToString("0.00")}");
-            HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"DownAuxBorder: {_lastStructure.DownAuxBorder.ToString("0.00")} | DownBorder: {_lastStructure.DownBorder.ToString("0.00")}");
+            HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"UpAuxBorder: {_lastStructure.UpAuxBorder.ToString("0.00")} | UpBorder: {_lastStructure.UpBorder.ToString("0.00")}");
+            //HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"DownAuxBorder: {_lastStructure.DownAuxBorder.ToString("0.00")} | DownBorder: {_lastStructure.DownBorder.ToString("0.00")}");
 
             if (OnStructureChange != null) OnStructureChange.Invoke(this, _lastStructure);
 

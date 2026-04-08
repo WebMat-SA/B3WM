@@ -26,6 +26,7 @@
     [Parameter]
     public string SaleColor { get; set; }
 
+    private string _Symbol;
     [CascadingParameter]
     public string Symbol { get; set; }
 
@@ -45,6 +46,15 @@
 
     [PersistState]
     public bool Sound { get; set; } = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_Symbol != Symbol)
+        {
+            _Symbol = Symbol;
+            await base.ForceReload();
+        }
+    }
 
     List<BubbleStorageItem> _bubbles => Bubbles
         .Where(q => !Amount || q.Amount >= ThresholdBubble)

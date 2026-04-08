@@ -60,8 +60,5 @@ namespace B3WM.Client.Model
         [MagicName("VolumeLevel")]
         public List<VolumeLevel>? VolumeLevel { get; set; }
 
-        [MagicName("VolumeStructure")]
-        public StructureStorageItem? Structure { get; set; }
-
     }
 }

@@ -224,12 +224,12 @@
     public DateTime? _lastUpdateBarReceived { get; set; }
 
     private VolumeLevelStorageItem? _lastVolumeLevel { get; set; }
-    private StructureStorageItem? _lastVolumeStructure { get; set; }
+    private StructureStorageItem? _lastStructure { get; set; }
 
-    public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1000){ SingleReader = true, SingleWriter = false});
+    public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(100000){ SingleReader = true, SingleWriter = false});
 
-    public readonly Channel<BarStorageItem> _channelBarStorage = Channel.CreateBounded<BarStorageItem>(new BoundedChannelOptions(1000) { SingleReader = true, SingleWriter = false });
-    public readonly Channel<BubbleStorageItem> _channelBubbleStorage = Channel.CreateBounded<BubbleStorageItem>(new BoundedChannelOptions(1000) { SingleReader = true, SingleWriter = false });
+    public readonly Channel<BarStorageItem> _channelBarStorage = Channel.CreateBounded<BarStorageItem>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
+    public readonly Channel<BubbleStorageItem> _channelBubbleStorage = Channel.CreateBounded<BubbleStorageItem>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
 
     protected override async Task OnInitializedAsync()
     {
@@ -473,7 +473,7 @@
 
                 _ = OnNewStructure?.Invoke(data);
 
-                _lastVolumeStructure = data;
+                _lastStructure = data;
 
                 sw.Stop();
             });
@@ -485,12 +485,12 @@
             });
     }
 
-    public async Task SetStructureMinDistance(double minDistance)
+    public async Task<List<StructureStorageItem>> SetStructureMinDistance(double minDistance, string jsonBars)
     {
         if (MainService == null)
-            return;
+            return new();
 
-        await MainService.RunAsync(s => s.SetMinDistanceStrucure(minDistance));
+        return await MainService.RunAsync(s => s.SetMinDistanceStrucure(minDistance, jsonBars));
     }
     #endregion
 
@@ -775,7 +775,6 @@
 
         //vincula o volume no candle
         bar.VolumeLevel = _lastVolumeLevel?.Volumes;
-        bar.Structure = _lastVolumeStructure;
 
         await _channelBarStorage.Writer.WriteAsync(bar);
 

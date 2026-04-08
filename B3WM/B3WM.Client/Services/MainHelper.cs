@@ -96,7 +96,7 @@ namespace B3WM.Client.Services
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_candle_OnClosedBars), 0, $"Closed bars received: {e.Date}");
             if (Candle_OnClosedBars != null) Candle_OnClosedBars.Invoke(this, e);
 
-            if (EnableStructureFormer)
+            if (EnableStructureFormer && !_structure.calculatingNewDistance)
                 _ = _structure.OnNewBar(e);
         }
 
@@ -300,9 +300,9 @@ namespace B3WM.Client.Services
             _volume.AddIntradayVolume(volumes ?? new());
         }
 
-        public void SetMinDistanceStrucure(double minDistanceUpdateBorder)
+        public async Task<List<StructureStorageItem>> SetMinDistanceStrucure(double minDistanceUpdateBorder, string jsonListBar)
         {
-            _structure.SetMinDistance(minDistanceUpdateBorder);
+            return await _structure.SetMinDistance(minDistanceUpdateBorder, jsonListBar);
         }
 
         public void SetFttStructureVolume(double _alpha)

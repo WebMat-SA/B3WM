@@ -72,25 +72,25 @@
     [PersistState]
     public string ColorSeller { get; set; } = "#b49696";
 
-    int __bubbleSizeRange_Max;
+    int __bubbleSizeRange_Max = 5000;
     [PersistState]
     public int _bubbleSizeRange_Max { 
         get => __bubbleSizeRange_Max;
         set
         {
             __bubbleSizeRange_Max = value;
-            _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
+            _bubbleSizeRange = new MudExRange<int>(__bubbleSizeRange_Min, __bubbleSizeRange_Max);
         }
     }
 
-    int __bubbleSizeRange_Min;
+    int __bubbleSizeRange_Min = 0;
     [PersistState]
     public int _bubbleSizeRange_Min {
         get => __bubbleSizeRange_Min;
         set
         {
             __bubbleSizeRange_Min = value;
-            _bubbleSizeRange = new MudExRange<int>(_bubbleSizeRange_Min, _bubbleSizeRange_Max);
+            _bubbleSizeRange = new MudExRange<int>(__bubbleSizeRange_Min, __bubbleSizeRange_Max);
         }
 
     }
@@ -137,6 +137,12 @@
 
     private List<StructureStorageItem> StructureStorageItem { get; set; } = new List<StructureStorageItem>();
     private StructureVolumeStorageItem StructureVolumeStorageItem { get; set; } = new StructureVolumeStorageItem();
+
+    // Structure change tracking and cache for rendered border series
+    private int _structureDataVersion { get; set; }
+    private int _lastRenderedStructureVersion { get; set; } = -1;
+    private List<object?>? _cachedUpBorderVals;
+    private List<object?>? _cachedDownBorderVals;
 
     [PersistState]
     private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
@@ -233,7 +239,7 @@
     private ScatterSeries? _cachedRedBubbleSeriesObj;
     private ScatterSeries? _cachedBlueBubbleSeriesObj;
 
-    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _jsFunctionCacheKey;
+    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange, double structureMinDist, double structureVolAlpha) _jsFunctionCacheKey;
     private bool _jsFunctionCacheValid;
     private NumberArrayOrFunction? _cachedSymbolSizeFunction;
     private JavascriptFunction? _cachedVolumeProfileFunction;
@@ -256,7 +262,7 @@
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
     private int _lastRenderedVolumeVersion = -1;
     private int _lastRenderedBubbleVersion = -1;
-    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange) _lastRenderedJsKey = default;
+    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange, double structureMinDist, double structureVolAlpha) _lastRenderedJsKey = default;
 
 
     private int _lastBubbleDataVersion = -1;
@@ -388,6 +394,7 @@
     public Task NewStructure(StructureStorageItem structure)
     {
         StructureStorageItem.Add(structure);
+        _structureDataVersion++; // mark structures changed
         return Task.CompletedTask;
     }
 
@@ -606,7 +613,7 @@
         //LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
 
         var swJs = Stopwatch.StartNew();
-        var jsKey = (BubbleSize,ThresholdBubble ,BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End);
+        var jsKey = (BubbleSize,ThresholdBubble ,BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End, StructureRangeUpd, StructureVolumeNormalizer);
         NumberArrayOrFunction symbolSizeFunction;
         JavascriptFunction volumeProfileFunction;
         JavascriptFunction deltaprofileFunction;
@@ -925,65 +932,76 @@
         var seriesList = new List<ISeries>(7);
         seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
 
-        if (bubbleDataChanged)
+        // Always include bubble series if we have cached instances or if data changed
+        if (_cachedRedBubbleSeriesObj != null || _cachedBlueBubbleSeriesObj != null || bubbleDataChanged)
         {
             seriesList.Add(_cachedRedBubbleSeriesObj ?? new ScatterSeries { Name = "Aggressive Red" }); // [1]
             seriesList.Add(_cachedBlueBubbleSeriesObj ?? new ScatterSeries { Name = "Aggressive Blue" }); // [2]
         }
 
-        if (volumeDataChanged)
+        // Always include volume/delta series if we have cached instances or if data changed
+        if (_cachedDeltaSeriesObj != null || _cachedVolumeSeriesObj != null || volumeDataChanged)
         {
             seriesList.Add(_cachedDeltaSeriesObj ?? new CustomSeries { Name = "Delta Profile" }); // [3]
             seriesList.Add(_cachedVolumeSeriesObj ?? new CustomSeries { Name = "Volume Profile" }); // [4]
         }
 
         // --- Optional dotted lines for Structure borders (Up/Down and Aux) ---
-        // Build aligned arrays matching categoryData indices so lines draw over the candles
-        if (StructureStorageItem != null && StructureStorageItem.Count > 0)
+        // Build and cache aligned arrays matching categoryData indices so lines draw over the candles.
+        // Rebuild only when structures changed (version), when a full redraw is requested, or when JS functions changed.
+        var structureDataChanged = _forceFullRedraw || _lastRenderedStructureVersion != _structureDataVersion || jsFunctionChanged;
+        if (structureDataChanged && categoryData != null && categoryData.Count > 0)
         {
             var upBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
             var downBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
-            //var upAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
-            //var downAuxBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
 
-            foreach (var s in StructureStorageItem)
+            // Build quick lookup from category string to its index to avoid IndexOf in loop
+            var indexLookup = new Dictionary<string, int>(categoryData.Count);
+            for (int i = 0; i < categoryData.Count; i++)
+                if (categoryData[i] != null && !indexLookup.ContainsKey(categoryData[i]))
+                    indexLookup[categoryData[i]] = i;
+
+            // Iterate structures (source of truth) and map into the aligned arrays
+            if (StructureStorageItem != null && StructureStorageItem.Count > 0)
             {
-                try
+                foreach (var s in StructureStorageItem)
                 {
-                    if (s == null) continue;
-                    if (!string.Equals(s.Symbol, Symbol)) continue;
-                    if (s.TimeFrame != TimeFrame) continue;
-
-                    var key = s.Date.ToString("dd/MM HH:mm");
-                    var idx = categoryData.IndexOf(key);
-                    if (idx >= 0)
+                    try
                     {
-                        upBorderVals[idx] = s.UpBorder;
-                        downBorderVals[idx] = s.DownBorder;
-                        //upAuxBorderVals[idx] = s.UpAuxBorder;
-                        //downAuxBorderVals[idx] = s.DownAuxBorder;
+                        if (s == null) continue;
+                        if (!string.Equals(s.Symbol, Symbol)) continue;
+                        if (s.TimeFrame != TimeFrame) continue;
+
+                        var key = s.Date.ToString("dd/MM HH:mm");
+                        if (indexLookup.TryGetValue(key, out var idx) && idx >= 0 && idx < upBorderVals.Count)
+                        {
+                            upBorderVals[idx] = s.UpBorder;
+                            downBorderVals[idx] = s.DownBorder;
+                        }
                     }
-                }
-                catch
-                {
-                    // ignore malformed entries and keep minimal changes
+                    catch
+                    {
+                        // ignore malformed entries and keep minimal changes
+                    }
                 }
             }
 
-            // Add line series (dashed) - no symbols so they render as continuous dotted lines
-            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorder", Data = upBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0)  } });
-            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorder", Data = downBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0) } });
-            //seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = upAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
-            //seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = downAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aaaaaa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureVisible ? 1 : 0) } });
+            _cachedUpBorderVals = upBorderVals;
+            _cachedDownBorderVals = downBorderVals;
+            _lastRenderedStructureVersion = _structureDataVersion;
+        }
+
+        // Add series only when cached arrays exist and contain any data points
+        if ((_cachedUpBorderVals != null && _cachedUpBorderVals.Any(x => x != null)) || (_cachedDownBorderVals != null && _cachedDownBorderVals.Any(x => x != null)))
+        {
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorder", Data = _cachedUpBorderVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0)  } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorder", Data = _cachedDownBorderVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0) } });
         }
 
         ChartOptions.Series = seriesList;
         _forceFullRedraw = false;
 
-        //swSeries.Stop();
         swTotal.Stop();
-        //HelperPerformanceConfig.Log(nameof(MapFlowGraph),"GenerateChart Series", swSeries.ElapsedMilliseconds);
-        //HelperPerformanceConfig.Log(nameof(MapFlow), "GenerateChart total", swTotal.ElapsedMilliseconds);
 
         await EChart.UpdateAsync(false);
     }
@@ -1025,6 +1043,7 @@
                 _bubbleDataVersion++;
 
                 BarStorageItem = barsForDay.OrderByDescending(q => q.Date).ToList();
+                //_ = StructureRangeChange(StructureRangeUpd);
                 _barsDataVersion++;
 
                 break; // carregou um dia válido -> sair do loop
@@ -1049,7 +1068,31 @@
     public async Task StructureRangeChange(double value)
     {
         StructureRangeUpd = value;
-        if (HubClient != null) await HubClient.SetStructureMinDistance(value);
+        if (HubClient != null)
+        {
+            var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new BarStorageItem()
+                {
+                    Date = e.Date,
+                    Symbol = e.Symbol,
+                    TimeFrame = e.TimeFrame,
+                    Close = e.Close,
+                    Open = e.Open,
+                    High = e.High,
+                    Low = e.Low,
+                    Volume = e.Volume
+                })));
+
+
+            StructureStorageItem.Clear();
+            foreach (var item in list) StructureStorageItem.Add(item);
+
+
+            _structureDataVersion++; // mark structures changed
+
+            //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem));
+
+            HelperPerformanceConfig.Log(nameof(MapFlow), nameof(StructureRangeChange), 0, $"Received structure data with {StructureStorageItem?.Count ?? 0} items");
+        }
     }
 
     public async Task StructureAlphaChange(double value)
@@ -1112,10 +1155,7 @@
     private async void SymbolChange(string value)
     {
         Symbol = value;
-        // openDrawer = false;
-        // openDrawerBubbleNotify = false;
         await base.ForceReload();
-        // if (HubClient != null) HubClient._started = false; // forçar re-subscribe com novo symbol
         StateHasChanged();
     }
 }
@@ -1321,6 +1361,12 @@
                                             <MudText Typo="Typo.caption">@StructureRangeUpd.ToString("0.0")</MudText>
                                         </MudStack>
                                     </MudSlider>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Console</MudText>
+                                        <MudIconButton OnClick="() => Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem))" Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" />
+                                    </MudStack>
                                 </MudListItem>
                             </NestedList>
                         </MudListItem>

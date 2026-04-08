@@ -11,7 +11,7 @@ namespace B3WM.Client.Components
         public HubConnection? hubConnection;
         public PeriodicTimer? periodicTimer;
         private CancellationTokenSource cts = new CancellationTokenSource();
-        public readonly Channel<string> _channelToDo = Channel.CreateBounded<string>(new BoundedChannelOptions(1000) { SingleReader = true, SingleWriter = false });
+        public readonly Channel<string> _channelToDo = Channel.CreateBounded<string>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
 
         public event EventHandler<string>? Notify;
 
