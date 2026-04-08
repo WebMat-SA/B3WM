@@ -115,6 +115,8 @@
 
     public bool isDataLoadedFromDb { get; set; } = false;
 
+    public bool IsStructureUpdating {get;set; } = false;
+
     private Vizor.ECharts.EChart? EChart;
 
 
@@ -1061,16 +1063,22 @@
 
         await GenerateChart();
 
+        await StructureRangeChange(StructureRangeUpd);
+
         sw.Stop();
         HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Loaded From DB {DateTime.Now:HH:mm:ss}");
     }
 
     public async Task StructureRangeChange(double value)
     {
-        StructureRangeUpd = value;
-        if (HubClient != null)
-        {
-            var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new BarStorageItem()
+        try{
+            IsStructureUpdating = true;
+            StateHasChanged();
+
+            StructureRangeUpd = value;
+            if (HubClient != null)
+            {
+                var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new BarStorageItem()
                 {
                     Date = e.Date,
                     Symbol = e.Symbol,
@@ -1083,15 +1091,21 @@
                 })));
 
 
-            StructureStorageItem.Clear();
-            foreach (var item in list) StructureStorageItem.Add(item);
+                StructureStorageItem.Clear();
+                foreach (var item in list) StructureStorageItem.Add(item);
 
 
-            _structureDataVersion++; // mark structures changed
+                _structureDataVersion++; // mark structures changed
 
-            //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem));
+                //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem));
 
-            HelperPerformanceConfig.Log(nameof(MapFlow), nameof(StructureRangeChange), 0, $"Received structure data with {StructureStorageItem?.Count ?? 0} items");
+                HelperPerformanceConfig.Log(nameof(MapFlow), nameof(StructureRangeChange), 0, $"Received structure data with {StructureStorageItem?.Count ?? 0} items");
+            }
+        }
+        finally
+        {
+            IsStructureUpdating = false;
+            StateHasChanged();
         }
     }
 
@@ -1338,31 +1352,35 @@
             <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Structure" Expanded=false>
                     <NestedList>
-                        <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Price" Expanded=false>
+                        <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Price" Expanded=false Disabled="IsStructureUpdating">
                             <NestedList>
+                                @if (IsStructureUpdating)
+                                {
+                                    <MudProgressLinear Indeterminate Color="MudBlazor.Color.Primary" Class="mb-1"></MudProgressLinear>
+                                }
                                 <MudListItem Dense="true" OnClick="() => StructureVisible = !StructureVisible">
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                         <MudText Typo="Typo.body2">Show on Chart</MudText>
                                         <MudSwitch @bind-Value="StructureVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
                                     </MudStack>
                                 </MudListItem>
-                                <MudListItem Dense="true">
-                                    <MudSlider Size="Size.Small" @bind-Value="@StructureOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                <MudListItem Dense="true" Disabled="IsStructureUpdating">
+                                    <MudSlider Size="Size.Small" @bind-Value="@StructureOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled" Disabled="IsStructureUpdating">
                                         <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                             <MudText Typo="Typo.body2">Opacity</MudText>
                                             <MudText Typo="Typo.caption">@StructureOpacity.ToString("P2")</MudText>
                                         </MudStack>
                                     </MudSlider>
                                 </MudListItem>
-                                <MudListItem Dense="true">
-                                    <MudSlider Size="Size.Small" Value="@StructureRangeUpd" ValueChanged="StructureRangeChange" Step="0.5" Min=0.0 Max=3000 T=@double Variant="Variant.Filled">
+                                <MudListItem Dense="true" Disabled="IsStructureUpdating">
+                                    <MudSlider Size="Size.Small" Value="@StructureRangeUpd" ValueChanged="StructureRangeChange" Step="0.5" Min=0.0 Max=3000 T=@double Variant="Variant.Filled" Disabled="IsStructureUpdating">
                                         <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                             <MudText Typo="Typo.body2">Range to Update</MudText>
                                             <MudText Typo="Typo.caption">@StructureRangeUpd.ToString("0.0")</MudText>
                                         </MudStack>
                                     </MudSlider>
                                 </MudListItem>
-                                <MudListItem Dense="true">
+                                <MudListItem Dense="true" Disabled="IsStructureUpdating">
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                         <MudText Typo="Typo.body2">Console</MudText>
                                         <MudIconButton OnClick="() => Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem))" Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" />
