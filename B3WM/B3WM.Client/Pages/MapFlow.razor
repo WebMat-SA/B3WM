@@ -10,9 +10,12 @@
 @using Nextended.Core.Contracts
 @using MudBlazor.Extensions.Components
 @using MudBlazor.Extensions.Components.ObjectEdit
+@using System.Globalization
+@using Nextended.Core.Extensions
 @using Vizor.ECharts
 @inherits Components.PersistentComponentBase
 @inject IMagicIndexedDb _MagicDb
+
 
 @page "/"
 
@@ -33,6 +36,8 @@
 
     [PersistState]
     public bool StructureVisible { get; set; } = true;
+    [PersistState]
+    public bool StructureAuxVisible { get; set; } = false;
     [PersistState]
     public double StructureOpacity { get; set; } = 0.3;
 
@@ -57,6 +62,9 @@
     public double ProfileOpacity { get; set; } = 0.3;
     [PersistState]
     public bool ProfileVisible { get; set; } = true;
+
+    [PersistState]
+    public bool ProfileAutoByPriceStructure { get; set; } = true;
 
     [PersistState]
     public double DeltaSizeH { get; set; } = 1.015;
@@ -241,7 +249,7 @@
     private ScatterSeries? _cachedRedBubbleSeriesObj;
     private ScatterSeries? _cachedBlueBubbleSeriesObj;
 
-    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange, double structureMinDist, double structureVolAlpha) _jsFunctionCacheKey;
+    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange, double structureMinDist, double structureVolAlpha, int dateRangeStart, int dateRangeEnd) _jsFunctionCacheKey;
     private bool _jsFunctionCacheValid;
     private NumberArrayOrFunction? _cachedSymbolSizeFunction;
     private JavascriptFunction? _cachedVolumeProfileFunction;
@@ -264,7 +272,7 @@
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastRenderedCandleKey = default;
     private int _lastRenderedVolumeVersion = -1;
     private int _lastRenderedBubbleVersion = -1;
-    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange, double structureMinDist, double structureVolAlpha) _lastRenderedJsKey = default;
+    private (double BubbleSize, int BubbleAmount, bool BubbleVisible, double ProfileSizeH, double ProfileSizeV, double ProfileOpacity, bool ProfileVisible, double maxVolume, double DeltaSizeH, double DeltaSizeV, double DeltaOpacity, bool DeltaVisible, double maxDelta, int minBubbleRange, int maxBubbleRange, double structureMinDist, double structureVolAlpha, int dateRangeStart, int dateRangeEnd) _lastRenderedJsKey = default;
 
 
     private int _lastBubbleDataVersion = -1;
@@ -395,6 +403,10 @@
 
     public Task NewStructure(StructureStorageItem structure)
     {
+        //se opção de calcular pontos de filtro estiver ativa, calcular quais são os start e end do applyvolume filter.
+        if (ProfileAutoByPriceStructure)
+            UpdateFilterVolumeByPriceStructure(structure);
+
         StructureStorageItem.Add(structure);
         _structureDataVersion++; // mark structures changed
         return Task.CompletedTask;
@@ -615,7 +627,7 @@
         //LogPerf("GenerateChart Eixos", swEixos.ElapsedMilliseconds);
 
         var swJs = Stopwatch.StartNew();
-        var jsKey = (BubbleSize,ThresholdBubble ,BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End, StructureRangeUpd, StructureVolumeNormalizer);
+        var jsKey = (BubbleSize,ThresholdBubble ,BubbleVisible, ProfileSizeH, ProfileSizeV, ProfileOpacity, ProfileVisible, maxVolume, DeltaSizeH, DeltaSizeV, DeltaOpacity, DeltaVisible, maxDelta, _bubbleSizeRange.Start, _bubbleSizeRange.End, StructureRangeUpd, StructureVolumeNormalizer, _dateRange.Start, _dateRange.End);
         NumberArrayOrFunction symbolSizeFunction;
         JavascriptFunction volumeProfileFunction;
         JavascriptFunction deltaprofileFunction;
@@ -899,6 +911,35 @@
                     Data = markLineEntries.ToArray()
                 };
 
+                var isFullRange = _dateRange.Start == 0 && _dateRange.End >= BarStorageItem.Count - 1;
+
+                if (!isFullRange)
+                {
+                    _cachedCandleSeriesObj.MarkArea = new MarkArea
+                    {
+                        Silent = true,
+                        ItemStyle = new ItemStyle
+                        {
+                            Color = "rgba(200,200,200,0.03)" // sombra leve (ajuste se quiser)
+                        },
+                        Data = new object[]
+                        {
+                            new object[]
+                            {
+                                new { xAxis = _dateRange.Start },
+                                new { xAxis = _dateRange.End }
+                            }
+                        }
+                    };
+                }
+                else
+                {
+                    _cachedCandleSeriesObj.MarkArea = new MarkArea
+                    {
+                        Data = Array.Empty<object>()
+                    };
+                }
+
             }
             catch
             {
@@ -931,7 +972,7 @@
         //   só candle mudou          ? envia [candle]           (índices 1-4 intactos ? Delta/Volume NÃO re-renderizados)
         //   candle + bubbles         ? envia [candle,red,blue]  (índices 3-4 intactos ? Delta/Volume NÃO re-renderizados)
         //   volume mudou (qualquer)  ? envia todos os 5         (update completo, evento raro)
-        var seriesList = new List<ISeries>(7);
+        var seriesList = new List<ISeries>(9);
         seriesList.Add(_cachedCandleSeriesObj ?? new CandlestickSeries { Name = "Candle" }); // [0]
 
         // Always include bubble series if we have cached instances or if data changed
@@ -952,6 +993,10 @@
         // Build and cache aligned arrays matching categoryData indices so lines draw over the candles.
         // Rebuild only when structures changed (version), when a full redraw is requested, or when JS functions changed.
         var structureDataChanged = _forceFullRedraw || _lastRenderedStructureVersion != _structureDataVersion || jsFunctionChanged;
+
+        var upBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+        var downBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+
         if (structureDataChanged && categoryData != null && categoryData.Count > 0)
         {
             var upBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
@@ -979,6 +1024,8 @@
                         {
                             upBorderVals[idx] = s.UpBorder;
                             downBorderVals[idx] = s.DownBorder;
+                            upBorderAuxVals[idx] = s.UpAuxBorder;
+                            downBorderAuxVals[idx] = s.DownAuxBorder;
                         }
                     }
                     catch
@@ -998,6 +1045,8 @@
         {
             seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorder", Data = _cachedUpBorderVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0)  } });
             seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorder", Data = _cachedDownBorderVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0) } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorderAux", Data = upBorderAuxVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#9696ff", Width = 1, Opacity = 0.1 * (StructureAuxVisible ? 1 : 0) } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorderAux", Data = downBorderAuxVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#ff9696", Width = 1, Opacity = 0.1 * (StructureAuxVisible ? 1 : 0) } });
         }
 
         ChartOptions.Series = seriesList;
@@ -1044,8 +1093,7 @@
                 Bubbles = bubblesForDay ?? new List<BubbleStorageItem>();
                 _bubbleDataVersion++;
 
-                BarStorageItem = barsForDay.OrderByDescending(q => q.Date).ToList();
-                //_ = StructureRangeChange(StructureRangeUpd);
+                BarStorageItem = barsForDay.OrderBy(q => q.Date).ToList();
                 _barsDataVersion++;
 
                 break; // carregou um dia válido -> sair do loop
@@ -1059,6 +1107,8 @@
         {
             HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Seding volume levels to helper");
             await HubClient.SetVolumeIntraday(_volumeLevels.VolumeLevel);
+
+            _dateRange = new MudExRange<int>(0, BarStorageItem.Count - 1);
         }
 
         await GenerateChart();
@@ -1117,11 +1167,14 @@
 
     private string IndexEndToDateStringBars(IRange<int> range)
     {
-        return $" {BarStorageItem.ElementAtOrDefault(range.End)?.Date:dd/MM HH:mm}";
+        string format = BarStorageItem.ElementAtOrDefault(range.End)?.Date.Date == BarStorageItem.ElementAtOrDefault(range.Start)?.Date.Date ? "HH:mm" : "dd/MM HH:mm";
+
+        return $" {BarStorageItem.ElementAtOrDefault(range.End)?.Date.ToString(format)}";
     }
     private string IndexStartToDateStringBars(IRange<int> range)
     {
-        return $"{BarStorageItem.ElementAtOrDefault(range.Start)?.Date:dd/MM HH:mm}";
+        string format = BarStorageItem.ElementAtOrDefault(range.End)?.Date.Date == BarStorageItem.ElementAtOrDefault(range.Start)?.Date.Date ? "HH:mm" : "dd/MM HH:mm";
+        return $"{BarStorageItem.ElementAtOrDefault(range.Start)?.Date.ToString(format)}";
     }
     private void ApplyVolumeFilter(IRange<int> newRange)
     {
@@ -1141,15 +1194,31 @@
         }
         else
         {
-            var startBar = BarStorageItem.ElementAtOrDefault(newRange.Start);
-            var endBar = BarStorageItem.ElementAtOrDefault(newRange.End);
+            var bars = BarStorageItem.OrderBy(q => q.Date).ToList();
+
+            var startBar = bars.ElementAtOrDefault(newRange.Start);
+            var endBar = bars.ElementAtOrDefault(newRange.End);
             if (startBar != null && endBar != null && HubClient != null)
             {
-                //_filteredVolumeLevels = await HubClient.GetVolumeSnapshot(startBar.Date, endBar.Date) ?? new List<VolumeLevel>();
-                //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(BarStorageItem, startBar.Date, endBar.Date);
+                //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(bars, startBar.Date, endBar.Date);
+                _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
+
+                Console.WriteLine();
             }
+        }
+
+        StateHasChanged();
+    }
+
+    public void UpdateFilterVolumeByPriceStructure(StructureStorageItem structure)
+    {
+        var lastStructure = StructureStorageItem.LastOrDefault();
+        if (lastStructure != null || structure != null)
+        {
+            ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count - 1)));
+            return;
         }
     }
 
@@ -1245,21 +1314,6 @@
             <MudList T="string" Dense>
                 <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
                     <NestedList>
-                        <MudListItem Dense="true">
-                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                <MudText Typo="Typo.body2">Range</MudText>
-                                <MudText Typo="Typo.caption">@($"{IndexStartToDateStringBars(_dateRange)} → {IndexEndToDateStringBars(_dateRange)}")</MudText>
-                            </MudStack>
-                            <MudExRangeSlider T="int"
-                                              Value="_dateRange"
-                                              ValueChanged="ApplyVolumeFilter"
-                                              AllowWholeRangeDrag
-                                              Size="Size.Small"
-                                              SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count - 1)))"
-                                              ToEndStringFunc="IndexEndToDateStringBars"
-                                              ToStartStringFunc="IndexStartToDateStringBars"
-                                              Class="pr-5 mr-5" Disabled="@(BarStorageItem.Count <= 2 || true)"/>
-                        </MudListItem>
 
                         @* Deltas *@
                         <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
@@ -1298,6 +1352,8 @@
                                 </MudListItem>
                             </NestedList>
                         </MudListItem>
+
+                        @* Profiles *@
                         <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
                             <NestedList>
                                 <MudListItem Dense="true" OnClick="() => ProfileVisible = !ProfileVisible">
@@ -1333,12 +1389,12 @@
                                     </MudSlider>
                                 </MudListItem>
 
-                                <MudListItem Dense="true">
+                                @* <MudListItem Dense="true" OnClick="() => ProfileAutoByPriceStructure = !ProfileAutoByPriceStructure">
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                        <MudText Typo="Typo.body2">Console</MudText>
-                                        <MudIconButton OnClick="() => Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(VolumeLevels))" Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small"/>
+                                        <MudText Typo="Typo.body2">Auto Update By Price Structure</MudText>
+                                        <MudSwitch @bind-Value="ProfileAutoByPriceStructure" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
                                     </MudStack>
-                                </MudListItem>
+                                </MudListItem> *@
                             </NestedList>
                         </MudListItem>
                     </NestedList>
@@ -1358,10 +1414,16 @@
                                 {
                                     <MudProgressLinear Indeterminate Color="MudBlazor.Color.Primary" Class="mb-1"></MudProgressLinear>
                                 }
-                                <MudListItem Dense="true" OnClick="() => StructureVisible = !StructureVisible">
+                                <MudListItem Dense="true" OnClick="() => { StructureVisible = !StructureVisible; if (!StructureVisible) StructureAuxVisible = false; }">
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                         <MudText Typo="Typo.body2">Show on Chart</MudText>
                                         <MudSwitch @bind-Value="StructureVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Dense="true" OnClick="() => { StructureAuxVisible = !StructureAuxVisible; if (StructureAuxVisible) StructureVisible = true; }">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Show Aux on Chart</MudText>
+                                        <MudSwitch @bind-Value="StructureAuxVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
                                     </MudStack>
                                 </MudListItem>
                                 <MudListItem Dense="true" Disabled="IsStructureUpdating">
@@ -1380,12 +1442,7 @@
                                         </MudStack>
                                     </MudSlider>
                                 </MudListItem>
-                                <MudListItem Dense="true" Disabled="IsStructureUpdating">
-                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                        <MudText Typo="Typo.body2">Console</MudText>
-                                        <MudIconButton OnClick="() => Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem))" Icon="@Icons.Material.Filled.ScreenShare" Size="Size.Small" />
-                                    </MudStack>
-                                </MudListItem>
+
                             </NestedList>
                         </MudListItem>
 
@@ -1536,14 +1593,134 @@
     <CascadingValue Value="Symbol">
         <MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="SelectedAgents" ThresholdBubble="ThresholdBubble" />
     </CascadingValue>
-    <div style="width:auto; height:86vh;  overflow:hidden;">
+    <div style="width:auto; height:90vh;  overflow:hidden;">
         <Vizor.ECharts.EChart @ref="EChart"
                               Renderer="Vizor.ECharts.ChartRenderer.Canvas"
                               Options="ChartOptions"
                               Width="auto"
-                              Height="800px"
+                              Height="750px"
                               @key="@($"chart_{Symbol}")" />
+
+        <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="1" Class="mt-2 py-2">
+            <MudExRangeSlider T="int" Class="px-5 mx-5"
+                Value="_dateRange"
+                ValueChanged="ApplyVolumeFilter"
+                SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count - 1)))"
+                ShowInputs="false"
+                AllowWholeRangeDrag="true"
+                ToEndStringFunc="IndexEndToDateStringBars"
+                ToStartStringFunc="IndexStartToDateStringBars">
+                    <TrackTemplate Context="ctx">
+                        <div style="
+                            height: 100%;
+                            position: relative;
+                            width: 100%;
+                            background: var(--mud-palette-surface);
+                            border-radius: 4px;
+                            overflow: hidden;">
+                            <div style="
+                                position:absolute;
+                                left:0;
+                                right:0;
+                                top:40%;
+                                height:20%;
+                                background: linear-gradient(
+                                to right,
+                                var(--mud-palette-background-grey),
+                                var(--mud-palette-surface)
+                                );
+                                pointer-events:none;">
+                            </div>
+                            @for (var time = 0; time <= BarStorageItem.Count-1; time++)
+                            {
+                                //var time = new TimeOnly(hour, 0);
+                                var pct = ctx.Math.Percent(time, ctx.SizeRange) * 100;
+                                var isMajor = time % 10 == 0; // every 10th as major tick
+                                var top = isMajor ? "10%" : "25%";
+                                var bottom = isMajor ? "10%" : "25%";
+                                var width = isMajor ? "2px" : "1px";
+                                var color = isMajor
+                                ? "var(--mud-palette-lines-default)"
+                                : "var(--mud-palette-divider)";
+                                <div style="
+                                    position:absolute;
+                                    left:@pct.ToString("F2", CultureInfo.InvariantCulture)%;
+                                    top:@top;
+                                    bottom:@bottom;
+                                    width:@width;
+                                    background:@color;">
+                                </div>
+                                @if (isMajor)
+                                {
+                                    <div style="
+                                        position:absolute;
+                                        left:@pct.ToString("F2", CultureInfo.InvariantCulture)%;
+                                        bottom:4px;
+                                        transform: translateX(-50%);
+                                        font-size:10px;
+                                        color:var(--mud-palette-text-secondary);
+                                        font-weight:500;
+                                        pointer-events:none;
+                                        white-space:nowrap;
+                                        z-index:1;">
+                                        @BarStorageItem.ElementAtOrDefault(time)?.Date.ToString("HH\\:mm", CultureInfo.CurrentCulture)
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </TrackTemplate>
+                    <SelectionTemplate Context="ctx">
+                        <div style="
+                            height: 100%;
+                            width: 100%;
+                            background: linear-gradient(
+                            90deg,
+                            var(--mud-palette-primary),
+                            var(--mud-palette-primary-darken)
+                            );
+                            display:flex;
+                            align-items:center;
+                            justify-content:center;
+                            position:relative;
+                            border-radius:4px;
+                            box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+                            <span style="
+                                color:var(--mud-palette-primary-text);
+                                font-weight:600;
+                                font-size:11px;
+                                white-space:nowrap;
+                                padding:0 8px;
+                                text-shadow:0 1px 2px rgba(0,0,0,0.3);">
+                            @IndexStartToDateStringBars(_dateRange) – @IndexEndToDateStringBars(_dateRange)
+                            </span>
+                        </div>
+                    </SelectionTemplate>
+                    <ThumbStartTemplate Context="ctx">
+                        <div style="
+                            width:14px;
+                            height:14px;
+                            background:var(--mud-palette-surface);
+                            border:3px solid var(--mud-palette-primary);
+                            border-radius:50%;
+                            box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+                        </div>
+                    </ThumbStartTemplate>
+                    <ThumbEndTemplate Context="ctx">
+                        <div style="
+                            width:14px;
+                            height:14px;
+                            background:var(--mud-palette-surface);
+                            border:3px solid var(--mud-palette-primary);
+                            border-radius:50%;
+                            box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+                        </div>
+                    </ThumbEndTemplate>
+            </MudExRangeSlider>
+            <MudIconButton Icon="@Icons.Material.Outlined.RestartAlt" OnClick="async () => { ApplyVolumeFilter(new MudExRange<int>(0, BarStorageItem.Count() -1)); StateHasChanged(); }" />
+            <MudIconButton Icon="@Icons.Material.Outlined.AutoMode" OnClick="() => ProfileAutoByPriceStructure = !ProfileAutoByPriceStructure" />
+        </MudStack>
     </div>
+
 </MudDrawerContainer>   
 @* <Import ThresholdBubble="ThresholdBubble" 
     TimeFrame="TimeFrame" 

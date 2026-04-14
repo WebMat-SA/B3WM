@@ -27,9 +27,7 @@ namespace B3WM.Client.Model
         {
             List<VolumeLevel> result = new List<VolumeLevel>();
 
-            //os volumes são somatorias do intraday
-
-            //barstorageitem do datetime to + ultimo bastorageitem do dia anterior - bastorageitem from
+            Console.WriteLine($"From: {from}, To: {to}");
 
             var barStorageTo = data.FirstOrDefault(q => q.Date == to);
             var barStorageFrom = data.FirstOrDefault(q => q.Date == from);
@@ -52,55 +50,24 @@ namespace B3WM.Client.Model
             result = Operation(result, barStorageFrom.VolumeLevel ?? new(), "Diff");
 
 
-            return result;
+            return result.OrderBy(q=>q.Price).ToList();
         }
 
-        private static List<VolumeLevel> Operation(List<VolumeLevel> vol1, List<VolumeLevel> vol2, string Operation)
+        public static List<VolumeLevel> Operation(List<VolumeLevel> vol1, List<VolumeLevel> vol2, string Operation)
         {
             ConcurrentDictionary<double, VolumeLevel> dictionary = new ConcurrentDictionary<double, VolumeLevel>();
 
             foreach(var item in vol1)
             {
-                dictionary.AddOrUpdate(item.Price, item,
-                    (price, exisiting) =>
-                    {
-                        if (Operation == "Sum")
-                        {
-                            exisiting.Total += item.Total;
-                            exisiting.SellVolume += item.SellVolume;
-                            exisiting.BuyVolume += item.BuyVolume;
-                        }
-                        else if (Operation == "Diff")
-                        {
-                            exisiting.Total -= item.Total;
-                            exisiting.SellVolume -= item.SellVolume;
-                            exisiting.BuyVolume -= item.BuyVolume;
-                        }
+                var itemVol2 = vol2.FirstOrDefault(q => q.Price == item.Price);
 
-                        return exisiting;
-                    });
-            }
-
-            foreach (var item in vol2)
-            {
-                dictionary.AddOrUpdate(item.Price, item,
-                    (price, exisiting) =>
-                    {
-                        if (Operation == "Sum")
-                        {
-                            exisiting.Total += item.Total;
-                            exisiting.SellVolume += item.SellVolume;
-                            exisiting.BuyVolume += item.BuyVolume;
-                        }
-                        else if (Operation == "Diff")
-                        {
-                            exisiting.Total -= item.Total;
-                            exisiting.SellVolume -= item.SellVolume;
-                            exisiting.BuyVolume -= item.BuyVolume;
-                        }
-
-                        return exisiting;
-                    });
+                dictionary.TryAdd(item.Price, new VolumeLevel()
+                {
+                    Total = item.Total - (itemVol2?.Total ?? 0),
+                    BuyVolume = item.BuyVolume - (itemVol2?.BuyVolume ?? 0),
+                    SellVolume = item.SellVolume - (itemVol2?.SellVolume ?? 0),
+                    Price = item.Price
+                });
             }
 
             return dictionary.Select(e=>e.Value).ToList();
