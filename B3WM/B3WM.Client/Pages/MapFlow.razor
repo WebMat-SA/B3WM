@@ -23,7 +23,7 @@
     protected override string PersistenceKey => $"{nameof(MapFlow)}_{Symbol.Substring(0,3)}_state";
     protected override bool ContinuousSave => true;
 
-    public string Symbol { get; set; } = "WINJ26";
+    public string Symbol { get; set; } = "WINM26";
 
     [PersistState]
     public int TimeFrame { get; set; } = 2;
@@ -153,6 +153,8 @@
     private int _lastRenderedStructureVersion { get; set; } = -1;
     private List<object?>? _cachedUpBorderVals;
     private List<object?>? _cachedDownBorderVals;
+    private List<object?>? _cachedUpAuxBorderVals;
+    private List<object?>? _cachedDownAuxBorderVals;
 
     [PersistState]
     private List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
@@ -297,14 +299,15 @@
             High = bar.High,
             Low = bar.Low,
             Close = bar.Close,
-            Volume = bar.Volume
+            Volume = bar.Volume,
+            VolumeLevel = bar.VolumeLevel
         };
     }
 
     public Task NewBar(BarStorageItem bar)
     {
         var count = BarStorageItem.Count;
-        var isFullRange = count > 0 && _dateRange.End >= count - 1;
+        var isFullRange = count > 0 && _dateRange.End >= count;
 
         var sw = Stopwatch.StartNew();
 
@@ -391,6 +394,18 @@
             var sw = Stopwatch.StartNew();
             VolumeLevels = volumes.Volumes as List<VolumeLevel> ?? volumes.Volumes.ToList();
             _volumeDataVersion++;
+
+            var count = BarStorageItem.Count;
+            var isFullRange = count > 0 && _dateRange.End >= count;
+
+            if (isFullRange && ProfileAutoByPriceStructure)
+            {
+                var startBar = BarStorageItem.ElementAtOrDefault(Math.Max(0, _dateRange.Start - 1));
+                _filteredVolumeLevels = VolumeLevelStorageItem.Operation(volumes.Volumes ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
+                _volumeFilterActive = true;
+                _filteredVolumeDataVersion++;
+            }
+
             sw.Stop();
         }
         catch(Exception e)
@@ -911,7 +926,7 @@
                     Data = markLineEntries.ToArray()
                 };
 
-                var isFullRange = _dateRange.Start == 0 && _dateRange.End >= BarStorageItem.Count - 1;
+                var isFullRange = _dateRange.Start == 0 && _dateRange.End >= BarStorageItem.Count;
 
                 if (!isFullRange)
                 {
@@ -994,13 +1009,13 @@
         // Rebuild only when structures changed (version), when a full redraw is requested, or when JS functions changed.
         var structureDataChanged = _forceFullRedraw || _lastRenderedStructureVersion != _structureDataVersion || jsFunctionChanged;
 
-        var upBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
-        var downBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
 
         if (structureDataChanged && categoryData != null && categoryData.Count > 0)
         {
             var upBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
             var downBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            var upBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+            var downBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
 
             // Build quick lookup from category string to its index to avoid IndexOf in loop
             var indexLookup = new Dictionary<string, int>(categoryData.Count);
@@ -1037,6 +1052,8 @@
 
             _cachedUpBorderVals = upBorderVals;
             _cachedDownBorderVals = downBorderVals;
+            _cachedUpAuxBorderVals = upBorderAuxVals;
+            _cachedDownAuxBorderVals = downBorderAuxVals;
             _lastRenderedStructureVersion = _structureDataVersion;
         }
 
@@ -1045,8 +1062,8 @@
         {
             seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorder", Data = _cachedUpBorderVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0)  } });
             seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorder", Data = _cachedDownBorderVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = StructureOpacity * (StructureVisible ? 1 : 0) } });
-            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpBorderAux", Data = upBorderAuxVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#9696ff", Width = 1, Opacity = 0.1 * (StructureAuxVisible ? 1 : 0) } });
-            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownBorderAux", Data = downBorderAuxVals ?? Enumerable.Repeat((object?)null, categoryData.Count).ToList(), Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#ff9696", Width = 1, Opacity = 0.1 * (StructureAuxVisible ? 1 : 0) } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = _cachedUpAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#5555aa", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureAuxVisible ? 1 : 0) } });
+            seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = _cachedDownAuxBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aa5555", Width = 1, Opacity = (StructureOpacity - 0.25 <= 0 ? 0.01 : StructureOpacity - 0.25) * (StructureAuxVisible ? 1 : 0) } });
         }
 
         ChartOptions.Series = seriesList;
@@ -1108,7 +1125,7 @@
             HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Seding volume levels to helper");
             await HubClient.SetVolumeIntraday(_volumeLevels.VolumeLevel);
 
-            _dateRange = new MudExRange<int>(0, BarStorageItem.Count - 1);
+            _dateRange = new MudExRange<int>(0, BarStorageItem.Count);
         }
 
         await GenerateChart();
@@ -1179,14 +1196,13 @@
     private void ApplyVolumeFilter(IRange<int> newRange)
     {
         ///refazer aqui...
-
         _dateRange = newRange;
 
         var count = BarStorageItem.Count;
         if (count == 0) return;
 
         // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
-        var isFullRange = newRange.Start == 0 && newRange.End >= count - 1;
+        var isFullRange = newRange.Start == 0 && newRange.End >= count ;
         if (isFullRange)
         {
             _volumeFilterActive = false;
@@ -1196,7 +1212,7 @@
         {
             var bars = BarStorageItem.OrderBy(q => q.Date).ToList();
 
-            var startBar = bars.ElementAtOrDefault(newRange.Start);
+            var startBar = bars.ElementAtOrDefault(Math.Max(0,newRange.Start - 1));
             var endBar = bars.ElementAtOrDefault(newRange.End);
             if (startBar != null && endBar != null && HubClient != null)
             {
@@ -1204,8 +1220,6 @@
                 _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
-
-                Console.WriteLine();
             }
         }
 
@@ -1217,7 +1231,7 @@
         var lastStructure = StructureStorageItem.LastOrDefault();
         if (lastStructure != null || structure != null)
         {
-            ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count - 1)));
+            ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count)));
             return;
         }
     }
@@ -1269,7 +1283,7 @@
                     <MudSelectItem Value="@("WDOJ26")">WDOJ26</MudSelectItem>
                     <MudSelectItem Value="@("WDOK26")">WDOK26</MudSelectItem>
                     <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>
-                    <MudSelectItem Value="@("WINK26")">WINK26</MudSelectItem>
+                    <MudSelectItem Value="@("WINM26")">WINM26</MudSelectItem>
                 </MudSelect>
                 <B3WM.Client.Components.HubClient @ref=HubClient
                     OnCandleSeriesChange="NewBar" 
@@ -1605,7 +1619,7 @@
             <MudExRangeSlider T="int" Class="px-5 mx-5"
                 Value="_dateRange"
                 ValueChanged="ApplyVolumeFilter"
-                SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count - 1)))"
+                SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count)))"
                 ShowInputs="false"
                 AllowWholeRangeDrag="true"
                 ToEndStringFunc="IndexEndToDateStringBars"
@@ -1716,8 +1730,14 @@
                         </div>
                     </ThumbEndTemplate>
             </MudExRangeSlider>
-            <MudIconButton Icon="@Icons.Material.Outlined.RestartAlt" OnClick="async () => { ApplyVolumeFilter(new MudExRange<int>(0, BarStorageItem.Count() -1)); StateHasChanged(); }" />
-            <MudIconButton Icon="@Icons.Material.Outlined.AutoMode" OnClick="() => ProfileAutoByPriceStructure = !ProfileAutoByPriceStructure" />
+            <MudIconButton Icon="@Icons.Material.Outlined.RestartAlt" OnClick="async () => { ApplyVolumeFilter(new MudExRange<int>(0, BarStorageItem.Count())); StateHasChanged(); Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(BarStorageItem)); }" />
+            @* <MudIconButton Icon="@Icons.Material.Outlined.AutoMode" OnClick="() => ProfileAutoByPriceStructure = !ProfileAutoByPriceStructure" /> *@
+            <MudToggleIconButton @bind-Toggled="ProfileAutoByPriceStructure"
+                                 Icon="@Icons.Material.Filled.AutoMode"
+                                 Color="@MudBlazor.Color.Error"
+                                 ToggledIcon="@Icons.Material.Filled.AutoMode"
+                                 ToggledColor="@MudBlazor.Color.Success"
+                                 title="@(ProfileAutoByPriceStructure ? "On" : "Off")" />
         </MudStack>
     </div>
 

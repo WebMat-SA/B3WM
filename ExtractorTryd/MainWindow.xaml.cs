@@ -25,7 +25,7 @@ namespace ExtractorTryd
     /// </summary>
     public partial class MainWindow : Window
     {
-        public string Symbol { get; set; } = "WINJ26";
+        public string Symbol { get; set; } = "WINM26";
         public string Url { get; set; } = "https://localhost:5001/api/datahub";
 
         BackgroundWorker workerTnT = new BackgroundWorker();
