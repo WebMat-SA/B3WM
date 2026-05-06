@@ -160,11 +160,13 @@
                 }
                 <MudListItem Dense="true" T="string">
                     <MudStack AlignItems="AlignItems.Center" Row Justify="Justify.SpaceBetween">
-                        <!-- Left group: first and second item stay together on the left -->
-                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-                            <MudChip Label="true" Text="@bubble.Date.ToString("HH:mm:ss")" Size="Size.Small"/>
-                            <MudText Typo="Typo.caption">@(((Ticks2.Agents?)bubble.Agent)?.Description()) </MudText>
-                        </MudStack>
+                        <MudTooltip Text="@(bubble.Price.ToString("0.##"))">
+                            <!-- Left group: first and second item stay together on the left -->
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                                <MudChip Label="true" Text="@bubble.Date.ToString("HH:mm:ss")" Size="Size.Small"/>
+                                <MudText Typo="Typo.caption">@(((Ticks2.Agents?)bubble.Agent)?.Description()) </MudText>
+                            </MudStack>
+                        </MudTooltip>
 
                         <!-- Last item stays on the right because parent uses SpaceBetween -->
                         <MudTooltip Text="@(bubble.ActionType == Ticks2.ActionType.Buy ? "Compra" : "Venda")">
