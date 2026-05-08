@@ -127,6 +127,8 @@
 
     private Vizor.ECharts.EChart? EChart;
 
+    public DateTime? _loadFromDate { get; set; } = DateTime.Today;
+
 
     private int _bubbleDataVersion { get; set; }
     private int _barsDataVersion { get; set; }
@@ -1276,11 +1278,13 @@
                 <MudTimePicker @bind-Time="_endTime" Label="Horário de Término" IconSize="Size.Small" AdornmentColor="MudBlazor.Color.Info" />
             </MudStack>
             <MudStack Row AlignItems="AlignItems.Center">
+                <MudTooltip Text="Data de busca no banco de dados">
+                    <MudDatePicker @bind-Date="_loadFromDate" Label="Data" IconSize="Size.Small" AdornmentColor="MudBlazor.Color.Info" />
+                </MudTooltip>
                 <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) Color="MudBlazor.Color.Surface" />
                 </MudTooltip>
                 <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChange" IconSize="Size.Small" FullWidth="false" Label="Symbol" AdornmentColor="MudBlazor.Color.Warning" AdornmentIcon="@Icons.Material.Filled.EuroSymbol" Dense="true" FitContent="true" Disabled="HubClient == null || HubClient._started">
-                    <MudSelectItem Value="@("WDOJ26")">WDOJ26</MudSelectItem>
                     <MudSelectItem Value="@("WDOK26")">WDOK26</MudSelectItem>
                     <MudSelectItem Value="@("WDOM26")">WDOM26</MudSelectItem>
                     <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>

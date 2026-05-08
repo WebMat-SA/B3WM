@@ -36,11 +36,17 @@ namespace B3WM.Client.Services
         public event EventHandler<int>? StructureVolume_OnQueueCount;
         public event EventHandler<string>? StructureVolume_OnQueueTime;
 
+        private StructureBubbleHelper _structureBubble = new();
+        public event EventHandler<StructureBubbleStorageItem>? StructureBubble_OnNewStructure;
+        public event EventHandler<int>? StructureBubble_OnQueueCount;
+        public event EventHandler<string>? StructureBubble_OnQueueTime;
+
         private bool EnableCandleFormer { get; set; }
         private bool EnableVolumeFormer { get;set; }
         private bool EnableBubbleFormer { get; set; }
         private bool EnableStructureFormer { get; set; }
         private bool EnableStructureVolumeFormer { get; set; }
+        private bool EnableStructureBubbleFormer { get; set; }
 
         public MainHelper()
         {
@@ -68,6 +74,9 @@ namespace B3WM.Client.Services
                 _structureVolume.OnQueueTime += _structureVolume_OnQueueTime;
                 _structureVolume.OnStructureChange += _structureVolume_OnNewStructure;
 
+                _structureBubble.OnQueueCount += _structureBubble_OnQueueCount;
+                _structureBubble.OnQueueTime += _structureBubble_OnQueueTime;
+                _structureBubble.OnStructureChange += _structureBubble_OnNewStructure;
             }
             catch (Exception ex)
             {
@@ -98,6 +107,9 @@ namespace B3WM.Client.Services
 
             if (EnableStructureFormer && !_structure.calculatingNewDistance)
                 _ = _structure.OnNewBar(e);
+
+            if (EnableStructureBubbleFormer && !_structureBubble.calculatingNewDistance)
+                _ = _structureBubble.OnNewBar(e);
         }
 
         private void _candle_OnUpdateLastBar(object? sender, BarStorageItem? e)
@@ -118,6 +130,11 @@ namespace B3WM.Client.Services
             if (StructureVolume_OnNewStructure != null) StructureVolume_OnNewStructure.Invoke(this, e);
         }
 
+        private void _structureBubble_OnNewStructure(object? sender, StructureBubbleStorageItem? e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureBubble_OnNewStructure), 0, $"Structure Bubble updated: {e}");
+            if (StructureBubble_OnNewStructure != null) StructureBubble_OnNewStructure.Invoke(this, e);
+        }
         #region Init
 
         public void InitCandle(int throtlingms = 200, int timeFrame = 5, bool _enableCandleFormer = true)
@@ -159,6 +176,14 @@ namespace B3WM.Client.Services
 
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitStructureVolume), 0, "Structure helper initialized");
         }
+
+        public void InitStructureBubble(int throtlingms = 5000, bool _enableStructureBubbFormer = true)
+        {
+            EnableStructureBubbleFormer = _enableStructureBubbFormer;
+            //_structureBubble.Init(throtlingms);
+
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(InitStructureBubble), 0, "Structure Bubble helper initialized");
+        }
         #endregion
 
         #region Queue Count
@@ -186,6 +211,11 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureVolume_OnQueueCount), 0, $"Structure Volume queue count: {e}");
             if (StructureVolume_OnQueueCount != null) StructureVolume_OnQueueCount.Invoke(this, e);
+        }
+        private void _structureBubble_OnQueueCount(object? sender, int e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureBubble_OnQueueCount), 0, $"Structure Bubble queue count: {e}");
+            if (StructureBubble_OnQueueCount != null) StructureBubble_OnQueueCount.Invoke(this, e);
         }
         #endregion
 
@@ -218,6 +248,12 @@ namespace B3WM.Client.Services
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureVolume_OnQueueTime), 0, $"Structure Volume queue time: {e}");
             if (StructureVolume_OnQueueTime != null) StructureVolume_OnQueueTime.Invoke(this, e);
+        }
+
+        private void _structureBubble_OnQueueTime(object? sender, string e)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_structureBubble_OnQueueTime), 0, $"Structure Bubble queue time: {e}");
+            if (StructureBubble_OnQueueTime != null) StructureBubble_OnQueueTime.Invoke(this, e);
         }
         #endregion
 
@@ -254,6 +290,11 @@ namespace B3WM.Client.Services
             EnableStructureVolumeFormer = enable;
         }
 
+        public void SetEnableStructureBubbleFormer(bool enable)
+        {
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(SetEnableStructureBubbleFormer), 0, $"Structure Bubble former enabled: {enable}");
+            EnableStructureBubbleFormer = enable;
+        }
         #endregion
 
         public void Enqueue(string dataString)

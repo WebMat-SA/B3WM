@@ -29,6 +29,9 @@ namespace B3WM.Client.Services
         /// <summary>Quando true, StructureHelper imprime [Perf] no console.</summary>
         public static bool EnableStructureVolumeHelper { get; set; } = false;
 
+        /// <summary>Quando true, StructureHelper imprime [Perf] no console.</summary>
+        public static bool EnableStructureBubbleHelper { get; set; } = false;
+
         /// <summary>Quando true, MapFlow imprime [Perf] no console.</summary>
         public static bool EnableMapFlow { get; set; } = false;
 

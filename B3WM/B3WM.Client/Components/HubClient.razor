@@ -170,8 +170,28 @@
 
         if (MainService != null)
         {
-            await MainService.RunAsync(s => s.SetEnableStructureFormer(EnableStructureVolumeFormer));
+            await MainService.RunAsync(s => s.SetEnableStructureVolumeFormer(EnableStructureVolumeFormer));
             HelperPerformanceConfig.Log(nameof(HubClient), "EnableStructureVolumeFormer", 0, $"EnableStructureVolumeFormer changed to {value} at {DateTime.Now:HH:mm:ss.fff}");
+        }
+    }
+
+    [PersistState]
+    public bool EnableStructureBubbleFormer { get; set; } = false;
+
+    public async Task EnableStructureBubbleFormerChanged(bool value)
+    {
+        EnableStructureBubbleFormer = value;
+        if (EnableStructureBubbleFormer)
+        {
+            _EnableTimesAndTrades = true; //depende de TimesAndTrades
+            EnableCandleFormer = true; //depende de candlehelper
+            EnableBubbleFormer = true; //depende de bubbleformer
+        }
+
+        if (MainService != null)
+        {
+            await MainService.RunAsync(s => s.SetEnableStructureBubbleFormer(EnableStructureBubbleFormer));
+            HelperPerformanceConfig.Log(nameof(HubClient), "EnableStructureBubbleFormer", 0, $"EnableStructureBubbleFormer changed to {value} at {DateTime.Now:HH:mm:ss.fff}");
         }
     }
 
@@ -208,6 +228,7 @@
     public int ThrottlingVolumeMs = 425;
     public int ThrottlingStructureMs = 5000;
     public int ThrottlingStructureVolumeMs = 1000;
+    public int ThrottlingStructureBubbleMs = 5000;
 
     private int _bubbleQueue;
     private int _volumeQueue;
@@ -280,6 +301,7 @@
             await MainService.RunAsync(s => s.InitVolume(ThrottlingVolumeMs, EnableVolumeFormer));
             await MainService.RunAsync(s => s.InitStructure(ThrottlingStructureMs, MinDistanceStructureUpd, EnableStructureFormer));
             await MainService.RunAsync(s => s.InitStructureVolume(ThrottlingStructureVolumeMs, AlphaStructureVolume, EnableStructureVolumeFormer));
+            //await MainService.RunAsync(s => s.InitStructureBubble(ThrottlingStructureBubbleMs, EnableStructureBubbleFormer));
 
             HelperPerformanceConfig.Log(nameof(HubClient), "CreateWorkers", 0, $"{MainService != null}");
 
