@@ -248,6 +248,7 @@
     private StructureStorageItem? _lastStructure { get; set; }
 
     public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(100000){ SingleReader = true, SingleWriter = false});
+    public readonly Channel<Ticks2[]> _channelProfitToDo = Channel.CreateBounded<Ticks2[]>(new BoundedChannelOptions(100000){ SingleReader = true, SingleWriter = false});
 
     public readonly Channel<BarStorageItem> _channelBarStorage = Channel.CreateBounded<BarStorageItem>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
     public readonly Channel<BubbleStorageItem> _channelBubbleStorage = Channel.CreateBounded<BubbleStorageItem>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
@@ -267,6 +268,8 @@
         if (firstRender)
         {
             _ = LoopSendWorker();
+
+            _ = LoopProfitSendWorker();
 
             _ = LoopAddBar();
 
@@ -339,6 +342,25 @@
 
                     foreach (var data in datas)
                         _ = _channelToDo.Writer.WriteAsync(data);
+
+                    _lastUpdateBarReceived = DateTime.Now;
+
+                    sw.Stop();
+                });
+
+            await HubService!.RegisterEventListenerAsync(nameof(HubClientWorker.NotifyProfit),
+                (object? s, IEnumerable<Ticks2[]> datas) =>
+                {
+                    var sw = Stopwatch.StartNew();
+
+                    if (!EnableTimesAndTrades) return;
+
+
+                    //debug de velocidade e confirmação de dados
+                    _counter += datas.Count();
+
+                    foreach (var data in datas)
+                        _ = _channelProfitToDo.Writer.WriteAsync(data);
 
                     _lastUpdateBarReceived = DateTime.Now;
 
@@ -594,6 +616,56 @@
             }
         }
         catch (OperationCanceledException e )
+        {
+            // esperado ao cancelar
+            HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", 0, $"Error: {e.Message}");
+        }
+    }
+
+    private async Task LoopProfitSendWorker()
+    {
+        try
+        {
+            HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopProfitCache", 0, $"Starting RunLoopProfitCache at {DateTime.Now:HH:mm:ss.fff}");
+
+            while (await _channelProfitToDo.Reader.WaitToReadAsync(_cts.Token))
+            {
+                var sw = Stopwatch.StartNew();
+
+                //cria variavel para enviar os dados uma unica vez para o worker, evitando múltiplas chamadas ao método RunAsync e consequentemente melhorando a performance
+                List<Ticks2> ticks2s = new List<Ticks2>();
+                var dequeued = _channelProfitToDo.Reader.Count;
+
+                int count = 0;
+
+                while (_channelProfitToDo.Reader.TryRead(out Ticks2[]? _data) && count < 10)
+                {
+                    if (_data == null) continue;
+
+                    ticks2s.AddRange(_data);
+
+                    count++;
+                }
+
+                string allCompactData = string.Empty;
+                allCompactData += System.Text.Json.JsonSerializer.Serialize(ticks2s.ToArray());
+
+                if (MainService != null)
+                {
+                    var swTotal = Stopwatch.StartNew();
+
+                    await MainService.RunAsync(s => s.EnqueueProfit(allCompactData));
+
+                    swTotal.Stop();
+                    //HelperPerformanceConfig.Log(nameof(HubClient), "RunLoop.SendingToWebWorker()", swTotal.ElapsedMilliseconds, $"tick at {DateTime.Now:HH:mm:ss.fff}");
+                }
+
+                //await Task.Delay(10);
+                sw.Stop();
+                HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", sw.ElapsedMilliseconds, $"Executed work from channel: Dequeued {dequeued}");
+            }
+        }
+        catch (OperationCanceledException e)
         {
             // esperado ao cancelar
             HelperPerformanceConfig.Log(nameof(HubClient), "RunLoopCache", 0, $"Error: {e.Message}");

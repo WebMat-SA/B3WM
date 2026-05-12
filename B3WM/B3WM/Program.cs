@@ -34,8 +34,6 @@ namespace B3WM
             // Add services to the container.
             builder.Services.AddMudServices();
 
-            
-
             builder.Services.AddCors(options => 
             {   
                 options.AddDefaultPolicy(builder =>
@@ -67,6 +65,10 @@ namespace B3WM
                 opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
                     ["application/octet-stream"]);
             });
+
+            //serviços uteis
+            builder.Services.AddSingleton<TickChannelService>();
+            builder.Services.AddHostedService<TickProcessorService>();
 
             var app = builder.Build();
 

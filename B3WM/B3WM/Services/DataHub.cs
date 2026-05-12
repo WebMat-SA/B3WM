@@ -1,10 +1,18 @@
-﻿using B3WM.Shared.Interfaces;
+﻿using B3WM.Shared.Entity;
+using B3WM.Shared.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 
 namespace B3WM.Services
 {
     public class DataHub : Hub<IDataHubClient>
     {
+        private readonly TickChannelService _tickChannel;
+
+        public DataHub(TickChannelService tickChannel)
+        {
+            _tickChannel = tickChannel;
+        }
+
         public async Task SendDataTnT(byte[] data, string group)
         {
             if (data != null && data.Length > 0 && !string.IsNullOrEmpty(group))
@@ -36,5 +44,28 @@ namespace B3WM.Services
             await Groups.AddToGroupAsync(Context.ConnectionId, group);
         }
 
+
+        public async Task SendDataTntProfit(Ticks2[] data, string group)
+        {
+            if (data != null && data.Length > 0 && !string.IsNullOrEmpty(group))
+            {
+                // escreve lote inteiro no channel
+                await _tickChannel.Channel.Writer.WriteAsync(data);
+
+                await Clients.Group(group).ReceiveTnTProfit(data);
+
+                var sizeBytes = data.Length;
+                var sizeKb = sizeBytes / 1024.0;
+                var sizeMb = sizeKb / 1024.0;
+
+                ////Console.WriteLine($"Profit - {group} | Message size: {sizeBytes} bytes | {sizeKb:F2} KB | {sizeMb:F4} MB");
+                //foreach(Ticks2 tick in data)
+                //{
+                //    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(tick));
+                //}
+
+                //Console.WriteLine(data.Count());
+            }
+        }
     }
 }

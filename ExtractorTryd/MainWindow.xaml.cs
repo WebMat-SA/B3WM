@@ -25,8 +25,9 @@ namespace ExtractorTryd
     /// </summary>
     public partial class MainWindow : Window
     {
-        public string Symbol { get; set; } = "WINM26";
-        public string Url { get; set; } = "https://localhost:5001/api/datahub";
+        public string Symbol { get; set; } = "WINFUT";
+        public string TNTSymbol { get; set; } = "T&T0";
+        public string Url { get; set; } = "https://localhost:5002/api/datahub";
 
         BackgroundWorker workerTnT = new BackgroundWorker();
         CancellationTokenSource SourceTnT { get; set; }
@@ -92,7 +93,7 @@ namespace ExtractorTryd
             });
 
             Dispatcher.Invoke(() => StatusTextBlock.Text = $"{TimesAndTrades.hubConnection?.State.ToString()}");
-            Dispatcher.Invoke(() => StatusTextBlockData.Text = $"{ev.ProgressPercentage}");
+            Dispatcher.Invoke(() => StatusTextBlockData.Text = $"{ev.ProgressPercentage} Ticks/s");
         }
 
         private async void Clear_TnT_Click(object sender, RoutedEventArgs e)
@@ -110,5 +111,48 @@ namespace ExtractorTryd
             Book.Counter = 0;
         }
 
+        private void TimesAndTradesProfit_Click(object sender, RoutedEventArgs e)
+        {
+            if (!workerTnT.IsBusy || SourceTnT.IsCancellationRequested)
+            {
+
+                workerTnT = new BackgroundWorker();
+
+                workerTnT.WorkerReportsProgress = true;
+                workerTnT.WorkerSupportsCancellation = true;
+
+                workerTnT.DoWork += WorkProfit;
+                workerTnT.ProgressChanged += Print;
+
+                SourceTnT = new CancellationTokenSource();
+                TokenTnT = SourceTnT.Token;
+
+                workerTnT.RunWorkerAsync();
+            }
+            else
+            {
+                SourceTnT.Cancel();
+                workerTnT.CancelAsync();
+                //TimesAndTrades.StopConnection();
+            }
+            
+        }
+
+        private void WorkProfit(object obj, DoWorkEventArgs e)
+        {
+            while (true)
+            {
+                if (workerTnT.CancellationPending || SourceTnT.IsCancellationRequested)
+                {
+                    e.Cancel = true;
+                    break;
+                }
+
+                //TimesAndTradesRtd.Start(TokenTnT, workerTnT,new string[] { "WINFUT" }, "rtdtrading.rtdserver");
+                TimesAndTradesRtd.Start(Symbol, TNTSymbol, Url, workerTnT);
+
+                Task.Delay(1000).Wait();
+            }
+        }
     }
 }

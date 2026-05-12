@@ -1,4 +1,5 @@
-﻿using System;
+﻿using B3WM.Shared.Entity;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -12,5 +13,6 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveBook(byte[] data);
         Task ReceiveTnTSimple(byte[] data);
         Task ReceiveCsvLines(string data);
+        Task ReceiveTnTProfit(Ticks2[] data);
     }
 }

@@ -309,6 +309,20 @@ namespace B3WM.Client.Services
             sw.Stop();
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
         }
+        public void EnqueueProfit(string dataStringTicks2)
+        {
+            var sw = Stopwatch.StartNew();
+
+            // Parse único: todos os helpers e subscribers recebem a mesma lista
+            var ticks = System.Text.Json.JsonSerializer.Deserialize<Ticks2[]>(dataStringTicks2);
+
+            //envia para os services
+            if (ticks != null)
+                Enqueue(ticks);
+
+            sw.Stop();
+            HelperPerformanceConfig.Log(nameof(MainHelper), nameof(Enqueue), sw.ElapsedMilliseconds, $"Ticks received: {ticks.Length}");
+        }
 
         public void EnqueueFromCsv(string ticksString, DateTime Date, string Symbol)
         {

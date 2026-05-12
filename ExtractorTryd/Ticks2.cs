@@ -23,7 +23,7 @@ namespace B3WM.Shared.Entity
 
         public override string ToString()
         {
-            return $"{TrydID}\t {Time.ToString("HH:mm:ss")}\t\t {Value}\t {Volume}\t {Buyer}\t\t\t {Seller}\t\t\t {Starter}";
+            return $"{TrydID}\t {Time.ToString("HH:mm:ss:fff")}\t\t {Value}\t {Volume}\t {Buyer}\t\t\t {Seller}\t\t\t {Starter}";
         }
 
         public enum Agents
@@ -48,7 +48,7 @@ namespace B3WM.Shared.Entity
             Guide = 15,
             [Description("J. P. MORGAN CCVM S.A.")]
             [Display(Description = "J. P. MORGAN CCVM S.A.")]
-            JP = 16,
+            JP_Morgan = 16,
             [Description("BOCOM BBM CCVM S/A")]
             [Display(Description = "BOCOM BBM CCVM S/A")]
             BOCOM = 18,
@@ -125,7 +125,7 @@ namespace B3WM.Shared.Entity
 
             [Description("CM CAPITAL MARKETS CCTVM LTDA")]
             [Display(Description = "CM CAPITAL MARKETS CCTVM LTDA")]
-            Capital = 88,
+            CM_Capital = 88,
 
             [Description("NUINVEST – TITULO CV S.A.")]
             [Display(Description = "NUINVEST – TITULO CV S.A.")]
@@ -169,7 +169,7 @@ namespace B3WM.Shared.Entity
 
             [Description("TULLETT PREBON")]
             [Display(Description = "TULLETT PREBON")]
-            Tullet = 127,
+            Tullett = 127,
 
             [Description("PLANNER CV S.A")]
             [Display(Description = "PLANNER CV S.A")]
@@ -215,13 +215,13 @@ namespace B3WM.Shared.Entity
             [Display(Description = "SITA SCCVM S.A.")]
             Sita = 187,
 
-            [Description("ELLIOT WARREN.")]
-            [Display(Description = "ELLIOT WARREN.")]
-            Elliot_Warren = 190,
-
             [Description("SENSO CCVM S.A.")]
             [Display(Description = "SENSO CCVM S.A.")]
             Senso = 191,
+
+            [Description("ELLIOT WARREN.")]
+            [Display(Description = "ELLIOT WARREN.")]
+            Elliot_Warren = 190,
 
             [Description("AMARIL FRANKLIN CTV LTDA.")]
             [Display(Description = "AMARIL FRANKLIN CTV LTDA.")]
@@ -267,7 +267,7 @@ namespace B3WM.Shared.Entity
 
             [Description("ABN AMRO CLEARING CTVM LTDA")]
             [Display(Description = "ABN AMRO CLEARING CTVM LTDA")]
-            ABN_AMRO = 688,
+            ABN = 688,
 
             [Description("DILLON S.A. DTVM")]
             [Display(Description = "DILLON S.A. DTVM")]
@@ -283,7 +283,7 @@ namespace B3WM.Shared.Entity
 
             [Description("LEV DTVM LTDA")]
             [Display(Description = "LEV DTVM LTDA")]
-            LEV_DTVM = 746,
+            LEV = 746,
 
             [Description("BB BANCO DE INVESTIMENTO S/A")]
             [Display(Description = "BB BANCO DE INVESTIMENTO S/A")]
@@ -369,7 +369,7 @@ namespace B3WM.Shared.Entity
 
             [Description("TORO CTVM LTDA.")]
             [Display(Description = "TORO CTVM LTDA.")]
-            Toro = 4090,
+            Santander_Institucional = 4090,
 
             [Description("C6 CTVM LTDA")]
             [Display(Description = "C6 CTVM LTDA")]

@@ -1,4 +1,5 @@
-﻿using B3WM.Shared.Interfaces;
+﻿using B3WM.Shared.Entity;
+using B3WM.Shared.Interfaces;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.Text;
@@ -9,11 +10,13 @@ namespace B3WM.Client.Services
     public class HubClientWorker : IDisposable
     {
         public event EventHandler<IEnumerable<byte[]>>? Notify;
+        public event EventHandler<IEnumerable<Ticks2[]>>? NotifyProfit;
 
         public HubConnection? hubConnection;
         public PeriodicTimer? periodicTimer;
         private CancellationTokenSource cts = new CancellationTokenSource();
         public readonly Channel<byte[]> _channelToDo = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
+        public readonly Channel<Ticks2[]> _channelProfitToDo = Channel.CreateBounded<Ticks2[]>(new BoundedChannelOptions(100000) { SingleReader = true, SingleWriter = false });
 
         private async Task RunTimerAsync()
         {
@@ -39,6 +42,24 @@ namespace B3WM.Client.Services
 
                             Notify.Invoke(this, list);
                         }
+
+
+                        if (NotifyProfit != null)
+                        {
+                            var list = new List<Ticks2[]>();
+                            int count = 0;
+
+                            while (_channelProfitToDo.Reader.TryRead(out Ticks2[]? _data) && count < 10)
+                            {
+                                if (_data == null) continue;
+
+                                list.Add(_data);
+                                count++;
+                            }
+
+                            NotifyProfit.Invoke(this, list);
+                        }
+
                     }
                     catch (Exception ex)
                     {
@@ -79,6 +100,7 @@ namespace B3WM.Client.Services
                .Build();
 
                 hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnT), OnReceiveTNT);
+                hubConnection.On<Ticks2[]>(nameof(IDataHubClient.ReceiveTnTProfit), OnReceiveTNTProfit);
                 //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveBook), OnReceiveBook);
                 //hubConnection.On<byte[]>(nameof(IDataHubClient.ReceiveTnTSimple), OnReceiveTNTSimple);
 
@@ -106,6 +128,18 @@ namespace B3WM.Client.Services
 
             _ = _channelToDo.Writer.WriteAsync(data);
 
+        }
+
+        private void OnReceiveTNTProfit(Ticks2[] data)
+        {
+
+            if (data == null || data.Length == 0) return;
+
+            HelperPerformanceConfig.Log(nameof(HubClientWorker), "OnReceiveTNT - Profit",
+                    0,
+                    $"Received new data lenght: {data.Length}");
+
+            _ = _channelProfitToDo.Writer.WriteAsync(data);
         }
         public async void Dispose()
         {

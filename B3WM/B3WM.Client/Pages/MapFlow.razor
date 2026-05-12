@@ -23,7 +23,7 @@
     protected override string PersistenceKey => $"{nameof(MapFlow)}_{Symbol.Substring(0,3)}_state";
     protected override bool ContinuousSave => true;
 
-    public string Symbol { get; set; } = "WINM26";
+    public string Symbol { get; set; } = "WINFUT";
 
     [PersistState]
     public int TimeFrame { get; set; } = 2;
@@ -1289,6 +1289,8 @@
                     <MudSelectItem Value="@("WDOM26")">WDOM26</MudSelectItem>
                     <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>
                     <MudSelectItem Value="@("WINM26")">WINM26</MudSelectItem>
+                    <MudSelectItem Value="@("WINFUT")">WINFUT (Profit)</MudSelectItem>
+                    <MudSelectItem Value="@("WDOFUT")">WDOFUT (Profit)</MudSelectItem>
                 </MudSelect>
                 <B3WM.Client.Components.HubClient @ref=HubClient
                     OnCandleSeriesChange="NewBar" 
