@@ -2,8 +2,13 @@ using B3WM.Client.Pages;
 using B3WM.Client.Services;
 using B3WM.Components;
 using B3WM.Services;
+using B3WM.Services.Core;
+using B3WM.Shared.Entity;
+using B3WM.Shared.Interfaces;
+using B3WM.Shared.Model;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.SignalR;
 using MudBlazor.Services;
 
 namespace B3WM
@@ -66,7 +71,15 @@ namespace B3WM
                     ["application/octet-stream"]);
             });
 
+            //fazer aqui uma lista de timeframes que gostaria de gerar, e criar um serviço singleton para cada um, passando o timeframe como parametro - FUTURO
+
             //serviços uteis
+            builder.Services.AddSingleton(sp => new CandleService(2, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddSingleton(sp => new CandleService(5, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddSingleton(sp => new BubbleService(sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddSingleton(sp => new VolumeService(sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+
+            builder.Services.AddSingleton<OrchestratorService>();
             builder.Services.AddSingleton<TickChannelService>();
             builder.Services.AddHostedService<TickProcessorService>();
 

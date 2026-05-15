@@ -1,0 +1,47 @@
+﻿@using B3WM.Shared.Model
+@using Microsoft.AspNetCore.SignalR.Client;
+@inject NavigationManager Navigation
+
+@code {
+    [CascadingParameter] public required string Symbol { get; set; }
+
+    public HubConnection? hubConnection;
+
+    public List<string> textcontent = new List<string> { "Connecting to data hub..." };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            hubConnection = new HubConnectionBuilder()
+                   .WithUrl(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri)
+                   .WithAutomaticReconnect()
+                   .Build();
+
+            hubConnection.On<BarStorageItem>(nameof(IDataHubClient.ReceiveOnCloseBar), OnCloseBar);
+            //hubConnection.On<Ticks2[]>(nameof(IDataHubClient.ReceiveTnTProfit), OnReceiveTNTProfit);
+
+            await hubConnection.StartAsync();
+
+            if (!string.IsNullOrEmpty(Symbol)) await hubConnection.SendAsync("JoinGroup", Symbol);
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    private void OnCloseBar(BarStorageItem bar)
+    {
+        Console.WriteLine($"Received close bar: {bar}");
+        textcontent.Add($"Received close bar: {bar}\n");
+        StateHasChanged();
+    }
+}
+<MudIcon Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" />
+<br/>
+@foreach(var t in textcontent)
+{   
+    <span>
+        @t
+    </span>
+    <br/>
+}

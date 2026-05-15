@@ -8,6 +8,7 @@ using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
+using System.Timers;
 using System.Windows.Controls;
 
 namespace ExtractorTryd.Services
@@ -106,6 +107,8 @@ namespace ExtractorTryd.Services
 
             Console.WriteLine(
                 "RTD conectado.");
+
+            worker.ReportProgress(0, "RTD conectado.");
 
             Console.WriteLine();
 

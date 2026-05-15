@@ -145,6 +145,7 @@ namespace ExtractorTryd
                 if (workerTnT.CancellationPending || SourceTnT.IsCancellationRequested)
                 {
                     e.Cancel = true;
+                    TimesAndTradesRtd.Stop();
                     break;
                 }
 

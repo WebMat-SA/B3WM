@@ -1,0 +1,12 @@
+﻿@using B3WM.Client.Components
+@page "/newmapflow"
+
+@code {
+    public string Symbol { get; set; } = "WINFUT";
+}
+
+<h3>NewMapFlow</h3>
+
+<CascadingValue TValue="string" Value="Symbol">
+    <MainHubClient/>
+</CascadingValue>
