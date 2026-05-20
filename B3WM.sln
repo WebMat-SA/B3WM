@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B3WM.Client", "B3WM\B3WM.Cl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B3WM.Shared", "B3WM.Shared\B3WM.Shared.csproj", "{EF162280-8547-45A3-A7EC-511A13C5E79A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExtractorTryd", "ExtractorTryd\ExtractorTryd.csproj", "{DF43F075-BCA6-4968-B797-86C453D33B19}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExtractorRTD", "ExtractorRTD\ExtractorRTD.csproj", "{DF43F075-BCA6-4968-B797-86C453D33B19}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

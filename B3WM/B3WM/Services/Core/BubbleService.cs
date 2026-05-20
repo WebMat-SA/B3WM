@@ -1,14 +1,16 @@
 ﻿using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
-using B3WM.Shared.Model;
+using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
 using System.Diagnostics;
 using System.Threading.Channels;
 
 namespace B3WM.Services.Core
 {
-    public class BubbleService : IProcessor<Ticks2, BubbleStorageItem>
+    public class BubbleService : IProcessor<Ticks2, BubbleStorageItem>, ISymbolable
     {
+        public string Symbol { get; }
+
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
 
         private readonly Channel<Ticks2[]> _channel =
@@ -26,8 +28,11 @@ namespace B3WM.Services.Core
         private DateTime _lastTime = default;
         private string _lastSymbol = string.Empty;
 
-        public BubbleService(IHubContext<DataHub, IDataHubClient> hubContext = null)
+        private BubbleStorageItem _lastItem { get; set; }  = new BubbleStorageItem();
+
+        public BubbleService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext)
         {
+            Symbol = symbol;
             this.hubContext = hubContext;
 
             _ = Task.Run(ProcessLoop);
@@ -38,16 +43,17 @@ namespace B3WM.Services.Core
             _channel.Writer.TryWrite(ticks);
         }
 
-        public object GetSnapshot() => new
-        {
-            BubbleThreshold = _bubbleThreshold,
-            RunningSum = _runningSum,
-            RunningAgent = _runningAgent,
-            RunningStarter = _runningStarter,
-            LastPrice = _lastPrice,
-            LastTime = _lastTime,
-            LastSymbol = _lastSymbol,
-        };
+        public BubbleStorageItem GetSnapshot() => _lastItem;
+            //new
+            //{
+            //    BubbleThreshold = _bubbleThreshold,
+            //    RunningSum = _runningSum,
+            //    RunningAgent = _runningAgent,
+            //    RunningStarter = _runningStarter,
+            //    LastPrice = _lastPrice,
+            //    LastTime = _lastTime,
+            //    LastSymbol = _lastSymbol,
+            //};
 
         private async Task ProcessLoop()
         {
@@ -96,6 +102,7 @@ namespace B3WM.Services.Core
                     try
                     {
                         await OnUpdate.Invoke(bubble);
+                        _lastItem = bubble;
                     }
                     catch (Exception ex)
                     {

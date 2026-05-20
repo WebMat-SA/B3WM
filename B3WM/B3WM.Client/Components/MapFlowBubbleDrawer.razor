@@ -1,12 +1,15 @@
-﻿@using B3WM.Client.Model
-@using B3WM.Shared.Entity
+﻿@using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
+@using B3WM.Shared.Models
 @inject IJSRuntime JS
 @inherits Components.PersistentComponentBase
 
 @code {
-    protected override string PersistenceKey => $"{nameof(MapFlowBubbleDrawer)}_{Symbol.Substring(0, 3)}_state";
+    protected override string PersistenceKey => $"{nameof(MapFlowBubbleDrawer)}_{Symbol}_state";
     protected override bool ContinuousSave => true;
+
+    [CascadingParameter]
+    public string Symbol { get; set; }
 
     [Parameter]
     public bool Open { get; set; }
@@ -27,8 +30,6 @@
     public string SaleColor { get; set; }
 
     private string _Symbol;
-    [CascadingParameter]
-    public string Symbol { get; set; }
 
     /// <summary>
     /// abrir para pai atualizar forçado, para não pesar o rerender do grafico no mapflow
@@ -112,8 +113,8 @@
               var g=ctx.createGain();
 
               o.type='sawtooth';          // sine, square, triangle, sawtooth
-              o.frequency.value=850;  // tom
-              g.gain.value=0.08;      // volume (0–1)
+              o.frequency.value=950;  // tom
+              g.gain.value=0.06;      // volume (0–1)
 
               o.connect(g);
               g.connect(ctx.destination);
@@ -122,7 +123,7 @@
               setTimeout(function(){
                 o.stop();
                 ctx.close();
-              }, 750);                // duração maior
+              }, 400);                // duração maior
 
               return true;
             }catch(e){return false;}

@@ -1,11 +1,9 @@
 ﻿@using System.Diagnostics
 @using System.Linq
 @using B3WM.Client.Components
-@using B3WM.Client.Model
 @using B3WM.Client.Services
 @using B3WM.Shared.Entity
 @using B3WM.Shared.Extensions
-@using MudBlazor.Extensions
 @using MudBlazor.Extensions.Helper
 @using Nextended.Core.Contracts
 @using MudBlazor.Extensions.Components
@@ -20,7 +18,7 @@
 @page "/"
 
 @code {
-    protected override string PersistenceKey => $"{nameof(MapFlow)}_{Symbol.Substring(0,3)}_state";
+    protected override string PersistenceKey => $"{nameof(MapFlow)}_{Symbol}_state";
     protected override bool ContinuousSave => true;
 
     public string Symbol { get; set; } = "WINFUT";
@@ -141,14 +139,14 @@
     private HubClient? HubClient { get; set; }
     private MapFlowBubbleDrawer? MapFlowBubbleDrawer{ get; set; }
 
-    private List<BarStorageItem> BarStorageItem { get; set; } = new List<BarStorageItem>();
-    private BarStorageItem CurrentBar { get; set; } = new BarStorageItem();
+    private List<Shared.Models.BarStorageItem> BarStorageItem { get; set; } = new List<Shared.Models.BarStorageItem>();
+    private Shared.Models.BarStorageItem CurrentBar { get; set; } = new Shared.Models.BarStorageItem();
 
-    private List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
+    private List<Shared.Models.BubbleStorageItem> Bubbles { get; set; } = new List<Shared.Models.BubbleStorageItem>();
     private List<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
 
-    private List<StructureStorageItem> StructureStorageItem { get; set; } = new List<StructureStorageItem>();
-    private StructureVolumeStorageItem StructureVolumeStorageItem { get; set; } = new StructureVolumeStorageItem();
+    private List<Shared.Models.StructureStorageItem> StructureStorageItem { get; set; } = new List<Shared.Models.StructureStorageItem>();
+    private Shared.Models.StructureVolumeStorageItem StructureVolumeStorageItem { get; set; } = new Shared.Models.StructureVolumeStorageItem();
 
     // Structure change tracking and cache for rendered border series
     private int _structureDataVersion { get; set; }
@@ -265,7 +263,7 @@
     private double _cachedMaxDelta;
     private double _cachedVolumeMinPrice = double.PositiveInfinity;
     private double _cachedVolumeMaxPrice = double.NegativeInfinity;
-    private double _cachedPriceStep = 1.0;
+    private double _cachedPriceStep = 0.5;
     private List<object[]>? _cachedDeltaProfileData;
     private List<object[]>? _cachedVolumeProfileData;
 
@@ -286,15 +284,15 @@
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsCacheKey;
     private (int BarsCount, int CurrentBarVersion, int BarsDataVersion, bool IncludeCurrentBar) _lastBarsSnapshotCacheKey;
 
-    private List<BarStorageItem>? _cachedBarsSnapshot;
+    private List<Shared.Models.BarStorageItem>? _cachedBarsSnapshot;
     private List<string>? _cachedCategoryData;
     private List<object[]>? _cachedCandleValues;
 
     private int _lastVolumeDataVersion = -1;
 
-    private static BarStorageItem CloneBar(BarStorageItem bar)
+    private static Shared.Models.BarStorageItem CloneBar(Shared.Models.BarStorageItem bar)
     {
-        return new BarStorageItem
+        return new Shared.Models.BarStorageItem
         {
             Date = bar.Date,
             Open = bar.Open,
@@ -306,7 +304,7 @@
         };
     }
 
-    public Task NewBar(BarStorageItem bar)
+    public Task NewBar(Shared.Models.BarStorageItem bar)
     {
         var count = BarStorageItem.Count;
         var isFullRange = count > 0 && _dateRange.End >= count;
@@ -343,7 +341,7 @@
         return Task.CompletedTask;
     }
 
-    public Task NewCurrentBar(BarStorageItem bar)
+    public Task NewCurrentBar(Shared.Models.BarStorageItem bar)
     {
         var sw = Stopwatch.StartNew();
 
@@ -374,7 +372,7 @@
         return Task.CompletedTask;
     }
 
-    public Task NewBubble(BubbleStorageItem data)
+    public Task NewBubble(Shared.Models.BubbleStorageItem data)
     {
         var sw = Stopwatch.StartNew();
         if (_allBubbleAgents.Add((Ticks2.Agents)data.Agent) && !SelectedAgents.Contains((Ticks2.Agents)data.Agent))
@@ -389,7 +387,7 @@
         //await InvokeAsync(StateHasChanged);
     }
 
-    public Task VolumeUpdate(VolumeLevelStorageItem volumes)
+    public Task VolumeUpdate(Shared.Models.VolumeLevelStorageItem volumes)
     {
         try{
 
@@ -403,7 +401,7 @@
             if (isFullRange && ProfileAutoByPriceStructure)
             {
                 var startBar = BarStorageItem.ElementAtOrDefault(Math.Max(0, _dateRange.Start - 1));
-                _filteredVolumeLevels = VolumeLevelStorageItem.Operation(volumes.Volumes ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
+                _filteredVolumeLevels = Shared.Models.VolumeLevelStorageItem.Operation(volumes.Volumes ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
             }
@@ -418,7 +416,7 @@
         return Task.CompletedTask;
     }
 
-    public Task NewStructure(StructureStorageItem structure)
+    public Task NewStructure(Shared.Models.StructureStorageItem structure)
     {
         //se opção de calcular pontos de filtro estiver ativa, calcular quais são os start e end do applyvolume filter.
         if (ProfileAutoByPriceStructure)
@@ -429,7 +427,7 @@
         return Task.CompletedTask;
     }
 
-    public Task NewStructureVolume(StructureVolumeStorageItem structure)
+    public Task NewStructureVolume(Shared.Models.StructureVolumeStorageItem structure)
     {
         StructureVolumeStorageItem = structure;
         return Task.CompletedTask;
@@ -489,14 +487,14 @@
         var hasCurrentBarInBars = CurrentBar != null && BarStorageItem.Any(b => b.Date == CurrentBar.Date);
         var includeCurrentBar = !hasCurrentBarInBars && CurrentBar != null && CurrentBar.Date != default;
         var barsKey = (BarStorageItem.Count, _currentBarVersion, _barsDataVersion, includeCurrentBar);
-        List<BarStorageItem> bars;
+        List<Shared.Models.BarStorageItem> bars;
         if (_cachedBarsSnapshot != null && _lastBarsSnapshotCacheKey == barsKey)
         {
             bars = _cachedBarsSnapshot;
         }
         else
         {
-            bars = new List<BarStorageItem>(BarStorageItem.Count);
+            bars = new List<Shared.Models.BarStorageItem>(BarStorageItem.Count);
             foreach (var bar in BarStorageItem.Where(q=> q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime))
                 bars.Add(bar);
 
@@ -1084,8 +1082,8 @@
 
         var sw = Stopwatch.StartNew();
 
-        IMagicQuery<BarStorageItem> barsQuery = await _MagicDb.Query<BarStorageItem>();
-        IMagicQuery<BubbleStorageItem> bubbleQuery = await _MagicDb.Query<BubbleStorageItem>();
+        IMagicQuery<Client.Model.BarStorageItem> barsQuery = await _MagicDb.Query<Client.Model.BarStorageItem>();
+        IMagicQuery<Client.Model.BubbleStorageItem> bubbleQuery = await _MagicDb.Query<Client.Model.BubbleStorageItem>();
 
         // Buscar bubbles e candles do dia atual. Se não houver registros, buscar retroativamente
         // até um limite (30 dias) e carregar apenas o dia encontrado.
@@ -1093,9 +1091,9 @@
 
         for (int d = 0; d <= daysBackLimit; d++)
         {
-            var day = DateTime.Today.AddDays(-d);
+            var day = DateTime.Today.AddDays(-d*5);
             var dayStart = day.Date;
-            var dayEnd = dayStart.AddDays(1);
+            var dayEnd = dayStart.AddDays(5);
 
             var bubblesForDay = await bubbleQuery
                 .Where(q => q.Date >= dayStart && q.Date < dayEnd && q.Symbol == Symbol && q.Amount >= ThresholdBubble)
@@ -1109,10 +1107,29 @@
 
             if ((bubblesForDay != null && bubblesForDay.Count > 0) || (barsForDay != null && barsForDay.Count > 0))
             {
-                Bubbles = bubblesForDay ?? new List<BubbleStorageItem>();
+                Bubbles = bubblesForDay?.Select(b => new Shared.Models.BubbleStorageItem
+                {
+                    Date = b.Date,
+                    Symbol = b.Symbol,
+                    Amount = b.Amount,
+                    Price = b.Price,
+                    ActionType = b.ActionType,
+                    Agent = b.Agent
+                }).ToList() ?? new List<Shared.Models.BubbleStorageItem>();
                 _bubbleDataVersion++;
 
-                BarStorageItem = barsForDay.OrderBy(q => q.Date).ToList();
+                BarStorageItem = barsForDay?.Select(b => new Shared.Models.BarStorageItem
+                {
+                    Symbol = b.Symbol,
+                    Close = b.Close,
+                    Open = b.Open,
+                    High = b.High,
+                    Low = b.Low,
+                    Date = b.Date,
+                    TimeFrame = b.TimeFrame,
+                    Volume = b.Volume,
+                    VolumeLevel = b.VolumeLevel
+                }).OrderBy(q => q.Date).ToList();
                 _barsDataVersion++;
 
                 break; // carregou um dia válido -> sair do loop
@@ -1147,7 +1164,7 @@
             StructureRangeUpd = value;
             if (HubClient != null)
             {
-                var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new BarStorageItem()
+                var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new Shared.Models.BarStorageItem()
                 {
                     Date = e.Date,
                     Symbol = e.Symbol,
@@ -1161,7 +1178,7 @@
 
 
                 StructureStorageItem.Clear();
-                foreach (var item in list) StructureStorageItem.Add(item);
+                //foreach (var item in list) StructureStorageItem.Add(item);
 
 
                 _structureDataVersion++; // mark structures changed
@@ -1219,7 +1236,7 @@
             if (startBar != null && endBar != null && HubClient != null)
             {
                 //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(bars, startBar.Date, endBar.Date);
-                _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
+                _filteredVolumeLevels = Client.Model.VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
             }
@@ -1228,7 +1245,7 @@
         StateHasChanged();
     }
 
-    public void UpdateFilterVolumeByPriceStructure(StructureStorageItem structure)
+    public void UpdateFilterVolumeByPriceStructure(Shared.Models.StructureStorageItem structure)
     {
         var lastStructure = StructureStorageItem.LastOrDefault();
         if (lastStructure != null || structure != null)
@@ -1292,7 +1309,7 @@
                     <MudSelectItem Value="@("WINFUT")">WINFUT (Profit)</MudSelectItem>
                     <MudSelectItem Value="@("WDOFUT")">WDOFUT (Profit)</MudSelectItem>
                 </MudSelect>
-                <B3WM.Client.Components.HubClient @ref=HubClient
+                @* <B3WM.Client.Components.HubClient @ref=HubClient
                     OnCandleSeriesChange="NewBar" 
                     OnCurrentBarChange="NewCurrentBar"
                     OnVolumeUpdate="VolumeUpdate" 
@@ -1302,7 +1319,9 @@
                     MinDistanceStructureUpd="StructureRangeUpd"
                     OnNewStructure="NewStructure"
                     AlphaStructureVolume="StructureVolumeNormalizer"
-                    OnNewStructureVolume="NewStructureVolume"/>
+                    OnNewStructureVolume="NewStructureVolume"/> *@
+
+                <MainHubClient OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnVolumeUpdate="VolumeUpdate" OnNewBubble="NewBubble" />
             </MudStack>
         </CascadingValue>
     </MudStack>

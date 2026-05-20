@@ -17,7 +17,7 @@ namespace B3WM.Client.Services
         public event EventHandler<string>? Candle_OnQueueTime;
 
         private BubbleHelper _bubble = new();
-        public event EventHandler<BubbleStorageItem>? Bubble_OnNewBubble;
+        public event EventHandler<Shared.Models.BubbleStorageItem>? Bubble_OnNewBubble;
         public event EventHandler<int>? Bubble_OnQueueCount;
         public event EventHandler<string>? Bubble_OnQueueTime;
 
@@ -94,7 +94,7 @@ namespace B3WM.Client.Services
                 _ = _structureVolume.Enqueu(e);
         }
 
-        private void _bubble_OnNewBubble(object? sender, BubbleStorageItem e)
+        private void _bubble_OnNewBubble(object? sender, Shared.Models.BubbleStorageItem e)
         {
             HelperPerformanceConfig.Log(nameof(MainHelper), nameof(_bubble_OnNewBubble), 0, $"New bubble: {e}");
             if (Bubble_OnNewBubble != null) Bubble_OnNewBubble.Invoke(this, e);

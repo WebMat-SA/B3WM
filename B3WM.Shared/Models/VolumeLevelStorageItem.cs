@@ -1,7 +1,7 @@
 using B3WM.Shared.Entity;
 using System.Collections.Concurrent;
 
-namespace B3WM.Shared.Model
+namespace B3WM.Shared.Models
 {
     /// <summary>
     /// VolumeLevel para IndexedDB com data da barra. KeyPath "id" (case-sensitive).

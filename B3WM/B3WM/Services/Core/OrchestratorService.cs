@@ -1,26 +1,26 @@
 ﻿using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
 using B3WM.Shared.Interfaces;
-using B3WM.Shared.Model;
+using B3WM.Shared.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR;
 
 namespace B3WM.Services.Core
 {
-    public class OrchestratorService : IDisposable
+    public class OrchestratorService : IDisposable, ISymbolable
     {
         private readonly IEnumerable<CandleService> candleService;
         private readonly IEnumerable<BubbleService> bubbleService;
         private readonly IEnumerable<VolumeService> volumeService;
-        private readonly ILogger<OrchestratorService> logger;
+        public string Symbol { get; }
 
-        public OrchestratorService(IHubContext<DataHub, IDataHubClient> hubContext, ILogger<OrchestratorService> _logger ,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService)
+        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService)
         {
-            this.logger = _logger;
+            this.Symbol = Symbol;
 
-            this.candleService = candleService;
-            this.bubbleService = bubbleService;
-            this.volumeService = volumeService;
+            this.candleService = candleService.Where(q=>q.Symbol == Symbol);
+            this.bubbleService = bubbleService.Where(q=>q.Symbol == Symbol);
+            this.volumeService = volumeService.Where(q=>q.Symbol == Symbol);
 
             // subscribe using shared helper to avoid duplicated foreach loops
             SubscribeAll(this.candleService, OnCandleUpdate);
@@ -101,6 +101,11 @@ namespace B3WM.Services.Core
     {
         event Func<U, Task>? OnUpdate;
         void Enqueue(T[] items);
-        object GetSnapshot();
+        U GetSnapshot();
+    }
+
+    public interface ISymbolable
+    {
+        string Symbol { get; }
     }
 }

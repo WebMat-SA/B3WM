@@ -8,7 +8,7 @@ namespace B3WM.Client.Services
 {
     public class BubbleHelper : IDisposable
     {
-        public event EventHandler<BubbleStorageItem>? OnNewBubble;
+        public event EventHandler<Shared.Models.BubbleStorageItem>? OnNewBubble;
         public event EventHandler<int>? OnQueueCount;
         public event EventHandler<string>? OnQueueTime;
 
@@ -162,7 +162,7 @@ namespace B3WM.Client.Services
             {
                 try
                 {
-                    var bubble = new BubbleStorageItem
+                    var bubble = new Shared.Models.BubbleStorageItem
                     {
                         Price = _lastPrice,
                         Agent = (int)_runningAgent,

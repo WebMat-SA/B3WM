@@ -1,14 +1,15 @@
 ﻿using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
+using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
 
 namespace B3WM.Services
 {
     public class DataHub : Hub<IDataHubClient>
     {
-        private readonly TickChannelService _tickChannel;
+        private readonly IEnumerable<TickChannelService> _tickChannel;
 
-        public DataHub(TickChannelService tickChannel)
+        public DataHub(IEnumerable<TickChannelService> tickChannel)
         {
             _tickChannel = tickChannel;
         }
@@ -49,22 +50,18 @@ namespace B3WM.Services
         {
             if (data != null && data.Length > 0 && !string.IsNullOrEmpty(group))
             {
-                // escreve lote inteiro no channel
-                await _tickChannel.Channel.Writer.WriteAsync(data);
+                var tickChannel = _tickChannel.FirstOrDefault(tc => tc.Symbol == group);
 
-                await Clients.Group(group).ReceiveTnTProfit(data);
-
-                var sizeBytes = data.Length;
-                var sizeKb = sizeBytes / 1024.0;
-                var sizeMb = sizeKb / 1024.0;
-
-                ////Console.WriteLine($"Profit - {group} | Message size: {sizeBytes} bytes | {sizeKb:F2} KB | {sizeMb:F4} MB");
-                //foreach(Ticks2 tick in data)
-                //{
-                //    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(tick));
-                //}
-
-                //Console.WriteLine(data.Count());
+                if (tickChannel != null)
+                {
+                    // escreve lote inteiro no channel
+                    await tickChannel.Channel.Writer.WriteAsync(data);
+                }
+                else
+                {
+                    Console.WriteLine($"Channel for symbol '{group}' not found.");
+                }
+                //await Clients.Group(group).ReceiveTnTProfit(data);
             }
         }
     }

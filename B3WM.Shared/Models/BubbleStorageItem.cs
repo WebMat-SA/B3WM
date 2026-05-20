@@ -2,7 +2,7 @@ using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
 using static B3WM.Shared.Entity.Ticks2;
 
-namespace B3WM.Shared.Model
+namespace B3WM.Shared.Models
 {
     /// <summary>
     /// Bubbles para IndexedDB. KeyPath "id" (case-sensitive). Sem timeframe.

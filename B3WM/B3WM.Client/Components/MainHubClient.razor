@@ -1,47 +1,103 @@
-﻿@using B3WM.Shared.Model
+﻿@using System.Text.Json;
+@using B3WM.Shared.Models
 @using Microsoft.AspNetCore.SignalR.Client;
 @inject NavigationManager Navigation
 
 @code {
-    [CascadingParameter] public required string Symbol { get; set; }
-
     public HubConnection? hubConnection;
 
-    public List<string> textcontent = new List<string> { "Connecting to data hub..." };
+    [CascadingParameter] public required string Symbol { get; set; }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    [Parameter]
+    public Func<BarStorageItem, Task> OnCloseBar { get; set; } = default!;
+
+    [Parameter]
+    public Func<BubbleStorageItem, Task> OnNewBubble { get; set; } = default!;
+
+    [Parameter]
+    public Func<VolumeLevelStorageItem, Task> OnVolumeUpdate { get; set; } = default!;
+
+    [Parameter]
+    public Func<BarStorageItem, Task> OnCurrentBar { get; set; } = default!;
+
+    #region Not Done yet
+    // [Parameter]
+    // public Func<StructureStorageItem, Task> OnNewStructure { get; set; } = default!;
+
+    // [Parameter]
+    // public Func<StructureVolumeStorageItem, Task> OnNewStructureVolume { get; set; } = default!;
+    #endregion
+
+    public bool _started { get; set; } = false;
+
+    public async Task StartConnection()
     {
-        if (firstRender)
+        _started = true;
+        try
         {
             hubConnection = new HubConnectionBuilder()
-                   .WithUrl(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri)
-                   .WithAutomaticReconnect()
-                   .Build();
+                           .WithUrl(Navigation.ToAbsoluteUri("/api/datahub").AbsoluteUri)
+                           .WithAutomaticReconnect()
+                           .Build();
 
             hubConnection.On<BarStorageItem>(nameof(IDataHubClient.ReceiveOnCloseBar), OnCloseBar);
-            //hubConnection.On<Ticks2[]>(nameof(IDataHubClient.ReceiveTnTProfit), OnReceiveTNTProfit);
+            hubConnection.On<BubbleStorageItem>(nameof(IDataHubClient.ReceiveOnBubble), OnNewBubble);
+            hubConnection.On<ThrottlingData>(nameof(IDataHubClient.ReceiveThrottlingData), OnThrottlingData);
 
             await hubConnection.StartAsync();
 
             if (!string.IsNullOrEmpty(Symbol)) await hubConnection.SendAsync("JoinGroup", Symbol);
         }
-
-        await base.OnAfterRenderAsync(firstRender);
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error starting connection: {ex.Message}");
+        }
     }
 
-    private void OnCloseBar(BarStorageItem bar)
+    public async Task StopConnection()
     {
-        Console.WriteLine($"Received close bar: {bar}");
-        textcontent.Add($"Received close bar: {bar}\n");
-        StateHasChanged();
+        _started = false;
+        if (hubConnection is not null)
+        {
+            await hubConnection.StopAsync();
+        }
+    }
+
+    public async Task OnThrottlingData(ThrottlingData data)
+    {
+        try
+        {
+            BarStorageItem? currentBar = null;
+            VolumeLevelStorageItem? currentVolume = null;
+
+            //colocar aqui filtro de timeframe
+            currentBar = data.Candle.FirstOrDefault();
+            currentVolume = data.Volume;
+
+            if (currentBar != null && OnCurrentBar != null) await OnCurrentBar.Invoke(currentBar);
+            if (currentVolume != null && OnVolumeUpdate != null) await OnVolumeUpdate.Invoke(currentVolume);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error parsing throttling data: {ex.Message}");
+        }
     }
 }
-<MudIcon Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" />
-<br/>
+@if (!_started)
+{
+    <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartConnection" Disabled="_started" Color="@(_started ? Color.Default : Color.Warning)" />
+    </MudTooltip>
+}
+else
+{
+    <MudIcon Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" />
+}
+@* <br/>
 @foreach(var t in textcontent)
 {   
     <span>
         @t
     </span>
     <br/>
-}
+} *@

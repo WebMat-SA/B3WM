@@ -1,7 +1,7 @@
 ﻿using B3WM.Shared.Entity;
 using B3WM.Shared.Extensions;
 using B3WM.Shared.Interfaces;
-using B3WM.Shared.Model;
+using B3WM.Shared.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR;
 using MudBlazor.Charts;
@@ -10,8 +10,10 @@ using System.Threading.Channels;
 
 namespace B3WM.Services.Core
 {
-    public class CandleService : IProcessor<Ticks2, BarStorageItem>
+    public class CandleService : IProcessor<Ticks2, BarStorageItem>, ISymbolable
     {
+        public string Symbol { get; }
+
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
 
         private readonly Channel<Ticks2[]> _channel =
@@ -20,10 +22,12 @@ namespace B3WM.Services.Core
         public event Func<BarStorageItem, Task>? OnUpdate;
 
         public int TimeFrame { get; private set; }
+
         private BarStorageItem? _currentBar;
 
-        public CandleService(int _timeFrame, IHubContext<DataHub, IDataHubClient> hubContext)
+        public CandleService(string symbol, int _timeFrame, IHubContext<DataHub, IDataHubClient> hubContext)
         {
+            Symbol = symbol;
             TimeFrame = _timeFrame;
             this.hubContext = hubContext;
             _ = Task.Run(ProcessLoop);
@@ -35,12 +39,7 @@ namespace B3WM.Services.Core
             //await Task.CompletedTask;
         }
 
-        public object GetSnapshot() => new
-        {
-            TimeFrame = TimeFrame,
-            CurrentBar = CloneBar(_currentBar?? new BarStorageItem()),
-            //QueueCount = _channel.Reader.Count
-        };
+        public BarStorageItem GetSnapshot() =>  CloneBar(_currentBar?? new BarStorageItem());
 
         private async Task ProcessLoop()
         {

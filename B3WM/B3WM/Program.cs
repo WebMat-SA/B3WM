@@ -5,7 +5,8 @@ using B3WM.Services;
 using B3WM.Services.Core;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
-using B3WM.Shared.Model;
+using B3WM.Shared.Models;
+using B3WM.Shared.Models;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.SignalR;
@@ -74,14 +75,24 @@ namespace B3WM
             //fazer aqui uma lista de timeframes que gostaria de gerar, e criar um serviço singleton para cada um, passando o timeframe como parametro - FUTURO
 
             //serviços uteis
-            builder.Services.AddSingleton(sp => new CandleService(2, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
-            builder.Services.AddSingleton(sp => new CandleService(5, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
-            builder.Services.AddSingleton(sp => new BubbleService(sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
-            builder.Services.AddSingleton(sp => new VolumeService(sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddSingleton(sp => new CandleService(Defaults.WINFUT,2, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            //builder.Services.AddSingleton(sp => new CandleService(Defaults.WINFUT,5, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddSingleton(sp => new BubbleService(Defaults.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddSingleton(sp => new VolumeService(Defaults.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
 
-            builder.Services.AddSingleton<OrchestratorService>();
-            builder.Services.AddSingleton<TickChannelService>();
-            builder.Services.AddHostedService<TickProcessorService>();
+            builder.Services.AddSingleton<OrchestratorService>(sp => 
+                new OrchestratorService(
+                    Defaults.WINFUT, 
+                    sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(),
+                    sp.GetServices<CandleService>(),
+                    sp.GetServices<BubbleService>(),
+                    sp.GetServices<VolumeService>())
+                );
+            builder.Services.AddSingleton<TickChannelService>(sp => new TickChannelService(Defaults.WINFUT));
+            builder.Services.AddHostedService<TickProcessorService>(sp => new TickProcessorService(Defaults.WINFUT, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>()));
+            builder.Services.AddHostedService<ThrottlingService>(sp =>
+                new ThrottlingService(Defaults.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp)
+            );
 
             var app = builder.Build();
 

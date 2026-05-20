@@ -1,6 +1,6 @@
 ﻿using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
-using B3WM.Shared.Model;
+using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -8,8 +8,10 @@ using System.Threading.Channels;
 
 namespace B3WM.Services.Core
 {
-    public class VolumeService : IProcessor<Ticks2, VolumeLevelStorageItem>
+    public class VolumeService : IProcessor<Ticks2, VolumeLevelStorageItem>, ISymbolable
     {
+        public string Symbol { get; }
+
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
 
         private readonly Channel<Ticks2[]> _channel =
@@ -29,8 +31,9 @@ namespace B3WM.Services.Core
 
         private bool _intraDayAdded { get; set; } = false;
 
-        public VolumeService(IHubContext<DataHub, IDataHubClient> hubContext = null)
+        public VolumeService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext = null)
         {
+            Symbol = symbol;
             this.hubContext = hubContext;
             _ = Task.Run(ProcessLoop);
         }
@@ -43,7 +46,7 @@ namespace B3WM.Services.Core
         }
 
         // interface implementation
-        public object GetSnapshot() => BuildSnapshot();
+        public VolumeLevelStorageItem GetSnapshot() => BuildSnapshot();
 
         private VolumeLevelStorageItem BuildSnapshot()
         {

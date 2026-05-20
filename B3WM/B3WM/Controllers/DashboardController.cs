@@ -15,16 +15,12 @@ namespace B3WM.Controllers
     [Route("api/[controller]/[action]")]
     public class DashboardController : ControllerBase
     {
-        private readonly IHubContext<DataHub, IDataHubClient> hub;
         private readonly IEnumerable<CandleService> candleService;
-        private readonly ILogger<DashboardController> logger;
         private readonly IEnumerable<BubbleService> bubbleService;
         private readonly IEnumerable<VolumeService> volumeService;
 
-        public DashboardController(IHubContext<DataHub,IDataHubClient> hub, IEnumerable<CandleService> _candleService, ILogger<DashboardController> logger, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService)
+        public DashboardController(IEnumerable<CandleService> _candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService)
         {
-            this.hub = hub;
-            this.logger = logger;
             this.candleService = _candleService;
             this.bubbleService = bubbleService;
             this.volumeService = volumeService;

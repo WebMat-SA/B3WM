@@ -1,0 +1,502 @@
+﻿@using B3WM.Shared.Entity
+@using B3WM.Shared.Extensions
+@using B3WM.Shared.Models
+@using MudBlazor.Extensions.Components
+@using MudBlazor.Extensions.Helper
+@using Nextended.Core.Contracts
+@inherits Components.PersistentComponentBase
+
+@code {
+    protected override string PersistenceKey => $"{nameof(MapFlowConfigDrawer)}_{Symbol}_state";
+    protected override bool ContinuousSave => true;
+
+    [CascadingParameter]
+    public required string Symbol { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public bool openDrawer { get; set; }
+
+    [Parameter]
+    public bool openDrawerBubbleNotify { get; set; } = false;
+
+
+    [PersistState]
+    public int TimeFrame { get; set; } = 2;
+    [PersistState]
+    public int ThresholdBubble { get; set; } = 250;
+    [PersistState]
+    public double StructureRangeUpd { get; set; } = 500;
+    [PersistState]
+    public double StructureVolumeNormalizer { get; set; } = 0.2;
+
+    [PersistState]
+    public bool StructureVisible { get; set; } = true;
+    [PersistState]
+    public bool StructureAuxVisible { get; set; } = false;
+    [PersistState]
+    public double StructureOpacity { get; set; } = 0.3;
+
+    [PersistState]
+    public bool StructureVolumeVisible { get; set; } = true;
+    [PersistState]
+    public double StructureVolumeOpacity { get; set; } = 0.3;
+
+
+    [PersistState]
+    public double BubbleSize { get; set; } = 0.1;
+    [PersistState]
+    public double BubbleOpacity { get; set; } = 0.3;
+    [PersistState]
+    public bool BubbleVisible { get; set; } = true;
+
+    [PersistState]
+    public double ProfileSizeH { get; set; } = 1.015;
+    [PersistState]
+    public double ProfileSizeV { get; set; } = 0.65;
+    [PersistState]
+    public double ProfileOpacity { get; set; } = 0.3;
+    [PersistState]
+    public bool ProfileVisible { get; set; } = true;
+
+    [PersistState]
+    public bool ProfileAutoByPriceStructure { get; set; } = true;
+
+    [PersistState]
+    public double DeltaSizeH { get; set; } = 1.015;
+    [PersistState]
+    public double DeltaSizeV { get; set; } = 0.5;
+    [PersistState]
+    public double DeltaOpacity { get; set; } = 0.3;
+    [PersistState]
+    public bool DeltaVisible { get; set; } = true;
+
+    [PersistState]
+    public string ColorBuyer { get; set; } = "#9696b4";
+    [PersistState]
+    public string ColorSeller { get; set; } = "#b49696";
+
+    int __bubbleSizeRange_Max = 5000;
+    [PersistState]
+    public int _bubbleSizeRange_Max
+    {
+        get => __bubbleSizeRange_Max;
+        set
+        {
+            __bubbleSizeRange_Max = value;
+            _bubbleSizeRange = new MudExRange<int>(__bubbleSizeRange_Min, __bubbleSizeRange_Max);
+        }
+    }
+
+    int __bubbleSizeRange_Min = 0;
+    [PersistState]
+    public int _bubbleSizeRange_Min
+    {
+        get => __bubbleSizeRange_Min;
+        set
+        {
+            __bubbleSizeRange_Min = value;
+            _bubbleSizeRange = new MudExRange<int>(__bubbleSizeRange_Min, __bubbleSizeRange_Max);
+        }
+
+    }
+
+    public MudExRange<int> _bubbleSizeRange { get; set; } = new MudExRange<int>(0, 5000);
+
+    [PersistState]
+    public List<Ticks2.Agents?> SelectedAgents { get; set; } = new List<Ticks2.Agents?>();
+    [PersistState]
+    public HashSet<Ticks2.Agents?> _allBubbleAgents { get; set; } = new();
+    private List<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
+
+
+    public bool IsStructureUpdating { get; set; } = false;
+
+
+    public async Task SelectAllAgents()
+    {
+
+        if (SelectedAgents.Count == _allBubbleAgents.Count)
+            SelectedAgents = new List<Ticks2.Agents?>();
+        else
+            SelectedAgents = AllBubbleAgents.ToList();
+
+        await InvokeAsync(StateHasChanged);
+    }
+    private void ToggleAgent(Ticks2.Agents? agent)
+    {
+        var list = SelectedAgents.ToList();
+        if (list.Contains(agent))
+            list.Remove(agent);
+        else
+            list.Add(agent);
+        SelectedAgents = list;
+    }
+    private async void BubbleSizeRangeChange(IRange<int> range)
+    {
+        if (range.Start > ThresholdBubble)
+            range = new MudExRange<int>(ThresholdBubble, range.End);
+        else if (range.End < ThresholdBubble)
+            range = new MudExRange<int>(range.Start, ThresholdBubble);
+
+        __bubbleSizeRange_Max = range.End;
+        __bubbleSizeRange_Min = range.Start;
+
+        _bubbleSizeRange = new MudExRange<int>(range.Start, range.End);
+    }
+    public async Task StructureRangeChange(double value)
+    {
+        try
+        {
+            IsStructureUpdating = true;
+            StateHasChanged();
+
+            StructureRangeUpd = value;
+            // if (HubClient != null)
+            // {
+            //     var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new BarStorageItem()
+            //     {
+            //         Date = e.Date,
+            //         Symbol = e.Symbol,
+            //         TimeFrame = e.TimeFrame,
+            //         Close = e.Close,
+            //         Open = e.Open,
+            //         High = e.High,
+            //         Low = e.Low,
+            //         Volume = e.Volume
+            //     })));
+
+
+            //     StructureStorageItem.Clear();
+            //     foreach (var item in list) StructureStorageItem.Add(item);
+
+
+            //     _structureDataVersion++; // mark structures changed
+
+            //     //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem));
+
+            //     HelperPerformanceConfig.Log(nameof(MapFlow), nameof(StructureRangeChange), 0, $"Received structure data with {StructureStorageItem?.Count ?? 0} items");
+            // }
+        }
+        finally
+        {
+            IsStructureUpdating = false;
+            StateHasChanged();
+        }
+    }
+
+
+
+
+    private MapFlowBubbleDrawer? MapFlowBubbleDrawer { get; set; }
+    [Parameter] public List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
+}
+
+<MudDrawer Open="openDrawer" Height="86vh" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent" Class="p-1">
+    @* TIMEFRAME *@
+    <MudPaper Class="p-1" Outlined Elevation="0">
+        <MudList T="string" Dense>
+            <MudListItem Dense=true Icon="@Icons.Material.Filled.Timelapse" Text="TimeFrame (Min)" Expanded=false>
+                <NestedList>
+                    <MudListItem Dense="true">
+                        <MudToggleGroup T=int @bind-Value=TimeFrame Delimiters Size="Size.Small" Outlined>
+                            <MudToggleItem Value="1">1</MudToggleItem>
+                            <MudToggleItem Value="2">2</MudToggleItem>
+                            <MudToggleItem Value="5">5</MudToggleItem>
+                            <MudToggleItem Value="15">15</MudToggleItem>
+                            <MudToggleItem Value="30">30</MudToggleItem>
+                            <MudToggleItem Value="60">60</MudToggleItem>
+                        </MudToggleGroup>
+                    </MudListItem>
+                </NestedList>
+            </MudListItem>
+        </MudList>
+    </MudPaper>
+
+    @* VOLUMES (DELTAS E PROFILE) *@
+    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+        <MudList T="string" Dense>
+            <MudListItem Dense=true Icon="@Icons.Material.Filled.BarChart" Text="Volumes" Expanded=true>
+                <NestedList>
+
+                    @* Deltas *@
+                    <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
+                        <NestedList>
+                            <MudListItem Dense="true" OnClick="() => DeltaVisible = !DeltaVisible">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                    <MudSwitch @bind-Value="DeltaVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                </MudStack>
+                            </MudListItem>
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
+                                        <MudText Typo="Typo.caption">@DeltaSizeH.ToString("0.000")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@DeltaSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Size (Vertical)</MudText>
+                                        <MudText Typo="Typo.caption">@DeltaSizeV.ToString("0.000")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@DeltaOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Opacity</MudText>
+                                        <MudText Typo="Typo.caption">@DeltaOpacity.ToString("P2")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+                        </NestedList>
+                    </MudListItem>
+
+                    @* Profiles *@
+                    <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
+                        <NestedList>
+                            <MudListItem Dense="true" OnClick="() => ProfileVisible = !ProfileVisible">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                    <MudSwitch @bind-Value="ProfileVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                </MudStack>
+                            </MudListItem>
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeH" Step="0.005" Min=0.0 Max=3 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Size (Horizontal)</MudText>
+                                        <MudText Typo="Typo.caption">@ProfileSizeH.ToString("0.000")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@ProfileSizeV" Step="0.01" Min=0.0 Max=10.00 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Size (Vertical)</MudText>
+                                        <MudText Typo="Typo.caption">@ProfileSizeV.ToString("0.000")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@ProfileOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Opacity</MudText>
+                                        <MudText Typo="Typo.caption">@ProfileOpacity.ToString("P2")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+
+                            @* <MudListItem Dense="true" OnClick="() => ProfileAutoByPriceStructure = !ProfileAutoByPriceStructure">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Auto Update By Price Structure</MudText>
+                                    <MudSwitch @bind-Value="ProfileAutoByPriceStructure" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                </MudStack>
+                            </MudListItem> *@
+                        </NestedList>
+                    </MudListItem>
+                </NestedList>
+            </MudListItem>
+        </MudList>
+
+    </MudPaper>
+
+    @* STRUCTURES *@
+    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+        <MudList T="string" Dense>
+            <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Structure" Expanded=false>
+                <NestedList>
+                    <MudListItem Dense=true Icon="@Icons.Material.Filled.StackedLineChart" Text="Price" Expanded=false Disabled="IsStructureUpdating">
+                        <NestedList>
+                            @if (IsStructureUpdating)
+                            {
+                                <MudProgressLinear Indeterminate Color="MudBlazor.Color.Primary" Class="mb-1"></MudProgressLinear>
+                            }
+                            <MudListItem Dense="true" OnClick="() => { StructureVisible = !StructureVisible; if (!StructureVisible) StructureAuxVisible = false; }">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                    <MudSwitch @bind-Value="StructureVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                </MudStack>
+                            </MudListItem>
+                            <MudListItem Dense="true" OnClick="() => { StructureAuxVisible = !StructureAuxVisible; if (StructureAuxVisible) StructureVisible = true; }">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Show Aux on Chart</MudText>
+                                    <MudSwitch @bind-Value="StructureAuxVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                </MudStack>
+                            </MudListItem>
+                            <MudListItem Dense="true" Disabled="IsStructureUpdating">
+                                <MudSlider Size="Size.Small" @bind-Value="@StructureOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled" Disabled="IsStructureUpdating">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Opacity</MudText>
+                                        <MudText Typo="Typo.caption">@StructureOpacity.ToString("P2")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+                            <MudListItem Dense="true" Disabled="IsStructureUpdating">
+                                <MudSlider Size="Size.Small" Value="@StructureRangeUpd" ValueChanged="StructureRangeChange" Step="0.5" Min=0.0 Max=3000 T=@double Variant="Variant.Filled" Disabled="IsStructureUpdating">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Range to Update</MudText>
+                                        <MudText Typo="Typo.caption">@StructureRangeUpd.ToString("0.0")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+
+                        </NestedList>
+                    </MudListItem>
+
+                    <MudListItem Dense=true Icon="@Icons.Material.Filled.Polyline" Text="Volume" Expanded=false>
+                        <NestedList>
+                            <MudListItem Dense="true" OnClick="() => StructureVolumeVisible = !StructureVolumeVisible">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                    <MudSwitch @bind-Value="StructureVolumeVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                                </MudStack>
+                            </MudListItem>
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@StructureVolumeOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Opacity</MudText>
+                                        <MudText Typo="Typo.caption">@StructureVolumeOpacity.ToString("P2")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+                            <MudListItem Dense="true">
+                                <MudSlider Size="Size.Small" @bind-Value="@StructureVolumeNormalizer" Step="0.001" Min=0.0 Max=1 T=@double Variant="Variant.Filled">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Normalizer</MudText>
+                                        <MudText Typo="Typo.caption">@StructureVolumeNormalizer.ToString("0.000")</MudText>
+                                    </MudStack>
+                                </MudSlider>
+                            </MudListItem>
+                        </NestedList>
+                    </MudListItem>
+                </NestedList>
+            </MudListItem>
+        </MudList>
+    </MudPaper>
+
+    @* BUBBLES E AGENTS *@
+    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+        <MudList T="string" Dense>
+            <MudListItem Dense=true Icon="@Icons.Material.Filled.BubbleChart" Text="Bubbles" Expanded=true>
+                <NestedList>
+                    <MudListItem Dense="true" OnClick="() => BubbleVisible = !BubbleVisible">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.body2">Show on Chart</MudText>
+                            <MudSwitch @bind-Value="BubbleVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                        </MudStack>
+                    </MudListItem>
+                    <MudListItem Dense="true">
+                        <MudSlider Size="Size.Small" @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Amount</MudText>
+                                <MudText Typo="Typo.caption">@ThresholdBubble.ToString()</MudText>
+                            </MudStack>
+                        </MudSlider>
+                    </MudListItem>
+                    <MudListItem>
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.body2">Min/Max Size By Amount</MudText>
+                            <MudText Typo="Typo.caption">@($"{_bubbleSizeRange.Start} → {_bubbleSizeRange.End}")</MudText>
+                        </MudStack>
+                        <MudExRangeSlider T="int"
+                        Value="_bubbleSizeRange"
+                        ValueChanged="BubbleSizeRangeChange"
+                        AllowWholeRangeDrag
+                        Size="Size.Small"
+                        StepLength="25"
+                        SizeRange="@(new MudExRange<int>(0,5000))"
+                        Class="pr-5 mr-5"/>
+                    </MudListItem>
+                    <MudListItem Dense="true">
+                        <MudSlider Size="Size.Small" @bind-Value="@BubbleSize" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Size</MudText>
+                                <MudText Typo="Typo.caption">@BubbleSize.ToString("0.000")</MudText>
+                            </MudStack>
+                        </MudSlider>
+                    </MudListItem>
+                    <MudListItem Dense="true">
+                        <MudSlider Size="Size.Small" @bind-Value="@BubbleOpacity" Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.body2">Opacity</MudText>
+                                <MudText Typo="Typo.caption">@BubbleOpacity.ToString("P2")</MudText>
+                            </MudStack>
+                        </MudSlider>
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Palette" Text="Colors" Expanded=false>
+                        <NestedList>
+                            <MudListItem Dense="true">
+                                <MudStack Row Spacing="2" Justify="Justify.SpaceEvenly" AlignItems="AlignItems.Center">
+                                    <MudColorPicker 
+                                    Label="Buy" 
+                                    ColorPickerView="ColorPickerView.Spectrum"
+                                    ShowModeSwitch=false
+                                    ShowSliders=true
+                                    ShowAlpha=false
+                                    @bind-Text="ColorBuyer"/>
+                                    <div style="width:32px; height:32px; background-color: @(ColorBuyer);" class="mr-2"></div>
+                                </MudStack>
+                            </MudListItem>
+
+                            <MudListItem Dense="true">
+                                <MudStack Row Spacing="2" Justify="Justify.SpaceEvenly" AlignItems="AlignItems.Center">
+                                    <MudColorPicker Label="Sell"
+                                    ColorPickerView="ColorPickerView.Spectrum"
+                                    ShowModeSwitch=false
+                                    ShowSliders=true
+                                    ShowAlpha=false
+                                    @bind-Text="ColorSeller" />
+                                    <div style="width:32px; height:32px; background-color: @(ColorSeller);" class="mr-2"></div>
+                                </MudStack>
+                            </MudListItem>
+                        </NestedList>
+                    </MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.People" Text="Agents" Expanded=true>
+                        <NestedList>
+                            <MudList Dense T="Ticks2.Agents?" ReadOnly=true Class="ml-3">
+                                <MudListItem Dense=true >
+
+                                    <MudCheckBox Dense Value="@(SelectedAgents.Count == AllBubbleAgents.Count)" ValueChanged=" async (bool c) => await SelectAllAgents()">
+                                        <MudText Typo="Typo.caption">
+                                            Selecionar Todos
+                                        </MudText>
+                                    </MudCheckBox>     
+                                </MudListItem>
+
+                                <MudDivider />
+                                @foreach (Ticks2.Agents? agent in AllBubbleAgents.OrderBy(q => ((Ticks2.Agents?)q).Description()))
+                                {
+                                        if (agent is null) continue;
+
+                                        <MudListItem Dense="true">
+
+                                            <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)">
+                                                <MudText Typo="Typo.caption">
+                                                    @agent.Description() (@((int)agent))
+                                                </MudText>
+                                            </MudCheckBox>
+                                        </MudListItem>
+                                    }
+                                </MudList>
+                            </NestedList>
+                        </MudListItem>
+                    </NestedList>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+
+    </MudDrawer>
+<MapFlowBubbleDrawer Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="@SelectedAgents" ThresholdBubble="@ThresholdBubble" />
+<CascadingValue Value="this">
+    @ChildContent
+</CascadingValue>

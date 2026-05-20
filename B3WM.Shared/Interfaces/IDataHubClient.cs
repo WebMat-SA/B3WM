@@ -1,9 +1,11 @@
 ﻿using B3WM.Shared.Entity;
-using B3WM.Shared.Model;
+using B3WM.Shared.Models;
+using B3WM.Shared.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace B3WM.Shared.Interfaces
@@ -21,6 +23,6 @@ namespace B3WM.Shared.Interfaces
 
         Task ReceiveOnCloseBar(BarStorageItem data);
         Task ReceiveOnBubble(BubbleStorageItem data);
-        Task ReceiveOnVolume(VolumeLevelStorageItem data);
+        Task ReceiveThrottlingData(ThrottlingData data);
     }
 }
