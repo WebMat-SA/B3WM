@@ -40,6 +40,36 @@
                            .WithAutomaticReconnect()
                            .Build();
 
+            hubConnection.Reconnected += async connectionId =>
+            {
+                if (!string.IsNullOrEmpty(Symbol))
+                    await hubConnection.SendAsync("JoinGroup", Symbol);
+
+                await InvokeAsync(StateHasChanged);
+            };
+
+            hubConnection.Reconnecting += error =>
+            {
+                Console.WriteLine($"SignalR reconnecting: {error?.Message}");
+                return Task.CompletedTask;
+            };
+
+            hubConnection.Closed += async error =>
+            {
+                Console.WriteLine($"SignalR closed: {error?.Message}");
+
+                await Task.Delay(3000);
+
+                try
+                {
+                    await StartConnection();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"SignalR restart failed: {ex.Message}");
+                }
+            };
+
             hubConnection.On<BarStorageItem>(nameof(IDataHubClient.ReceiveOnCloseBar), OnCloseBar);
             hubConnection.On<BubbleStorageItem>(nameof(IDataHubClient.ReceiveOnBubble), OnNewBubble);
             hubConnection.On<ThrottlingData>(nameof(IDataHubClient.ReceiveThrottlingData), OnThrottlingData);
@@ -57,9 +87,12 @@
     public async Task StopConnection()
     {
         _started = false;
+
         if (hubConnection is not null)
         {
             await hubConnection.StopAsync();
+            await hubConnection.DisposeAsync();
+            hubConnection = null;
         }
     }
 
@@ -67,15 +100,18 @@
     {
         try
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             BarStorageItem? currentBar = null;
             VolumeLevelStorageItem? currentVolume = null;
 
-            //colocar aqui filtro de timeframe
+            //colocar aqui filtro de timeframe - TODO
             currentBar = data.Candle.FirstOrDefault();
             currentVolume = data.Volume;
 
             if (currentBar != null && OnCurrentBar != null) await OnCurrentBar.Invoke(currentBar);
             if (currentVolume != null && OnVolumeUpdate != null) await OnVolumeUpdate.Invoke(currentVolume);
+            sw.Stop();
+            //Console.WriteLine($"Throttling data processed in {sw.ElapsedMilliseconds} ms");
         }
         catch (Exception ex)
         {
@@ -91,7 +127,9 @@
 }
 else
 {
-    <MudIcon Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" />
+    <MudTooltip Text="@($"Connected")" Arrow Placement="Placement.Start">
+        <MudIconButton Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" OnClick="StopConnection" />
+    </MudTooltip>
 }
 @* <br/>
 @foreach(var t in textcontent)

@@ -10,7 +10,7 @@ using System.Threading.Channels;
 
 namespace B3WM.Services.Core
 {
-    public class CandleService : IProcessor<Ticks2, BarStorageItem>, ISymbolable
+    public class CandleService : DataKeeperService<List<BarStorageItem>>, IProcessor<Ticks2, BarStorageItem>, ISymbolable
     {
         public string Symbol { get; }
 
@@ -25,7 +25,10 @@ namespace B3WM.Services.Core
 
         private BarStorageItem? _currentBar;
 
-        public CandleService(string symbol, int _timeFrame, IHubContext<DataHub, IDataHubClient> hubContext)
+        public override string Path => $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{DateTime.Now:yyyy-MM-dd}.json";
+
+        public CandleService(string symbol, int _timeFrame, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+            : base(serviceProvider)
         {
             Symbol = symbol;
             TimeFrame = _timeFrame;
@@ -43,6 +46,9 @@ namespace B3WM.Services.Core
 
         private async Task ProcessLoop()
         {
+            // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.
+            await LoadAsync();
+
             await foreach (var ticks in _channel.Reader.ReadAllAsync())
             {
                 // processamento aqui
@@ -97,6 +103,12 @@ namespace B3WM.Services.Core
                 }
 
                 await OnUpdate.Invoke(barToEmit);
+
+                //adiciona na lista geral
+                DataKeep.Add(barToEmit);
+
+                //marca para salvar no arquivo
+                await SetDataAsync(DataKeep);
             }
         }
 

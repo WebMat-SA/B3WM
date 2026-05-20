@@ -222,7 +222,7 @@
                 <NestedList>
 
                     @* Deltas *@
-                    <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
+                    @* <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalLeft" Text="Deltas" Expanded=false>
                         <NestedList>
                             <MudListItem Dense="true" OnClick="() => DeltaVisible = !DeltaVisible">
                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
@@ -257,7 +257,7 @@
                                 </MudSlider>
                             </MudListItem>
                         </NestedList>
-                    </MudListItem>
+                    </MudListItem> *@
 
                     @* Profiles *@
                     <MudListItem Dense=true Icon="@Icons.Material.Filled.AlignHorizontalRight" Text="Profile" Expanded=false>
@@ -395,7 +395,7 @@
                         </MudStack>
                     </MudListItem>
                     <MudListItem Dense="true">
-                        <MudSlider Size="Size.Small" @bind-Value="@ThresholdBubble" Step="25" Min=0 Max=5000 T=@int Variant="Variant.Filled">
+                        <MudSlider Size="Size.Small" @bind-Value="@ThresholdBubble" Step="25" Min=Shared.Models.Defaults.ThresholdBubbleSize Max=5000 T=@int Variant="Variant.Filled">
                             <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
                                 <MudText Typo="Typo.body2">Amount</MudText>
                                 <MudText Typo="Typo.caption">@ThresholdBubble.ToString()</MudText>

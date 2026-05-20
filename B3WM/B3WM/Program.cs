@@ -74,8 +74,14 @@ namespace B3WM
 
             //fazer aqui uma lista de timeframes que gostaria de gerar, e criar um serviço singleton para cada um, passando o timeframe como parametro - FUTURO
 
+
+            //fazer aqui melhoria de inicialização de serviços
+            //Extensions.AddCandleService(builder.Services, builder.Configuration);
+
             //serviços uteis
-            builder.Services.AddSingleton(sp => new CandleService(Defaults.WINFUT,2, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
+            builder.Services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
+
+            builder.Services.AddSingleton(sp => new CandleService(Defaults.WINFUT,2, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
             //builder.Services.AddSingleton(sp => new CandleService(Defaults.WINFUT,5, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
             builder.Services.AddSingleton(sp => new BubbleService(Defaults.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
             builder.Services.AddSingleton(sp => new VolumeService(Defaults.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>()));
