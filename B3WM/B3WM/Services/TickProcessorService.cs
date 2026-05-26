@@ -2,7 +2,7 @@
 
 namespace B3WM.Services
 {
-    public class TickProcessorService : BackgroundService , ISymbolable
+    public class TickProcessorService : BackgroundService, ISymbolable
     {
         public string Symbol { get; }
         private readonly IEnumerable<TickChannelService> _tickChannel;
@@ -18,7 +18,7 @@ namespace B3WM.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            var orchestrator = _orchestratorService.FirstOrDefault(q=>q.Symbol == Symbol);
+            var orchestrator = _orchestratorService.FirstOrDefault(q => q.Symbol == Symbol);
             var tickChannel = _tickChannel.FirstOrDefault(q => q.Symbol == Symbol);
 
             if (orchestrator == null || tickChannel == null)
@@ -29,7 +29,14 @@ namespace B3WM.Services
 
             await foreach (var batch in tickChannel.Channel.Reader.ReadAllAsync(stoppingToken))
             {
-                await orchestrator.Enqueue(batch);
+                try
+                {
+                    await orchestrator.Enqueue(batch);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
             }
         }
     }

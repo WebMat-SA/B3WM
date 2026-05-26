@@ -1,6 +1,8 @@
-﻿namespace B3WM.Shared.Models
+﻿using B3WM.Shared.Interfaces;
+
+namespace B3WM.Shared.Models
 {
-    public class StructureStorageItem
+    public class StructureStorageItem : ICloneable
     {
         public DateTime Date { get; set; }
 
@@ -16,6 +18,12 @@
         public double UpAuxBorder { get; set; }
 
         public double DownAuxBorder { get; set; }
+
+        public object Clone()
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(this);
+            return System.Text.Json.JsonSerializer.Deserialize<StructureStorageItem>(json) ?? new StructureStorageItem();
+        }
 
         public override string ToString()
         {

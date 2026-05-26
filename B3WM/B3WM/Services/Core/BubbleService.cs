@@ -7,7 +7,7 @@ using System.Threading.Channels;
 
 namespace B3WM.Services.Core
 {
-    public class BubbleService : IProcessor<Ticks2, BubbleStorageItem>, ISymbolable
+    public class BubbleService : DataKeeperService<List<BubbleStorageItem>> ,IProcessor<Ticks2, BubbleStorageItem>, ISymbolable
     {
         public string Symbol { get; }
 
@@ -18,7 +18,7 @@ namespace B3WM.Services.Core
 
         public event Func<BubbleStorageItem, Task>? OnUpdate;
 
-        private int _bubbleThreshold = 350;
+        public int _bubbleThreshold { get; private set; }
 
         // running state
         private int _runningSum = 0;
@@ -30,9 +30,13 @@ namespace B3WM.Services.Core
 
         private BubbleStorageItem _lastItem { get; set; }  = new BubbleStorageItem();
 
-        public BubbleService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext)
+        public override string Path => $"{Symbol}_{nameof(BubbleService)}_{DateTime.Now:yyyy-MM-dd}.json";
+
+        public BubbleService(string symbol, int bubbleThreshold, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+            : base(serviceProvider)
         {
             Symbol = symbol;
+            _bubbleThreshold = bubbleThreshold;
             this.hubContext = hubContext;
 
             _ = Task.Run(ProcessLoop);
@@ -57,6 +61,9 @@ namespace B3WM.Services.Core
 
         private async Task ProcessLoop()
         {
+            // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.
+            await LoadAsync();
+
             await foreach (var ticks in _channel.Reader.ReadAllAsync())
             {
                 try
@@ -96,44 +103,14 @@ namespace B3WM.Services.Core
             // if no aggressor, finalize running sequence
             if (aggressor == null)
             {
-                var bubble = FinalizeRunning();
-                if (bubble != null && OnUpdate != null)
-                {
-                    try
-                    {
-                        await OnUpdate.Invoke(bubble);
-                        _lastItem = bubble;
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"OnUpdate error: {ex.Message}");
-                    }
-                }
+                await FinalizeRunning();
                 return;
             }
 
             // changed aggressor or side -> finalize previous
             if (_runningAgent != null && (_runningAgent != aggressor || _runningStarter != t.Starter))
             {
-                var bubble = FinalizeRunning();
-                if (bubble != null && OnUpdate != null)
-                {
-                    try
-                    {
-
-                        //ainda pensar sobre signalR e envio de dados para clientes
-                        if (hubContext != null)
-                        {
-                            await hubContext.Clients.Group(bubble.Symbol).ReceiveOnBubble(bubble);
-                        }
-
-                        await OnUpdate.Invoke(bubble);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"OnUpdate error: {ex.Message}");
-                    }
-                }
+                await FinalizeRunning();
             }
 
             // start new sequence if needed
@@ -150,7 +127,7 @@ namespace B3WM.Services.Core
             _lastTime = t.Time;
         }
 
-        private BubbleStorageItem? FinalizeRunning()
+        private async Task<BubbleStorageItem?> FinalizeRunning()
         {
             if (_runningAgent != null && _runningSum >= _bubbleThreshold)
             {
@@ -172,6 +149,20 @@ namespace B3WM.Services.Core
                     _runningSum = 0;
                     _runningAgent = null;
                     _runningStarter = null;
+
+                    //ainda pensar sobre signalR e envio de dados para clientes
+                    if (hubContext != null)
+                    {
+                        await hubContext.Clients.Group(bubble.Symbol).ReceiveOnBubble(bubble);
+                    }
+
+                    if (OnUpdate != null) await OnUpdate.Invoke(bubble);
+
+                    //adiciona na lista geral
+                    DataKeep.Add(bubble);
+
+                    //marca para salvar no arquivo
+                    await SetDataAsync(DataKeep);
 
                     return bubble;
                 }

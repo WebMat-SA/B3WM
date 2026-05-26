@@ -219,7 +219,9 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Extensions.cs" />
     <Compile Include="Services\Book.cs" />
+    <Compile Include="Services\TickLogItem.cs" />
     <Compile Include="Services\TimesAndTrades.cs" />
     <Compile Include="Services\TimesAndTradesRtd.cs" />
     <Compile Include="Services\TimesAndTradesSimple.cs" />

@@ -13,6 +13,7 @@ namespace B3WM.Services.Core
     public class CandleService : DataKeeperService<List<BarStorageItem>>, IProcessor<Ticks2, BarStorageItem>, ISymbolable
     {
         public string Symbol { get; }
+        public int TimeFrame { get; private set; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
 
@@ -21,7 +22,6 @@ namespace B3WM.Services.Core
 
         public event Func<BarStorageItem, Task>? OnUpdate;
 
-        public int TimeFrame { get; private set; }
 
         private BarStorageItem? _currentBar;
 
@@ -99,7 +99,7 @@ namespace B3WM.Services.Core
                 //ainda pensar sobre signalR e envio de dados para clientes
                 if (hubContext != null)
                 {
-                    await hubContext.Clients.Group(barToEmit.Symbol).ReceiveOnCloseBar(barToEmit);
+                    await hubContext.Clients.Group(Symbol).ReceiveOnCloseBar(barToEmit);
                 }
 
                 await OnUpdate.Invoke(barToEmit);

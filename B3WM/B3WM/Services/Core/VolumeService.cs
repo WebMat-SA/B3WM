@@ -5,14 +5,17 @@ using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading.Channels;
+using System.Timers;
 
 namespace B3WM.Services.Core
 {
-    public class VolumeService : IProcessor<Ticks2, VolumeLevelStorageItem>, ISymbolable
+    public class VolumeService : DataKeeperService<VolumeLevelStorageItem>, IProcessor<Ticks2, VolumeLevelStorageItem>, ISymbolable
     {
         public string Symbol { get; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
+
+        PeriodicTimer _timer { get; set; }
 
         private readonly Channel<Ticks2[]> _channel =
             Channel.CreateUnbounded<Ticks2[]>();
@@ -31,11 +34,16 @@ namespace B3WM.Services.Core
 
         private bool _intraDayAdded { get; set; } = false;
 
-        public VolumeService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext = null)
+        public override string Path => $"{Symbol}_{nameof(VolumeService)}_{DateTime.Now:yyyy-MM-dd}.json";
+
+        public VolumeService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+            :base(serviceProvider)
         {
             Symbol = symbol;
             this.hubContext = hubContext;
+            _timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
             _ = Task.Run(ProcessLoop);
+            _ = Task.Run(DataKeeperLoop);
         }
 
         public void Enqueue(Ticks2[] ticks)
@@ -192,6 +200,26 @@ namespace B3WM.Services.Core
                         return existing;
                     }
                 );
+            }
+        }
+
+        private async Task DataKeeperLoop()
+        {
+            // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.
+            await LoadAsync();
+
+            AddIntradayVolume(DataKeep.Volumes);
+
+            while (await _timer.WaitForNextTickAsync())
+            {
+                try
+                {
+                    await SetDataAsync(BuildSnapshot());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"VolumeService.DataKeeperLoop error: {ex.Message}");
+                }
             }
         }
     }

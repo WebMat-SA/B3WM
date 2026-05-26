@@ -2,7 +2,10 @@
 {
     public class DataKeeperService<T> : IDataKeeperService where T : notnull, new() 
     {
-        private readonly IServiceProvider _serviceProvider;
+        private static readonly SemaphoreSlim _fileSemaphore = new(1, 1);
+        public readonly IServiceProvider _serviceProvider;
+
+        public virtual string Path => throw new Exception("Implement Path on your service");
 
         public T DataKeep { get; set; } = default!;
 
@@ -11,7 +14,7 @@
             _serviceProvider = serviceProvider;
         }
 
-        public async Task<T> GetDataAsync()
+        public async Task<T> GetDataAsync(string? path = null)
         {
             //fazer aqui para que o DataKeeperBase seja injetado e resolvido pelo serviço de injeção de dependência
             var dataKeeper = _serviceProvider.CreateScope().ServiceProvider.GetService<DataKeeperBase>();
@@ -21,18 +24,29 @@
                 throw new InvalidOperationException($"Data keeper not found.");
             }
 
-            return await dataKeeper.ReadDataAsync<T>(Path);
+            return await dataKeeper.ReadDataAsync<T>(path ?? Path);
         }
 
         public async Task SetDataAsync(T data)
         {
-            var dataKeeper = _serviceProvider.CreateScope().ServiceProvider.GetService<DataKeeperBase>();
-            if (dataKeeper == null)
-            {
-                throw new InvalidOperationException($"Data keeper not found.");
-            }
+            using var scope = _serviceProvider.CreateScope();
 
-            await dataKeeper.WriteDataAsync(Path, data);
+            var dataKeeper = scope.ServiceProvider.GetService<DataKeeperBase>();
+
+            if (dataKeeper == null)
+                throw new InvalidOperationException("Data keeper not found.");
+
+            await _fileSemaphore.WaitAsync();
+
+            try
+            {
+                await dataKeeper.WriteDataAsync(Path, data);
+                DataKeep = data;
+            }
+            finally
+            {
+                _fileSemaphore.Release();
+            }
         }
 
         public async Task LoadAsync()
@@ -47,7 +61,6 @@
             }
         }
 
-        public virtual string Path => throw new Exception("Implement Path on your service");
     }
 
     public interface IDataKeeperService

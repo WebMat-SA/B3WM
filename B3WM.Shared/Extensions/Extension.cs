@@ -86,19 +86,29 @@ namespace B3WM.Shared.Extensions
             return list;
         }
 
-        public static DateTime GetCandleStart(this DateTime time, int TimeFrameMinutes)
+        public static DateTime GetCandleStart(this DateTime time, int timeFrameMinutes)
         {
-            try
-            {
+            if (timeFrameMinutes <= 0)
+                throw new ArgumentException("TimeFrame must be greater than zero.", nameof(timeFrameMinutes));
 
-                var minutes = (time.Minute / TimeFrameMinutes) * TimeFrameMinutes;
-                return new DateTime(time.Year, time.Month, time.Day, time.Hour, minutes, 0);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Error in GetCandleStart: " + e.Message);
-                return time;
-            }
+            var totalMinutes = (int)time.TimeOfDay.TotalMinutes;
+            var candleStartMinutes = (totalMinutes / timeFrameMinutes) * timeFrameMinutes;
+
+            return time.Date.AddMinutes(candleStartMinutes);
+        }
+
+        public static TimeSpan GetRemainingTimeCandle(this DateTime time, DateTime currentTime, int timeFrameMinutes)
+        {
+            if (timeFrameMinutes <= 0)
+                throw new ArgumentException("TimeFrame must be greater than zero.", nameof(timeFrameMinutes));
+
+            var totalMinutes = (int)time.TimeOfDay.TotalMinutes;
+            var candleStartMinutes = (totalMinutes / timeFrameMinutes) * timeFrameMinutes;
+            var candleEndMinutes = candleStartMinutes + timeFrameMinutes;
+
+            var candleEnd = time.Date.AddMinutes(candleEndMinutes);
+
+            return candleEnd - currentTime;
         }
     }
 

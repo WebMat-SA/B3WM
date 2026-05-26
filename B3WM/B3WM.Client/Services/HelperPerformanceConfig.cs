@@ -68,14 +68,8 @@ namespace B3WM.Client.Services
             nameof(DataHelper) => EnableDataHelper,
             nameof(StructureHelper) => EnableStructureHelper,
             nameof(StructureVolumeHelper) => EnableStructureVolumeHelper,
-            nameof(MapFlow) => EnableMapFlow,
-            nameof(HubClient) => EnableHubClient,
             nameof(MainHelper) => EnableMainHelper,
-            nameof(HubClientWorker) => EnableHubClientWorker,
             nameof(Magic) => EnableMagicDb,
-            nameof(Import) => EnableImport,
-            nameof(HubImport) => EnableImport,
-            nameof(ImportNode) => EnableImport,
             "Log" => true,
             _ => false
         };

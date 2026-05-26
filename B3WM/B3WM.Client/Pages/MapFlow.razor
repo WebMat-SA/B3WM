@@ -15,7 +15,7 @@
 @inject IMagicIndexedDb _MagicDb
 
 
-@page "/"
+@page "/oldmapFlow"
 
 @code {
     protected override string PersistenceKey => $"{nameof(MapFlow)}_{Symbol}_state";
@@ -136,7 +136,7 @@
     private bool _volumeFilterActive { get; set; }
     private List<VolumeLevel>? _filteredVolumeLevels { get; set; }
 
-    private HubClient? HubClient { get; set; }
+    // private HubClient? HubClient { get; set; }
     private MapFlowBubbleDrawer? MapFlowBubbleDrawer{ get; set; }
 
     private List<Shared.Models.BarStorageItem> BarStorageItem { get; set; } = new List<Shared.Models.BarStorageItem>();
@@ -348,7 +348,7 @@
         CurrentBar = bar;
         _currentBarVersion++;
 
-        _cachecount = HubClient?.GetCacheCount();
+        //_cachecount = HubClient?.GetCacheCount();
 
         if (_cachecount >= 2)
         {
@@ -1139,13 +1139,13 @@
         // Selecionar o último bar carregado (se houver) para enviar volume levels ao HubClient
         var _volumeLevels = BarStorageItem.Where(j=>j.VolumeLevel != null).OrderByDescending(q=>q.VolumeLevel.Count).ThenByDescending(e => e.Date).FirstOrDefault();
 
-        if (_volumeLevels != null && _volumeLevels.VolumeLevel != null && _volumeLevels.VolumeLevel.Any() && HubClient != null)
-        {
-            HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Seding volume levels to helper");
-            await HubClient.SetVolumeIntraday(_volumeLevels.VolumeLevel);
+        // if (_volumeLevels != null && _volumeLevels.VolumeLevel != null && _volumeLevels.VolumeLevel.Any() && HubClient != null)
+        // {
+        //     HelperPerformanceConfig.Log(nameof(Magic), nameof(LoadFromDB), sw.ElapsedMilliseconds, $"Seding volume levels to helper");
+        //     //await HubClient.SetVolumeIntraday(_volumeLevels.VolumeLevel);
 
-            _dateRange = new MudExRange<int>(0, BarStorageItem.Count);
-        }
+        //     _dateRange = new MudExRange<int>(0, BarStorageItem.Count);
+        // }
 
         await GenerateChart();
 
@@ -1162,31 +1162,31 @@
             StateHasChanged();
 
             StructureRangeUpd = value;
-            if (HubClient != null)
-            {
-                var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new Shared.Models.BarStorageItem()
-                {
-                    Date = e.Date,
-                    Symbol = e.Symbol,
-                    TimeFrame = e.TimeFrame,
-                    Close = e.Close,
-                    Open = e.Open,
-                    High = e.High,
-                    Low = e.Low,
-                    Volume = e.Volume
-                })));
+            // if (HubClient != null)
+            // {
+            //     var list = await HubClient.SetStructureMinDistance(value, System.Text.Json.JsonSerializer.Serialize(BarStorageItem.Select(e => new Shared.Models.BarStorageItem()
+            //     {
+            //         Date = e.Date,
+            //         Symbol = e.Symbol,
+            //         TimeFrame = e.TimeFrame,
+            //         Close = e.Close,
+            //         Open = e.Open,
+            //         High = e.High,
+            //         Low = e.Low,
+            //         Volume = e.Volume
+            //     })));
 
 
-                StructureStorageItem.Clear();
-                //foreach (var item in list) StructureStorageItem.Add(item);
+            //     StructureStorageItem.Clear();
+            //     //foreach (var item in list) StructureStorageItem.Add(item);
 
 
-                _structureDataVersion++; // mark structures changed
+            //     _structureDataVersion++; // mark structures changed
 
-                //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem));
+            //     //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(StructureStorageItem));
 
-                HelperPerformanceConfig.Log(nameof(MapFlow), nameof(StructureRangeChange), 0, $"Received structure data with {StructureStorageItem?.Count ?? 0} items");
-            }
+            //     HelperPerformanceConfig.Log(nameof(MapFlow), nameof(StructureRangeChange), 0, $"Received structure data with {StructureStorageItem?.Count ?? 0} items");
+            // }
         }
         finally
         {
@@ -1198,7 +1198,7 @@
     public async Task StructureAlphaChange(double value)
     {
         StructureVolumeNormalizer = value;
-        if (HubClient != null) await HubClient.SetStructureAlpha(value);
+        // if (HubClient != null) await HubClient.SetStructureAlpha(value);
     }
 
     private string IndexEndToDateStringBars(IRange<int> range)
@@ -1233,13 +1233,13 @@
 
             var startBar = bars.ElementAtOrDefault(Math.Max(0,newRange.Start - 1));
             var endBar = bars.ElementAtOrDefault(newRange.End);
-            if (startBar != null && endBar != null && HubClient != null)
-            {
-                //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(bars, startBar.Date, endBar.Date);
-                _filteredVolumeLevels = Client.Model.VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
-                _volumeFilterActive = true;
-                _filteredVolumeDataVersion++;
-            }
+            // if (startBar != null && endBar != null && HubClient != null)
+            // {
+            //     //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(bars, startBar.Date, endBar.Date);
+            //     _filteredVolumeLevels = Client.Model.VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
+            //     _volumeFilterActive = true;
+            //     _filteredVolumeDataVersion++;
+            // }
         }
 
         StateHasChanged();
@@ -1299,16 +1299,16 @@
                     <MudDatePicker @bind-Date="_loadFromDate" Label="Data" IconSize="Size.Small" AdornmentColor="MudBlazor.Color.Info" />
                 </MudTooltip>
                 <MudTooltip Text="Carregar barras, bubbles e volume do banco local">
-                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) Color="MudBlazor.Color.Surface" />
+                    @* <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Downloading" OnClick="LoadFromDB" Disabled=@(HubClient == null || !HubClient.WorkerOn || isDataLoadedFromDb) Color="MudBlazor.Color.Surface" /> *@
                 </MudTooltip>
-                <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChange" IconSize="Size.Small" FullWidth="false" Label="Symbol" AdornmentColor="MudBlazor.Color.Warning" AdornmentIcon="@Icons.Material.Filled.EuroSymbol" Dense="true" FitContent="true" Disabled="HubClient == null || HubClient._started">
+                @* <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChange" IconSize="Size.Small" FullWidth="false" Label="Symbol" AdornmentColor="MudBlazor.Color.Warning" AdornmentIcon="@Icons.Material.Filled.EuroSymbol" Dense="true" FitContent="true" Disabled="HubClient == null || HubClient._started">
                     <MudSelectItem Value="@("WDOK26")">WDOK26</MudSelectItem>
                     <MudSelectItem Value="@("WDOM26")">WDOM26</MudSelectItem>
                     <MudSelectItem Value="@("WINJ26")">WINJ26</MudSelectItem>
                     <MudSelectItem Value="@("WINM26")">WINM26</MudSelectItem>
                     <MudSelectItem Value="@("WINFUT")">WINFUT (Profit)</MudSelectItem>
                     <MudSelectItem Value="@("WDOFUT")">WDOFUT (Profit)</MudSelectItem>
-                </MudSelect>
+                </MudSelect> *@
                 @* <B3WM.Client.Components.HubClient @ref=HubClient
                     OnCandleSeriesChange="NewBar" 
                     OnCurrentBarChange="NewCurrentBar"

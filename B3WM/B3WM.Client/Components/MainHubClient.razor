@@ -8,6 +8,8 @@
 
     [CascadingParameter] public required string Symbol { get; set; }
 
+    [Parameter] public int? Timeframe { get; set; }
+
     [Parameter]
     public Func<BarStorageItem, Task> OnCloseBar { get; set; } = default!;
 
@@ -19,6 +21,12 @@
 
     [Parameter]
     public Func<BarStorageItem, Task> OnCurrentBar { get; set; } = default!;
+
+    [Parameter]
+    public Func<StructureStorageItem, Task> OnNewStructure { get; set; } = default!;
+
+    [Parameter]
+    public bool ShowButtons { get; set; } = false;
 
     #region Not Done yet
     // [Parameter]
@@ -72,6 +80,7 @@
 
             hubConnection.On<BarStorageItem>(nameof(IDataHubClient.ReceiveOnCloseBar), OnCloseBar);
             hubConnection.On<BubbleStorageItem>(nameof(IDataHubClient.ReceiveOnBubble), OnNewBubble);
+            hubConnection.On<StructureStorageItem>(nameof(IDataHubClient.ReceiveOnStructure), OnNewStructure);
             hubConnection.On<ThrottlingData>(nameof(IDataHubClient.ReceiveThrottlingData), OnThrottlingData);
 
             await hubConnection.StartAsync();
@@ -105,7 +114,7 @@
             VolumeLevelStorageItem? currentVolume = null;
 
             //colocar aqui filtro de timeframe - TODO
-            currentBar = data.Candle.FirstOrDefault();
+            if (Timeframe != null) currentBar = data.Candle.FirstOrDefault(c => c.TimeFrame == Timeframe);
             currentVolume = data.Volume;
 
             if (currentBar != null && OnCurrentBar != null) await OnCurrentBar.Invoke(currentBar);
@@ -119,23 +128,19 @@
         }
     }
 }
-@if (!_started)
+
+@if(ShowButtons)
 {
-    <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
-        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartConnection" Disabled="_started" Color="@(_started ? Color.Default : Color.Warning)" />
-    </MudTooltip>
+    @if (!_started)
+    {
+        <MudTooltip Text="@($"Play")" Arrow Placement="Placement.Start">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayArrow" OnClick="StartConnection" Disabled="_started" Color="@(_started ? Color.Default : Color.Warning)" />
+        </MudTooltip>
+    }
+    else
+    {
+        <MudTooltip Text="@($"Connected")" Arrow Placement="Placement.Start">
+            <MudIconButton Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" OnClick="StopConnection" />
+        </MudTooltip>
+    }
 }
-else
-{
-    <MudTooltip Text="@($"Connected")" Arrow Placement="Placement.Start">
-        <MudIconButton Icon="@Icons.Material.Filled.Wifi" Color="@(hubConnection?.State == HubConnectionState.Connected ? Color.Success : Color.Dark)" Size="Size.Small" OnClick="StopConnection" />
-    </MudTooltip>
-}
-@* <br/>
-@foreach(var t in textcontent)
-{   
-    <span>
-        @t
-    </span>
-    <br/>
-} *@

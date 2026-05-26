@@ -1,6 +1,5 @@
 ﻿using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
-using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
 
 namespace B3WM.Services.Core
@@ -10,18 +9,21 @@ namespace B3WM.Services.Core
         public string Symbol { get; }
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
         private readonly IServiceProvider _serviceProvider;
-        private readonly PeriodicTimer timer;
+        private readonly int timerMiliseconds;
 
         public ThrottlingService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, int intervalMilliseconds=250)
         {
             this.Symbol = symbol;
             this.hubContext = hubContext;
             this._serviceProvider = serviceProvider;
-            this.timer = new PeriodicTimer(TimeSpan.FromMilliseconds(intervalMilliseconds));
+            this.timerMiliseconds = intervalMilliseconds;
+            
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(timerMiliseconds));
+
             var candleServices = _serviceProvider.GetServices<CandleService>().Where(c => c.Symbol == Symbol);
             var volumeService = _serviceProvider.GetServices<VolumeService>().Where(v => v.Symbol == Symbol).FirstOrDefault();
 
@@ -31,7 +33,7 @@ namespace B3WM.Services.Core
                 {
                     var listCandleTimeFrame = new List<BarStorageItem>();
 
-                    foreach(var candleService in candleServices)
+                    foreach (var candleService in candleServices)
                     {
                         listCandleTimeFrame.Add(candleService.GetSnapshot());
                     }
