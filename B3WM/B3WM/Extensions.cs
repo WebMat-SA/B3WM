@@ -40,8 +40,12 @@ namespace B3WM
                     sp.GetServices<StructureService>())
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(Defaults.Symbols.WINFUT));
-            services.AddHostedSingleton<TickProcessorService>(sp => new TickProcessorService(Defaults.Symbols.WINFUT, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>()));
-            services.AddHostedSingleton(sp => new ThrottlingService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(),sp));
+
+            services.AddSingleton(sp => new TickProcessorService(Defaults.Symbols.WINFUT, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>()));
+            services.AddSingleton<IHostedService>(sp => sp.GetServices<TickProcessorService>().First(s => s.Symbol == Defaults.Symbols.WINFUT));
+
+            services.AddSingleton(sp => new ThrottlingService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
+            services.AddSingleton<IHostedService>(sp => sp.GetServices<ThrottlingService>().First(s => s.Symbol == Defaults.Symbols.WINFUT));
 
             return services;
         }
@@ -66,21 +70,12 @@ namespace B3WM
                     sp.GetServices<StructureService>())
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(Defaults.Symbols.WDOFUT));
-            services.AddHostedSingleton<TickProcessorService>(sp => new TickProcessorService(Defaults.Symbols.WDOFUT, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>()));
-            services.AddHostedSingleton(sp => new ThrottlingService(Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
+            
+            services.AddSingleton(sp => new TickProcessorService(Defaults.Symbols.WDOFUT, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>()));
+            services.AddSingleton<IHostedService>(sp => sp.GetServices<TickProcessorService>().First(s => s.Symbol == Defaults.Symbols.WDOFUT));
 
-            return services;
-        }
-
-        public static IServiceCollection AddHostedSingleton<TService>(
-            this IServiceCollection services,
-            Func<IServiceProvider, TService> factory)
-            where TService : class, IHostedService
-        {
-            services.AddSingleton(factory);
-
-            services.AddSingleton<IHostedService>(sp =>
-                sp.GetServices<TService>().Last());
+            services.AddSingleton(sp => new ThrottlingService( Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
+            services.AddSingleton<IHostedService>(sp => sp.GetServices<ThrottlingService>().First(s => s.Symbol == Defaults.Symbols.WDOFUT));
 
             return services;
         }

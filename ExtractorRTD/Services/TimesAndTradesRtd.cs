@@ -1,31 +1,19 @@
 using B3WM.Shared.Entity;
-using ExtractorTryd;
-using ExtractorTryd.Services;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Office.Interop.Excel;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ExtractorRTD.Services
 {
     public static class TimesAndTradesRtd
     {
-        public static string ConnectionState
-        {
-            get
-            {
-                if (hubConnection == null)
-                    return "Disconnected";
-
-                return hubConnection.State.ToString();
-            }
-        }
-
         private static IRtdServer _rtdServer;
 
         private static RtdUpdateEvent _callback;
@@ -35,68 +23,61 @@ namespace ExtractorRTD.Services
 
         public static string url { get; set; }
 
-        // HUB
         public static HubConnection hubConnection;
 
-        // MULTIPLOS T&Ts
-        private static readonly List<TntConfig> _tnts =
-            new List<TntConfig>();
+        public static string ConnectionState =>
+            hubConnection?.State.ToString() ?? "Disconnected";
 
-        // QUANTIDADE DE LINHAS
         private const int ROWS = 300;
 
-        // ID SEQUENCIAL
         private static int _nextTrydId = 1;
 
-        // RTD TOPIC ID
-        private static int _nextTopicId = 1;
-
-        // DEBUG
-        public static int Counter { get; set; }
+        public static int Counter { get; set; } = 0;
 
         public static DateTime BaseTime { get; set; }
 
-        // CACHE DOS VALORES RTD
-        private static readonly Dictionary<int, string> _values =
-            new Dictionary<int, string>();
+        // topicId -> value
+        private static readonly Dictionary<int, string>
+            _values =
+                new Dictionary<int, string>();
 
-        // MAPA:
-        // topicId -> "T&T0|DAT|0"
-        private static readonly Dictionary<int, string> _topicNames =
-            new Dictionary<int, string>();
+        // topicId -> topic info
+        private static readonly Dictionary<int, TopicInfo>
+            _topics =
+                new Dictionary<int, TopicInfo>();
 
-        // MAPA:
-        // "T&T0|DAT|0" -> topicId
-        private static readonly Dictionary<string, int> _topicIds =
-            new Dictionary<string, int>();
+        // trades pendentes para envio
+        private static readonly List<Ticks2>
+            _pendingTicks =
+                new List<Ticks2>();
 
-        // CONTROLE DUPLICIDADE
-        private static readonly Dictionary<string, int> _sentCount =
-            new Dictionary<string, int>();
+        // cache de contagem dos snapshots
+        private static readonly ConcurrentDictionary<
+            string,
+            TradeCounter>
+            _tradeCache =
+                new ConcurrentDictionary<
+                    string,
+                    TradeCounter>();
 
-        // FILA
-        private static readonly List<Ticks2> _pendingTicks =
-            new List<Ticks2>();
-
-        // EVENTO RTD
-        private static readonly AutoResetEvent _dataEvent =
-            new AutoResetEvent(false);
+        private static int _nextTopicId = 1;
 
         [STAThread]
         public static void Start(
-            List<TntConfig> tnts,
+            List<TntConfig> configs,
             string _url,
-            BackgroundWorker worker)
+            BackgroundWorker worker,
+            CancellationToken token)
         {
             url = _url;
 
-            _tnts.Clear();
-
-            _tnts.AddRange(tnts);
-
             worker.ReportProgress(
                 0,
-                "Starting RTD...");
+                new TickLogItem
+                {
+                    Symbol = "SYSTEM",
+                    Message = "RTD Started"
+                });
 
             string rtdProgId =
                 "rtdtrading.rtdserver";
@@ -106,8 +87,13 @@ namespace ExtractorRTD.Services
 
             if (rtdType == null)
             {
-                Console.WriteLine(
-                    "RTD não encontrado");
+                worker.ReportProgress(
+                    0,
+                    new TickLogItem
+                    {
+                        Symbol = "SYSTEM",
+                        Message = "RTD não encontrado"
+                    });
 
                 return;
             }
@@ -116,41 +102,54 @@ namespace ExtractorRTD.Services
                 (IRtdServer)
                 Activator.CreateInstance(rtdType);
 
-            Console.WriteLine(
-                "COM Pointer: " +
-                Marshal.GetIUnknownForObject(_rtdServer));
-
             _callback =
-                new RtdUpdateEvent(_dataEvent);
+                new RtdUpdateEvent();
 
             int result =
                 _rtdServer.ServerStart(_callback);
 
-            Console.WriteLine(
-                $"ServerStart: {result}");
+            worker.ReportProgress(
+                0,
+                new TickLogItem
+                {
+                    Symbol = "SYSTEM",
+                    Message = $"ServerStart: {result}"
+                });
 
             StartHubConnection();
 
-            RegisterTopics();
+            RegisterTopics(configs);
 
-            Console.WriteLine(
-                "RTD conectado.");
-
-            while (true)
+            while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    _dataEvent.WaitOne();
+                    if (_callback.newData)
+                    {
+                        ReadRtdBatch();
 
-                    ReadRtdBatch();
+                        ProcessTrades(
+                            configs,
+                            worker);
 
-                    ProcessTrades(worker);
+                        _callback.newData = false;
+                    }
+
+                    Thread.Sleep(1);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex);
+                    worker.ReportProgress(
+                        0,
+                        new TickLogItem
+                        {
+                            Symbol = "ERROR",
+                            Message = ex.ToString()
+                        });
                 }
             }
+
+            Stop();
         }
 
         public static void StartHubConnection()
@@ -163,59 +162,56 @@ namespace ExtractorRTD.Services
                         .GetAwaiter()
                         .GetResult();
                 }
-
-                hubConnection =
-                    new HubConnectionBuilder()
-                    .WithUrl(url)
-                    .WithAutomaticReconnect()
-                    .Build();
-
-                hubConnection.StartAsync()
-                    .GetAwaiter()
-                    .GetResult();
-
-                Console.WriteLine(
-                    "SignalR conectado.");
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine(ex);
             }
+
+            hubConnection =
+                new HubConnectionBuilder()
+                .WithUrl(url)
+                .WithAutomaticReconnect()
+                .Build();
+
+            hubConnection.StartAsync()
+                .GetAwaiter()
+                .GetResult();
         }
 
-        private static void RegisterTopics()
+        private static void RegisterTopics(
+            List<TntConfig> configs)
         {
-            foreach (var tnt in _tnts)
+            foreach (var config in configs)
             {
                 for (int row = 0; row < ROWS; row++)
                 {
                     RegisterTopic(
-                        tnt.TNTSymbol,
+                        config,
                         row,
                         "DAT");
 
                     RegisterTopic(
-                        tnt.TNTSymbol,
+                        config,
                         row,
                         "PRE");
 
                     RegisterTopic(
-                        tnt.TNTSymbol,
+                        config,
                         row,
                         "QUL");
 
                     RegisterTopic(
-                        tnt.TNTSymbol,
+                        config,
                         row,
                         "ACP");
 
                     RegisterTopic(
-                        tnt.TNTSymbol,
+                        config,
                         row,
                         "AVD");
 
                     RegisterTopic(
-                        tnt.TNTSymbol,
+                        config,
                         row,
                         "AGR");
                 }
@@ -223,7 +219,7 @@ namespace ExtractorRTD.Services
         }
 
         private static void RegisterTopic(
-            string tnt,
+            TntConfig config,
             int row,
             string field)
         {
@@ -233,7 +229,7 @@ namespace ExtractorRTD.Services
             Array topic =
                 new object[]
                 {
-                    tnt,
+                    config.TNTSymbol,
                     field,
                     row.ToString()
                 };
@@ -245,12 +241,15 @@ namespace ExtractorRTD.Services
                 ref topic,
                 ref newValue);
 
-            string key =
-                $"{tnt}|{field}|{row}";
-
-            _topicNames[topicId] = key;
-
-            _topicIds[key] = topicId;
+            _topics[topicId] =
+                new TopicInfo
+                {
+                    TopicId = topicId,
+                    Field = field,
+                    Row = row,
+                    TNTSymbol = config.TNTSymbol,
+                    Symbol = config.Symbol
+                };
         }
 
         private static void ReadRtdBatch()
@@ -258,7 +257,8 @@ namespace ExtractorRTD.Services
             int topicCount = 0;
 
             Array data =
-                _rtdServer.RefreshData(ref topicCount);
+                _rtdServer.RefreshData(
+                    ref topicCount);
 
             if (data == null)
                 return;
@@ -275,9 +275,7 @@ namespace ExtractorRTD.Services
                         data.GetValue(1, i);
 
                     string value =
-                        raw == null
-                            ? ""
-                            : raw.ToString();
+                        raw?.ToString() ?? "";
 
                     _values[topicId] = value;
                 }
@@ -285,14 +283,179 @@ namespace ExtractorRTD.Services
         }
 
         private static void ProcessTrades(
+            List<TntConfig> configs,
             BackgroundWorker worker)
         {
             lock (_lock)
             {
-                foreach (var config in _tnts)
+                var ticks =
+                    new List<Ticks2>();
+
+                foreach (var config in configs)
                 {
-                    ProcessTnt(config, worker);
+                    for (int row = 0; row < ROWS; row++)
+                    {
+                        string dat =
+                            GetValue(
+                                config.TNTSymbol,
+                                row,
+                                "DAT");
+
+                        string pre =
+                            GetValue(
+                                config.TNTSymbol,
+                                row,
+                                "PRE");
+
+                        string qul =
+                            GetValue(
+                                config.TNTSymbol,
+                                row,
+                                "QUL");
+
+                        string acp =
+                            GetValue(
+                                config.TNTSymbol,
+                                row,
+                                "ACP");
+
+                        string avd =
+                            GetValue(
+                                config.TNTSymbol,
+                                row,
+                                "AVD");
+
+                        string agr =
+                            GetValue(
+                                config.TNTSymbol,
+                                row,
+                                "AGR");
+
+                        if (!IsValidTrade(
+                            dat,
+                            pre,
+                            qul))
+                        {
+                            continue;
+                        }
+
+                        if (!DateTime.TryParse(
+                            dat,
+                            out DateTime time))
+                        {
+                            continue;
+                        }
+
+                        if (!TryParsePrice(
+                            pre,
+                            out double price))
+                        {
+                            continue;
+                        }
+
+                        if (!int.TryParse(
+                            qul,
+                            out int qty))
+                        {
+                            continue;
+                        }
+
+                        ticks.Add(
+                            new Ticks2
+                            {
+                                Time = time,
+                                Value = price,
+                                Volume = qty,
+                                Buyer = ParseAgent(acp),
+                                Seller = ParseAgent(avd),
+                                Starter = ParseAction(agr),
+                                Symbol = config.Symbol
+                            });
+                    }
                 }
+
+                ticks =
+                    ticks
+                    .OrderBy(x => x.Time)
+                    .ToList();
+
+                var grouped =
+                    ticks
+                    .GroupBy(BuildTradeKey)
+                    .ToDictionary(
+                        x => x.Key,
+                        x => x.ToList());
+
+                foreach (var kv in grouped)
+                {
+                    string key =
+                        kv.Key;
+
+                    List<Ticks2> sameTrades =
+                        kv.Value;
+
+                    int currentCount =
+                        sameTrades.Count;
+
+                    int alreadySent =
+                        0;
+
+                    if (_tradeCache.TryGetValue(
+                        key,
+                        out TradeCounter counter))
+                    {
+                        alreadySent =
+                            counter.Count;
+                    }
+
+                    int missing =
+                        currentCount - alreadySent;
+
+                    if (missing <= 0)
+                    {
+                        if (_tradeCache.ContainsKey(key))
+                        {
+                            _tradeCache[key]
+                                .LastSeen =
+                                    DateTime.UtcNow;
+                        }
+
+                        continue;
+                    }
+
+                    for (int i = 0; i < missing; i++)
+                    {
+                        var tick =
+                            sameTrades[i];
+
+                        tick.TrydID =
+                            _nextTrydId++;
+
+                        Counter++;
+
+                        worker.ReportProgress(
+                            GetAverageTicks(
+                                Counter,
+                                tick.Time),
+                            new TickLogItem
+                            {
+                                Symbol = tick.Symbol,
+                                Message = tick.ToString(),
+                                Tick = tick
+                            });
+
+                        _pendingTicks.Add(tick);
+                    }
+
+                    _tradeCache[key] =
+                        new TradeCounter
+                        {
+                            Count = currentCount,
+                            LastSeen = DateTime.UtcNow
+                        };
+                }
+
+                CleanupTradeCache();
 
                 if (_pendingTicks.Count > 0)
                 {
@@ -303,141 +466,7 @@ namespace ExtractorRTD.Services
             }
         }
 
-        private static void ProcessTnt(
-            TntConfig config,
-            BackgroundWorker worker)
-        {
-            var ticks =
-                new List<Ticks2>();
-
-            for (int row = 0; row < ROWS; row++)
-            {
-                string dat =
-                    GetValue(
-                        config.TNTSymbol,
-                        row,
-                        "DAT");
-
-                string pre =
-                    GetValue(
-                        config.TNTSymbol,
-                        row,
-                        "PRE");
-
-                string qul =
-                    GetValue(
-                        config.TNTSymbol,
-                        row,
-                        "QUL");
-
-                string acp =
-                    GetValue(
-                        config.TNTSymbol,
-                        row,
-                        "ACP");
-
-                string avd =
-                    GetValue(
-                        config.TNTSymbol,
-                        row,
-                        "AVD");
-
-                string agr =
-                    GetValue(
-                        config.TNTSymbol,
-                        row,
-                        "AGR");
-
-                if (!IsValidTrade(
-                    dat,
-                    pre,
-                    qul))
-                {
-                    continue;
-                }
-
-                if (!DateTime.TryParse(
-                    dat,
-                    out DateTime time))
-                {
-                    continue;
-                }
-
-                if (!Extensions.TryParsePrice(
-                    pre,
-                    out double price))
-                {
-                    continue;
-                }
-
-                if (!int.TryParse(
-                    qul,
-                    out int qty))
-                {
-                    continue;
-                }
-
-                ticks.Add(
-                    new Ticks2
-                    {
-                        Time = time,
-                        Value = price,
-                        Volume = qty,
-                        Buyer = ParseAgent(acp),
-                        Seller = ParseAgent(avd),
-                        Starter = ParseAction(agr),
-                        Symbol = config.Symbol
-                    });
-            }
-
-            ticks =
-                ticks
-                .OrderBy(x => x.Time)
-                .ToList();
-
-            foreach (var tick in ticks)
-            {
-                string key =
-                    config.TNTSymbol + "|" +
-                    tick.Time.ToString("HH:mm:ss.fff") + "|" +
-                    tick.Value + "|" +
-                    tick.Volume + "|" +
-                    tick.Buyer + "|" +
-                    tick.Seller + "|" +
-                    tick.Starter;
-
-                int count = 0;
-
-                if (_sentCount.ContainsKey(key))
-                {
-                    count =
-                        _sentCount[key];
-                }
-
-                _sentCount[key] =
-                    count + 1;
-
-                tick.TrydID =
-                    _nextTrydId++;
-
-                Counter++;
-
-                worker.ReportProgress(
-                    GetAverageTicks(
-                        Counter,
-                        tick.Time),
-                    new TickLogItem
-                    {
-                        Symbol = tick.Symbol,
-                        Message = tick.ToString(),
-                        Tick = tick
-                    });
-
-                _pendingTicks.Add(tick);
-            }
-        }
-
-        private static async System.Threading.Tasks.Task SendTicks()
+        private static async Task SendTicks()
         {
             try
             {
@@ -451,6 +480,7 @@ namespace ExtractorRTD.Services
                     StartHubConnection();
                 }
 
+                // AGRUPA POR ATIVO
                 var grouped =
                     _pendingTicks
                     .GroupBy(x => x.Symbol)
@@ -458,19 +488,16 @@ namespace ExtractorRTD.Services
 
                 foreach (var group in grouped)
                 {
-                    string symbol =
-                        group.Key;
-
                     var arr =
                         group.ToArray();
+
+                    string symbol =
+                        group.Key;
 
                     await hubConnection.SendAsync(
                         "SendDataTntProfit",
                         arr,
                         symbol);
-
-                    Console.WriteLine(
-                        $"Sent {arr.Length} ticks [{symbol}]");
                 }
 
                 _pendingTicks.Clear();
@@ -481,27 +508,34 @@ namespace ExtractorRTD.Services
             }
         }
 
-        private static string GetValue(
-            string tnt,
-            int row,
-            string field)
+        private static void CleanupTradeCache()
         {
-            string key =
-                $"{tnt}|{field}|{row}";
+            DateTime now =
+                DateTime.UtcNow;
 
-            if (_topicIds.TryGetValue(
-                key,
-                out int topicId))
+            foreach (var kv in _tradeCache)
             {
-                if (_values.TryGetValue(
-                    topicId,
-                    out string value))
+                if ((now - kv.Value.LastSeen)
+                    .TotalSeconds > 5)
                 {
-                    return value;
+                    _tradeCache.TryRemove(
+                        kv.Key,
+                        out _);
                 }
             }
+        }
 
-            return "";
+        private static string BuildTradeKey(
+            Ticks2 tick)
+        {
+            return
+                $"{tick.Symbol}|" +
+                $"{tick.Time:HH:mm:ss.fff}|" +
+                $"{tick.Value}|" +
+                $"{tick.Volume}|" +
+                $"{tick.Buyer}|" +
+                $"{tick.Seller}|" +
+                $"{tick.Starter}";
         }
 
         private static bool IsValidTrade(
@@ -518,13 +552,8 @@ namespace ExtractorRTD.Services
             if (string.IsNullOrWhiteSpace(qul))
                 return false;
 
-            if (!DateTime.TryParse(dat, out _))
-                return false;
-
-            if (!double.TryParse(
+            if (!TryParsePrice(
                 pre,
-                NumberStyles.Any,
-                CultureInfo.InvariantCulture,
                 out double price))
             {
                 return false;
@@ -537,9 +566,69 @@ namespace ExtractorRTD.Services
                 return false;
             }
 
-            return
-                price > 0 &&
-                qty > 0;
+            if (price <= 0)
+                return false;
+
+            if (qty <= 0)
+                return false;
+
+            return true;
+        }
+
+        private static bool TryParsePrice(
+            string value,
+            out double result)
+        {
+            result = 0;
+
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            value = value.Trim();
+
+            if (double.TryParse(
+                value,
+                NumberStyles.Any,
+                new CultureInfo("pt-BR"),
+                out result))
+            {
+                return true;
+            }
+
+            if (double.TryParse(
+                value,
+                NumberStyles.Any,
+                CultureInfo.InvariantCulture,
+                out result))
+            {
+                return true;
+            }
+
+            value =
+                value.Replace(".", ",");
+
+            if (double.TryParse(
+                value,
+                NumberStyles.Any,
+                new CultureInfo("pt-BR"),
+                out result))
+            {
+                return true;
+            }
+
+            value =
+                value.Replace(",", ".");
+
+            if (double.TryParse(
+                value,
+                NumberStyles.Any,
+                CultureInfo.InvariantCulture,
+                out result))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static Ticks2.Agents ParseAgent(
@@ -560,7 +649,8 @@ namespace ExtractorRTD.Services
                     value,
                     StringComparison.OrdinalIgnoreCase))
                 {
-                    return (Ticks2.Agents)
+                    return
+                        (Ticks2.Agents)
                         Enum.Parse(
                             typeof(Ticks2.Agents),
                             name);
@@ -599,18 +689,45 @@ namespace ExtractorRTD.Services
             return 0;
         }
 
+        private static string GetValue(
+            string tnt,
+            int row,
+            string field)
+        {
+            foreach (var kv in _topics)
+            {
+                var topic =
+                    kv.Value;
+
+                if (topic.TNTSymbol == tnt &&
+                    topic.Row == row &&
+                    topic.Field == field)
+                {
+                    if (_values.TryGetValue(
+                        topic.TopicId,
+                        out string value))
+                    {
+                        return value;
+                    }
+                }
+            }
+
+            return "";
+        }
+
         public static void Stop()
         {
             try
             {
                 if (_rtdServer != null)
                 {
-                    foreach (var topicId in _topicNames.Keys)
+                    foreach (var topicId in _topics.Keys)
                     {
                         try
                         {
-                            _rtdServer.DisconnectData(
-                                topicId);
+                            _rtdServer
+                                .DisconnectData(
+                                    topicId);
                         }
                         catch
                         {
@@ -632,6 +749,7 @@ namespace ExtractorRTD.Services
             if (BaseTime == default)
             {
                 BaseTime = time;
+
                 return counter;
             }
 
@@ -648,6 +766,26 @@ namespace ExtractorRTD.Services
         }
     }
 
+    public class TradeCounter
+    {
+        public int Count { get; set; }
+
+        public DateTime LastSeen { get; set; }
+    }
+
+    public class TopicInfo
+    {
+        public int TopicId { get; set; }
+
+        public string TNTSymbol { get; set; }
+
+        public string Symbol { get; set; }
+
+        public string Field { get; set; }
+
+        public int Row { get; set; }
+    }
+
     public class TntConfig
     {
         public string TNTSymbol { get; set; }
@@ -655,16 +793,20 @@ namespace ExtractorRTD.Services
         public string Symbol { get; set; }
     }
 
+    public class TickLogItem
+    {
+        public string Symbol { get; set; }
+
+        public string Message { get; set; }
+
+        public Ticks2 Tick { get; set; }
+    }
+
     public class RtdUpdateEvent :
         IRTDUpdateEvent
     {
-        private readonly AutoResetEvent _event;
-
-        public RtdUpdateEvent(
-            AutoResetEvent ev)
-        {
-            _event = ev;
-        }
+        public volatile bool newData =
+            false;
 
         public int HeartbeatInterval
         {
@@ -678,7 +820,7 @@ namespace ExtractorRTD.Services
 
         public void UpdateNotify()
         {
-            _event.Set();
+            newData = true;
         }
     }
 }

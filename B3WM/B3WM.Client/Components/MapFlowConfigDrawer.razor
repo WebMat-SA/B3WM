@@ -117,6 +117,17 @@
 
     public bool IsStructureUpdating { get; set; } = false;
 
+    private string _Symbol;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_Symbol != Symbol)
+        {
+            _Symbol = Symbol;
+            await base.ForceReload();
+        }
+    }
+
 
     public async Task SelectAllAgents()
     {

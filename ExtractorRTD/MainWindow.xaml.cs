@@ -1,7 +1,7 @@
 using ExtractorRTD.Services;
-using ExtractorTryd.Services;
 using Microsoft.AspNetCore.SignalR.Client;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 
 namespace ExtractorRTD
 {
@@ -22,6 +23,15 @@ namespace ExtractorRTD
 
         public string Url { get; set; } =
             "https://localhost:5002/api/datahub";
+
+        private readonly ConcurrentQueue<string> _winBuffer =
+            new ConcurrentQueue<string>();
+
+        private readonly ConcurrentQueue<string> _wdoBuffer =
+            new ConcurrentQueue<string>();
+
+        private readonly ConcurrentQueue<string> _otherBuffer =
+            new ConcurrentQueue<string>();
 
         // CONFIGURACAO DOS T&Ts
         public ObservableCollection<TntItem> Tnts { get; set; } =
@@ -62,6 +72,55 @@ namespace ExtractorRTD
             InitializeComponent();
 
             DataContext = this;
+
+            DispatcherTimer timer =
+            new DispatcherTimer();
+
+            timer.Interval =
+                TimeSpan.FromMilliseconds(100);
+
+            timer.Tick += FlushUi;
+
+            timer.Start();
+        }
+
+        private void FlushUi(
+            object sender,
+            EventArgs e)
+        {
+            FlushQueue(
+                _winBuffer,
+                WinMessages);
+
+            FlushQueue(
+                _wdoBuffer,
+                WdoMessages);
+
+            FlushQueue(
+                _otherBuffer,
+                OtherMessages);
+        }
+
+        private void FlushQueue(
+            ConcurrentQueue<string> queue,
+            ObservableCollection<string> target)
+        {
+            int count = 0;
+
+            while (queue.TryDequeue(out string msg))
+            {
+                target.Insert(0, msg);
+
+                count++;
+
+                if (count >= 50)
+                    break;
+            }
+
+            while (target.Count > 200)
+            {
+                target.RemoveAt(target.Count - 1);
+            }
         }
 
         private void TimesAndTradesProfit_Click(
@@ -105,100 +164,68 @@ namespace ExtractorRTD
             object obj,
             DoWorkEventArgs e)
         {
-            while (true)
+            try
             {
-                if (workerTnT.CancellationPending ||
-                    SourceTnT.IsCancellationRequested)
-                {
-                    e.Cancel = true;
-
-                    TimesAndTradesRtd.Stop();
-
-                    break;
-                }
-
-                try
-                {
-                    TimesAndTradesRtd.Start(
-                        Tnts
-                        .Select(x => new TntConfig
-                        {
-                            TNTSymbol = x.TNTSymbol,
-                            Symbol = x.Symbol
-                        })
-                        .ToList(),
-                        Url,
-                        workerTnT);
-                }
-                catch (Exception ex)
-                {
-                    Dispatcher.Invoke(() =>
+                TimesAndTradesRtd.Start(
+                    Tnts
+                    .Select(x => new TntConfig
                     {
-                        OtherMessages.Insert(0, ex.ToString());
-                    });
-                }
-
-                Task.Delay(1000).Wait();
+                        TNTSymbol = x.TNTSymbol,
+                        Symbol = x.Symbol
+                    })
+                    .ToList(),
+                    Url,
+                    workerTnT,
+                    TokenTnT);
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    OtherMessages.Insert(0, ex.ToString());
+                });
             }
         }
 
         private void Print(
-    object s,
-    ProgressChangedEventArgs ev)
+            object s,
+            ProgressChangedEventArgs ev)
         {
-            Dispatcher.Invoke(() =>
+            if (ev.UserState is TickLogItem item)
             {
-                if (ev.UserState is TickLogItem item)
+                switch (item.Symbol)
                 {
-                    switch (item.Symbol)
-                    {
-                        case "WINFUT":
+                    case "WINFUT":
 
-                            WinMessages.Insert(
-                                0,
-                                item.Message);
+                        _winBuffer.Enqueue(
+                            item.Message);
 
-                            while (WinMessages.Count > 30)
-                                WinMessages.RemoveAt(30);
+                        break;
 
-                            break;
+                    case "WDOFUT":
 
-                        case "WDOFUT":
+                        _wdoBuffer.Enqueue(
+                            item.Message);
 
-                            WdoMessages.Insert(
-                                0,
-                                item.Message);
+                        break;
 
-                            while (WdoMessages.Count > 30)
-                                WdoMessages.RemoveAt(30);
+                    default:
 
-                            break;
+                        _otherBuffer.Enqueue(
+                            item.Message);
 
-                        default:
-
-                            OtherMessages.Insert(
-                                0,
-                                $"[{item.Symbol}] {item.Message}");
-
-                            while (OtherMessages.Count > 30)
-                                OtherMessages.RemoveAt(30);
-
-                            break;
-                    }
+                        break;
                 }
-            });
+            }
 
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 StatusTextBlock.Text =
                     TimesAndTradesRtd.ConnectionState;
-            });
 
-            Dispatcher.Invoke(() =>
-            {
                 StatusTextBlockData.Text =
                     $"{ev.ProgressPercentage} Ticks/s";
-            });
+            }));
         }
 
         private async void Clear_Click(
