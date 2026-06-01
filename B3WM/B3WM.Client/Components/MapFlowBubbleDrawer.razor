@@ -83,23 +83,6 @@
             _initialized = true;
             return;
         }
-
-        var newKeys = currentKeys.Except(_seenKeys).ToList();
-        if (_initialized && Sound && newKeys.Any())
-        {
-            try
-            {
-                await PlayNotificationSoundAsync();
-            }
-            catch
-            {
-                // ignore JS errors for audio
-            }
-        }
-
-        // update seen keys for next render
-        _seenKeys = new HashSet<string>(currentKeys);
-        _initialized = true;
     }
 
     ValueTask PlayNotificationSoundAsync()
@@ -130,6 +113,39 @@
             })()";
         
         return JS.InvokeVoidAsync("eval", script);
+    }
+
+    // Public helper so parent can request an immediate notification (play sound and refresh)
+    // This verifies the same filtering/seen-key logic as OnParametersSetAsync before playing.
+    public async Task NotifyNewBubbleAsync()
+    {
+        // compute current filtered list and their keys
+        var currentKeys = _bubbles.Select(MakeKey).ToList();
+        var newKeys = currentKeys.Except(_seenKeys).ToList();
+
+        // If component was not initialized yet, initialize seen keys and mark initialized
+        if (!_initialized)
+        {
+            _seenKeys = new HashSet<string>(currentKeys);
+            _initialized = true;
+            return;
+        }
+
+        if (Sound && newKeys.Any())
+        {
+            try
+            {
+                await PlayNotificationSoundAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+                // ignore JS errors for audio
+            }
+        }
+
+        // update seen keys for next calls
+        _seenKeys = new HashSet<string>(currentKeys);
     }
 }
 

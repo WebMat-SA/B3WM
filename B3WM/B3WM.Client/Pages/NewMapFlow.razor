@@ -108,6 +108,15 @@
         if (MapFlowConfigDrawer._allBubbleAgents.Add((Ticks2.Agents)data.Agent) && !MapFlowConfigDrawer.SelectedAgents.Contains((Ticks2.Agents)data.Agent))
             MapFlowConfigDrawer.SelectedAgents.Add((Ticks2.Agents)data.Agent);
         Bubbles.Add(data);
+        // trigger immediate sound/notification in the bubble drawer
+        try
+        {
+            await MapFlowConfigDrawer.MapFlowBubbleDrawer?.NotifyNewBubbleAsync();
+        }
+        catch
+        {
+            // ignore errors from JS interop
+        }
         // After adding a new bubble, rebuild the simple chart so bubbles are shown
 
 

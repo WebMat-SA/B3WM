@@ -169,7 +169,7 @@
         
     }
 
-    private MapFlowBubbleDrawer? MapFlowBubbleDrawer { get; set; }
+    public MapFlowBubbleDrawer? MapFlowBubbleDrawer { get; set; }
     [Parameter] public List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
 }
 
@@ -438,7 +438,7 @@
 
 
     </MudDrawer>
-<MapFlowBubbleDrawer Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="@SelectedAgents" ThresholdBubble="@ThresholdBubble" />
+<MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="@SelectedAgents" ThresholdBubble="@ThresholdBubble" />
 <CascadingValue Value="this">
     @ChildContent
 </CascadingValue>
