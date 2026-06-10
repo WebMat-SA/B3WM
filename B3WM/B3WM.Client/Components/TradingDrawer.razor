@@ -1,0 +1,409 @@
+@using System.Globalization
+@using B3WM.Client.Model
+@inject TradingService TradingService
+@inject MudBlazor.ISnackbar Snackbar
+@implements IDisposable
+
+<div class="trading-panel d-flex flex-column" style="width:340px; flex-shrink:0; overflow-y:auto; border-left:1px solid rgba(128,128,128,0.15); background: var(--mud-palette-surface); height:100%;">
+        @* HEADER *@
+        <MudPaper Class="pa-2 d-flex" Outlined Elevation="0">
+            <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100">
+                <MudText Typo="Typo.h6">
+                    <MudIcon Icon="@Icons.Material.Filled.TravelExplore" Size="Size.Small" Class="mr-1" />
+                    Trading
+                </MudText>
+                <MudTooltip Text="Refresh All">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" OnClick="@RefreshAll" />
+                </MudTooltip>
+            </MudStack>
+        </MudPaper>
+
+        @* ACCOUNT INFO *@
+        <MudPaper Class="pa-2 mt-1" Outlined Elevation="0">
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.subtitle2" Class="mb-1 d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" Class="mr-1" />
+                    Account
+                </MudText>
+                @if (_account is not null)
+                {
+                    <div class="account-grid">
+                        <MudText Typo="Typo.caption" Class="text-medium">Login</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right font-weight-bold">@_account.Login</MudText>
+
+                        <MudText Typo="Typo.caption" Class="text-medium">Balance</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right font-weight-bold">@_account.Balance.ToString("N2")</MudText>
+
+                        <MudText Typo="Typo.caption" Class="text-medium">Equity</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right font-weight-bold" Style="@(_account.Equity >= _account.Balance ? "color: #4caf50" : "color: #f44336")">@_account.Equity.ToString("N2")</MudText>
+
+                        <MudText Typo="Typo.caption" Class="text-medium">Margin</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right">@_account.Margin.ToString("N2")</MudText>
+
+                        <MudText Typo="Typo.caption" Class="text-medium">Free</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right">@_account.MarginFree.ToString("N2")</MudText>
+
+                        <MudText Typo="Typo.caption" Class="text-medium">Level</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right">@_account.MarginLevel.ToString("N2")%</MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="text-medium">@(_loadingAccount ? "Loading..." : "No data")</MudText>
+                }
+            </MudStack>
+        </MudPaper>
+
+        @* MARKET ORDER *@
+        <MudPaper Class="pa-2 mt-1" Outlined Elevation="0">
+            <MudStack Spacing="1">
+                <MudText Typo="Typo.subtitle2" Class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.SwapVert" Size="Size.Small" Class="mr-1" />
+                    Market Order
+                </MudText>
+
+                @* Symbol *@
+                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption">Symbol</MudText>
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@Symbol</MudText>
+                </MudStack>
+
+                @* Buy/Sell Toggle *@
+                <MudStack Row Spacing="1">
+                    <MudButton Variant="@(_isBuy ? Variant.Filled : Variant.Outlined)" Color="MudBlazor.Color.Success" FullWidth Size="Size.Small" OnClick="() => _isBuy = true" Class="buy-btn">
+                        COMPRAR
+                    </MudButton>
+                    <MudButton Variant="@(!_isBuy ? Variant.Filled : Variant.Outlined)" Color="MudBlazor.Color.Error" FullWidth Size="Size.Small" OnClick="() => _isBuy = false" Class="sell-btn">
+                        VENDER
+                    </MudButton>
+                </MudStack>
+
+                @* Volume *@
+                <MudNumericField @bind-Value="_volume" Label="Volume" Min="0.01" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
+
+                @* SL / TP *@
+                <MudStack Row Spacing="1">
+                    <MudNumericField @bind-Value="_sl" Label="Stop Loss" Min="0" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Clearable="true" Class="flex-1" />
+                    <MudNumericField @bind-Value="_tp" Label="Take Profit" Min="0" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Clearable="true" Class="flex-1" />
+                </MudStack>
+
+                @* Deviation *@
+                <MudNumericField @bind-Value="_deviation" Label="Deviation (pts)" Min="0" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
+
+                @* Comment *@
+                <MudTextField @bind-Value="_comment" Label="Comment" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
+
+                @* Execute Button *@
+                <MudButton Variant="Variant.Filled" Color="@(_isBuy ? MudBlazor.Color.Success : MudBlazor.Color.Error)" FullWidth OnClick="@ExecuteOrder" Disabled="@_sendingOrder" Class="mt-1 execute-btn">
+                    @if (_sendingOrder)
+                    {
+                        <MudProgressCircular Indeterminate Size="Size.Small" Class="mr-1" />
+                    }
+                    @(_isBuy ? "COMPRAR " + Symbol : "VENDER " + Symbol)
+                </MudButton>
+
+                @* Last Result *@
+                @if (_lastResult is not null)
+                {
+                    <MudAlert Severity="@(_lastResult.Success ? MudBlazor.Severity.Success : MudBlazor.Severity.Error)" Dense="true" Variant="Variant.Filled" Class="mt-1">
+                        <MudText Typo="Typo.caption">
+                            @(_lastResult.Success
+                                ? $"Ticket: {_lastResult.OrderTicket} @ {_lastResult.Price:F2}"
+                                : $"Error: {_lastResult.Message}")
+                        </MudText>
+                    </MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+
+        @* SYMBOL INFO *@
+        <MudPaper Class="pa-2 mt-1" Outlined Elevation="0">
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.subtitle2" Class="mb-1 d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.MonitorHeart" Size="Size.Small" Class="mr-1" />
+                    @Symbol
+                </MudText>
+                @if (_symbolInfo is not null)
+                {
+                    <div class="symbol-grid">
+                        <MudText Typo="Typo.caption" Class="text-medium">Bid</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right font-weight-bold">@_symbolInfo.Bid.ToString("F2")</MudText>
+                        <MudText Typo="Typo.caption" Class="text-medium">Ask</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right font-weight-bold">@_symbolInfo.Ask.ToString("F2")</MudText>
+                        <MudText Typo="Typo.caption" Class="text-medium">Spread</MudText>
+                        <MudText Typo="Typo.body2" Class="text-right">@_symbolInfo.Spread</MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="text-medium">@(_loadingSymbolInfo ? "Loading..." : "No data")</MudText>
+                }
+            </MudStack>
+        </MudPaper>
+
+        @* POSITIONS *@
+        <MudPaper Class="pa-2 mt-1" Outlined Elevation="0" Style="flex:1; overflow-y:auto; min-height:100px">
+            <MudStack Spacing="0" Class="h-100">
+                <MudText Typo="Typo.subtitle2" Class="mb-1 d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" Class="mr-1" />
+                    Positions (@_positions.Count)
+                </MudText>
+                @if (_positions.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Class="text-medium">@(_loadingPositions ? "Loading..." : "No open positions")</MudText>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true" Class="pa-0" Style="overflow-y:auto">
+                        @foreach (var pos in _positions)
+                        {
+                            var isProfitable = pos.Profit >= 0;
+                            <MudListItem Dense="true" T="string" Class="pa-1 position-item">
+                                <MudStack Spacing="0" Class="w-100">
+                                    <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudChip Label="true" Size="Size.Small"
+                                                     Style="@($"background-color: {(pos.Type == "buy" ? "#4caf50" : "#f44336")}; color: white")"
+                                                     Text="@(pos.Type == "buy" ? "B" : "S")" />
+                                            <MudText Typo="Typo.caption" Class="font-weight-bold">@pos.Symbol</MudText>
+                                        </MudStack>
+                                        <MudTooltip Text="Close position">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="MudBlazor.Color.Error"
+                                                           OnClick="@(() => ClosePosition(pos.Ticket))" Disabled="@_closingPosition" />
+                                        </MudTooltip>
+                                    </MudStack>
+                                    <MudText Typo="Typo.caption">Vol: @pos.Volume.ToString("F2") @@ @pos.PriceOpen.ToString("F2")</MudText>
+                                    <MudText Typo="Typo.caption" Style="@(isProfitable ? "color: #4caf50" : "color: #f44336")" Class="font-weight-bold">
+                                        P/L: @(isProfitable ? "+" : "")@pos.Profit.ToString("F2")
+                                    </MudText>
+                                </MudStack>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudStack>
+        </MudPaper>
+</div>
+
+<style>
+    .trading-drawer .mud-drawer {
+        overflow-y: auto;
+    }
+    .trading-drawer .account-grid {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0 8px;
+        font-size: 0.8rem;
+    }
+    .trading-drawer .symbol-grid {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0 8px;
+        font-size: 0.8rem;
+    }
+    .trading-drawer .position-item {
+        border-bottom: 1px solid rgba(128,128,128,0.15);
+        padding: 4px 0;
+    }
+    .trading-drawer .buy-btn, .trading-drawer .sell-btn {
+        min-width: 0;
+    }
+    .trading-drawer .execute-btn {
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 1px;
+    }
+    .trading-drawer .flex-1 {
+        flex: 1;
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    public required string Symbol { get; set; }
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    private AccountInfo? _account;
+    private bool _loadingAccount;
+
+    private List<PositionInfo> _positions = [];
+    private bool _loadingPositions;
+
+    private SymbolInfo? _symbolInfo;
+    private bool _loadingSymbolInfo;
+
+    private double _volume = 1.0;
+    private bool _isBuy = true;
+    private double? _sl;
+    private double? _tp;
+    private string _comment = "";
+    private int _deviation = 10;
+    private bool _sendingOrder;
+    private bool _closingPosition;
+
+    private OrderResult? _lastResult;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _cts = new CancellationTokenSource();
+            _timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            _ = RefreshLoop(_cts.Token);
+            _ = RefreshAll();
+        }
+    }
+
+    private async Task RefreshLoop(CancellationToken ct)
+    {
+        while (await _timer!.WaitForNextTickAsync(ct))
+        {
+            try
+            {
+                await RefreshAll();
+            }
+            catch
+            {
+                // ignore loop errors
+            }
+        }
+    }
+
+    private async Task RefreshAll()
+    {
+        await Task.WhenAll(
+            RefreshAccount(),
+            RefreshPositions(),
+            RefreshSymbolInfo()
+        );
+        try { await InvokeAsync(StateHasChanged); } catch { }
+    }
+
+    private async Task RefreshAccount()
+    {
+        try
+        {
+            _loadingAccount = true;
+            _account = await TradingService.GetAccountInfo();
+        }
+        catch
+        {
+            _account = null;
+        }
+        finally
+        {
+            _loadingAccount = false;
+        }
+    }
+
+    private async Task RefreshPositions()
+    {
+        try
+        {
+            _loadingPositions = true;
+            _positions = await TradingService.GetPositions() ?? [];
+        }
+        catch
+        {
+            _positions = [];
+        }
+        finally
+        {
+            _loadingPositions = false;
+        }
+    }
+
+    private async Task RefreshSymbolInfo()
+    {
+        try
+        {
+            _loadingSymbolInfo = true;
+            _symbolInfo = await TradingService.GetSymbolInfo(Symbol);
+        }
+        catch
+        {
+            _symbolInfo = null;
+        }
+        finally
+        {
+            _loadingSymbolInfo = false;
+        }
+    }
+
+    private async Task ExecuteOrder()
+    {
+        _sendingOrder = true;
+        _lastResult = null;
+        try
+        {
+            var request = new MarketOrderRequest
+            {
+                Symbol = Symbol,
+                Volume = _volume,
+                Type = _isBuy ? "buy" : "sell",
+                Sl = _sl,
+                Tp = _tp,
+                Comment = _comment,
+                Deviation = _deviation,
+            };
+            var result = await TradingService.PlaceMarketOrder(request);
+            _lastResult = result;
+            if (result is not null)
+            {
+                if (result.Success)
+                {
+                    Snackbar.Add($"Order executed: ticket {result.OrderTicket} @ {result.Price:F2}", MudBlazor.Severity.Success);
+                }
+                else
+                {
+                    Snackbar.Add($"Order failed: {result.Message}", MudBlazor.Severity.Error);
+                }
+            }
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            _lastResult = new OrderResult { Success = false, Message = ex.Message };
+            Snackbar.Add($"Error: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _sendingOrder = false;
+        }
+    }
+
+    private async Task ClosePosition(long ticket)
+    {
+        _closingPosition = true;
+        try
+        {
+            var result = await TradingService.ClosePosition(ticket);
+            if (result is not null && result.Success)
+            {
+                Snackbar.Add($"Position {ticket} closed @ {result.Price:F2}", MudBlazor.Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Failed to close position {ticket}: {result?.Message}", MudBlazor.Severity.Error);
+            }
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _closingPosition = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

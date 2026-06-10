@@ -66,9 +66,9 @@ namespace B3WM.Controllers
         }
 
         [HttpGet("{symbol}/{minDistance:double}")]
-        public async Task<IActionResult> SetStructureDistanceAsync(string symbol,double minDistance)
+        public async Task<IActionResult> SetStructureDistanceAsync(string symbol, double minDistance)
         {
-            foreach(var structure in structureServices)
+            foreach (var structure in structureServices.Where(s => s.Symbol == symbol))
             {
                 await structure.SetMinDistance(minDistance);
             }

@@ -25,6 +25,7 @@ namespace B3WM.Client
             builder.Services.AddScoped<LocalStorageAccessor>();
             builder.Services.AddScoped<ComponentStateService>();
             builder.Services.AddTransient(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+            builder.Services.AddScoped<TradingService>();
             builder.Services.AddBlazoredSessionStorage();
 
             // use this to add MudServices and the MudBlazor.Extensions

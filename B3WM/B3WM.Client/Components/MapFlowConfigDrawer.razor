@@ -162,11 +162,9 @@
     }
     public async Task StructureRangeChange(double value)
     {
+        StructureRangeUpd = value;
         IsStructureUpdating = true;
         StateHasChanged();
-
-        StructureRangeUpd = value;
-        
     }
 
     public MapFlowBubbleDrawer? MapFlowBubbleDrawer { get; set; }

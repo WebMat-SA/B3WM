@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -9,8 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\B3WM.Shared\B3WM.Shared.csproj" />
     <ProjectReference Include="..\B3WM.Client\B3WM.Client.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.12" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.9" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.8" />
+    <!-- SignalR is included in Microsoft.AspNetCore.App for net10.0 -->
   </ItemGroup>
 
 </Project>

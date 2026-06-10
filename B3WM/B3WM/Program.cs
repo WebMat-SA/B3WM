@@ -5,8 +5,6 @@ using B3WM.Services;
 using B3WM.Services.Core;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
-using B3WM.Shared.Models;
-using B3WM.Shared.Models;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.SignalR;
@@ -59,6 +57,13 @@ namespace B3WM
                 options.JsonSerializerOptions.IgnoreReadOnlyFields = true;
             });
 
+            builder.Services.AddHttpClient("PythonService", client =>
+            {
+                var baseUrl = builder.Configuration.GetValue<string>("PythonService:BaseUrl") ?? "http://localhost:8000";
+                client.BaseAddress = new Uri(baseUrl);
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+
 
             builder.Services.AddSignalR(options =>
             {
@@ -74,6 +79,11 @@ namespace B3WM
 
             //fazer aqui melhoria de inicialização de serviços
             Extensions.AddCustomService(builder.Services, builder.Configuration);
+
+#if DEBUG
+            builder.WebHost.UseUrls("https://localhost:5002",
+                "https://0.0.0.0:5002");
+#endif
 
             var app = builder.Build();
 
@@ -96,31 +106,22 @@ namespace B3WM
             app.UseHttpsRedirection();
 
             app.UseStaticFiles();
+
+            app.UseRouting();
+
             app.UseAntiforgery();
 
+            app.UseAuthorization();
 
-            app.MapRazorComponents<App>()
-                .AddInteractiveServerRenderMode()
-                .AddInteractiveWebAssemblyRenderMode()
-                .AddAdditionalAssemblies(typeof(Home).Assembly);
-
-            app.MapWhen(ctx => ctx.Request.Path.StartsWithSegments("/api"), api =>
+            app.UseEndpoints(endpoints =>
             {
-                api.UseRouting();
-                api.UseAuthorization();
-                api.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapControllers();
-                    app.MapHub<DataHub>("/api/datahub");
-                });
+                endpoints.MapControllers();
+                endpoints.MapHub<DataHub>("/api/datahub");
+                endpoints.MapRazorComponents<App>()
+                    .AddInteractiveServerRenderMode()
+                    .AddInteractiveWebAssemblyRenderMode()
+                    .AddAdditionalAssemblies(typeof(Home).Assembly);
             });
-
-            
-
-#if DEBUG
-            builder.WebHost.UseUrls("https://localhost:5002",
-                "https://0.0.0.0:5002");
-#endif
 
             app.Map("/null", () => DateTime.Now.ToString());
 

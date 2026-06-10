@@ -34,7 +34,7 @@ namespace ExtractorRTD.Services
                 hubConnection = null;
             }
             hubConnection = new HubConnectionBuilder()
-                .WithUrl("https://localhost:5001/api/datahub")
+                .WithUrl("https://localhost:5002/api/datahub")
                 .Build();
             hubConnection.StartAsync();
         }

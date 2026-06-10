@@ -27,6 +27,7 @@
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
     public bool openDrawer { get; set; } = false;
     public bool openDrawerBubbleNotify { get; set; } = false;
+    public bool showTradingPanel { get; set; } = false;
 
     private List<BarStorageItem> BarStorageItem { get; set; } = new List<BarStorageItem>();
     private IList<BarStorageItem> BarStorageItemTimeFrameFilter => BarStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame).ToList();
@@ -37,7 +38,7 @@
     private List<VolumeLevel>? _filteredVolumeLevels { get; set; }
     private bool _volumeFilterActive { get; set; }
 
-    private List<Shared.Models.StructureStorageItem> StructureStorageItemTimeFrameFilter => StructureStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame).ToList();
+    private List<Shared.Models.StructureStorageItem> StructureStorageItemTimeFrameFilter => StructureStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame && q.Symbol == Symbol).ToList();
     private List<Shared.Models.StructureStorageItem> StructureStorageItem { get; set; } = new List<Shared.Models.StructureStorageItem>();
 
 
@@ -128,6 +129,7 @@
     }
     public async Task NewStructure(StructureStorageItem structure)
     {
+        if (structure.Symbol != Symbol) return;
         StructureStorageItem.Add(structure);
     }
     public async Task NewBar(BarStorageItem bar)
@@ -746,7 +748,7 @@
     }
     private async Task SetMinDistanceStructure(double minDistance)
     {
-        var todayStructure = await httpClient.GetFromJsonAsync<List<StructureStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/SetStructureDistance/{Symbol}/{MapFlowConfigDrawer.StructureRangeUpd.ToString(CultureInfo.InvariantCulture)}").AbsoluteUri}");
+        var todayStructure = await httpClient.GetFromJsonAsync<List<StructureStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/SetStructureDistance/{Symbol}/{minDistance.ToString(CultureInfo.InvariantCulture)}").AbsoluteUri}");
         StructureStorageItem = todayStructure ?? new List<StructureStorageItem>();
     }
 }
@@ -761,6 +763,9 @@
                     <MudBadge Color="MudBlazor.Color.Transparent" Icon="@Icons.Material.Filled.BubbleChart" Overlap="true" Bordered="true">
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; }" />
                     </MudBadge>
+                </MudTooltip>
+                <MudTooltip Text="Trading Panel">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.TravelExplore" Color="@(showTradingPanel ? MudBlazor.Color.Info : MudBlazor.Color.Default)" OnClick="() => { showTradingPanel = !showTradingPanel; }" />
                 </MudTooltip>
             </MudStack>
             <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
@@ -786,138 +791,19 @@
             }
             else
             {
-                <div style="width:auto; height:90vh;  overflow:hidden;">
-                    <Vizor.ECharts.EChart @ref="EChart"
-                    Renderer="Vizor.ECharts.ChartRenderer.Canvas"
-                    Options="ChartOptions"
-                    Width="auto"
-                    Height="750px"
-                    @key="@($"chart_{Symbol}")" />
-
-                    @* <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="1" Class="mt-2 py-2">
-                    <MudExRangeSlider T="int" Class="px-5 mx-5"
-                                      Value="_dateRange"
-                                      ValueChanged="ApplyVolumeFilter"
-                                      SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItem.Count)))"
-                                      ShowInputs="false"
-                                      AllowWholeRangeDrag="true"
-                                      ToEndStringFunc="IndexEndToDateStringBars"
-                                      ToStartStringFunc="IndexStartToDateStringBars">
-                        <TrackTemplate Context="ctx">
-                            <div style="
-                                height: 100%;
-                                position: relative;
-                                width: 100%;
-                                background: var(--mud-palette-surface);
-                                border-radius: 4px;
-                                overflow: hidden;">
-                                <div style="
-                                    position:absolute;
-                                    left:0;
-                                    right:0;
-                                    top:40%;
-                                    height:20%;
-                                    background: linear-gradient(
-                                    to right,
-                                    var(--mud-palette-background-grey),
-                                    var(--mud-palette-surface)
-                                    );
-                                    pointer-events:none;">
-                                </div>
-                                @for (var time = 0; time <= BarStorageItem.Count - 1; time++)
-                                {
-                                    //var time = new TimeOnly(hour, 0);
-                                    var pct = ctx.Math.Percent(time, ctx.SizeRange) * 100;
-                                    var isMajor = time % 10 == 0; // every 10th as major tick
-                                    var top = isMajor ? "10%" : "25%";
-                                    var bottom = isMajor ? "10%" : "25%";
-                                    var width = isMajor ? "2px" : "1px";
-                                    var color = isMajor
-                                    ? "var(--mud-palette-lines-default)"
-                                    : "var(--mud-palette-divider)";
-                                    <div style="
-                                        position:absolute;
-                                        left:@pct.ToString("F2", CultureInfo.InvariantCulture)%;
-                                        top:@top;
-                                        bottom:@bottom;
-                                        width:@width;
-                                        background:@color;">
-                                    </div>
-                                    @if (isMajor)
-                                    {
-                                        <div style="
-                                            position:absolute;
-                                            left:@pct.ToString("F2", CultureInfo.InvariantCulture)%;
-                                            bottom:4px;
-                                            transform: translateX(-50%);
-                                            font-size:10px;
-                                            color:var(--mud-palette-text-secondary);
-                                            font-weight:500;
-                                            pointer-events:none;
-                                            white-space:nowrap;
-                                            z-index:1;">
-                                            @BarStorageItem.ElementAtOrDefault(time)?.Date.ToString("HH\\:mm", CultureInfo.CurrentCulture)
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        </TrackTemplate>
-                        <SelectionTemplate Context="ctx">
-                            <div style="
-                                height: 100%;
-                                width: 100%;
-                                background: linear-gradient(
-                                90deg,
-                                var(--mud-palette-primary),
-                                var(--mud-palette-primary-darken)
-                                );
-                                display:flex;
-                                align-items:center;
-                                justify-content:center;
-                                position:relative;
-                                border-radius:4px;
-                                box-shadow:0 2px 4px rgba(0,0,0,0.25);">
-                                <span style="
-                                    color:var(--mud-palette-primary-text);
-                                    font-weight:600;
-                                    font-size:11px;
-                                    white-space:nowrap;
-                                    padding:0 8px;
-                                    text-shadow:0 1px 2px rgba(0,0,0,0.3);">
-                                    @IndexStartToDateStringBars(_dateRange) – @IndexEndToDateStringBars(_dateRange)
-                                </span>
-                            </div>
-                        </SelectionTemplate>
-                        <ThumbStartTemplate Context="ctx">
-                            <div style="
-                                width:14px;
-                                height:14px;
-                                background:var(--mud-palette-surface);
-                                border:3px solid var(--mud-palette-primary);
-                                border-radius:50%;
-                                box-shadow:0 2px 4px rgba(0,0,0,0.25);">
-                            </div>
-                        </ThumbStartTemplate>
-                        <ThumbEndTemplate Context="ctx">
-                            <div style="
-                                width:14px;
-                                height:14px;
-                                background:var(--mud-palette-surface);
-                                border:3px solid var(--mud-palette-primary);
-                                border-radius:50%;
-                                box-shadow:0 2px 4px rgba(0,0,0,0.25);">
-                            </div>
-                        </ThumbEndTemplate>
-                    </MudExRangeSlider> *@
-                    @* <MudIconButton Icon="@Icons.Material.Outlined.RestartAlt" OnClick="async () => { ApplyVolumeFilter(new MudExRange<int>(0, BarStorageItem.Count())); StateHasChanged(); Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(BarStorageItem)); }" /> *@
-                    @* <MudIconButton Icon="@Icons.Material.Outlined.AutoMode" OnClick="() => ProfileAutoByPriceStructure = !ProfileAutoByPriceStructure" /> *@
-                    @* <MudToggleIconButton @bind-Toggled="ProfileAutoByPriceStructure"
-                             Icon="@Icons.Material.Filled.AutoMode"
-                             Color="@MudBlazor.Color.Error"
-                             ToggledIcon="@Icons.Material.Filled.AutoMode"
-                             ToggledColor="@MudBlazor.Color.Success"
-                             title="@(ProfileAutoByPriceStructure ? "On" : "Off")" /> *@
-                    @* </MudStack> *@
+                <div style="display:flex; flex-direction:row; height:90vh; overflow:hidden;">
+                    <div style="flex:1; overflow:hidden; min-width:0;">
+                        <Vizor.ECharts.EChart @ref="EChart"
+                        Renderer="Vizor.ECharts.ChartRenderer.Canvas"
+                        Options="ChartOptions"
+                        Width="auto"
+                        Height="750px"
+                        @key="@($"chart_{Symbol}")" />
+                    </div>
+                    @if (showTradingPanel)
+                    {
+                        <TradingDrawer />
+                    }
                 </div>
             }
         </MapFlowConfigDrawer>

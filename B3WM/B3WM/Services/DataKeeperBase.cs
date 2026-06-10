@@ -8,6 +8,9 @@ namespace B3WM.Services
         {
             try
             {
+                if (!Directory.Exists("Data"))
+                    Directory.CreateDirectory("Data");
+
                 if (!File.Exists("Data/" + path))
                 {
                     return new T();
@@ -35,6 +38,9 @@ namespace B3WM.Services
                     {
                         WriteIndented = true
                     });
+
+                if (!Directory.Exists("Data"))
+                    Directory.CreateDirectory("Data");
 
                 await File.WriteAllTextAsync("Data/"+path, json);
             }
