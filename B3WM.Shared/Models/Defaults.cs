@@ -25,7 +25,7 @@ namespace B3WM.Shared.Models
 
         public static class WDOFUT
         {
-            public const int ThresholdBubbleSize = 1000;
+            public const int ThresholdBubbleSize = 500;
             public const double MinDistanceUpdateBorder = 2.5;
         }
 
