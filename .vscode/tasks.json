@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "python-service",
+      "type": "shell",
+      "command": "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
+      "options": {
+        "cwd": "${workspaceFolder}/B3WM.Python"
+      },
+      "presentation": {
+        "group": "b3wm",
+        "panel": "dedicated",
+        "focus": true,
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dotnet-webapp",
+      "type": "shell",
+      "command": "dotnet run --launch-profile https",
+      "options": {
+        "cwd": "${workspaceFolder}/B3WM/B3WM"
+      },
+      "presentation": {
+        "group": "b3wm",
+        "panel": "dedicated",
+        "focus": true,
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-all",
+      "dependsOn": ["python-service", "dotnet-webapp"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}
