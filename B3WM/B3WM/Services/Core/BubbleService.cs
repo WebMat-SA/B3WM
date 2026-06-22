@@ -12,6 +12,7 @@ namespace B3WM.Services.Core
         public string Symbol { get; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
+        private readonly ILogger<BubbleService> _logger;
 
         private readonly Channel<Ticks2[]> _channel =
             Channel.CreateUnbounded<Ticks2[]>();
@@ -32,12 +33,13 @@ namespace B3WM.Services.Core
 
         public override string Path => $"{Symbol}_{nameof(BubbleService)}_{DateTime.Now:yyyy-MM-dd}.json";
 
-        public BubbleService(string symbol, int bubbleThreshold, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+        public BubbleService(string symbol, int bubbleThreshold, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<BubbleService> logger)
             : base(serviceProvider)
         {
             Symbol = symbol;
             _bubbleThreshold = bubbleThreshold;
             this.hubContext = hubContext;
+            _logger = logger;
 
             _ = Task.Run(ProcessLoop);
         }
@@ -71,7 +73,7 @@ namespace B3WM.Services.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"BubbleService.ProcessLoop error: {ex.Message}");
+                    _logger.LogWarning(ex, "BubbleService.ProcessLoop error");
                 }
             }
         }
@@ -153,7 +155,7 @@ namespace B3WM.Services.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("FinalizeRunning error: " + ex.Message);
+                    _logger.LogWarning(ex, "FinalizeRunning error");
                 }
             }
 

@@ -18,8 +18,13 @@ namespace B3WM.Services.Backtest
     public class BacktestEngine
     {
         private readonly DataKeeperBase _dataKeeper;
+        private readonly ILogger<BacktestEngine> _logger;
 
-        public BacktestEngine(DataKeeperBase dataKeeper) => _dataKeeper = dataKeeper;
+        public BacktestEngine(DataKeeperBase dataKeeper, ILogger<BacktestEngine> logger)
+        {
+            _dataKeeper = dataKeeper;
+            _logger = logger;
+        }
 
         public async Task<BacktestResult> Run(BacktestConfig config, IStrategy strategy)
         {
@@ -119,7 +124,7 @@ namespace B3WM.Services.Backtest
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load bars for {current:yyyy-MM-dd}: {ex.Message}");
+                    _logger.LogWarning(ex, "Failed to load bars for {Date}", current.ToString("yyyy-MM-dd"));
                 }
                 current = current.AddDays(1);
             }

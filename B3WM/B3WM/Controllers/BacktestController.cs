@@ -11,11 +11,13 @@ namespace B3WM.Controllers
     {
         private readonly BacktestEngine _engine;
         private readonly DataKeeperBase _dataKeeper;
+        private readonly ILogger<SmartBreakoutStrategy> _smartLogger;
 
-        public BacktestController(BacktestEngine engine, DataKeeperBase dataKeeper)
+        public BacktestController(BacktestEngine engine, DataKeeperBase dataKeeper, ILogger<SmartBreakoutStrategy> smartLogger)
         {
             _engine = engine;
             _dataKeeper = dataKeeper;
+            _smartLogger = smartLogger;
         }
 
         [HttpPost]
@@ -30,7 +32,7 @@ namespace B3WM.Controllers
             IStrategy strategy = config.StrategyName switch
             {
                 StrategyType.Breakout => new SimpleBreakoutStrategy(config.LookbackPeriod),
-                StrategyType.SmartBreakout => new SmartBreakoutStrategy(_dataKeeper, config),
+                StrategyType.SmartBreakout => new SmartBreakoutStrategy(_dataKeeper, config, _smartLogger),
                 _ => throw new ArgumentException($"Unknown strategy: {config.StrategyName}")
             };
 

@@ -10,6 +10,7 @@ namespace B3WM.Services.Backtest
     {
         private readonly DataKeeperBase _dataKeeper;
         private readonly BacktestConfig _config;
+        private readonly ILogger<SmartBreakoutStrategy> _logger;
         private readonly Dictionary<DateTime, List<BubbleStorageItem>> _bubblesByBar = new();
         private readonly int _thresholdEntry = Defaults.Backtest.SmartEntryThreshold;
         private readonly int _thresholdExit = Defaults.Backtest.SmartExitThreshold;
@@ -23,10 +24,11 @@ namespace B3WM.Services.Backtest
 
         public string Name => "SmartBreakout";
 
-        public SmartBreakoutStrategy(DataKeeperBase dataKeeper, BacktestConfig config)
+        public SmartBreakoutStrategy(DataKeeperBase dataKeeper, BacktestConfig config, ILogger<SmartBreakoutStrategy> logger)
         {
             _dataKeeper = dataKeeper;
             _config = config;
+            _logger = logger;
             _minDistance = Defaults.GetMinDistance(config.Symbol);
         }
 
@@ -54,7 +56,7 @@ namespace B3WM.Services.Backtest
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load bubbles for {current:yyyy-MM-dd}: {ex.Message}");
+                    _logger.LogWarning(ex, "Failed to load bubbles for {Date}", current.ToString("yyyy-MM-dd"));
                 }
                 current = current.AddDays(1);
             }

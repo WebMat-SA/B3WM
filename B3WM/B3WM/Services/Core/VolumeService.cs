@@ -14,6 +14,7 @@ namespace B3WM.Services.Core
         public string Symbol { get; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
+        private readonly ILogger<VolumeService> _logger;
 
         PeriodicTimer _timer { get; set; }
 
@@ -36,11 +37,12 @@ namespace B3WM.Services.Core
 
         public override string Path => $"{Symbol}_{nameof(VolumeService)}_{DateTime.Now:yyyy-MM-dd}.json";
 
-        public VolumeService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+        public VolumeService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<VolumeService> logger)
             :base(serviceProvider)
         {
             Symbol = symbol;
             this.hubContext = hubContext;
+            _logger = logger;
             _timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
             _ = Task.Run(ProcessLoop);
             _ = Task.Run(DataKeeperLoop);
@@ -105,13 +107,13 @@ namespace B3WM.Services.Core
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"OnUpdate error: {ex.Message}");
+                            _logger.LogWarning(ex, "OnUpdate error");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"VolumeService.ProcessLoop error: {ex.Message}");
+                    _logger.LogWarning(ex, "VolumeService.ProcessLoop error");
                 }
             }
         }
@@ -209,7 +211,7 @@ namespace B3WM.Services.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"VolumeService.DataKeeperLoop error: {ex.Message}");
+                    _logger.LogWarning(ex, "VolumeService.DataKeeperLoop error");
                 }
             }
         }

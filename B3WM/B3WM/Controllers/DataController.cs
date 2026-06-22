@@ -13,11 +13,13 @@ namespace B3WM.Controllers
     {
         private readonly DataKeeperBase dataKeeper;
         private readonly IEnumerable<StructureService> structureServices;
+        private readonly ILogger<DataController> _logger;
 
-        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices)
+        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, ILogger<DataController> logger)
         {
             this.dataKeeper = dataKeeper;
             this.structureServices = structureServices;
+            _logger = logger;
         }
 
         [HttpGet("{symbol}/{date}")]
@@ -52,7 +54,7 @@ namespace B3WM.Controllers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load bars for {current:yyyy-MM-dd}: {ex.Message}");
+                    _logger.LogWarning(ex, "Failed to load bars for {Date}", current.ToString("yyyy-MM-dd"));
                 }
                 current = current.AddDays(1);
             }
@@ -88,8 +90,7 @@ namespace B3WM.Controllers
                 data.AddRange(await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path));
             }
 
-            // ✔️ retorna imediatamente
-            return Ok(System.Text.Json.JsonSerializer.Serialize(data));
+            return Ok(data);
         }
 
         [HttpGet("{symbol}/{minDistance:double}")]

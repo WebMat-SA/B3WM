@@ -4,7 +4,7 @@ namespace B3WM.Services
 {
     public class DataKeeperBase
     {
-        public async Task<T> ReadDataAsync<T>(string path) where T : new()
+        public virtual async Task<T> ReadDataAsync<T>(string path) where T : new()
         {
             try
             {
@@ -28,7 +28,7 @@ namespace B3WM.Services
             }
         }
 
-        public async Task WriteDataAsync<T>(string path, T data)
+        public virtual async Task WriteDataAsync<T>(string path, T data)
         {
             try
             {
