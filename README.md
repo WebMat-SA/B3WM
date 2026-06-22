@@ -143,10 +143,20 @@ B3WM/                        # Solução principal (.NET)
 
 ## Licença
 
-**MIT License** — Uso exclusivamente educacional.
+**GNU Affero General Public License v3.0 (AGPLv3)** — Uso exclusivamente educacional.
 
 Este software é fornecido "como está", sem garantia de qualquer tipo.
 O uso comercial ou monetização deste software é **expressamente proibido**.
+
+### AGPLv3 em resumo
+- ✅ **Estudo e aprendizado** — Livre para estudar, modificar e experimentar
+- ✅ **Uso pessoal** — Pode usar para análise pessoal do mercado
+- ⚠️ **Compartilhamento** — Se distribuir o código ou versões modificadas, deve manter a mesma licença AGPLv3
+- ⚠️ **Serviços web** — Se rodar uma versão modificada como servidor web, **precisa disponibilizar o código fonte** aos usuários
+- ❌ **Uso comercial fechado** — Não pode incorporar em produtos comerciais sem abrir o código
+- ❌ **Monetização** — Não é permitido vender este software ou versões derivadas sem manter o código aberto
+
+Veja o arquivo [LICENSE](LICENSE) para o texto completo.
 
 ---
 

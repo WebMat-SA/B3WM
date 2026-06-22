@@ -106,7 +106,6 @@ namespace B3WM.Services.Core
         {
             var result = await Generate(newBar, skipPreLoad);
 
-            //ainda pensar sobre signalR e envio de dados para clientes
             if (hubContext != null)
             {
                 await hubContext.Clients.Group(Symbol).ReceiveOnStructure(result);
@@ -123,7 +122,6 @@ namespace B3WM.Services.Core
 
         private async Task<StructureStorageItem> Generate(BarStorageItem newBar, bool skipPreLoad = false)
         {
-            //HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(Init), 0, $"OnNewBar");
             //se for primeiro candle
             if (_lastStructure == null)
             {
@@ -152,8 +150,6 @@ namespace B3WM.Services.Core
             double virtualSameUpAuxBorder = Math.Max(_lastStructure.UpAuxBorder, newBar.High);
             double virtualSameDownAuxBorder = Math.Min(_lastStructure.DownAuxBorder, newBar.Low);
 
-            //HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"MinDist:{_minDistanceUpdateBorder} | Diff Up|Close: {virtualSameUpAuxBorder - newBar.Close}");
-
             //se houve um distanciamento entre a borda superior e o preço (rebotando para baixo)
             if (virtualSameUpAuxBorder - newBar.Close >= _minDistanceUpdateBorder && expectBuyDrop)
             {
@@ -170,8 +166,6 @@ namespace B3WM.Services.Core
 
                 isSizeChanger = true;
             }
-
-            //HelperPerformanceConfig.Log(nameof(StructureHelper), nameof(OnNewBar), 0, $"MinDist:{_minDistanceUpdateBorder} | Diff Down|Close: {newBar.Close - virtualSameDownAuxBorder}");
 
             //se houve um distanciamento entre a borda inferior e o preço (rebotando para cima)
             if (newBar.Close - virtualSameDownAuxBorder >= _minDistanceUpdateBorder && expectSellDrop && !isSizeChanger)

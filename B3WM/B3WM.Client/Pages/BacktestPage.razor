@@ -17,8 +17,8 @@
     <MudSelectItem Value="@("60")">60 min</MudSelectItem>
 </MudSelect>
 <MudSelect @bind-Value="config.StrategyName" Label="Estrategia" Variant="Variant.Outlined" Dense="true">
-    <MudSelectItem Value="@("Breakout")">Breakout</MudSelectItem>
-    <MudSelectItem Value="@("SmartBreakout")">SmartBreakout</MudSelectItem>
+    <MudSelectItem Value="@StrategyType.Breakout">Breakout</MudSelectItem>
+    <MudSelectItem Value="@StrategyType.SmartBreakout">SmartBreakout</MudSelectItem>
 </MudSelect>
 <MudDatePicker @bind-Date="startDate" Label="Data Inicio" Variant="Variant.Outlined" Dense="true" />
 <MudDatePicker @bind-Date="endDate" Label="Data Fim" Variant="Variant.Outlined" Dense="true" />
@@ -139,7 +139,7 @@
     {
         Symbol = "WINFUT",
         TimeFrame = 5,
-        StrategyName = "SmartBreakout",
+        StrategyName = StrategyType.SmartBreakout,
         StartDate = DateTime.Today.AddDays(-5),
         EndDate = DateTime.Today,
         StopLossPoints = 200,

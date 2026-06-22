@@ -11,15 +11,15 @@ namespace B3WM.Services.Backtest
         private readonly DataKeeperBase _dataKeeper;
         private readonly BacktestConfig _config;
         private readonly Dictionary<DateTime, List<BubbleStorageItem>> _bubblesByBar = new();
-        private readonly int _thresholdEntry = 500;
-        private readonly int _thresholdExit = 1000;
-        private readonly double _volumePct = 0.3;
-        private readonly double _structureBufferPct = 0.1;
+        private readonly int _thresholdEntry = Defaults.Backtest.SmartEntryThreshold;
+        private readonly int _thresholdExit = Defaults.Backtest.SmartExitThreshold;
+        private readonly double _volumePct = Defaults.Backtest.SmartVolumePct;
+        private readonly double _structureBufferPct = Defaults.Backtest.SmartStructureBufferPct;
 
         private double? _upBorder, _downBorder;
         private double _upAuxBorder, _downAuxBorder;
         private bool _expectBuyDrop = true, _expectSellDrop = true, _isSizeChanger;
-        private double _minDistance;
+        private readonly double _minDistance;
 
         public string Name => "SmartBreakout";
 
@@ -27,7 +27,7 @@ namespace B3WM.Services.Backtest
         {
             _dataKeeper = dataKeeper;
             _config = config;
-            _minDistance = config.Symbol == "WINFUT" ? 250 : 2.5;
+            _minDistance = Defaults.GetMinDistance(config.Symbol);
         }
 
         public async Task InitializeAsync()
@@ -111,7 +111,7 @@ namespace B3WM.Services.Backtest
             if (bar.VolumeLevel == null || bar.VolumeLevel.Count == 0)
                 return false;
 
-            var tickSize = _config.Symbol == "WINFUT" ? 5.0 : 0.5;
+            var tickSize = Defaults.GetTickSize(_config.Symbol);
             var avg = bar.VolumeLevel.Average(v => (double)v.Total);
             if (avg <= 0) return false;
 

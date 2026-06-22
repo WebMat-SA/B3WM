@@ -48,16 +48,6 @@ namespace B3WM.Services.Core
         }
 
         public BubbleStorageItem GetSnapshot() => _lastItem;
-            //new
-            //{
-            //    BubbleThreshold = _bubbleThreshold,
-            //    RunningSum = _runningSum,
-            //    RunningAgent = _runningAgent,
-            //    RunningStarter = _runningStarter,
-            //    LastPrice = _lastPrice,
-            //    LastTime = _lastTime,
-            //    LastSymbol = _lastSymbol,
-            //};
 
         private async Task ProcessLoop()
         {
@@ -143,14 +133,9 @@ namespace B3WM.Services.Core
                         Symbol = _lastSymbol
                     };
 
-                    //Console.WriteLine("Bubble detected: " + bubble.ToString());
-
-                    // reset
                     _runningSum = 0;
                     _runningAgent = null;
                     _runningStarter = null;
-
-                    //ainda pensar sobre signalR e envio de dados para clientes
                     if (hubContext != null)
                     {
                         await hubContext.Clients.Group(bubble.Symbol).ReceiveOnBubble(bubble);

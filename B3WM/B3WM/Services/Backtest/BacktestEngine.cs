@@ -21,13 +21,6 @@ namespace B3WM.Services.Backtest
 
         public BacktestEngine(DataKeeperBase dataKeeper) => _dataKeeper = dataKeeper;
 
-        private static double GetPointValue(string symbol) => symbol switch
-        {
-            "WINFUT" => 1.0,
-            "WDOFUT" => 10.0,
-            _ => 1.0
-        };
-
         public async Task<BacktestResult> Run(BacktestConfig config, IStrategy strategy)
         {
             await strategy.InitializeAsync();
@@ -41,7 +34,7 @@ namespace B3WM.Services.Backtest
 
             if (bars.Count == 0) return result;
 
-            var pointValue = GetPointValue(config.Symbol);
+            var pointValue = Defaults.GetPointValue(config.Symbol);
             var trades = new List<BacktestTrade>();
             var equityCurve = new List<double> { 0 };
             BacktestPosition? position = null;

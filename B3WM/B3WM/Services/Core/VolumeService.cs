@@ -95,23 +95,12 @@ namespace B3WM.Services.Core
                     }
 
                     sw.Stop();
-                    //Console.WriteLine($"VolumeService processed {sortedTicks.Count} ticks in {sw.ElapsedMilliseconds} ms");
 
                     if (OnUpdate != null)
                     {
                         try
                         {
-                            #region PENSAR ISSO AQUI, POIS PODE GERAR MUITO GARGALO
                             var snapShot = BuildSnapshot();
-
-                            ////ainda pensar sobre signalR e envio de dados para clientes
-                            //if (hubContext != null)
-                            //{
-                            //    await hubContext.Clients.Group(snapShot.Symbol).ReceiveOnVolume(snapShot);
-                            //}
-
-                            #endregion
-
                             await OnUpdate.Invoke(snapShot);
                         }
                         catch (Exception ex)

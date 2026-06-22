@@ -64,7 +64,6 @@ namespace B3WM.Services.Core
                 }
                 swTicks.Stop();
 
-                //Console.WriteLine($"{nameof(CandleService)}:{nameof(ProcessTick)}:{swTicks.ElapsedMilliseconds} ms");
             }
         }
 
@@ -96,7 +95,6 @@ namespace B3WM.Services.Core
             // Emitir fora do lock; usamos só a cópia já feita.
             if (barToEmit != null && OnUpdate != null)
             {
-                //ainda pensar sobre signalR e envio de dados para clientes
                 if (hubContext != null)
                 {
                     await hubContext.Clients.Group(Symbol).ReceiveOnCloseBar(barToEmit);

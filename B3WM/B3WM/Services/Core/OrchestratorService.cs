@@ -24,10 +24,7 @@ namespace B3WM.Services.Core
             this.volumeService = volumeService.Where(q=>q.Symbol == Symbol);
             this.structureService = structureService.Where(q=>q.Symbol == Symbol);
 
-            // subscribe using shared helper to avoid duplicated foreach loops
             SubscribeAll(this.candleService, OnCandleUpdate);
-            //SubscribeAll(this.bubbleService, OnBubbleUpdate);
-            //SubscribeAll(this.structureService, OnStructureUpdate);
         }
 
         public Task Enqueue(Ticks2[] ticks)
@@ -67,31 +64,10 @@ namespace B3WM.Services.Core
 
             await Task.CompletedTask;
         }
-        //private async Task OnBubbleUpdate(BubbleStorageItem bubble)
-        //{
-        //    //se quiser fazer o input de outros serviços no finalizar de bubble (como por exemplo indicadores, vwap, etc)
-
-        //    Console.WriteLine(
-        //        $"Bubble atualizada: {bubble} ");
-
-        //    await Task.CompletedTask;
-        //}
-        //private async Task OnStructureUpdate(StructureStorageItem structure)
-        //{
-        //    //se quiser fazer o input de outros serviços no finalizar de structure (como por exemplo indicadores, vwap, etc)
-
-        //    Console.WriteLine(
-        //        $"Structure atualizada: {structure} ");
-
-        //    await Task.CompletedTask;
-        //}
 
         public void Dispose()
         {
-            // unsubscribe using shared helper
             UnsubscribeAll(candleService, OnCandleUpdate);
-            //UnsubscribeAll(bubbleService, OnBubbleUpdate);
-            //UnsubscribeAll(volumeService, OnVolumeUpdate);
         }
 
         private void SubscribeAll<T>(IEnumerable<IProcessor<Ticks2, T>> services, Func<T, Task> handler)

@@ -29,8 +29,8 @@ namespace B3WM.Controllers
 
             IStrategy strategy = config.StrategyName switch
             {
-                "Breakout" => new SimpleBreakoutStrategy(config.LookbackPeriod),
-                "SmartBreakout" => new SmartBreakoutStrategy(_dataKeeper, config),
+                StrategyType.Breakout => new SimpleBreakoutStrategy(config.LookbackPeriod),
+                StrategyType.SmartBreakout => new SmartBreakoutStrategy(_dataKeeper, config),
                 _ => throw new ArgumentException($"Unknown strategy: {config.StrategyName}")
             };
 

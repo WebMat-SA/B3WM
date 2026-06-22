@@ -4,7 +4,7 @@ namespace B3WM.Shared.Models.Backtest
     {
         public string Symbol { get; set; } = "WINFUT";
         public int TimeFrame { get; set; } = 5;
-        public string StrategyName { get; set; } = "Breakout";
+        public StrategyType StrategyName { get; set; } = StrategyType.Breakout;
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public double StopLossPoints { get; set; } = 200;

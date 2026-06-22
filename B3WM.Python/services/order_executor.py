@@ -201,7 +201,7 @@ class MT5OrderExecutor:
                 price_current=p.price_current,
                 profit=p.profit,
                 swap=p.swap,
-                commission=p.commission,
+                commission=getattr(p, 'commission', 0.0),
                 magic=p.magic,
                 comment=p.comment,
                 time=str(p.time),
