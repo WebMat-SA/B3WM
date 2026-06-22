@@ -76,7 +76,6 @@ namespace B3WM
                     ["application/octet-stream"]);
             });
 
-            //fazer aqui melhoria de inicialização de serviços
             Extensions.AddCustomService(builder.Services, builder.Configuration);
 
 #if DEBUG

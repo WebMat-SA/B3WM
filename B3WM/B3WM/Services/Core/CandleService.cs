@@ -27,11 +27,11 @@ namespace B3WM.Services.Core
 
         public override string Path => $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{DateTime.Now:yyyy-MM-dd}.json";
 
-        public CandleService(string symbol, int _timeFrame, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+        public CandleService(string symbol, int timeFrame, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
             : base(serviceProvider)
         {
             Symbol = symbol;
-            TimeFrame = _timeFrame;
+            TimeFrame = timeFrame;
             this.hubContext = hubContext;
             _ = Task.Run(ProcessLoop);
         }
