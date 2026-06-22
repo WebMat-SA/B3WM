@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openai/deepseek/deepseek-r1-0528-qwen3-8b",
+  "provider": {
+    "openai": {
+      "options": {
+        "baseURL": "http://127.0.0.1:1234"
+      }
+    }
+  }
+}

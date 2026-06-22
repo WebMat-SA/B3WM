@@ -1,4 +1,5 @@
 ﻿using B3WM.Services;
+using B3WM.Services.Backtest;
 using B3WM.Services.Core;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
@@ -12,6 +13,7 @@ namespace B3WM
         {
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
+            services.AddScoped<BacktestEngine>();
 
             services.AddWinfutServices(config);
 

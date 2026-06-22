@@ -37,6 +37,32 @@ namespace B3WM.Controllers
             return Ok(System.Text.Json.JsonSerializer.Serialize(data));
         }
 
+        [HttpGet("{symbol}/{startDate}/{endDate}/{timeFrame}")]
+        public async Task<IActionResult> GetBarRange(string symbol, DateTime startDate, DateTime endDate, int timeFrame)
+        {
+            var allBars = new List<BarStorageItem>();
+            var current = startDate.Date;
+
+            while (current <= endDate.Date)
+            {
+                var path = $"{symbol}_{nameof(CandleService)}_{timeFrame}MIN_{current:yyyy-MM-dd}.json";
+                try
+                {
+                    var dayBars = await dataKeeper.ReadDataAsync<List<BarStorageItem>>(path);
+                    allBars.AddRange(dayBars);
+                }
+                catch { }
+                current = current.AddDays(1);
+            }
+
+            var filtered = allBars
+                .Where(b => b.Date >= startDate && b.Date <= endDate)
+                .OrderBy(b => b.Date)
+                .ToList();
+
+            return Ok(System.Text.Json.JsonSerializer.Serialize(filtered));
+        }
+
         [HttpGet("{symbol}/{date}")]
         public async Task<IActionResult> GetBubbleAsync(string symbol, DateTime date)
         {
