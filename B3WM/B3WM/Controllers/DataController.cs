@@ -33,8 +33,7 @@ namespace B3WM.Controllers
                 data.AddRange(await dataKeeper.ReadDataAsync<List<BarStorageItem>>(path));
             }
 
-            // ✔️ retorna imediatamente
-            return Ok(System.Text.Json.JsonSerializer.Serialize(data));
+            return Ok(data);
         }
 
         [HttpGet("{symbol}/{startDate}/{endDate}/{timeFrame}")]
@@ -51,7 +50,10 @@ namespace B3WM.Controllers
                     var dayBars = await dataKeeper.ReadDataAsync<List<BarStorageItem>>(path);
                     allBars.AddRange(dayBars);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to load bars for {current:yyyy-MM-dd}: {ex.Message}");
+                }
                 current = current.AddDays(1);
             }
 
@@ -60,7 +62,7 @@ namespace B3WM.Controllers
                 .OrderBy(b => b.Date)
                 .ToList();
 
-            return Ok(System.Text.Json.JsonSerializer.Serialize(filtered));
+            return Ok(filtered);
         }
 
         [HttpGet("{symbol}/{date}")]
@@ -70,8 +72,7 @@ namespace B3WM.Controllers
 
             var data = await dataKeeper.ReadDataAsync<List<BubbleStorageItem>>(path);
 
-            // ✔️ retorna imediatamente
-            return Ok(System.Text.Json.JsonSerializer.Serialize(data));
+            return Ok(data);
         }
 
         [HttpGet("{symbol}/{date}/{minDistance:double}")]

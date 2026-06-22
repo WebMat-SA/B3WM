@@ -52,8 +52,9 @@ namespace B3WM.Services.Backtest
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"Failed to load bubbles for {current:yyyy-MM-dd}: {ex.Message}");
                 }
                 current = current.AddDays(1);
             }

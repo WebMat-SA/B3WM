@@ -124,7 +124,10 @@ namespace B3WM.Services.Backtest
                     var dayBars = await _dataKeeper.ReadDataAsync<List<BarStorageItem>>(path);
                     allBars.AddRange(dayBars);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to load bars for {current:yyyy-MM-dd}: {ex.Message}");
+                }
                 current = current.AddDays(1);
             }
 
@@ -239,9 +242,6 @@ namespace B3WM.Services.Backtest
             r.LargestWin = trades.Count > 0 ? trades.Max(t => t.ProfitLoss) : 0;
             r.LargestLoss = trades.Count > 0 ? trades.Min(t => t.ProfitLoss) : 0;
             r.TotalCommission = trades.Sum(t => t.Commission);
-
-            var maxDdTrade = trades.OrderByDescending(t => t.CumulativePL - trades.Where(x => x.CumulativePL <= t.CumulativePL).DefaultIfEmpty(t).Min(x => x.CumulativePL)).FirstOrDefault();
-            r.MaxDrawdown = maxDdTrade != null ? equityCurve.DefaultIfEmpty(0).Max() - equityCurve.DefaultIfEmpty(0).Min() : 0;
 
             var peakVal = 0.0;
             var maxDrawdown = 0.0;

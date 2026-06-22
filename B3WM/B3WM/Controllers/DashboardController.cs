@@ -45,8 +45,7 @@ namespace B3WM.Controllers
                 data.Add(iprocess.GetSnapshot());
             }
 
-            // ✔️ retorna imediatamente
-            return Ok(System.Text.Json.JsonSerializer.Serialize(data));
+            return Ok(data);
         }
     }
 }

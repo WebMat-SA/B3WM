@@ -1,4 +1,3 @@
-using B3WM.Client.Pages;
 using B3WM.Client.Services;
 using B3WM.Components;
 using B3WM.Services;
@@ -120,10 +119,8 @@ namespace B3WM
                 endpoints.MapRazorComponents<App>()
                     .AddInteractiveServerRenderMode()
                     .AddInteractiveWebAssemblyRenderMode()
-                    .AddAdditionalAssemblies(typeof(Home).Assembly);
+                    .AddAdditionalAssemblies(typeof(B3WM.Client.Pages.NewMapFlow).Assembly);
             });
-
-            app.Map("/null", () => DateTime.Now.ToString());
 
             app.Run();
         }

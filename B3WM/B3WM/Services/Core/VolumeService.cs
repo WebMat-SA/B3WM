@@ -201,6 +201,8 @@ namespace B3WM.Services.Core
                     }
                 );
             }
+
+            _intraDayAdded = true;
         }
 
         private async Task DataKeeperLoop()
