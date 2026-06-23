@@ -64,37 +64,58 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 
 ## Arquitetura
 
-```
-                    Profit Platform
-                        │
-   ┌────────────────────────────────────┐
-   │      ExtractorRTD (WPF .NET)        │
-   │  Socket TCP :12002 ou Excel RTD     │
-   └──────────────┬─────────────────────┘
-                  │ SignalR
-                  v
-   ┌────────────────────────────────────┐
-   │    B3WM Server (ASP.NET Core)      │
-   │                                    │
-   │  CandleService → OHLCV            │
-   │  BubbleService → Agressivos       │
-   │  VolumeService → Perfil de Volume │
-   │  StructureService → Suporte/Resis.│
-   │  ThrottlingService → Snapshots    │
-   └──────────┬────────────────────────┘
-              │ REST + SignalR
-              v
-   ┌────────────────────────────────────┐
-   │  Blazor WASM Client (Navegador)    │
-   │  - NewMapFlow (Chart)             │
-   │  - TradingDrawer (Ordens)         │
-   │  - BacktestPage (Análise)         │
-   └────────────────────────────────────┘
+### Estrutura dos Projetos
 
-   ┌────────────────────────────────────┐
-   │  Python/FastAPI Bridge            │
-   │  → MetaTrader 5 (Ordens)          │
-   └────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph SOL["📦 B3WM.sln - Solução .NET"]
+        direction TB
+        API["B3WM/<br/>Servidor ASP.NET Core<br/>Program.cs → dotnet run"]
+        CLIENT["B3WM.Client/<br/>Blazor WebAssembly<br/>Frontend"]
+        SHARED["B3WM.Shared/<br/>Modelos & DTOs"]
+        TESTS["B3WM.Tests/<br/>Testes Unitários xUnit"]
+        API --- CLIENT
+        API --- SHARED
+        CLIENT --- SHARED
+        TESTS --- SHARED
+    end
+
+    subgraph EXT["Projetos Externos"]
+        PYTHON["B3WM.Python/<br/>Bridge MetaTrader 5<br/>FastAPI :8000<br/>(Opcional)"]
+        RTD["ExtractorRTD/<br/>Coletor WPF (Profit)<br/>Socket TCP :12002<br/>(Opcional)"]
+    end
+
+    PYTHON -.->|HTTP| API
+    RTD -.->|SignalR| API
+```
+
+### Fluxo de Dados em Execução
+
+```mermaid
+graph TD
+    subgraph FONTES["Fontes de Dados"]
+        PROFIT["Profit Carteira<br/>Profissional"]
+        SIMULADO["Dados Simulados<br/>(Modo Debug)"]
+    end
+
+    subgraph SERVER["B3WM Server"]
+        EXTRACT["ExtractorRTD<br/>WPF .NET"] -->|SignalR| HUB["📡 SignalR Hub<br/>/api/datahub"]
+        HUB --> CORE["Core Services<br/>Candle · Bubble<br/>Volume · Structure"]
+        CORE --> REST["🌐 REST API"]
+    end
+
+    subgraph CLIENTE["Cliente Web"]
+        REST --> WASM["🖥️ Blazor WASM<br/>NewMapFlow · BacktestPage"]
+        HUB -->|WebSocket<br/>Tempo Real| WASM
+    end
+
+    subgraph TRADING["Trading (Opcional)"]
+        PY["🐍 Python FastAPI"] -->|MT5| MT5["MetaTrader 5"]
+        CORE -->|HTTP :8000| PY
+    end
+
+    PROFIT -->|Socket TCP :12002| EXTRACT
+    SIMULADO -.->|Dados fake| CORE
 ```
 
 ---
@@ -107,36 +128,87 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 - MetaTrader 5 (opcional, para trading)
 - Profit (Carteira Profissional) ou fonte de dados B3 (opcional, para dados reais)
 
-### Servidor Web
+### Ordem de Inicialização
+
+```
+1️⃣ Servidor Web (obrigatório) — inicia primeiro
+2️⃣ Fonte de dados (real ou simulada) — conecta ao servidor
+3️⃣ Trading Bridge (opcional) — conecta ao servidor
+4️⃣ Testes — podem rodar a qualquer momento
+```
+
+### 1. Servidor Web (Obrigatório)
+
 ```bash
 dotnet run --project B3WM/B3WM
 ```
-Acesse https://localhost:5002
 
-### Python Bridge (opcional)
+Acesse em: **https://localhost:5002**
+
+> O servidor já inclui o frontend Blazor WASM. Tudo em um único processo.
+
+### 2. Fonte de Dados
+
+#### Opção A — Dados Reais (requer Profit Carteira Profissional)
+
+```bash
+# Abra o Profit Carteira Profissional
+# Compile e execute o ExtractorRTD:
+```
+Abra `ExtractorRTD/B3WM.ExtractorRTD.sln` no Visual Studio e compile.
+
+O ExtractorRTD se conecta ao Profit via Socket TCP :12002 e envia os dados para o servidor via SignalR.
+
+#### Opção B — Dados Simulados (Modo Debug)
+
+Nenhuma ação necessária. Em modo **Debug**, o servidor gera dados falsos automaticamente para desenvolvimento e testes.
+
+### 3. Trading Bridge — MetaTrader 5 (Opcional)
+
 ```bash
 cd B3WM.Python
 pip install -r requirements.txt
 python main.py
 ```
 
-### Coletor de Dados (ExtractorRTD)
-Abra `ExtractorRTD/B3WM.ExtractorRTD.sln` no Visual Studio e compile. Necessário Profit Carteira Profissional rodando.
+O servidor FastAPI inicia em **http://localhost:8000** e o B3WM Server se conecta a ele automaticamente.
+
+### 4. Testes
+
+```bash
+dotnet test B3WM.Tests
+```
 
 ---
 
 ## Estrutura do Projeto
 
 ```
-B3WM/                        # Solução principal (.NET)
-├── B3WM/                   # Servidor ASP.NET Core + SignalR
-│   ├── Services/Core/      # CandleService, BubbleService, VolumeService, StructureService
-│   └── Services/Backtest/  # BacktestEngine, IStrategy, SmartBreakoutStrategy
-├── B3WM.Client/            # Blazor WebAssembly
-│   └── Pages/              # NewMapFlow, BacktestPage
-├── B3WM.Shared/            # Modelos, DTOs, Extensions
-├── B3WM.Python/            # Bridge MT5 (FastAPI)
-└── ExtractorRTD/           # Coletor WPF (Profit)
+B3WM.sln                          # Solução principal (.NET 10)
+│
+├── B3WM/                         # 🖥️ Servidor ASP.NET Core + SignalR
+│   ├── Program.cs                #    Entry point do servidor
+│   ├── Services/Core/            #    Candle, Bubble, Volume, Structure
+│   ├── Services/Backtest/        #    BacktestEngine, SmartBreakoutStrategy
+│   ├── Controllers/              #    REST API endpoints
+│   ├── Data/                     #    Persistência (JSON)
+│   ├── Components/               #    Componentes Server-Side
+│   └── wwwroot/                  #    Arquivos estáticos
+│
+├── B3WM.Client/                  # 🌐 Frontend Blazor WebAssembly
+│   ├── Pages/                    #    NewMapFlow, BacktestPage
+│   ├── Components/               #    TradingDrawer, Charts
+│   └── Services/                 #    Serviços HTTP/SignalR (cliente)
+│
+├── B3WM.Shared/                  # 📦 Modelos, DTOs, Interfaces
+│
+├── B3WM.Tests/                   # ✅ Testes unitários (xUnit)
+│
+├── B3WM.Python/                  # 🐍 Bridge MetaTrader 5 (FastAPI)
+│   └── main.py                   #    Entry point (python main.py)
+│
+└── ExtractorRTD/                 # 📡 Coletor WPF (Profit RTD)
+    └── B3WM.ExtractorRTD.sln     #    Solução separada (.NET Framework)
 ```
 
 ---
