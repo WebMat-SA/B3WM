@@ -13,5 +13,7 @@ namespace B3WM.Shared.Models.Backtest
         public double SlippagePoints { get; set; } = 0;
         public double CommissionPerSide { get; set; } = 0.90;
         public int LookbackPeriod { get; set; } = 20;
+        public bool IsDayTrade { get; set; } = false;
+        public string DayTradeCloseTime { get; set; } = "17:00";
     }
 }

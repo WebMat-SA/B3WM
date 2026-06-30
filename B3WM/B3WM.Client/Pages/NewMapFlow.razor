@@ -5,7 +5,9 @@
 @using B3WM.Shared.Extensions
 @using B3WM.Shared.Models
 @using MudBlazor.Extensions.Helper
+@using MudBlazor.Extensions.Components
 @using Nextended.Core.Contracts
+@using Nextended.Core.Extensions
 @using Vizor.ECharts
 @inject NavigationManager Navigation
 @inject HttpClient httpClient
@@ -37,6 +39,10 @@
     private List<VolumeLevel> VolumeLevels { get; set; } = new List<VolumeLevel>();
     private List<VolumeLevel>? _filteredVolumeLevels { get; set; }
     private bool _volumeFilterActive { get; set; }
+    private int _volumeDataVersion { get; set; }
+    private int _filteredVolumeDataVersion { get; set; }
+    private int _lastVolumeDataVersion { get; set; } = -1;
+    private List<object[]>? _cachedVolumeProfileData { get; set; }
 
     private List<Shared.Models.StructureStorageItem> StructureStorageItemTimeFrameFilter => StructureStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame && q.Symbol == Symbol).ToList();
     private List<Shared.Models.StructureStorageItem> StructureStorageItem { get; set; } = new List<Shared.Models.StructureStorageItem>();
@@ -75,6 +81,7 @@
 
             var sw = Stopwatch.StartNew();
             VolumeLevels = volumes.Volumes as List<VolumeLevel> ?? volumes.Volumes.ToList();
+            _volumeDataVersion++;
 
             var count = BarStorageItemTimeFrameFilter.Count;
             var isFullRange = count > 0 && _dateRange.End >= count;
@@ -84,6 +91,7 @@
                 var startBar = BarStorageItemTimeFrameFilter.ElementAtOrDefault(Math.Max(0, _dateRange.Start - 1));
                 _filteredVolumeLevels = VolumeLevelStorageItem.Operation(volumes.Volumes ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
                 _volumeFilterActive = true;
+                _filteredVolumeDataVersion++;
             }
             //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(volumes));
 
@@ -131,6 +139,8 @@
     {
         if (structure.Symbol != Symbol) return;
         StructureStorageItem.Add(structure);
+        if (MapFlowConfigDrawer?.ProfileAutoByPriceStructure == true)
+            ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItemTimeFrameFilter.Count)));
     }
     public async Task NewBar(BarStorageItem bar)
     {
@@ -197,33 +207,30 @@
 
     private void ApplyVolumeFilter(IRange<int> newRange)
     {
-        ///refazer aqui...
         _dateRange = newRange;
 
         var count = BarStorageItemTimeFrameFilter.Count;
         if (count == 0) return;
 
-        // // Range contempla todas as barras = sem filtro: manter gráfico atual (volume já condizente com todo o período).
-        // var isFullRange = newRange.Start == 0 && newRange.End >= count;
-        // if (isFullRange)
-        // {
-        //     _volumeFilterActive = false;
-        //     _filteredVolumeLevels = null;
-        // }
-        // else
-        // {
-        //     var bars = BarStorageItem.OrderBy(q => q.Date).ToList();
+        var isFullRange = newRange.Start == 0 && newRange.End >= count;
+        if (isFullRange)
+        {
+            _volumeFilterActive = false;
+            _filteredVolumeLevels = null;
+        }
+        else
+        {
+            var bars = BarStorageItemTimeFrameFilter.OrderBy(q => q.Date).ToList();
 
-        //     var startBar = bars.ElementAtOrDefault(Math.Max(0, newRange.Start - 1));
-        //     var endBar = bars.ElementAtOrDefault(newRange.End);
-        //     if (startBar != null && endBar != null && HubClient != null)
-        //     {
-        //         //_filteredVolumeLevels = VolumeLevelStorageItem.FromTo(bars, startBar.Date, endBar.Date);
-        //         _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
-        //         _volumeFilterActive = true;
-        //         _filteredVolumeDataVersion++;
-        //     }
-        // }
+            var startBar = bars.ElementAtOrDefault(Math.Max(0, newRange.Start - 1));
+            var endBar = bars.ElementAtOrDefault(newRange.End);
+            if (startBar != null && endBar != null)
+            {
+                _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
+                _volumeFilterActive = true;
+                _filteredVolumeDataVersion++;
+            }
+        }
 
         StateHasChanged();
     }
@@ -457,6 +464,35 @@
                 Data = markLineEntries.ToArray()
             };
 
+        var isFullRange = _dateRange.Start == 0 && _dateRange.End >= BarStorageItemTimeFrameFilter.Count;
+
+        if (!isFullRange)
+        {
+            _cachedCandleSeriesObj.MarkArea = new MarkArea
+            {
+                Silent = true,
+                ItemStyle = new ItemStyle
+                {
+                    Color = "rgba(200,200,200,0.03)"
+                },
+                Data = new object[]
+                {
+                    new object[]
+                    {
+                        new { xAxis = _dateRange.Start },
+                        new { xAxis = _dateRange.End }
+                    }
+                }
+            };
+        }
+        else
+        {
+            _cachedCandleSeriesObj.MarkArea = new MarkArea
+            {
+                Data = Array.Empty<object>()
+            };
+        }
+
         #endregion
 
         #region Bubbles
@@ -519,26 +555,32 @@
         IList<VolumeLevel> effectiveLevels = _volumeFilterActive && _filteredVolumeLevels != null
             ? _filteredVolumeLevels
             : VolumeLevels;
+        var effectiveVolumeVersion = _volumeFilterActive ? _filteredVolumeDataVersion : _volumeDataVersion;
 
         var maxVolume = double.MinValue;
 
-        var _cachedVolumeProfileData = new List<object[]>();
-        if (MapFlowConfigDrawer.ProfileVisible)
+        // Só recalcula quando os dados de volume mudam
+        var volumeNeedsRefresh = _lastVolumeDataVersion != effectiveVolumeVersion
+            || (effectiveLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
+        if (volumeNeedsRefresh)
         {
-
+            _cachedVolumeProfileData = new List<object[]>(effectiveLevels.Count);
             foreach (var v in effectiveLevels)
             {
                 var total = (double)v.Total;
-                var absDelta = Math.Abs((double)v.Delta);
-                var price = (double)v.Price;
                 if (total > maxVolume) maxVolume = total;
-                // if (absDelta > _cachedMaxDelta) _cachedMaxDelta = absDelta;
-                // if (price < _cachedVolumeMinPrice) _cachedVolumeMinPrice = price;
-                // if (price > _cachedVolumeMaxPrice) _cachedVolumeMaxPrice = price;
-
                 _cachedVolumeProfileData.Add(new object[] { v.Total, v.Price, _cachedPriceStep });
             }
-
+            _lastVolumeDataVersion = effectiveVolumeVersion;
+        }
+        else
+        {
+            // Recalcular maxVolume a partir do cache existente
+            foreach (var item in _cachedVolumeProfileData!)
+            {
+                var total = (double)((object[])item)[0];
+                if (total > maxVolume) maxVolume = total;
+            }
         }
 
         var volumeProfileFunction = new JavascriptFunction(@"
@@ -571,7 +613,7 @@
                 }
             ");
 
-        var _cachedVolumeSeriesObj = new CustomSeries { Name = "Volume Profile", XAxisIndex = 1, YAxisIndex = 1, Z = 0, Data = _cachedVolumeProfileData, RenderItem = volumeProfileFunction };
+        var _cachedVolumeSeriesObj = new CustomSeries { Name = "Volume Profile", XAxisIndex = 1, YAxisIndex = 1, Z = 0, Data = _cachedVolumeProfileData ?? new List<object[]>(), RenderItem = volumeProfileFunction };
         #endregion
 
         #region Structure
@@ -719,6 +761,10 @@
             var todayData = await httpClient.GetFromJsonAsync<List<BarStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbar/{Symbol}/{DateTime.Today:yyyy-MM-dd}").AbsoluteUri}");
             BarStorageItem = todayData ?? new List<BarStorageItem>();
 
+            _dateRange = new MudExRange<int>(0, BarStorageItemTimeFrameFilter.Count);
+            _volumeFilterActive = false;
+            _filteredVolumeLevels = null;
+
 
             var todayBubble = await httpClient.GetFromJsonAsync<List<BubbleStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbubble/{Symbol}/{DateTime.Today:yyyy-MM-dd}").AbsoluteUri}");
             Bubbles = todayBubble ?? new List<BubbleStorageItem>();
@@ -791,7 +837,7 @@
             }
             else
             {
-                <div style="display:flex; flex-direction:row; height:90vh; overflow:hidden;">
+                <div style="display:flex; flex-direction:column; height:90vh; overflow:hidden;">
                     <div style="flex:1; overflow:hidden; min-width:0;">
                         <Vizor.ECharts.EChart @ref="EChart"
                         Renderer="Vizor.ECharts.ChartRenderer.Canvas"
@@ -804,6 +850,128 @@
                     {
                         <TradingDrawer />
                     }
+                    <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="1" Class="mt-2 py-2">
+                        <MudExRangeSlider T="int" Class="px-5 mx-5"
+                            Value="_dateRange"
+                            ValueChanged="ApplyVolumeFilter"
+                            SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItemTimeFrameFilter.Count)))"
+                            ShowInputs="false"
+                            AllowWholeRangeDrag="true"
+                            ToEndStringFunc="IndexEndToDateStringBars"
+                            ToStartStringFunc="IndexStartToDateStringBars">
+                                <TrackTemplate Context="ctx">
+                                    <div style="
+                                        height: 100%;
+                                        position: relative;
+                                        width: 100%;
+                                        background: var(--mud-palette-surface);
+                                        border-radius: 4px;
+                                        overflow: hidden;">
+                                        <div style="
+                                            position:absolute;
+                                            left:0;
+                                            right:0;
+                                            top:40%;
+                                            height:20%;
+                                            background: linear-gradient(
+                                            to right,
+                                            var(--mud-palette-background-grey),
+                                            var(--mud-palette-surface)
+                                            );
+                                            pointer-events:none;">
+                                        </div>
+                                        @for (var time = 0; time <= BarStorageItemTimeFrameFilter.Count-1; time++)
+                                        {
+                                            var pct = ctx.Math.Percent(time, ctx.SizeRange) * 100;
+                                            var isMajor = time % 10 == 0;
+                                            var top = isMajor ? "10%" : "25%";
+                                            var bottom = isMajor ? "10%" : "25%";
+                                            var width = isMajor ? "2px" : "1px";
+                                            var color = isMajor
+                                            ? "var(--mud-palette-lines-default)"
+                                            : "var(--mud-palette-divider)";
+                                            <div style="
+                                                position:absolute;
+                                                left:@pct.ToString("F2", CultureInfo.InvariantCulture)%;
+                                                top:@top;
+                                                bottom:@bottom;
+                                                width:@width;
+                                                background:@color;">
+                                            </div>
+                                            @if (isMajor)
+                                            {
+                                                <div style="
+                                                    position:absolute;
+                                                    left:@pct.ToString("F2", CultureInfo.InvariantCulture)%;
+                                                    bottom:4px;
+                                                    transform: translateX(-50%);
+                                                    font-size:10px;
+                                                    color:var(--mud-palette-text-secondary);
+                                                    font-weight:500;
+                                                    pointer-events:none;
+                                                    white-space:nowrap;
+                                                    z-index:1;">
+                                                    @BarStorageItemTimeFrameFilter.ElementAtOrDefault(time)?.Date.ToString("HH\\:mm", CultureInfo.CurrentCulture)
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                </TrackTemplate>
+                                <SelectionTemplate Context="ctx">
+                                    <div style="
+                                        height: 100%;
+                                        width: 100%;
+                                        background: linear-gradient(
+                                        90deg,
+                                        var(--mud-palette-primary),
+                                        var(--mud-palette-primary-darken)
+                                        );
+                                        display:flex;
+                                        align-items:center;
+                                        justify-content:center;
+                                        position:relative;
+                                        border-radius:4px;
+                                        box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+                                        <span style="
+                                            color:var(--mud-palette-primary-text);
+                                            font-weight:600;
+                                            font-size:11px;
+                                            white-space:nowrap;
+                                            padding:0 8px;
+                                            text-shadow:0 1px 2px rgba(0,0,0,0.3);">
+                                        @IndexStartToDateStringBars(_dateRange) – @IndexEndToDateStringBars(_dateRange)
+                                        </span>
+                                    </div>
+                                </SelectionTemplate>
+                                <ThumbStartTemplate Context="ctx">
+                                    <div style="
+                                        width:14px;
+                                        height:14px;
+                                        background:var(--mud-palette-surface);
+                                        border:3px solid var(--mud-palette-primary);
+                                        border-radius:50%;
+                                        box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+                                    </div>
+                                </ThumbStartTemplate>
+                                <ThumbEndTemplate Context="ctx">
+                                    <div style="
+                                        width:14px;
+                                        height:14px;
+                                        background:var(--mud-palette-surface);
+                                        border:3px solid var(--mud-palette-primary);
+                                        border-radius:50%;
+                                        box-shadow:0 2px 4px rgba(0,0,0,0.25);">
+                                    </div>
+                                </ThumbEndTemplate>
+                        </MudExRangeSlider>
+                        <MudIconButton Icon="@Icons.Material.Outlined.RestartAlt" OnClick="async () => { ApplyVolumeFilter(new MudExRange<int>(0, BarStorageItemTimeFrameFilter.Count())); StateHasChanged(); }" />
+                        <MudToggleIconButton @bind-Toggled="MapFlowConfigDrawer.ProfileAutoByPriceStructure"
+                                             Icon="@Icons.Material.Filled.AutoMode"
+                                             Color="@MudBlazor.Color.Error"
+                                             ToggledIcon="@Icons.Material.Filled.AutoMode"
+                                             ToggledColor="@MudBlazor.Color.Success"
+                                             title="@(MapFlowConfigDrawer.ProfileAutoByPriceStructure ? "On" : "Off")" />
+                    </MudStack>
                 </div>
             }
         </MapFlowConfigDrawer>

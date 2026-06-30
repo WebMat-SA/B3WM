@@ -2,136 +2,197 @@
 @using System.Net.Http.Json
 @using B3WM.Shared.Models
 @using B3WM.Shared.Models.Backtest
+@using B3WM.Shared.Entity
 @using Vizor.ECharts
+@using B3WM.Client.Components
 @inject NavigationManager Navigation
 @inject HttpClient Http
 
 @page "/backtest"
 
-<MudTextField @bind-Value="config.Symbol" Label="Simbolo" Variant="Variant.Outlined" Dense="true" />
-<MudSelect @bind-Value="config.TimeFrame" Label="TimeFrame" Variant="Variant.Outlined" Dense="true">
-    <MudSelectItem Value="@("1")">1 min</MudSelectItem>
-    <MudSelectItem Value="@("5")">5 min</MudSelectItem>
-    <MudSelectItem Value="@("15")">15 min</MudSelectItem>
-    <MudSelectItem Value="@("30")">30 min</MudSelectItem>
-    <MudSelectItem Value="@("60")">60 min</MudSelectItem>
-</MudSelect>
-<MudSelect @bind-Value="config.StrategyName" Label="Estrategia" Variant="Variant.Outlined" Dense="true">
-    <MudSelectItem Value="@StrategyType.Breakout">Breakout</MudSelectItem>
-    <MudSelectItem Value="@StrategyType.SmartBreakout">SmartBreakout</MudSelectItem>
-</MudSelect>
-<MudDatePicker @bind-Date="startDate" Label="Data Inicio" Variant="Variant.Outlined" Dense="true" />
-<MudDatePicker @bind-Date="endDate" Label="Data Fim" Variant="Variant.Outlined" Dense="true" />
+<MudCard Elevation="2" Class="mb-4">
+    <MudCardContent>
+        <MudText Typo="MudBlazor.Typo.h6" Class="mb-4">Configuracao do Backtest</MudText>
 
-<MudNumericField @bind-Value="config.StopLossPoints" Label="Stop Loss (pts)" Variant="Variant.Outlined" Dense="true" />
-<MudNumericField @bind-Value="config.TakeProfitPoints" Label="Take Profit (pts)" Variant="Variant.Outlined" Dense="true" />
-<MudNumericField @bind-Value="config.Quantity" Label="Quantidade" Variant="Variant.Outlined" Dense="true" />
-<MudNumericField @bind-Value="config.LookbackPeriod" Label="Lookback" Variant="Variant.Outlined" Dense="true" />
-<MudNumericField @bind-Value="config.SlippagePoints" Label="Slippage (pts)" Variant="Variant.Outlined" Dense="true" />
-<MudNumericField @bind-Value="config.CommissionPerSide" Label="Corretagem (R$/lado)" Variant="Variant.Outlined" Dense="true" />
+        <MudText Typo="MudBlazor.Typo.subtitle2" Class="mb-2">Mercado</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <MudTextField @bind-Value="config.Symbol" Label="Simbolo" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect @bind-Value="config.TimeFrame" Label="TimeFrame" Variant="Variant.Outlined" Dense="true">
+                    @foreach (var tf in B3WM.Shared.Models.Defaults.TimeFrames)
+                    {
+                        <MudSelectItem Value="@(tf.ToString())">@tf min</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect @bind-Value="config.StrategyName" Label="Estrategia" Variant="Variant.Outlined" Dense="true">
+                    <MudSelectItem Value="@StrategyType.Breakout">Breakout</MudSelectItem>
+                    <MudSelectItem Value="@StrategyType.SmartBreakout">SmartBreakout</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
 
-<MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="RunBacktest" Disabled="isRunning">
-    @if (isRunning) { <MudProgressCircular Indeterminate Size="Size.Small" Class="mr-2" /> }
-    Executar Backtest
-</MudButton>
+        <MudText Typo="MudBlazor.Typo.subtitle2" Class="mt-4 mb-2">Periodo</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="startDate" Label="Data Inicio" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="endDate" Label="Data Fim" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="MudBlazor.Typo.subtitle2" Class="mt-4 mb-2">Gerenciamento de Risco</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <MudNumericField @bind-Value="config.StopLossPoints" Label="Stop Loss (pts)" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudNumericField @bind-Value="config.TakeProfitPoints" Label="Take Profit (pts)" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudNumericField @bind-Value="config.Quantity" Label="Quantidade" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="MudBlazor.Typo.subtitle2" Class="mt-4 mb-2">Configuracoes Avancadas</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <MudNumericField @bind-Value="config.LookbackPeriod" Label="Lookback" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudNumericField @bind-Value="config.SlippagePoints" Label="Slippage (pts)" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudNumericField @bind-Value="config.CommissionPerSide" Label="Corretagem (R$/lado)" Variant="Variant.Outlined" Dense="true" />
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="MudBlazor.Typo.subtitle2" Class="mt-4 mb-2">Daytrade</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSwitch @bind-Value="config.IsDayTrade" Label="Daytrade" Color="MudBlazor.Color.Primary" Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField @bind-Value="config.DayTradeCloseTime" Label="Horario Fechamento" Variant="Variant.Outlined" Dense="true" Disabled="@(!config.IsDayTrade)" />
+            </MudItem>
+        </MudGrid>
+
+        <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="RunBacktest" Disabled="isRunning" FullWidth="true" Class="mt-4" Size="MudBlazor.Size.Large">
+            @if (isRunning) { <MudProgressCircular Indeterminate Size="Size.Small" Class="mr-2" /> }
+            Executar Backtest
+        </MudButton>
+    </MudCardContent>
+</MudCard>
 
 @if (errorMessage != null)
 {
-    <MudAlert Severity="MudBlazor.Severity.Error">@errorMessage</MudAlert>
+    <MudAlert Severity="MudBlazor.Severity.Error" Class="mb-4">@errorMessage</MudAlert>
 }
 
 @if (result != null)
 {
-    <MudText Typo="MudBlazor.Typo.h5">Resultados - @result.StrategyName</MudText>
+    <MapFlowConfigDrawer @ref="ConfigDrawer" openDrawer="openDrawer" Bubbles="bubbles">
+        <MudCard Elevation="2" Class="mb-4">
+            <MudCardContent>
+                <MudText Typo="MudBlazor.Typo.h6" Class="mb-4">Resultados - @result.StrategyName</MudText>
+                <MudGrid>
+                    <MudItem xs="6" sm="4" md="2" Class="text-center">
+                        <MudText Typo="MudBlazor.Typo.subtitle2">Win Rate</MudText>
+                        <MudText Typo="MudBlazor.Typo.h5" Color="@(result.WinRate >= 0.5 ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
+                            @(result.WinRate.ToString("P1", CultureInfo.InvariantCulture))
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2" Class="text-center">
+                        <MudText Typo="MudBlazor.Typo.subtitle2">Net P&L (R$)</MudText>
+                        <MudText Typo="MudBlazor.Typo.h5" Color="@(result.NetProfit >= 0 ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
+                            @result.NetProfit.ToString("N2", CultureInfo.InvariantCulture)
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2" Class="text-center">
+                        <MudText Typo="MudBlazor.Typo.subtitle2">Profit Factor</MudText>
+                        <MudText Typo="MudBlazor.Typo.h5">@result.ProfitFactor.ToString("N2", CultureInfo.InvariantCulture)</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2" Class="text-center">
+                        <MudText Typo="MudBlazor.Typo.subtitle2">Total Trades</MudText>
+                        <MudText Typo="MudBlazor.Typo.h5">@result.TotalTrades</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2" Class="text-center">
+                        <MudText Typo="MudBlazor.Typo.subtitle2">Max Drawdown</MudText>
+                        <MudText Typo="MudBlazor.Typo.h5" Color="MudBlazor.Color.Warning">
+                            @result.MaxDrawdown.ToString("N2", CultureInfo.InvariantCulture)
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2" Class="text-center">
+                        <MudText Typo="MudBlazor.Typo.subtitle2">Total Commission</MudText>
+                        <MudText Typo="MudBlazor.Typo.h5">@result.TotalCommission.ToString("N2", CultureInfo.InvariantCulture)</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
 
-    <MudPaper Class="pa-4 ma-2">
-        <MudGrid>
-            <MudItem xs="6" sm="4" md="2">
-                <MudText Typo="MudBlazor.Typo.subtitle2">Win Rate</MudText>
-                <MudText Typo="MudBlazor.Typo.h6" Color="@(result.WinRate >= 0.5 ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
-                    @(result.WinRate.ToString("P1", CultureInfo.InvariantCulture))
-                </MudText>
-            </MudItem>
-            <MudItem xs="6" sm="4" md="2">
-                <MudText Typo="MudBlazor.Typo.subtitle2">Net P&L (R$)</MudText>
-                <MudText Typo="MudBlazor.Typo.h6" Color="@(result.NetProfit >= 0 ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
-                    @result.NetProfit.ToString("N2", CultureInfo.InvariantCulture)
-                </MudText>
-            </MudItem>
-            <MudItem xs="6" sm="4" md="2">
-                <MudText Typo="MudBlazor.Typo.subtitle2">Profit Factor</MudText>
-                <MudText Typo="MudBlazor.Typo.h6">@result.ProfitFactor.ToString("N2", CultureInfo.InvariantCulture)</MudText>
-            </MudItem>
-            <MudItem xs="6" sm="4" md="2">
-                <MudText Typo="MudBlazor.Typo.subtitle2">Total Trades</MudText>
-                <MudText Typo="MudBlazor.Typo.h6">@result.TotalTrades</MudText>
-            </MudItem>
-            <MudItem xs="6" sm="4" md="2">
-                <MudText Typo="MudBlazor.Typo.subtitle2">Max Drawdown</MudText>
-                <MudText Typo="MudBlazor.Typo.h6" Color="MudBlazor.Color.Warning">
-                    @result.MaxDrawdown.ToString("N2", CultureInfo.InvariantCulture)
-                </MudText>
-            </MudItem>
-            <MudItem xs="6" sm="4" md="2">
-                <MudText Typo="MudBlazor.Typo.subtitle2">Total Commission</MudText>
-                <MudText Typo="MudBlazor.Typo.h6">@result.TotalCommission.ToString("N2", CultureInfo.InvariantCulture)</MudText>
-            </MudItem>
-        </MudGrid>
-    </MudPaper>
+        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Class="my-2">
+            <MudIconButton Icon="@Icons.Material.Filled.Settings" Color="MudBlazor.Color.Default" Size="Size.Small" OnClick="() => openDrawer = !openDrawer" />
+            <MudText Typo="MudBlazor.Typo.subtitle2">Configuracoes do Grafico</MudText>
+        </MudStack>
 
-    <div style="height:600px; width:100%;">
-        <Vizor.ECharts.EChart @ref="EChart"
-        Renderer="Vizor.ECharts.ChartRenderer.Canvas"
-        Options="ChartOptions"
-        Width="auto"
-        Height="100%" />
-    </div>
+        <div style="height:65vh; min-height:500px; width:100%;" class="mb-4">
+            <Vizor.ECharts.EChart @ref="EChart"
+            Renderer="Vizor.ECharts.ChartRenderer.Canvas"
+            Options="ChartOptions"
+            Width="auto"
+            Height="100%" />
+        </div>
 
-    <MudText Typo="MudBlazor.Typo.h6" Class="mt-4">Trades</MudText>
-    <MudTable Items="@result.Trades" Dense="true" Hover="true" Striped="true" Elevation="1">
-        <ColGroup>
-            <col style="width: 40px;" />
-            <col style="width: 80px;" />
-            <col style="width: 50px;" />
-            <col style="width: 90px;" />
-            <col style="width: 90px;" />
-            <col style="width: 100px;" />
-            <col style="width: 70px;" />
-            <col style="width: 90px;" />
-        </ColGroup>
-        <HeaderContent>
-            <MudTh>#</MudTh>
-            <MudTh>Entrada</MudTh>
-            <MudTh>Side</MudTh>
-            <MudTh>Entry Price</MudTh>
-            <MudTh>Exit Price</MudTh>
-            <MudTh>Motivo</MudTh>
-            <MudTh>Pontos</MudTh>
-            <MudTh>P&L (R$)</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="#">@(result.Trades.IndexOf(context) + 1)</MudTd>
-            <MudTd DataLabel="Entrada">@context.EntryDate.ToString("dd/MM HH:mm")</MudTd>
-            <MudTd DataLabel="Side">
-                <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(context.Side == OrderSide.Buy ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
-                    @(context.Side == OrderSide.Buy ? "BUY" : "SELL")
-                </MudChip>
-            </MudTd>
-            <MudTd DataLabel="Entry">@context.EntryPrice.ToString("N2", CultureInfo.InvariantCulture)</MudTd>
-            <MudTd DataLabel="Exit">@context.ExitPrice.ToString("N2", CultureInfo.InvariantCulture)</MudTd>
-            <MudTd DataLabel="Motivo">
-                <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(GetExitColor(context.ExitReason))">
-                    @GetExitLabel(context.ExitReason)
-                </MudChip>
-            </MudTd>
-            <MudTd DataLabel="Pontos" Style="@(context.Points >= 0 ? "color: #4caf50;" : "color: #f44336;")">
-                @(context.Points >= 0 ? "+" : "")@context.Points.ToString("N2", CultureInfo.InvariantCulture)
-            </MudTd>
-            <MudTd DataLabel="P&L" Style="@(context.ProfitLoss >= 0 ? "color: #4caf50;" : "color: #f44336;")">
-                @(context.ProfitLoss >= 0 ? "+" : "")@context.ProfitLoss.ToString("N2", CultureInfo.InvariantCulture)
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
+        <MudText Typo="MudBlazor.Typo.h6" Class="mb-2">Trades</MudText>
+        <MudTable Items="@result.Trades" Dense="true" Hover="true" Striped="true" Elevation="2">
+            <ColGroup>
+                <col style="width: 40px;" />
+                <col style="width: 100px;" />
+                <col style="width: 60px;" />
+                <col style="width: 100px;" />
+                <col style="width: 100px;" />
+                <col style="width: 100px;" />
+                <col style="width: 80px;" />
+                <col style="width: 100px;" />
+            </ColGroup>
+            <HeaderContent>
+                <MudTh>#</MudTh>
+                <MudTh>Entrada</MudTh>
+                <MudTh>Side</MudTh>
+                <MudTh>Entry Price</MudTh>
+                <MudTh>Exit Price</MudTh>
+                <MudTh>Motivo</MudTh>
+                <MudTh>Pontos</MudTh>
+                <MudTh>P&L (R$)</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="#">@(result.Trades.IndexOf(context) + 1)</MudTd>
+                <MudTd DataLabel="Entrada">@context.EntryDate.ToString("dd/MM HH:mm")</MudTd>
+                <MudTd DataLabel="Side">
+                    <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(context.Side == OrderSide.Buy ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
+                        @(context.Side == OrderSide.Buy ? "BUY" : "SELL")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Entry">@context.EntryPrice.ToString("N2", CultureInfo.InvariantCulture)</MudTd>
+                <MudTd DataLabel="Exit">@context.ExitPrice.ToString("N2", CultureInfo.InvariantCulture)</MudTd>
+                <MudTd DataLabel="Motivo">
+                    <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(GetExitColor(context.ExitReason))">
+                        @GetExitLabel(context.ExitReason)
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Pontos" Style="@(context.Points >= 0 ? "color: #4caf50;" : "color: #f44336;")">
+                    @(context.Points >= 0 ? "+" : "")@context.Points.ToString("N2", CultureInfo.InvariantCulture)
+                </MudTd>
+                <MudTd DataLabel="P&L" Style="@(context.ProfitLoss >= 0 ? "color: #4caf50;" : "color: #f44336;")">
+                    @(context.ProfitLoss >= 0 ? "+" : "")@context.ProfitLoss.ToString("N2", CultureInfo.InvariantCulture)
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MapFlowConfigDrawer>
 }
 
 @code {
@@ -164,10 +225,13 @@
 
     private BacktestResult? result;
     private List<BarStorageItem> bars = new();
+    private List<BubbleStorageItem> bubbles = new();
     private Vizor.ECharts.EChart? EChart;
     private Vizor.ECharts.ChartOptions ChartOptions = new();
     private bool isRunning;
     private string? errorMessage;
+    private MapFlowConfigDrawer? ConfigDrawer;
+    private bool openDrawer;
 
     private async Task RunBacktest()
     {
@@ -180,6 +244,9 @@
             var barsTask = Http.GetFromJsonAsync<List<BarStorageItem>>(
                 Navigation.ToAbsoluteUri($"/api/data/getbarrange/{config.Symbol}/{config.StartDate:yyyy-MM-dd}/{config.EndDate:yyyy-MM-dd}/{config.TimeFrame}").AbsoluteUri);
 
+            var bubblesTask = Http.GetFromJsonAsync<List<BubbleStorageItem>>(
+                Navigation.ToAbsoluteUri($"/api/data/getbubblerange/{config.Symbol}/{config.StartDate:yyyy-MM-dd}/{config.EndDate:yyyy-MM-dd}").AbsoluteUri);
+
             var response = await Http.PostAsJsonAsync(
                 Navigation.ToAbsoluteUri("/api/backtest/run").AbsoluteUri, config);
 
@@ -191,6 +258,7 @@
 
             result = await response.Content.ReadFromJsonAsync<BacktestResult>();
             bars = await barsTask ?? new();
+            bubbles = await bubblesTask ?? new();
 
             BuildChart();
         }
@@ -214,6 +282,20 @@
 
         var minPrice = bars.Min(b => b.Low);
         var maxPrice = bars.Max(b => b.High);
+
+        if (bubbles.Count > 0)
+        {
+            minPrice = Math.Min(minPrice, bubbles.Min(b => b.Price));
+            maxPrice = Math.Max(maxPrice, bubbles.Max(b => b.Price));
+        }
+        if (result.StructureLines != null && result.StructureLines.Count > 0)
+        {
+            minPrice = Math.Min(minPrice, result.StructureLines.Min(s => s.DownBorder));
+            minPrice = Math.Min(minPrice, result.StructureLines.Min(s => s.DownAuxBorder));
+            maxPrice = Math.Max(maxPrice, result.StructureLines.Max(s => s.UpBorder));
+            maxPrice = Math.Max(maxPrice, result.StructureLines.Max(s => s.UpAuxBorder));
+        }
+
         var priceRange = maxPrice - minPrice;
         if (priceRange <= 0) priceRange = 1;
         var padding = priceRange * 0.1;
@@ -238,8 +320,83 @@
             .Select(t => new object[] { t.ExitDate.ToString("dd/MM HH:mm"), t.ExitPrice, GetExitLabel(t.ExitReason) })
             .ToList();
 
+        var cfg = ConfigDrawer;
+        var showBubbles = cfg?.BubbleVisible ?? true;
+        var bubbleThreshold = cfg?.ThresholdBubble ?? 250;
+        var showStructure = cfg?.StructureVisible ?? true;
+        var structOpacity = showStructure ? (cfg?.StructureOpacity ?? 0.6) : 0;
+        var showVolumeProfile = cfg?.ProfileVisible ?? true;
+
+        // --- Bubbles ---
+        var redBubbleData = new List<object[]>();
+        var blueBubbleData = new List<object[]>();
+
+        if (showBubbles)
+        {
+            foreach (var b in bubbles)
+            {
+                if (b.Amount < bubbleThreshold) continue;
+                if (b.ActionType != Ticks2.ActionType.Buy && b.ActionType != Ticks2.ActionType.Sale) continue;
+                var arr = new object[] { b.Date.ToString("dd/MM HH:mm"), b.Price, (double)b.Amount };
+                if (b.ActionType == Ticks2.ActionType.Sale)
+                    redBubbleData.Add(arr);
+                else
+                    blueBubbleData.Add(arr);
+            }
+        }
+
+        // --- Structure Lines ---
+        var upBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+        var downBorderVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+        var upBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+        var downBorderAuxVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+
+        if (showStructure && result.StructureLines != null)
+        {
+            var indexLookup = new Dictionary<string, int>(categoryData.Count);
+            for (int i = 0; i < categoryData.Count; i++)
+                if (!indexLookup.ContainsKey(categoryData[i]))
+                    indexLookup[categoryData[i]] = i;
+
+            foreach (var s in result.StructureLines)
+            {
+                var key = s.Date.ToString("dd/MM HH:mm");
+                if (indexLookup.TryGetValue(key, out var idx) && idx >= 0 && idx < upBorderVals.Count)
+                {
+                    upBorderVals[idx] = s.UpBorder;
+                    downBorderVals[idx] = s.DownBorder;
+                    upBorderAuxVals[idx] = s.UpAuxBorder;
+                    downBorderAuxVals[idx] = s.DownAuxBorder;
+                }
+            }
+        }
+
+        // --- Volume Profile ---
+        var volumeProfileData = new List<object[]>();
+        double maxVolumeProfile = 0;
+        var tickSize = B3WM.Shared.Models.Defaults.GetTickSize(config.Symbol);
+
+        if (showVolumeProfile)
+        {
+            var aggregated = bars
+                .Where(b => b.VolumeLevel != null)
+                .SelectMany(b => b.VolumeLevel!)
+                .GroupBy(v => v.Price)
+                .Select(g => new { Price = g.Key, Total = g.Sum(v => (double)v.Total) })
+                .ToList();
+
+            if (aggregated.Count > 0)
+            {
+                maxVolumeProfile = aggregated.Max(v => v.Total);
+                foreach (var v in aggregated)
+                    volumeProfileData.Add(new object[] { v.Total, v.Price, tickSize });
+            }
+        }
+
+        // --- Build Series ---
         var seriesList = new List<ISeries>();
 
+        // [0] Candles
         seriesList.Add(new CandlestickSeries
         {
             Name = "Candle",
@@ -248,6 +405,75 @@
             ItemStyle = new ItemStyle { Color = "#ffffff", Color0 = "#000000", BorderColor = "#ffffff", BorderColor0 = "#ffffff" }
         });
 
+        // [1] Buy Bubbles
+        if (blueBubbleData.Count > 0)
+        {
+            seriesList.Add(new ScatterSeries
+            {
+                Name = "Buy Bubble",
+                Data = blueBubbleData,
+                Symbol = "circle",
+                SymbolSize = 8,
+                Z = 3,
+                ItemStyle = new ItemStyle { Color = "#42a5f5", Opacity = 0.7, BorderColor = "#ffffff", BorderWidth = 1 }
+            });
+        }
+
+        // [2] Sell Bubbles
+        if (redBubbleData.Count > 0)
+        {
+            seriesList.Add(new ScatterSeries
+            {
+                Name = "Sell Bubble",
+                Data = redBubbleData,
+                Symbol = "circle",
+                SymbolSize = 8,
+                Z = 3,
+                ItemStyle = new ItemStyle { Color = "#ef5350", Opacity = 0.7, BorderColor = "#ffffff", BorderWidth = 1 }
+            });
+        }
+
+        // [3] Volume Profile
+        var profileOpacity = cfg?.ProfileOpacity ?? 0.3;
+        if (volumeProfileData.Count > 0 && maxVolumeProfile > 0)
+        {
+            var volRenderFunc = new JavascriptFunction($@"
+                function(params, api) {{
+                    var vol = api.value(0);
+                    var price = api.value(1);
+                    var step = api.value(2);
+                    var start = api.coord([0, price]);
+                    var end = api.coord([vol * 0.4, price]);
+                    var size = api.size([0, step]);
+                    var h = size[1] * 0.8;
+                    var isPoc = Math.abs(vol - {maxVolumeProfile.ToString(inv)}) < 0.5;
+                    return {{
+                        type: 'rect',
+                        shape: {{
+                            x: end[0],
+                            y: start[1] - h / 2,
+                            width: start[0] - end[0],
+                            height: h
+                        }},
+                        style: api.style({{
+                            fill: isPoc ? 'rgba(255, 100, 0, {profileOpacity.ToString(inv)})' : 'rgba(100, 150, 250, {profileOpacity.ToString(inv)})',
+                            stroke: 'rgba(100, 150, 250, {(profileOpacity - 0.2).ToString(inv)})'
+                        }})
+                    }};
+                }}");
+
+            seriesList.Add(new CustomSeries
+            {
+                Name = "Volume Profile",
+                XAxisIndex = 1,
+                YAxisIndex = 1,
+                Z = 0,
+                Data = volumeProfileData,
+                RenderItem = volRenderFunc
+            });
+        }
+
+        // [4] Trade markers
         if (buyEntryData.Count > 0)
         {
             seriesList.Add(new ScatterSeries
@@ -300,9 +526,51 @@
             });
         }
 
+        // [5] Structure lines
+        var showAux = cfg?.StructureAuxVisible ?? false;
+        seriesList.Add(new LineSeries { Name = "UpBorder", Data = upBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#9696ff", Width = 1, Opacity = structOpacity } });
+        seriesList.Add(new LineSeries { Name = "DownBorder", Data = downBorderVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dotted), Color = "#ff9696", Width = 1, Opacity = structOpacity } });
+        var auxOpacity = (structOpacity - 0.25 <= 0 ? 0.01 : structOpacity - 0.25) * (showAux ? 1 : 0);
+        seriesList.Add(new LineSeries { Name = "UpAuxBorder", Data = upBorderAuxVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#5555aa", Width = 1, Opacity = auxOpacity } });
+        seriesList.Add(new LineSeries { Name = "DownAuxBorder", Data = downBorderAuxVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aa5555", Width = 1, Opacity = auxOpacity } });
+
+        // --- Chart Options ---
+        var yMin = minPrice - padding;
+        var yMax = maxPrice + padding;
+
+        var xAxisList = new List<XAxis>
+        {
+            new XAxis { Type = AxisType.Category, Data = categoryData, BoundaryGap = true,
+                AxisPointer = new AxisPointer { Show = true } }
+        };
+
+        var yAxisList = new List<YAxis>
+        {
+            new YAxis { Type = AxisType.Value, Scale = true, Min = yMin, Max = yMax,
+                AxisPointer = new AxisPointer { Show = true },
+                SplitLine = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128,128,128,0.05)" } } }
+        };
+
+        if (showVolumeProfile && maxVolumeProfile > 0)
+        {
+            xAxisList.Add(new XAxis
+            {
+                Type = AxisType.Value, Show = false, Inverse = true, Min = 0,
+                Max = maxVolumeProfile * 4,
+                AxisPointer = new AxisPointer { Show = false }
+            });
+            yAxisList.Add(new YAxis
+            {
+                Type = AxisType.Value, Position = LeftOrRight.Right,
+                Min = yMin, Max = yMax,
+                AxisPointer = new AxisPointer { Show = false },
+                SplitLine = new SplitLine { Show = false }
+            });
+        }
+
         ChartOptions = new Vizor.ECharts.ChartOptions
         {
-            Grid = new Vizor.ECharts.Grid { Left = "60", Right = "20", Bottom = "30", Top = "10", ContainLabel = true },
+            Grid = new Vizor.ECharts.Grid { Left = "60", Right = showVolumeProfile && maxVolumeProfile > 0 ? "100" : "20", Bottom = "30", Top = "10", ContainLabel = true },
             Tooltip = new Tooltip
             {
                 Trigger = TooltipTrigger.Axis,
@@ -312,22 +580,15 @@
                     "params.forEach(function(p) {" +
                     "if (p.seriesName.indexOf('Candle') >= 0 && p.data) {" +
                     "html += 'O: ' + p.data[1] + ' C: ' + p.data[2] + ' L: ' + p.data[3] + ' H: ' + p.data[4] + '<br/>';" +
+                    "} else if (p.seriesName == 'Volume Profile') {" +
+                    "html += 'Vol: ' + p.data[0] + '<br/>';" +
                     "} else {" +
                     "html += p.seriesName + ' @ ' + p.data[1] + '<br/>';" +
                     "}});" +
                     "return html;}")
             },
-            XAxisList = new List<XAxis>
-            {
-                new XAxis { Type = AxisType.Category, Data = categoryData, BoundaryGap = true,
-                    AxisPointer = new AxisPointer { Show = true } }
-            },
-            YAxisList = new List<YAxis>
-            {
-                new YAxis { Type = AxisType.Value, Scale = true, Min = minPrice - padding, Max = maxPrice + padding,
-                    AxisPointer = new AxisPointer { Show = true },
-                    SplitLine = new SplitLine { Show = true, LineStyle = new LineStyle { Color = "rgba(128,128,128,0.05)" } } }
-            },
+            XAxisList = xAxisList,
+            YAxisList = yAxisList,
             DataZoom = new List<IDataZoom>
             {
                 new InsideDataZoom { XAxisIndex = new[] { 0.0 } },
@@ -343,6 +604,7 @@
         ExitReason.TakeProfit => MudBlazor.Color.Success,
         ExitReason.StrategySignal => MudBlazor.Color.Info,
         ExitReason.EndOfData => MudBlazor.Color.Warning,
+        ExitReason.DayTradeClose => MudBlazor.Color.Warning,
         _ => MudBlazor.Color.Default
     };
 
@@ -352,6 +614,7 @@
         ExitReason.TakeProfit => "Gain",
         ExitReason.StrategySignal => "Estrategia",
         ExitReason.EndOfData => "Fim",
+        ExitReason.DayTradeClose => "Daytrade",
         _ => reason.ToString()
     };
 }

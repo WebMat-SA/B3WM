@@ -65,6 +65,21 @@ namespace B3WM.Services.Backtest
                     {
                         CloseTrade(position, bar.Close, ExitReason.StrategySignal, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
                         position = null;
+                        closed = true;
+                    }
+                }
+
+                if (position != null && !closed && config.IsDayTrade)
+                {
+                    if (TimeSpan.TryParse(config.DayTradeCloseTime, out var closeTime))
+                    {
+                        var barTime = bar.Date.TimeOfDay;
+                        if (barTime >= closeTime)
+                        {
+                            CloseTrade(position, bar.Close, ExitReason.DayTradeClose, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
+                            position = null;
+                            closed = true;
+                        }
                     }
                 }
 
@@ -106,6 +121,10 @@ namespace B3WM.Services.Backtest
             }
 
             CalculateMetrics(result, trades, equityCurve, cumulativePL);
+
+            if (strategy is SmartBreakoutStrategy smart)
+                result.StructureLines = smart.StructureLines;
+
             return result;
         }
 

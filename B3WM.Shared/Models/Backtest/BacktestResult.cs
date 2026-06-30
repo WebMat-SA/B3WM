@@ -1,3 +1,5 @@
+using B3WM.Shared.Models;
+
 namespace B3WM.Shared.Models.Backtest
 {
     public class BacktestResult
@@ -21,5 +23,6 @@ namespace B3WM.Shared.Models.Backtest
         public double TotalCommission { get; set; }
         public List<BacktestTrade> Trades { get; set; } = new();
         public List<double> EquityCurve { get; set; } = new();
+        public List<StructureStorageItem>? StructureLines { get; set; }
     }
 }

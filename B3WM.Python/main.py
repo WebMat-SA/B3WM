@@ -1,4 +1,7 @@
 import sys
+import traceback
+
+import MetaTrader5 as mt5
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +15,7 @@ from models.order import (
     PositionInfo,
     SymbolInfo,
 )
+from services.contract_utils import resolve_symbol
 from services.order_executor import MT5OrderExecutor
 
 app = FastAPI(title="B3WM Python MT5 Bridge")
@@ -30,8 +34,9 @@ executor = MT5OrderExecutor()
 @app.on_event("startup")
 async def startup():
     if not executor.connect():
-        print("Failed to initialize MetaTrader 5", file=sys.stderr)
-        print(f"Error: {executor.last_error() if hasattr(executor, 'last_error') else ''}", file=sys.stderr)
+        error_code, error_desc = mt5.last_error()
+        print(f"Failed to initialize MetaTrader 5", file=sys.stderr)
+        print(f"Error: ({error_code}) {error_desc}", file=sys.stderr)
 
 
 @app.on_event("shutdown")
@@ -82,7 +87,16 @@ async def get_positions(symbol: str = ""):
 
 @app.get("/api/symbol/{symbol}", response_model=SymbolInfo)
 async def get_symbol_info(symbol: str):
-    info = executor.get_symbol_info(symbol)
-    if info is None:
-        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-    return info
+    try:
+        resolved = resolve_symbol(symbol)
+        info = executor.get_symbol_info(resolved)
+        if info is None:
+            raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
+        if resolved != symbol:
+            info.symbol = symbol
+        return info
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc(file=sys.stderr)
+        raise HTTPException(status_code=500, detail=f"Internal error processing symbol {symbol}: {e}")

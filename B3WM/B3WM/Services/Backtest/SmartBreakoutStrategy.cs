@@ -21,6 +21,7 @@ namespace B3WM.Services.Backtest
         private double _upAuxBorder, _downAuxBorder;
         private bool _expectBuyDrop = true, _expectSellDrop = true, _isSizeChanger;
         private readonly double _minDistance;
+        public List<StructureStorageItem> StructureLines { get; } = new();
 
         public string Name => "SmartBreakout";
 
@@ -161,6 +162,17 @@ namespace B3WM.Services.Backtest
             _upAuxBorder = Math.Max(_upAuxBorder, bar.High);
             _downAuxBorder = Math.Min(_downAuxBorder, bar.Low);
             _isSizeChanger = false;
+
+            StructureLines.Add(new StructureStorageItem
+            {
+                Date = bar.Date,
+                Symbol = _config.Symbol,
+                TimeFrame = _config.TimeFrame,
+                UpBorder = _upBorder ?? double.NaN,
+                DownBorder = _downBorder ?? double.NaN,
+                UpAuxBorder = _upAuxBorder,
+                DownAuxBorder = _downAuxBorder
+            });
         }
 
         public void Reset()

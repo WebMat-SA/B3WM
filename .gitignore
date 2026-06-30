@@ -22,3 +22,6 @@ packages
 opencode.json
 opencode.ps1
 opencode.ps1 - Atalho.lnk
+
+# Python cache
+**/__pycache__/

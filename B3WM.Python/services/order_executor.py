@@ -1,3 +1,4 @@
+import sys
 from typing import Optional
 
 import MetaTrader5 as mt5
@@ -9,6 +10,7 @@ from models.order import (
     PositionInfo,
     SymbolInfo,
 )
+from services.contract_utils import resolve_symbol
 
 
 class MT5OrderExecutor:
@@ -43,10 +45,14 @@ class MT5OrderExecutor:
     def is_connected(self) -> bool:
         return self._connected
 
+    def _resolve_sym(self, symbol: str) -> str:
+        return resolve_symbol(symbol)
+
     def market_order(self, request: MarketOrderRequest) -> OrderResult:
+        symbol = self._resolve_sym(request.symbol)
         mt5_type = mt5.ORDER_TYPE_BUY if request.type.lower() == "buy" else mt5.ORDER_TYPE_SELL
 
-        tick = mt5.symbol_info_tick(request.symbol)
+        tick = mt5.symbol_info_tick(symbol)
         if tick is None:
             return OrderResult(message=f"Symbol {request.symbol} not found")
 
@@ -54,7 +60,7 @@ class MT5OrderExecutor:
 
         mt5_request = {
             "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": request.symbol,
+            "symbol": symbol,
             "volume": request.volume,
             "type": mt5_type,
             "price": price,
@@ -162,6 +168,8 @@ class MT5OrderExecutor:
     def get_account_info(self) -> Optional[AccountInfo]:
         info = mt5.account_info()
         if info is None:
+            error_code, error_desc = mt5.last_error()
+            print(f"[MT5] account_info() returned None. last_error: ({error_code}) {error_desc}", file=sys.stderr)
             return None
 
         return AccountInfo(
@@ -181,6 +189,7 @@ class MT5OrderExecutor:
 
     def get_positions(self, symbol: str = "") -> list[PositionInfo]:
         if symbol:
+            symbol = self._resolve_sym(symbol)
             positions = mt5.positions_get(symbol=symbol)
         else:
             positions = mt5.positions_get()
@@ -209,8 +218,13 @@ class MT5OrderExecutor:
         return result
 
     def get_symbol_info(self, symbol: str) -> Optional[SymbolInfo]:
-        tick = mt5.symbol_info_tick(symbol)
-        info = mt5.symbol_info(symbol)
+        try:
+            symbol = self._resolve_sym(symbol)
+            tick = mt5.symbol_info_tick(symbol)
+            info = mt5.symbol_info(symbol)
+        except Exception as e:
+            print(f"[MT5] exception in symbol_info for {symbol}: {e}", file=sys.stderr)
+            return None
 
         if info is None:
             return None
@@ -223,21 +237,25 @@ class MT5OrderExecutor:
             mt5.SYMBOL_TRADE_MODE_FULL: "full",
         }
 
-        return SymbolInfo(
-            symbol=symbol,
-            bid=tick.bid if tick else 0.0,
-            ask=tick.ask if tick else 0.0,
-            spread=info.spread,
-            digits=info.digits,
-            trade_mode=trade_mode_map.get(info.trade_mode, "unknown"),
-            volume_min=info.volume_min,
-            volume_max=info.volume_max,
-            volume_step=info.volume_step,
-            point=info.point,
-            tick_value=info.trade_tick_value,
-            contract_size=info.contract_size,
-            description=info.description,
-        )
+        try:
+            return SymbolInfo(
+                symbol=symbol,
+                bid=tick.bid if tick else 0.0,
+                ask=tick.ask if tick else 0.0,
+                spread=info.spread,
+                digits=info.digits,
+                trade_mode=trade_mode_map.get(info.trade_mode, "unknown"),
+                volume_min=getattr(info, "volume_min", 0.0),
+                volume_max=getattr(info, "volume_max", 0.0),
+                volume_step=getattr(info, "volume_step", 0.0),
+                point=info.point,
+                tick_value=getattr(info, "trade_tick_value", 0.0),
+                contract_size=getattr(info, "contract_size", 0),
+                description=getattr(info, "description", ""),
+            )
+        except Exception as e:
+            print(f"[MT5] error building SymbolInfo for {symbol}: {e}", file=sys.stderr)
+            return None
 
     def _retcode_name(self, retcode: int) -> str:
         mapping = {

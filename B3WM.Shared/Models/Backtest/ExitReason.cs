@@ -6,6 +6,7 @@ namespace B3WM.Shared.Models.Backtest
         TakeProfit,
         Reversal,
         StrategySignal,
-        EndOfData
+        EndOfData,
+        DayTradeClose
     }
 }

@@ -67,6 +67,35 @@ namespace B3WM.Controllers
             return Ok(filtered);
         }
 
+        [HttpGet("{symbol}/{startDate}/{endDate}")]
+        public async Task<IActionResult> GetBubbleRange(string symbol, DateTime startDate, DateTime endDate)
+        {
+            var allBubbles = new List<BubbleStorageItem>();
+            var current = startDate.Date;
+
+            while (current <= endDate.Date)
+            {
+                var path = $"{symbol}_{nameof(BubbleService)}_{current:yyyy-MM-dd}.json";
+                try
+                {
+                    var dayBubbles = await dataKeeper.ReadDataAsync<List<BubbleStorageItem>>(path);
+                    if (dayBubbles != null)
+                        allBubbles.AddRange(dayBubbles);
+                }
+                catch
+                {
+                    // skip missing days
+                }
+                current = current.AddDays(1);
+            }
+
+            var filtered = allBubbles
+                .Where(b => b.Date >= startDate && b.Date <= endDate)
+                .ToList();
+
+            return Ok(filtered);
+        }
+
         [HttpGet("{symbol}/{date}")]
         public async Task<IActionResult> GetBubbleAsync(string symbol, DateTime date)
         {
