@@ -29,6 +29,7 @@
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
     public bool openDrawer { get; set; } = false;
     public bool openDrawerBubbleNotify { get; set; } = false;
+    public bool openDrawerStrategy { get; set; } = false;
     public bool showTradingPanel { get; set; } = false;
 
     private List<BarStorageItem> BarStorageItem { get; set; } = new List<BarStorageItem>();
@@ -86,6 +87,7 @@
             var count = BarStorageItemTimeFrameFilter.Count;
             var isFullRange = count > 0 && _dateRange.End >= count;
 
+            // Auto-filter: quando o range está completo e o toggle AutoMode está ativo
             if (isFullRange && MapFlowConfigDrawer?.ProfileAutoByPriceStructure == true)
             {
                 var startBar = BarStorageItemTimeFrameFilter.ElementAtOrDefault(Math.Max(0, _dateRange.Start - 1));
@@ -93,7 +95,32 @@
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
             }
+            // Filter ativo manualmente: atualiza o volume filtrado com dados ao vivo
+            else if (_volumeFilterActive && _filteredVolumeLevels != null)
+            {
+                var bars = BarStorageItemTimeFrameFilter.OrderBy(q => q.Date).ToList();
+                var startBar = bars.ElementAtOrDefault(Math.Max(0, _dateRange.Start - 1));
+                if (startBar != null && startBar.VolumeLevel != null && startBar.VolumeLevel.Count > 0)
+                {
+                    _filteredVolumeLevels = VolumeLevelStorageItem.Operation(volumes.Volumes ?? new(), startBar.VolumeLevel, "Diff").OrderBy(q => q.Price).ToList();
+                }
+                else
+                {
+                    _filteredVolumeLevels = VolumeLevels.OrderBy(q => q.Price).ToList();
+                }
+                _filteredVolumeDataVersion++;
+            }
             //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(volumes));
+
+            // trigger strategy evaluation
+            try
+            {
+                await (MapFlowConfigDrawer?.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
+            }
+            catch
+            {
+                // ignore errors
+            }
 
             // rebuild simplified chart when volume data arrives
             //await GenerateChart();
@@ -126,6 +153,15 @@
         {
             // ignore errors from JS interop
         }
+        // trigger strategy evaluation
+        try
+        {
+            await (MapFlowConfigDrawer.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
+        }
+        catch
+        {
+            // ignore errors
+        }
         // After adding a new bubble, rebuild the simple chart so bubbles are shown
 
 
@@ -141,6 +177,15 @@
         StructureStorageItem.Add(structure);
         if (MapFlowConfigDrawer?.ProfileAutoByPriceStructure == true)
             ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItemTimeFrameFilter.Count)));
+        // trigger strategy evaluation
+        try
+        {
+            await (MapFlowConfigDrawer?.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
+        }
+        catch
+        {
+            // ignore errors
+        }
     }
     public async Task NewBar(BarStorageItem bar)
     {
@@ -171,6 +216,16 @@
         {
             _dateRange = new MudExRange<int>(_dateRange.Start, BarStorageItemTimeFrameFilter.Count);
             ApplyVolumeFilter(_dateRange);
+        }
+
+        // trigger strategy evaluation
+        try
+        {
+            await (MapFlowConfigDrawer?.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
+        }
+        catch
+        {
+            // ignore errors
         }
 
         //Console.WriteLine(bar);
@@ -221,12 +276,31 @@
         else
         {
             var bars = BarStorageItemTimeFrameFilter.OrderBy(q => q.Date).ToList();
-
             var startBar = bars.ElementAtOrDefault(Math.Max(0, newRange.Start - 1));
             var endBar = bars.ElementAtOrDefault(newRange.End);
+
             if (startBar != null && endBar != null)
             {
-                _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endBar.VolumeLevel ?? new(), startBar.VolumeLevel ?? new(), "Diff").OrderBy(q => q.Price).ToList();
+                // Tenta usar VolumeLevel das barras (snapshots cumulativos do disco)
+                var startLevels = startBar.VolumeLevel;
+                var endLevels = endBar.VolumeLevel;
+
+                if (endLevels != null && endLevels.Count > 0 && startLevels != null && startLevels.Count > 0)
+                {
+                    // Ambos os lados têm snapshot cumulativo → diff preciso do range
+                    _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endLevels, startLevels, "Diff").OrderBy(q => q.Price).ToList();
+                }
+                else if (startLevels != null && startLevels.Count > 0)
+                {
+                    // Só o start tem snapshot → usa volume ao vivo menos o start (range → agora)
+                    _filteredVolumeLevels = VolumeLevelStorageItem.Operation(VolumeLevels, startLevels, "Diff").OrderBy(q => q.Price).ToList();
+                }
+                else
+                {
+                    // Nenhum snapshot disponível → usa o volume ao vivo como está
+                    _filteredVolumeLevels = VolumeLevels.OrderBy(q => q.Price).ToList();
+                }
+
                 _volumeFilterActive = true;
                 _filteredVolumeDataVersion++;
             }
@@ -332,7 +406,6 @@
         var swTotal = Stopwatch.StartNew();
 
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        double _cachedPriceStep = 0.5;
 
         #region Candles and graph setup
 
@@ -559,6 +632,11 @@
 
         var maxVolume = double.MinValue;
 
+        // Calcular price step dinamicamente (como no código legado)
+        double priceStep = 0.5;
+        if (effectiveLevels.Count >= 2)
+            priceStep = Math.Abs(effectiveLevels[1].Price - effectiveLevels[0].Price);
+
         // Só recalcula quando os dados de volume mudam
         var volumeNeedsRefresh = _lastVolumeDataVersion != effectiveVolumeVersion
             || (effectiveLevels.Count > 0 && (_cachedVolumeProfileData == null || _cachedVolumeProfileData.Count == 0));
@@ -569,7 +647,7 @@
             {
                 var total = (double)v.Total;
                 if (total > maxVolume) maxVolume = total;
-                _cachedVolumeProfileData.Add(new object[] { v.Total, v.Price, _cachedPriceStep });
+                _cachedVolumeProfileData.Add(new object[] { v.Total, v.Price, priceStep });
             }
             _lastVolumeDataVersion = effectiveVolumeVersion;
         }
@@ -810,6 +888,9 @@
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; }" />
                     </MudBadge>
                 </MudTooltip>
+                <MudTooltip Text="Notificações de estratégia">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Leaderboard" Color="@(openDrawerStrategy ? MudBlazor.Color.Info : MudBlazor.Color.Default)" OnClick="() => { openDrawerStrategy = !openDrawerStrategy; openDrawer = false; openDrawerBubbleNotify = false; }" />
+                </MudTooltip>
                 <MudTooltip Text="Trading Panel">
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.TravelExplore" Color="@(showTradingPanel ? MudBlazor.Color.Info : MudBlazor.Color.Default)" OnClick="() => { showTradingPanel = !showTradingPanel; }" />
                 </MudTooltip>
@@ -828,7 +909,7 @@
     </MudAppBar>
 
     <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
-        <MapFlowConfigDrawer @ref="MapFlowConfigDrawer" openDrawer="openDrawer" openDrawerBubbleNotify="openDrawerBubbleNotify" Bubbles="Bubbles" OnNewStructureDistance="SetMinDistanceStructure">
+        <MapFlowConfigDrawer @ref="MapFlowConfigDrawer" openDrawer="openDrawer" openDrawerBubbleNotify="openDrawerBubbleNotify" openDrawerStrategy="openDrawerStrategy" Bubbles="Bubbles" Bars="BarStorageItemTimeFrameFilter.ToList()" Structures="StructureStorageItemTimeFrameFilter" VolumeLevels="VolumeLevels" OnNewStructureDistance="SetMinDistanceStructure">
             @if (isLoading)
             {
                 <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height:100%">
@@ -837,20 +918,17 @@
             }
             else
             {
-                <div style="display:flex; flex-direction:column; height:90vh; overflow:hidden;">
-                    <div style="flex:1; overflow:hidden; min-width:0;">
-                        <Vizor.ECharts.EChart @ref="EChart"
-                        Renderer="Vizor.ECharts.ChartRenderer.Canvas"
-                        Options="ChartOptions"
-                        Width="auto"
-                        Height="750px"
-                        @key="@($"chart_{Symbol}")" />
-                    </div>
-                    @if (showTradingPanel)
-                    {
-                        <TradingDrawer />
-                    }
-                    <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="1" Class="mt-2 py-2">
+                <div style="display:flex; flex-direction:row; height:90vh; overflow:hidden;">
+                    <div style="display:flex; flex-direction:column; flex:1; overflow:hidden; min-width:0;">
+                        <div style="flex:1; overflow:hidden; min-height:0;">
+                            <Vizor.ECharts.EChart @ref="EChart"
+                            Renderer="Vizor.ECharts.ChartRenderer.Canvas"
+                            Options="ChartOptions"
+                            Width="auto"
+                            Height="750px"
+                            @key="@($"chart_{Symbol}")" />
+                        </div>
+                        <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="1" Class="mt-2 py-2">
                         <MudExRangeSlider T="int" Class="px-5 mx-5"
                             Value="_dateRange"
                             ValueChanged="ApplyVolumeFilter"
@@ -973,6 +1051,11 @@
                                              title="@(MapFlowConfigDrawer.ProfileAutoByPriceStructure ? "On" : "Off")" />
                     </MudStack>
                 </div>
+                @if (showTradingPanel)
+                {
+                    <TradingDrawer />
+                }
+            </div>
             }
         </MapFlowConfigDrawer>
     </MudDrawerContainer>

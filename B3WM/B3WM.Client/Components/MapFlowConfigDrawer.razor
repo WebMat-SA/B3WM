@@ -23,7 +23,19 @@
     public bool openDrawerBubbleNotify { get; set; } = false;
 
     [Parameter]
+    public bool openDrawerStrategy { get; set; } = false;
+
+    [Parameter]
     public Func<double, Task>? OnNewStructureDistance { get; set; }
+
+    [Parameter]
+    public List<BarStorageItem> Bars { get; set; } = new();
+
+    [Parameter]
+    public List<Shared.Models.StructureStorageItem> Structures { get; set; } = new();
+
+    [Parameter]
+    public List<VolumeLevel> VolumeLevels { get; set; } = new();
 
 
     [PersistState]
@@ -168,6 +180,7 @@
     }
 
     public MapFlowBubbleDrawer? MapFlowBubbleDrawer { get; set; }
+    public MapFlowStrategyDrawer? MapFlowStrategyDrawer { get; set; }
     [Parameter] public List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
 }
 
@@ -437,6 +450,7 @@
 
     </MudDrawer>
 <MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="@SelectedAgents" ThresholdBubble="@ThresholdBubble" />
+<MapFlowStrategyDrawer @ref="MapFlowStrategyDrawer" Open="openDrawerStrategy" Bars="Bars" Bubbles="Bubbles" Structures="Structures" VolumeLevels="VolumeLevels" TimeFrame="TimeFrame" />
 <CascadingValue Value="this">
     @ChildContent
 </CascadingValue>

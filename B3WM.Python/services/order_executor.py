@@ -45,10 +45,30 @@ class MT5OrderExecutor:
     def is_connected(self) -> bool:
         return self._connected
 
+    def ensure_connected(self) -> bool:
+        if not self._connected:
+            return self.connect()
+
+        probe = mt5.account_info()
+        if probe is not None:
+            return True
+
+        error_code, error_desc = mt5.last_error()
+        if error_code == -10004:
+            print(f"[MT5] IPC lost ({error_code} {error_desc}). Reconnecting...", file=sys.stderr)
+            mt5.shutdown()
+            self._connected = False
+            return self.connect()
+
+        return True
+
     def _resolve_sym(self, symbol: str) -> str:
         return resolve_symbol(symbol)
 
     def market_order(self, request: MarketOrderRequest) -> OrderResult:
+        if not self.ensure_connected():
+            return OrderResult(message="MT5 not connected")
+
         symbol = self._resolve_sym(request.symbol)
         mt5_type = mt5.ORDER_TYPE_BUY if request.type.lower() == "buy" else mt5.ORDER_TYPE_SELL
 
@@ -92,6 +112,9 @@ class MT5OrderExecutor:
         )
 
     def close_position(self, position_ticket: int) -> OrderResult:
+        if not self.ensure_connected():
+            return OrderResult(message="MT5 not connected")
+
         position = mt5.positions_get(ticket=position_ticket)
         if position is None or len(position) == 0:
             return OrderResult(message=f"Position {position_ticket} not found")
@@ -135,6 +158,9 @@ class MT5OrderExecutor:
         )
 
     def modify_position(self, position_ticket: int, sl: Optional[float] = None, tp: Optional[float] = None) -> OrderResult:
+        if not self.ensure_connected():
+            return OrderResult(message="MT5 not connected")
+
         position = mt5.positions_get(ticket=position_ticket)
         if position is None or len(position) == 0:
             return OrderResult(message=f"Position {position_ticket} not found")
@@ -166,6 +192,9 @@ class MT5OrderExecutor:
         )
 
     def get_account_info(self) -> Optional[AccountInfo]:
+        if not self.ensure_connected():
+            return None
+
         info = mt5.account_info()
         if info is None:
             error_code, error_desc = mt5.last_error()
@@ -188,6 +217,9 @@ class MT5OrderExecutor:
         )
 
     def get_positions(self, symbol: str = "") -> list[PositionInfo]:
+        if not self.ensure_connected():
+            return []
+
         if symbol:
             symbol = self._resolve_sym(symbol)
             positions = mt5.positions_get(symbol=symbol)
@@ -218,6 +250,9 @@ class MT5OrderExecutor:
         return result
 
     def get_symbol_info(self, symbol: str) -> Optional[SymbolInfo]:
+        if not self.ensure_connected():
+            return None
+
         try:
             symbol = self._resolve_sym(symbol)
             tick = mt5.symbol_info_tick(symbol)

@@ -23,7 +23,7 @@
                 <MudSelect @bind-Value="config.TimeFrame" Label="TimeFrame" Variant="Variant.Outlined" Dense="true">
                     @foreach (var tf in B3WM.Shared.Models.Defaults.TimeFrames)
                     {
-                        <MudSelectItem Value="@(tf.ToString())">@tf min</MudSelectItem>
+                        <MudSelectItem Value="@tf">@tf min</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
@@ -139,12 +139,12 @@
             <MudText Typo="MudBlazor.Typo.subtitle2">Configuracoes do Grafico</MudText>
         </MudStack>
 
-        <div style="height:65vh; min-height:500px; width:100%;" class="mb-4">
+        <div style="height:750px; width:100%;" class="mb-4">
             <Vizor.ECharts.EChart @ref="EChart"
             Renderer="Vizor.ECharts.ChartRenderer.Canvas"
             Options="ChartOptions"
             Width="auto"
-            Height="100%" />
+            Height="750px" />
         </div>
 
         <MudText Typo="MudBlazor.Typo.h6" Class="mb-2">Trades</MudText>

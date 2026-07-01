@@ -1,0 +1,299 @@
+@using B3WM.Shared.Models.Backtest
+@using B3WM.Shared.Entity
+@using B3WM.Shared.Extensions
+@using B3WM.Shared.Models
+@inject IJSRuntime JS
+@inherits Components.PersistentComponentBase
+
+@code {
+    protected override string PersistenceKey => $"{nameof(MapFlowStrategyDrawer)}_{Symbol}_state";
+
+    public class StrategySignalRecord
+    {
+        public DateTime Time { get; set; }
+        public OrderSide Side { get; set; }
+        public string Reason { get; set; } = "";
+        public double Price { get; set; }
+        public double? StopLoss { get; set; }
+    }
+
+    string GetChipStyle(OrderSide side) =>
+        $"background-color: {(side == OrderSide.Buy ? "#00fa9a" : "#ff4500")}";
+
+    [CascadingParameter]
+    public string Symbol { get; set; } = "";
+
+    [Parameter]
+    public bool Open { get; set; }
+
+    [Parameter]
+    public int TimeFrame { get; set; } = 2;
+
+    [Parameter]
+    public List<BarStorageItem> Bars { get; set; } = new();
+
+    [Parameter]
+    public List<BubbleStorageItem> Bubbles { get; set; } = new();
+
+    [Parameter]
+    public List<StructureStorageItem> Structures { get; set; } = new();
+
+    [Parameter]
+    public List<VolumeLevel> VolumeLevels { get; set; } = new();
+
+    [PersistState]
+    public int EntryThreshold { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartEntryThreshold;
+
+    [PersistState]
+    public int ExitThreshold { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartExitThreshold;
+
+    [PersistState]
+    public double VolumePct { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartVolumePct;
+
+    [PersistState]
+    public double BufferPct { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartStructureBufferPct;
+
+    [PersistState]
+    public bool Sound { get; set; } = true;
+
+    private bool _inPosition;
+    private List<StrategySignalRecord> _signals = new();
+    private HashSet<string> _seenKeys = new();
+    private bool _initialized;
+
+    string MakeKey(StrategySignalRecord s) => $"{s.Time.Ticks}_{s.Side}_{s.Reason}_{s.Price}";
+
+    async Task PlayNotificationSoundAsync()
+    {
+        try
+        {
+            var script = @"(function(){
+              var ctx = new (window.AudioContext || window.webkitAudioContext)();
+              var o = ctx.createOscillator();
+              var g = ctx.createGain();
+              o.type = 'sine';
+              o.frequency.value = 660;
+              g.gain.value = 0.08;
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.start(0);
+              setTimeout(function(){ o.stop(0); ctx.close(); }, 500);
+            })()";
+            await JS.InvokeVoidAsync("eval", script);
+        }
+        catch
+        {
+        }
+    }
+
+    private bool IsLowVolumeLevel(double price)
+    {
+        if (VolumeLevels == null || VolumeLevels.Count == 0) return false;
+
+        var tickSize = B3WM.Shared.Models.Defaults.GetTickSize(Symbol);
+        var avg = VolumeLevels.Average(v => (double)v.Total);
+        if (avg <= 0) return false;
+
+        var level = VolumeLevels
+            .Where(v => Math.Abs(v.Price - price) <= tickSize)
+            .OrderBy(v => Math.Abs(v.Price - price))
+            .FirstOrDefault();
+
+        return level != null && level.Total < avg * VolumePct;
+    }
+
+    public async Task NotifyNewSignalAsync()
+    {
+        var bar = Bars.LastOrDefault();
+        if (bar == null) return;
+
+        var structure = Structures.LastOrDefault();
+        if (structure == null) return;
+
+        var upBorder = structure.UpBorder;
+        var downBorder = structure.DownBorder;
+        if (double.IsNaN(upBorder) || double.IsNaN(downBorder)) return;
+
+        var range = upBorder - downBorder;
+        if (range <= 0) return;
+
+        var buffer = range * BufferPct;
+        var barStart = bar.Date.GetCandleStart(TimeFrame);
+        var barBubbles = Bubbles
+            .Where(b => b.Date.GetCandleStart(TimeFrame) == barStart)
+            .ToList();
+
+        if (barBubbles.Count == 0) return;
+
+        var largeBubbles = barBubbles.Where(b => b.Amount >= EntryThreshold).ToList();
+        if (largeBubbles.Count == 0) return;
+
+        List<StrategySignalRecord> newSignals = new();
+
+        if (_inPosition)
+        {
+            if (barBubbles.Any(b => b.Amount >= ExitThreshold))
+            {
+                newSignals.Add(new StrategySignalRecord
+                {
+                    Time = bar.Date,
+                    Side = bar.Close >= (upBorder + downBorder) / 2 ? OrderSide.Sell : OrderSide.Buy,
+                    Reason = "Exit: large bubble",
+                    Price = bar.Close,
+                });
+            }
+        }
+        else
+        {
+            foreach (var bubble in largeBubbles)
+            {
+                if (!IsLowVolumeLevel(bubble.Price)) continue;
+
+                if (Math.Abs(bubble.Price - upBorder) <= buffer ||
+                    Math.Abs(bubble.Price - downBorder) <= buffer)
+                    continue;
+
+                if (bubble.ActionType == Ticks2.ActionType.Buy && bubble.Price < upBorder)
+                {
+                    var slPrice = downBorder - buffer;
+                    newSignals.Add(new StrategySignalRecord
+                    {
+                        Time = bar.Date,
+                        Side = OrderSide.Buy,
+                        Reason = $"SmartB.Compra {bubble.Amount}@{(Ticks2.Agents)bubble.Agent}",
+                        Price = bubble.Price,
+                        StopLoss = slPrice,
+                    });
+                }
+
+                if (bubble.ActionType == Ticks2.ActionType.Sale && bubble.Price > downBorder)
+                {
+                    var slPrice = upBorder + buffer;
+                    newSignals.Add(new StrategySignalRecord
+                    {
+                        Time = bar.Date,
+                        Side = OrderSide.Sell,
+                        Reason = $"SmartB.Venda {bubble.Amount}@{(Ticks2.Agents)bubble.Agent}",
+                        Price = bubble.Price,
+                        StopLoss = slPrice,
+                    });
+                }
+            }
+        }
+
+        if (newSignals.Count == 0) return;
+
+        if (!_initialized)
+        {
+            _seenKeys = new HashSet<string>(newSignals.Select(MakeKey));
+            _initialized = true;
+            _signals.AddRange(newSignals);
+            return;
+        }
+
+        var unseen = newSignals.Where(s => !_seenKeys.Contains(MakeKey(s))).ToList();
+
+        if (unseen.Count > 0)
+        {
+            if (Sound)
+            {
+                try { await PlayNotificationSoundAsync(); }
+                catch { }
+            }
+
+            _signals.AddRange(unseen);
+            if (_signals.Count > 200) _signals.RemoveRange(0, _signals.Count - 200);
+
+            foreach (var s in unseen)
+            {
+                if (s.Side == OrderSide.Buy && !string.IsNullOrEmpty(s.Reason) && !s.Reason.StartsWith("Exit"))
+                    _inPosition = true;
+                else if (s.Side == OrderSide.Sell && !string.IsNullOrEmpty(s.Reason) && !s.Reason.StartsWith("Exit"))
+                    _inPosition = true;
+                else if (s.Reason.StartsWith("Exit"))
+                    _inPosition = false;
+            }
+        }
+
+        _seenKeys = new HashSet<string>(newSignals.Select(MakeKey));
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void ForceUpdate() => StateHasChanged();
+}
+
+<MudDrawer Open="Open" Height="86vh" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent">
+
+    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+        <MudList ReadOnly=true Dense T="string">
+            <MudListItem Dense="true" T="string" Icon="@Icons.Material.Filled.TravelExplore">
+                <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption">Estratégia SmartBreakout</MudText>
+                    <MudStack Row Justify="Justify.FlexEnd" Spacing="1">
+                        <MudTooltip Text="Notificações Sonoras">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => Sound =! Sound" Color="@(Sound ? MudBlazor.Color.Info : MudBlazor.Color.Default)" />
+                        </MudTooltip>
+                    </MudStack>
+                </MudStack>
+            </MudListItem>
+
+            <MudListItem Dense="true" T="string">
+                <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudIconButton Size="Size.Small" Icon="@(_inPosition ? Icons.Material.Filled.FiberManualRecord : Icons.Material.Filled.PauseCircleOutline)" Color="@(_inPosition ? MudBlazor.Color.Warning : MudBlazor.Color.Default)" Disabled="true" />
+                    <MudText Typo="Typo.caption">@(_inPosition ? "EM POSIÇÃO" : "AGUARDANDO")</MudText>
+                    <MudText Typo="Typo.caption">Sinais: @_signals.Count</MudText>
+                </MudStack>
+            </MudListItem>
+
+            <MudListItem Dense="true">
+                <MudStack Row Spacing="2" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption">Entry</MudText>
+                    <MudSlider Size="Size.Small" @bind-Value="@EntryThreshold" Step="25" Min=100 Max=5000 T=@int Variant="Variant.Filled" />
+                    <MudText Typo="Typo.caption">@EntryThreshold</MudText>
+                </MudStack>
+            </MudListItem>
+
+            <MudListItem Dense="true">
+                <MudStack Row Spacing="2" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption">Exit</MudText>
+                    <MudSlider Size="Size.Small" @bind-Value="@ExitThreshold" Step="25" Min=100 Max=5000 T=@int Variant="Variant.Filled" />
+                    <MudText Typo="Typo.caption">@ExitThreshold</MudText>
+                </MudStack>
+            </MudListItem>
+
+            <MudDivider />
+
+            <Virtualize TItem=StrategySignalRecord Items="_signals" Context="s">
+                <MudListItem Dense="true" T="string">
+                    <MudStack AlignItems="AlignItems.Center" Row Justify="Justify.SpaceBetween">
+                        <MudTooltip Text="@s.Price.ToString("0.##")">
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                                <MudChip Label="true" Text="@s.Time.ToString("HH:mm:ss")" Size="Size.Small" />
+                                @if (s.Side == OrderSide.Buy)
+                                {
+                                    <MudText Typo="Typo.caption" Style="color:#00fa9a">▲ COMPRA</MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Style="color:#ff4500">▼ VENDA</MudText>
+                                }
+                            </MudStack>
+                        </MudTooltip>
+                        <MudTooltip Text="@s.Reason">
+                            <MudChip Label="true" Text="@s.Price.ToString("0.##")" Size="Size.Small" Style="@GetChipStyle(s.Side)" />
+                        </MudTooltip>
+                    </MudStack>
+                    @if (s.StopLoss.HasValue)
+                    {
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Style="padding-left: 8px">
+                            <MudText Typo="Typo.caption" Style="color:#888">SL:</MudText>
+                            <MudText Typo="Typo.caption" Style="color:#ff6b6b">@s.StopLoss.Value.ToString("0.##")</MudText>
+                        </MudStack>
+                    }
+                    <MudText Typo="Typo.caption" Style="color:#aaa; padding-left: 8px">@s.Reason</MudText>
+                </MudListItem>
+            </Virtualize>
+        </MudList>
+    </MudPaper>
+
+</MudDrawer>
