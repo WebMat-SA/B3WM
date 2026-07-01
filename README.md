@@ -20,6 +20,37 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 **Objetivo:** Estudar a dinâmica do fluxo de ordens, perfil de volume, agressividade dos participantes e estrutura de preços — tudo em tempo real.
 
 ---
+> 💡 **Quer ver na prática?** As imagens abaixo mostram o B3WM rodando com dados reais da B3.
+> Se você tiver sugestões de outros prints que ajudariam a entender melhor o projeto,
+> fique à vontade para contribuir! (veja sugestões ao final da seção)
+
+---
+
+## Prévia
+
+<div align="center">
+  <img src="screenshots/B3WM2.png" alt="Visão Geral da Plataforma" width="800" style="max-width:100%;">
+  <p><em>Visão geral com gráfico de candles, bubbles de grandes volumes e perfil de volume (Volume Profile) à direita.</em></p>
+</div>
+
+<br/>
+
+<div align="center">
+  <img src="screenshots/B3WM.png" alt="Análise de Microestrutura" width="800" style="max-width:100%;">
+  <p><em>Análise detalhada de microestrutura: delta acumulado por nível de preço, identificação de agentes agressores e estrutura de suporte/resistência.</em></p>
+</div>
+
+### Prints que ajudariam (contribua!)
+
+Se quiser tornar este README ainda mais completo, capture e envie prints de:
+
+| # | O que capturar | O que mostra |
+|---|---|---|
+| 1 | Página de **Backtest** — trades no gráfico + métricas | Que o sistema testa estratégias no histórico |
+| 2 | **Painel de Trading** — posição aberta, saldo, botões | Integração com MetaTrader 5 para execução real |
+| 3 | **Bubbles em close** — candle com bolhas grandes | Detecção de agentes agressivos (diferencial do projeto) |
+
+---
 
 ## Funcionalidades
 
