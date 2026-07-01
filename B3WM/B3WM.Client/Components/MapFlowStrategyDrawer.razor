@@ -185,7 +185,8 @@
 
         if (!_initialized)
         {
-            _seenKeys = new HashSet<string>(newSignals.Select(MakeKey));
+            foreach (var key in newSignals.Select(MakeKey))
+                _seenKeys.Add(key);
             _initialized = true;
             _signals.AddRange(newSignals);
             return;
@@ -215,7 +216,8 @@
             }
         }
 
-        _seenKeys = new HashSet<string>(newSignals.Select(MakeKey));
+        foreach (var key in newSignals.Select(MakeKey))
+            _seenKeys.Add(key);
         await InvokeAsync(StateHasChanged);
     }
 
