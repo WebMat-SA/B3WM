@@ -113,7 +113,7 @@ graph TB
 
     subgraph EXT["Projetos Externos"]
         PYTHON["B3WM.Python/<br/>Bridge MetaTrader 5<br/>FastAPI :8000<br/>(Opcional)"]
-        RTD["ExtractorRTD/<br/>Coletor WPF (Profit)<br/>COM RTD (Excel Interop)<br/>(Opcional)"]
+        RTD["ExtractorRTD/<br/>Coletor WPF (Profit)<br/>COM RTD (Excel Interop)<br/>(Obrigatório p/ dados reais)"]
     end
 
     PYTHON -.->|HTTP| API
