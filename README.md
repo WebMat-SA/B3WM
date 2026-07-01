@@ -89,7 +89,7 @@ Se quiser tornar este README ainda mais completo, capture e envie prints de:
 | Real-time | SignalR (WebSocket) |
 | Trading Bridge | Python 3 / FastAPI / MetaTrader 5 |
 | Persistência | JSON (arquivos) + IndexedDB (navegador) |
-| Coleta de Dados | WPF / Excel RTD / Socket TCP (Profit) |
+| Coleta de Dados | WPF / Profit COM RTD (Excel Interop) |
 
 ---
 
@@ -113,7 +113,7 @@ graph TB
 
     subgraph EXT["Projetos Externos"]
         PYTHON["B3WM.Python/<br/>Bridge MetaTrader 5<br/>FastAPI :8000<br/>(Opcional)"]
-        RTD["ExtractorRTD/<br/>Coletor WPF (Profit)<br/>Socket TCP :12002<br/>(Opcional)"]
+        RTD["ExtractorRTD/<br/>Coletor WPF (Profit)<br/>COM RTD (Excel Interop)<br/>(Opcional)"]
     end
 
     PYTHON -.->|HTTP| API
@@ -145,7 +145,7 @@ graph TD
         CORE -->|HTTP :8000| PY
     end
 
-    PROFIT -->|Socket TCP :12002| EXTRACT
+    PROFIT -->|COM RTD| EXTRACT
     SIMULADO -.->|Dados fake| CORE
 ```
 
@@ -182,13 +182,13 @@ Acesse em: **https://localhost:5002**
 
 #### Opção A — Dados Reais (requer Profit Carteira Profissional)
 
-```bash
-# Abra o Profit Carteira Profissional
-# Compile e execute o ExtractorRTD:
-```
 Abra `ExtractorRTD/B3WM.ExtractorRTD.sln` no Visual Studio e compile.
 
-O ExtractorRTD se conecta ao Profit via Socket TCP :12002 e envia os dados para o servidor via SignalR.
+O ExtractorRTD se conecta ao Profit via **COM RTD** (RealTime Data — servidor COM exposto pelo Profit)
+e envia os dados para o servidor B3WM via SignalR.
+
+> ⚠️ O Profit Carteira Profissional deve estar aberto com o **suplemento RTD Trading** habilitado
+> para que o servidor COM `rtdtrading.rtdserver` esteja disponível.
 
 #### Opção B — Dados Simulados (Modo Debug)
 
@@ -238,7 +238,7 @@ B3WM.sln                          # Solução principal (.NET 10)
 ├── B3WM.Python/                  # 🐍 Bridge MetaTrader 5 (FastAPI)
 │   └── main.py                   #    Entry point (python main.py)
 │
-└── ExtractorRTD/                 # 📡 Coletor WPF (Profit RTD)
+└── ExtractorRTD/                 # 📡 Coletor WPF (Profit RTD via COM)
     └── B3WM.ExtractorRTD.sln     #    Solução separada (.NET Framework)
 ```
 
