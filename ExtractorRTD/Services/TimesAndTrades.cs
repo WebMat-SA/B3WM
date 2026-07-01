@@ -16,6 +16,7 @@ using System.Windows.Markup;
 
 namespace ExtractorRTD.Services
 {
+    [Obsolete("SubstituÃ­do pelo TimesAndTradesRtd via COM RTD. Mantido apenas para referÃªncia histÃ³rica.")]
     public class TimesAndTrades
     {
         public static HubConnection hubConnection;
@@ -46,7 +47,7 @@ namespace ExtractorRTD.Services
         }
 
         /// <summary>
-        /// Worker responsável por enviar batches para o SignalR
+        /// Worker responsï¿½vel por enviar batches para o SignalR
         /// </summary>
         public static async Task WorkChannel()
         {
@@ -109,7 +110,7 @@ namespace ExtractorRTD.Services
                         socket.Send(Encoding.ASCII.GetBytes(str));
                     }
 
-                    // buffer reutilizável
+                    // buffer reutilizï¿½vel
                     byte[] buffer = new byte[1024 * 1024]; // 1MB
                     int bufferLength = 0;
 
@@ -159,7 +160,7 @@ namespace ExtractorRTD.Services
                             }
                         }
 
-                        // move o restante não processado para o início
+                        // move o restante nï¿½o processado para o inï¿½cio
                         if (messageStart > 0)
                         {
                             int remaining = bufferLength - messageStart;

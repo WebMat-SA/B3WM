@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 
 namespace ExtractorRTD.Services
 {
+    [Obsolete("Substituído pelo TimesAndTradesRtd via COM RTD. Mantido apenas para referência histórica.")]
     public class TimesAndTradesSimple
     {
         public static HubConnection hubConnection;

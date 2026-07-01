@@ -12,6 +12,7 @@ using System.Security.Cryptography;
 
 namespace ExtractorRTD.Services
 {
+    [Obsolete("Substituído pelo BookRtd via COM RTD. Mantido apenas para referência histórica.")]
     public class Book
     {
         public static HubConnection hubConnection;
