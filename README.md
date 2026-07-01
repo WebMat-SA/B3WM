@@ -39,17 +39,6 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
   <img src="screenshots/B3WM.png" alt="Análise de Microestrutura" width="800" style="max-width:100%;">
   <p><em>Análise detalhada de microestrutura: delta acumulado por nível de preço, identificação de agentes agressores e estrutura de suporte/resistência.</em></p>
 </div>
-
-### Prints que ajudariam (contribua!)
-
-Se quiser tornar este README ainda mais completo, capture e envie prints de:
-
-| # | O que capturar | O que mostra |
-|---|---|---|
-| 1 | Página de **Backtest** — trades no gráfico + métricas | Que o sistema testa estratégias no histórico |
-| 2 | **Painel de Trading** — posição aberta, saldo, botões | Integração com MetaTrader 5 para execução real |
-| 3 | **Bubbles em close** — candle com bolhas grandes | Detecção de agentes agressivos (diferencial do projeto) |
-
 ---
 
 ## Funcionalidades
