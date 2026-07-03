@@ -180,8 +180,7 @@
             AgentThresholds[agent] = value.Value;
         else
             AgentThresholds.Remove(agent);
-        MarkDirty();
-        await InvokeAsync(StateHasChanged);
+        await StateService.SaveAsync(this, PersistenceKey);
     }
     private async void BubbleSizeRangeChange(IRange<int> range)
     {
