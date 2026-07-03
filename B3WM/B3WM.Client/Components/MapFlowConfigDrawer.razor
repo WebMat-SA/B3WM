@@ -126,10 +126,21 @@
     public HashSet<Ticks2.Agents?> _allBubbleAgents { get; set; } = new();
     private List<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
 
+    [PersistState]
+    public Dictionary<Ticks2.Agents?, int> AgentThresholds { get; set; } = new();
+
+    public int GetThreshold(Ticks2.Agents? agent)
+    {
+        if (agent != null && AgentThresholds.TryGetValue(agent, out var t))
+            return t;
+        return ThresholdBubble;
+    }
+
 
     public bool IsStructureUpdating { get; set; } = false;
 
     private string _Symbol;
+    private Ticks2.Agents? _editingAgent;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -159,6 +170,15 @@
         else
             list.Add(agent);
         SelectedAgents = list;
+    }
+    private async void SetAgentThreshold(Ticks2.Agents? agent, int? value)
+    {
+        if (agent == null) return;
+        if (value.HasValue)
+            AgentThresholds[agent] = value.Value;
+        else
+            AgentThresholds.Remove(agent);
+        await InvokeAsync(StateHasChanged);
     }
     private async void BubbleSizeRangeChange(IRange<int> range)
     {
@@ -430,13 +450,43 @@
                                 {
                                         if (agent is null) continue;
 
-                                        <MudListItem Dense="true">
+                                        var isCustom = AgentThresholds.ContainsKey(agent);
+                                        var thrValue = isCustom ? AgentThresholds[agent] : (int?)null;
+                                        var thrClass = isCustom ? "mud-primary-text" : "mud-text-secondary";
 
-                                            <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)">
-                                                <MudText Typo="Typo.caption">
-                                                    @agent.Description() (@((int)agent))
-                                                </MudText>
-                                            </MudCheckBox>
+                                        <MudListItem Dense="true">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                                <MudCheckBox Dense Value="@SelectedAgents.Contains(agent)" ValueChanged="(bool c) => ToggleAgent(agent)">
+                                                    <MudText Typo="Typo.caption">
+                                                        @agent.Description() (@((int)agent))
+                                                    </MudText>
+                                                </MudCheckBox>
+                                                @if (SelectedAgents.Contains(agent))
+                                                {
+                                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="0" Class="mr-1">
+                                                        @* <MudText Typo="Typo.caption" Class="@("mr-1 " + (isCustom ? "mud-primary-text" : "mud-text-secondary"))">
+                                                            ≥ @(isCustom ? thrValue.ToString() : ThresholdBubble.ToString())
+                                                        </MudText> *@
+                                                        <MudTooltip Text="Definir threshold específico">
+                                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Tune" Color="@(isCustom ? Color.Primary : Color.Default)" OnClick="() => _editingAgent = _editingAgent == agent ? null : agent" />
+                                                        </MudTooltip>
+                                                    </MudStack>
+                                                }
+                                            </MudStack>
+                                            @if (_editingAgent == agent && SelectedAgents.Contains(agent))
+                                            {
+                                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Class="ml-6 mt-1">
+                                                    <MudNumericField Size="Size.Small" T="int?" Value="@thrValue" ValueChanged="(int? v) => SetAgentThreshold(agent, v)" Min="@ThresholdBubble" Max="10000" Step="25" Label="Threshold" Dense="true" Style="width:140px" Variant="Variant.Outlined" Immediate="true" />
+                                                    @if (isCustom)
+                                                    {
+                                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Clear" OnClick="() => { SetAgentThreshold(agent, null); _editingAgent = null; }" Color="Color.Error" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">padrão: @ThresholdBubble</MudText>
+                                                    }
+                                                </MudStack>
+                                            }
                                         </MudListItem>
                                     }
                                 </MudList>
@@ -449,7 +499,7 @@
 
 
     </MudDrawer>
-<MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" BuyColor="@ColorBuyer" SaleColor="@ColorSeller" SelectedAgents="@SelectedAgents" ThresholdBubble="@ThresholdBubble" />
+<MapFlowBubbleDrawer @ref="MapFlowBubbleDrawer" Open="openDrawerBubbleNotify" Bubbles="Bubbles" SelectedAgents="@SelectedAgents" ThresholdBubble="@ThresholdBubble" AgentThresholds="@AgentThresholds" />
 <MapFlowStrategyDrawer @ref="MapFlowStrategyDrawer" Open="openDrawerStrategy" Bars="Bars" Bubbles="Bubbles" Structures="Structures" VolumeLevels="VolumeLevels" TimeFrame="TimeFrame" />
 <CascadingValue Value="this">
     @ChildContent
