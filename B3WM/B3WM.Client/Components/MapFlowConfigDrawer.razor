@@ -385,7 +385,7 @@
                             <MudText Typo="Typo.caption">@($"{_bubbleSizeRange.Start} → {_bubbleSizeRange.End}")</MudText>
                         </MudStack>
                         <MudExRangeSlider T="int"
-                        Value="_bubbleSizeRange"
+                        Value="@_bubbleSizeRange"
                         ValueChanged="BubbleSizeRangeChange"
                         AllowWholeRangeDrag
                         Size="Size.Small"
