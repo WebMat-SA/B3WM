@@ -113,10 +113,7 @@ graph TB
 
 ```mermaid
 graph TD
-    subgraph FONTES["Fontes de Dados"]
-        PROFIT["Profit Carteira<br/>Profissional"]
-        SIMULADO["Dados Simulados<br/>(Modo Debug)"]
-    end
+    PROFIT["Profit Carteira<br/>Profissional"]
 
     subgraph SERVER["B3WM Server"]
         EXTRACT["ExtractorRTD<br/>WPF .NET"] -->|SignalR| HUB["📡 SignalR Hub<br/>/api/datahub"]
@@ -135,7 +132,6 @@ graph TD
     end
 
     PROFIT -->|COM RTD| EXTRACT
-    SIMULADO -.->|Dados fake| CORE
 ```
 
 ---
@@ -152,7 +148,7 @@ graph TD
 
 ```
 1️⃣ Servidor Web (obrigatório) — inicia primeiro
-2️⃣ Fonte de dados (real ou simulada) — conecta ao servidor
+2️⃣ Fonte de dados (real) — conecta ao servidor
 3️⃣ Trading Bridge (opcional) — conecta ao servidor
 4️⃣ Testes — podem rodar a qualquer momento
 ```
@@ -178,10 +174,6 @@ e envia os dados para o servidor B3WM via SignalR.
 
 > ⚠️ O Profit Carteira Profissional deve estar aberto com o **suplemento RTD Trading** habilitado
 > para que o servidor COM `rtdtrading.rtdserver` esteja disponível.
-
-#### Opção B — Dados Simulados (Modo Debug)
-
-Nenhuma ação necessária. Em modo **Debug**, o servidor gera dados falsos automaticamente para desenvolvimento e testes.
 
 ### 3. Trading Bridge — MetaTrader 5 (Opcional)
 
