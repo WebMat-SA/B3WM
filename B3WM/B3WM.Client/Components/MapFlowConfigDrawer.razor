@@ -160,6 +160,7 @@
         else
             SelectedAgents = AllBubbleAgents.ToList();
 
+        MarkDirty();
         await InvokeAsync(StateHasChanged);
     }
     private void ToggleAgent(Ticks2.Agents? agent)
@@ -170,6 +171,7 @@
         else
             list.Add(agent);
         SelectedAgents = list;
+        MarkDirty();
     }
     private async void SetAgentThreshold(Ticks2.Agents? agent, int? value)
     {
@@ -178,6 +180,7 @@
             AgentThresholds[agent] = value.Value;
         else
             AgentThresholds.Remove(agent);
+        MarkDirty();
         await InvokeAsync(StateHasChanged);
     }
     private async void BubbleSizeRangeChange(IRange<int> range)
@@ -191,11 +194,13 @@
         __bubbleSizeRange_Min = range.Start;
 
         _bubbleSizeRange = new MudExRange<int>(range.Start, range.End);
+        MarkDirty();
     }
     public async Task StructureRangeChange(double value)
     {
         StructureRangeUpd = value;
         IsStructureUpdating = true;
+        MarkDirty();
         StateHasChanged();
     }
 
