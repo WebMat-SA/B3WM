@@ -127,11 +127,11 @@
     private List<Ticks2.Agents?> AllBubbleAgents => _allBubbleAgents.ToList();
 
     [PersistState]
-    public Dictionary<Ticks2.Agents?, int> AgentThresholds { get; set; } = new();
+    public Dictionary<int, int> AgentThresholds { get; set; } = new();
 
     public int GetThreshold(Ticks2.Agents? agent)
     {
-        if (agent != null && AgentThresholds.TryGetValue(agent, out var t))
+        if (agent != null && AgentThresholds.TryGetValue((int)agent, out var t))
             return t;
         return ThresholdBubble;
     }
@@ -177,9 +177,9 @@
     {
         if (agent == null) return;
         if (value.HasValue)
-            AgentThresholds[agent] = value.Value;
+            AgentThresholds[(int)agent] = value.Value;
         else
-            AgentThresholds.Remove(agent);
+            AgentThresholds.Remove((int)agent);
         MarkDirty();
         StateHasChanged();
         await StateService.SaveAsync(this, PersistenceKey);
@@ -456,8 +456,8 @@
                                 {
                                         if (agent is null) continue;
 
-                                        var isCustom = AgentThresholds.ContainsKey(agent);
-                                        var thrValue = isCustom ? AgentThresholds[agent] : (int?)null;
+                                        var isCustom = AgentThresholds.ContainsKey((int)agent);
+                                        var thrValue = isCustom ? AgentThresholds[(int)agent] : (int?)null;
                                         var thrClass = isCustom ? "mud-primary-text" : "mud-text-secondary";
 
                                         <MudListItem Dense="true">

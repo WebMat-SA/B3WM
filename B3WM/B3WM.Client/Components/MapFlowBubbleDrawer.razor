@@ -24,6 +24,16 @@
     public List<Ticks2.Agents?> SelectedAgents { get; set; }
 
     [Parameter]
+    public Dictionary<int, int> AgentThresholds { get; set; } = new();
+
+    public int GetThreshold(Ticks2.Agents? agent)
+    {
+        if (agent != null && AgentThresholds.TryGetValue((int)agent, out var t))
+            return t;
+        return ThresholdBubble;
+    }
+
+    [Parameter]
     public string BuyColor { get; set; }
 
     [Parameter]
@@ -58,7 +68,7 @@
     }
 
     List<BubbleStorageItem> _bubbles => Bubbles
-        .Where(q => !Amount || q.Amount >= ThresholdBubble)
+        .Where(q => !Amount || q.Amount >= GetThreshold((Ticks2.Agents?)q.Agent))
         .Where(q => !Agents || SelectedAgents.Contains((Ticks2.Agents?)q.Agent))
         .OrderByDescending(e => e.Date)
         .Take(45)
