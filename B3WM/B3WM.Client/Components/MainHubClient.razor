@@ -26,6 +26,9 @@
     public Func<StructureStorageItem, Task> OnNewStructure { get; set; } = default!;
 
     [Parameter]
+    public Func<AdjustmentForecastItem, Task> OnForecastUpdate { get; set; } = default!;
+
+    [Parameter]
     public bool ShowButtons { get; set; } = false;
 
     #region Not Done yet
@@ -81,6 +84,7 @@
             hubConnection.On<BarStorageItem>(nameof(IDataHubClient.ReceiveOnCloseBar), OnCloseBar);
             hubConnection.On<BubbleStorageItem>(nameof(IDataHubClient.ReceiveOnBubble), OnNewBubble);
             hubConnection.On<StructureStorageItem>(nameof(IDataHubClient.ReceiveOnStructure), OnNewStructure);
+            hubConnection.On<AdjustmentForecastItem>(nameof(IDataHubClient.ReceiveOnForecast), OnForecastUpdate);
             hubConnection.On<ThrottlingData>(nameof(IDataHubClient.ReceiveThrottlingData), OnThrottlingData);
 
             await hubConnection.StartAsync();
@@ -119,6 +123,10 @@
 
             if (currentBar != null && OnCurrentBar != null) await OnCurrentBar.Invoke(currentBar);
             if (currentVolume != null && OnVolumeUpdate != null) await OnVolumeUpdate.Invoke(currentVolume);
+
+            if (data.Forecast != null && OnForecastUpdate != null)
+                await OnForecastUpdate.Invoke(data.Forecast);
+
             sw.Stop();
             //Console.WriteLine($"Throttling data processed in {sw.ElapsedMilliseconds} ms");
         }

@@ -80,6 +80,9 @@
     public bool ProfileAutoByPriceStructure { get; set; } = true;
 
     [PersistState]
+    public bool ForecastVisible { get; set; } = true;
+
+    [PersistState]
     public double DeltaSizeH { get; set; } = 1.015;
     [PersistState]
     public double DeltaSizeV { get; set; } = 0.5;
@@ -326,6 +329,25 @@
                                 </MudStack>
                             </MudStack>
                         </MudSlider>
+                    </MudListItem>
+                </NestedList>
+            </MudListItem>
+        </MudList>
+    </MudPaper>
+
+    @* ADJUSTMENT FORECAST *@
+    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+        <MudList T="string" Dense>
+            <MudListItem Dense=true Icon="@Icons.Material.Filled.SsidChart" Text="Ajuste Previsto" Expanded=false>
+                <NestedList>
+                    <MudListItem Dense="true" OnClick="() => ForecastVisible = !ForecastVisible">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.body2">Show on Chart</MudText>
+                            <MudSwitch @bind-Value="ForecastVisible" Color="MudBlazor.Color.Primary" Size="Size.Small"></MudSwitch>
+                        </MudStack>
+                    </MudListItem>
+                    <MudListItem Dense="true">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">VWAP Diário (acumulado do pregão)</MudText>
                     </MudListItem>
                 </NestedList>
             </MudListItem>

@@ -13,9 +13,10 @@ namespace B3WM.Services.Core
         private readonly IEnumerable<BubbleService> bubbleService;
         private readonly IEnumerable<VolumeService> volumeService;
         private readonly IEnumerable<StructureService> structureService;
+        private readonly IEnumerable<AdjustmentForecastService> adjustmentForecastService;
         public string Symbol { get; }
 
-        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService)
+        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<AdjustmentForecastService> adjustmentForecastService)
         {
             this.Symbol = Symbol;
 
@@ -23,6 +24,7 @@ namespace B3WM.Services.Core
             this.bubbleService = bubbleService.Where(q=>q.Symbol == Symbol);
             this.volumeService = volumeService.Where(q=>q.Symbol == Symbol);
             this.structureService = structureService.Where(q=>q.Symbol == Symbol);
+            this.adjustmentForecastService = adjustmentForecastService.Where(q=>q.Symbol == Symbol);
 
             SubscribeAll(this.candleService, OnCandleUpdate);
         }
@@ -34,6 +36,7 @@ namespace B3WM.Services.Core
             EnqueueAll(candleService, ticks);
             EnqueueAll(bubbleService, ticks);
             EnqueueAll(volumeService, ticks);
+            EnqueueAll(adjustmentForecastService, ticks);
 
             return Task.CompletedTask;
         }
@@ -46,6 +49,14 @@ namespace B3WM.Services.Core
 
             if (volumeSnapshot != null)
                 bar.VolumeLevel = volumeSnapshot.Volumes;
+
+            #endregion
+
+            #region Forecast in Candles
+            var forecastSnapshot = adjustmentForecastService.FirstOrDefault()?.GetSnapshot();
+
+            if (forecastSnapshot != null && forecastSnapshot.Vwap > 0)
+                bar.ForecastPrice = forecastSnapshot.Vwap;
 
             #endregion
 

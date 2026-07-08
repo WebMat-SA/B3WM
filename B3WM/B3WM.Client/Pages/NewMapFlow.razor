@@ -19,6 +19,9 @@
     [Parameter]
     public string Symbol { get; set; } = "";
 
+    private AdjustmentForecastItem? _currentForecast;
+    private List<(DateTime Time, double Vwap)> _forecastHistory = new();
+
     private bool _autoStarted;
 
     protected override void OnParametersSet()
@@ -40,7 +43,6 @@
     public bool isLoading { get; set; } = false;
 
     private Vizor.ECharts.EChart? EChart;
-    private PeriodicTimer timer;
 
     public required MapFlowConfigDrawer MapFlowConfigDrawer { get; set; }
     private MainHubClient? HubClient { get; set; }
@@ -72,7 +74,6 @@
     {
         if (firstRender)
         {
-            this.timer = new PeriodicTimer(TimeSpan.FromMilliseconds(throttlingDelayMs));
             _ = Task.Run(ProcessLoop);
         }
         base.OnAfterRender(firstRender);
@@ -80,17 +81,17 @@
 
     private async Task ProcessLoop()
     {
-        while (await timer.WaitForNextTickAsync())
+        while (true)
         {
             try
             {
+                await Task.Delay(throttlingDelayMs);
                 await GenerateChart();
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error in ProcessLoop: " + ex.Message);
+                Console.WriteLine("Error in ProcessLoop: " + ex);
             }
-            //await Task.Delay(1000); // Aguarda 1 segundo antes de atualizar novamente
         }
     }
 
@@ -202,6 +203,12 @@
         {
             // ignore errors
         }
+    }
+    public Task NewForecast(AdjustmentForecastItem forecast)
+    {
+        _currentForecast = forecast;
+        _forecastHistory.Add((forecast.Time, forecast.Vwap));
+        return Task.CompletedTask;
     }
     public async Task NewBar(BarStorageItem bar)
     {
@@ -692,7 +699,7 @@
             {
                 var total = (double)v.Total;
                 if (total > maxVolume) maxVolume = total;
-                _cachedVolumeProfileData.Add(new object[] { v.Total, v.Price, priceStep });
+                _cachedVolumeProfileData.Add(new object[] { (double)v.Total, v.Price, priceStep });
             }
             _lastVolumeDataVersion = effectiveVolumeVersion;
         }
@@ -864,6 +871,92 @@
         seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = upBorderAuxVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#5555aa", Width = 1, Opacity = (MapFlowConfigDrawer.StructureOpacity - 0.25 <= 0 ? 0.01 : MapFlowConfigDrawer.StructureOpacity - 0.25) * (MapFlowConfigDrawer.StructureAuxVisible ? 1 : 0) } });
         seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = downBorderAuxVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aa5555", Width = 1, Opacity = (MapFlowConfigDrawer.StructureOpacity - 0.25 <= 0 ? 0.01 : MapFlowConfigDrawer.StructureOpacity - 0.25) * (MapFlowConfigDrawer.StructureAuxVisible ? 1 : 0) } });
         
+        #region Adjustment Forecast
+
+        var forecastVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+        if (MapFlowConfigDrawer.ForecastVisible)
+        {
+            var indexLookup = new Dictionary<string, int>(categoryData.Count);
+            for (int i = 0; i < categoryData.Count; i++)
+                if (categoryData[i] != null && !indexLookup.ContainsKey(categoryData[i]))
+                    indexLookup[categoryData[i]] = i;
+
+            // bars são a fonte primária (dados persistidos)
+            for (int i = 0; i < bars.Count; i++)
+            {
+                if (bars[i].ForecastPrice.HasValue)
+                {
+                    var key = bars[i].Date.ToString("dd/MM HH:mm");
+                    if (indexLookup.TryGetValue(key, out var idx) && idx >= 0 && idx < forecastVals.Count)
+                        forecastVals[idx] = bars[i].ForecastPrice.Value;
+                }
+            }
+
+            // _forecastHistory complementa com pontos ao vivo não persistidos
+            foreach (var f in _forecastHistory)
+            {
+                var key = f.Time.ToString("dd/MM HH:mm");
+                if (indexLookup.TryGetValue(key, out var idx) && idx >= 0 && idx < forecastVals.Count && forecastVals[idx] == null)
+                {
+                    forecastVals[idx] = f.Vwap;
+                }
+            }
+        }
+
+        var forecastSeries = new Vizor.ECharts.LineSeries
+        {
+            Name = "Ajuste Previsto",
+            Data = forecastVals,
+            Z = 5,
+            ShowSymbol = false,
+            LineStyle = new LineStyle
+            {
+                Color = "#ffaa00",
+                Width = MapFlowConfigDrawer.ForecastVisible ? 2 : 0,
+                Opacity = MapFlowConfigDrawer.ForecastVisible ? 1 : 0
+            },
+            MarkLine = MapFlowConfigDrawer.ForecastVisible && _currentForecast != null
+                ? new MarkLine
+                {
+                    Silent = true,
+                    Symbol = null,
+                    SymbolSize = 0,
+                    Data = new object[]
+                    {
+                        new
+                        {
+                            yAxis = _currentForecast.Vwap,
+                            animation = true,
+                            symbol = new[] { "none" },
+                            symbolSize = new[] { 0 },
+                            label = new
+                            {
+                                show = true,
+                                position = "end",
+                                distance = 0,
+                                verticalAlign = "middle",
+                                align = "left",
+                                color = "#ffffff",
+                                backgroundColor = "#ffaa00",
+                                padding = new[] { 2, 6, 2, 6 },
+                                borderRadius = 4,
+                                formatter = new JavascriptFunction($"function() {{ return '{_currentForecast.Vwap.ToString(inv)}'; }}")
+                            },
+                            lineStyle = new
+                            {
+                                type = "dashed",
+                                color = "#ffaa00",
+                                width = 1,
+                                opacity = 0.7
+                            }
+                        }
+                    }
+                }
+                : new MarkLine { Data = Array.Empty<object>() }
+        };
+        seriesList.Add(forecastSeries);
+
+        #endregion
 
         ChartOptions.Series = seriesList;
 
@@ -895,6 +988,12 @@
             }
 
             BarStorageItem = bars ?? new List<BarStorageItem>();
+
+            _forecastHistory.Clear();
+            foreach (var bar in BarStorageItem.Where(b => b.ForecastPrice.HasValue).OrderBy(b => b.Date))
+            {
+                _forecastHistory.Add((bar.Date, bar.ForecastPrice.Value));
+            }
 
             _dateRange = new MudExRange<int>(0, BarStorageItemTimeFrameFilter.Count);
             _volumeFilterActive = false;
@@ -984,7 +1083,7 @@
                 <MudTooltip Text="@($"Connect")" Arrow>
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayCircleOutline" OnClick="LoadData" Color="MudBlazor.Color.Default" />
                 </MudTooltip>
-                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
+                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnForecastUpdate="NewForecast" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
             </MudStack>
         </MudStack>
     </MudAppBar>

@@ -26,6 +26,8 @@ namespace B3WM.Shared.Models
 
         public virtual List<VolumeLevel>? VolumeLevel { get; set; }
 
+        public virtual double? ForecastPrice { get; set; }
+
         public override string ToString()
         {
             return $"Date: {Date}, Symbol: {Symbol}, TimeFrame: {TimeFrame}, Open: {Open}, High: {High}, Low: {Low}, Close: {Close}";

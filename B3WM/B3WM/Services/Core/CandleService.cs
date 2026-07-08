@@ -122,6 +122,7 @@ namespace B3WM.Services.Core
                 Volume = bar.Volume,
                 Symbol = bar.Symbol,
                 TimeFrame = bar.TimeFrame,
+                ForecastPrice = bar.ForecastPrice,
             };
         }
 
@@ -136,7 +137,8 @@ namespace B3WM.Services.Core
                 Close = price,
                 Volume = volume,
                 Symbol = symbol,
-                TimeFrame = TimeFrame
+                TimeFrame = TimeFrame,
+                ForecastPrice = null,
             };
         }
 

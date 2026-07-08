@@ -15,6 +15,7 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveOnCloseBar(BarStorageItem data);
         Task ReceiveOnBubble(BubbleStorageItem data);
         Task ReceiveOnStructure(StructureStorageItem data);
+        Task ReceiveOnForecast(AdjustmentForecastItem data);
         Task ReceiveThrottlingData(ThrottlingData data);
     }
 }

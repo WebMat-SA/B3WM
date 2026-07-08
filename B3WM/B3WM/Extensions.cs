@@ -31,6 +31,7 @@ namespace B3WM
             }
             services.AddSingleton(sp => new BubbleService(Defaults.Symbols.WINFUT, Defaults.WINFUT.ThresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
+            services.AddSingleton(sp => new AdjustmentForecastService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<AdjustmentForecastService>>()));
 
             services.AddSingleton<OrchestratorService>(sp =>
                 new OrchestratorService(
@@ -39,7 +40,8 @@ namespace B3WM
                     sp.GetServices<CandleService>(),
                     sp.GetServices<BubbleService>(),
                     sp.GetServices<VolumeService>(),
-                    sp.GetServices<StructureService>())
+                    sp.GetServices<StructureService>(),
+                    sp.GetServices<AdjustmentForecastService>())
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(Defaults.Symbols.WINFUT));
 
@@ -61,6 +63,7 @@ namespace B3WM
             }
             services.AddSingleton(sp => new BubbleService(Defaults.Symbols.WDOFUT, Defaults.WDOFUT.ThresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
+            services.AddSingleton(sp => new AdjustmentForecastService(Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<AdjustmentForecastService>>()));
 
             services.AddSingleton<OrchestratorService>(sp =>
                 new OrchestratorService(
@@ -69,7 +72,8 @@ namespace B3WM
                     sp.GetServices<CandleService>(),
                     sp.GetServices<BubbleService>(),
                     sp.GetServices<VolumeService>(),
-                    sp.GetServices<StructureService>())
+                    sp.GetServices<StructureService>(),
+                    sp.GetServices<AdjustmentForecastService>())
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(Defaults.Symbols.WDOFUT));
             

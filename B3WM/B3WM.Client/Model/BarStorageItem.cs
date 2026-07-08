@@ -60,5 +60,8 @@ namespace B3WM.Client.Model
         [MagicName("VolumeLevel")]
         public List<VolumeLevel>? VolumeLevel { get; set; }
 
+        [MagicName("ForecastPrice")]
+        public double? ForecastPrice { get; set; }
+
     }
 }
