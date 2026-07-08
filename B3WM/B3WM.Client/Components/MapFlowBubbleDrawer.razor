@@ -97,28 +97,28 @@
 
     ValueTask PlayNotificationSoundAsync()
     {
-        // Use WebAudio oscillator via eval to play a short beep. Keep small gain to avoid loudness.
-        //var script = "(function(){try{var ctx=new (window.AudioContext||window.webkitAudioContext)();var o=ctx.createOscillator();var g=ctx.createGain();o.type='sine';o.frequency.value=880;g.gain.value=0.03;o.connect(g);g.connect(ctx.destination);o.start();setTimeout(function(){o.stop();ctx.close();},150);return true;}catch(e){return false;}})()";
-        var script = @"(function(){
+        var script = @"(async function(){
             try{
               var ctx=new (window.AudioContext||window.webkitAudioContext)();
+              if (ctx.state==='suspended') await ctx.resume();
               var o=ctx.createOscillator();
               var g=ctx.createGain();
 
-              o.type='sawtooth';          // sine, square, triangle, sawtooth
-              o.frequency.value=950;  // tom
-              g.gain.value=0.06;      // volume (0–1)
+              o.type='sawtooth';
+              o.frequency.value=950;
+              g.gain.value=0.06;
 
               o.connect(g);
               g.connect(ctx.destination);
 
               o.start();
-              setTimeout(function(){
-                o.stop();
-                ctx.close();
-              }, 400);                // duração maior
-
-              return true;
+              return new Promise(function(resolve){
+                setTimeout(function(){
+                  o.stop();
+                  ctx.close();
+                  resolve(true);
+                }, 400);
+              });
             }catch(e){return false;}
             })()";
         

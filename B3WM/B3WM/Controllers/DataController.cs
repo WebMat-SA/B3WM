@@ -122,6 +122,14 @@ namespace B3WM.Controllers
             return Ok(data);
         }
 
+        [HttpGet("{symbol}/{date}")]
+        public async Task<IActionResult> GetVolumeAsync(string symbol, DateTime date)
+        {
+            string path = $"{symbol}_{nameof(VolumeService)}_{date:yyyy-MM-dd}.json";
+            var data = await dataKeeper.ReadDataAsync<VolumeLevelStorageItem>(path);
+            return Ok(data);
+        }
+
         [HttpGet("{symbol}/{minDistance:double}")]
         public async Task<IActionResult> SetStructureDistanceAsync(string symbol, double minDistance)
         {

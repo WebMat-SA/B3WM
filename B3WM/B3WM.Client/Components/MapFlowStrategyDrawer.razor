@@ -67,8 +67,9 @@
     {
         try
         {
-            var script = @"(function(){
+            var script = @"(async function(){
               var ctx = new (window.AudioContext || window.webkitAudioContext)();
+              if (ctx.state === 'suspended') await ctx.resume();
               var o = ctx.createOscillator();
               var g = ctx.createGain();
               o.type = 'sine';
@@ -77,7 +78,9 @@
               o.connect(g);
               g.connect(ctx.destination);
               o.start(0);
-              setTimeout(function(){ o.stop(0); ctx.close(); }, 500);
+              return new Promise(function(resolve){
+                setTimeout(function(){ o.stop(0); ctx.close(); resolve(true); }, 500);
+              });
             })()";
             await JS.InvokeVoidAsync("eval", script);
         }

@@ -19,7 +19,7 @@
     {
       "label": "dotnet-webapp",
       "type": "shell",
-      "command": "dotnet run --launch-profile https",
+      "command": "dotnet restore; dotnet clean; dotnet run --launch-profile https",
       "options": {
         "cwd": "${workspaceFolder}/B3WM/B3WM"
       },

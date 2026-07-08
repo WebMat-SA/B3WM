@@ -100,6 +100,7 @@
         get => __bubbleSizeRange_Max;
         set
         {
+            if (value < __bubbleSizeRange_Min) value = __bubbleSizeRange_Min;
             __bubbleSizeRange_Max = value;
             _bubbleSizeRange = new MudExRange<int>(__bubbleSizeRange_Min, __bubbleSizeRange_Max);
         }
@@ -112,6 +113,7 @@
         get => __bubbleSizeRange_Min;
         set
         {
+            if (value > __bubbleSizeRange_Max) value = __bubbleSizeRange_Max;
             __bubbleSizeRange_Min = value;
             _bubbleSizeRange = new MudExRange<int>(__bubbleSizeRange_Min, __bubbleSizeRange_Max);
         }
@@ -331,7 +333,7 @@
     </MudPaper>
 
     @* STRUCTURES VOLUME*@
-    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
+    @* <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
         <MudList T="string" Dense>
             <MudListItem Dense=true Icon="@Icons.Material.Filled.Polyline" Text="Structure Volume" Expanded=false>
                 <NestedList>
@@ -360,7 +362,7 @@
                 </NestedList>
             </MudListItem>
         </MudList>
-    </MudPaper>
+    </MudPaper> *@
 
     @* BUBBLES E AGENTS *@
     <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
@@ -387,7 +389,7 @@
                             <MudText Typo="Typo.caption">@($"{_bubbleSizeRange.Start} → {_bubbleSizeRange.End}")</MudText>
                         </MudStack>
                         <MudExRangeSlider T="int"
-                        Value="@_bubbleSizeRange"
+                        Value="_bubbleSizeRange"
                         ValueChanged="BubbleSizeRangeChange"
                         AllowWholeRangeDrag
                         Size="Size.Small"
@@ -482,7 +484,7 @@
                                             @if (_editingAgent == agent && SelectedAgents.Contains(agent))
                                             {
                                                 <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Class="ml-6 mt-1">
-                                                    <MudNumericField Size="Size.Small" T="int?" Value="@thrValue" ValueChanged="(int? v) => SetAgentThreshold(agent, v)" Min="@ThresholdBubble" Max="10000" Step="25" Label="Threshold" Dense="true" Style="width:140px" Variant="Variant.Outlined" Immediate="true" />
+                                                    <MudNumericField T="int?" Value="@thrValue" ValueChanged="(int? v) => SetAgentThreshold(agent, v)" Min="@ThresholdBubble" Max="10000" Step="25" Label="Threshold" Style="width:140px" Variant="Variant.Outlined" Immediate="true" />
                                                     @if (isCustom)
                                                     {
                                                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Clear" OnClick="() => { SetAgentThreshold(agent, null); _editingAgent = null; }" Color="Color.Error" />

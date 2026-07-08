@@ -5,6 +5,7 @@ using B3WM.Services.Core;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.SignalR;
 using MudBlazor.Services;
@@ -76,6 +77,11 @@ namespace B3WM
                     ["application/octet-stream"]);
             });
 
+            builder.Services.AddHttpLogging(o =>
+            {
+                o.LoggingFields = HttpLoggingFields.All;
+            });
+
             Extensions.AddCustomService(builder.Services, builder.Configuration);
 
 #if DEBUG
@@ -84,6 +90,8 @@ namespace B3WM
 #endif
 
             var app = builder.Build();
+
+            app.UseHttpLogging();
 
             app.UseResponseCompression();
 

@@ -52,7 +52,7 @@
     public bool showTradingPanel { get; set; } = false;
 
     private List<BarStorageItem> BarStorageItem { get; set; } = new List<BarStorageItem>();
-    private IList<BarStorageItem> BarStorageItemTimeFrameFilter => BarStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame).ToList();
+    private IList<BarStorageItem> BarStorageItemTimeFrameFilter => BarStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame).OrderBy(q => q.Date).ToList();
     private BarStorageItem CurrentBar { get; set; } = new BarStorageItem();
 
     private List<BubbleStorageItem> Bubbles { get; set; } = new List<BubbleStorageItem>();
@@ -115,19 +115,16 @@
                 _filteredVolumeDataVersion++;
             }
             // Filter ativo manualmente: atualiza o volume filtrado com dados ao vivo
+            // Se o snapshot da barra de inicio nao estiver disponivel, preserva o filtro existente
             else if (_volumeFilterActive && _filteredVolumeLevels != null)
             {
                 var bars = BarStorageItemTimeFrameFilter.OrderBy(q => q.Date).ToList();
                 var startBar = bars.ElementAtOrDefault(Math.Max(0, _dateRange.Start - 1));
-                if (startBar != null && startBar.VolumeLevel != null && startBar.VolumeLevel.Count > 0)
+                if (startBar != null && startBar.VolumeLevel is { Count: > 0 })
                 {
                     _filteredVolumeLevels = VolumeLevelStorageItem.Operation(volumes.Volumes ?? new(), startBar.VolumeLevel, "Diff").OrderBy(q => q.Price).ToList();
+                    _filteredVolumeDataVersion++;
                 }
-                else
-                {
-                    _filteredVolumeLevels = VolumeLevels.OrderBy(q => q.Price).ToList();
-                }
-                _filteredVolumeDataVersion++;
             }
             //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(volumes));
 
@@ -223,6 +220,8 @@
             existing.Low = bar.Low;
             existing.Close = bar.Close;
             existing.Volume = bar.Volume;
+            if (bar.VolumeLevel is { Count: > 0 })
+                existing.VolumeLevel = bar.VolumeLevel;
         }
         else
         {
@@ -305,24 +304,50 @@
                 var startLevels = startBar.VolumeLevel;
                 var endLevels = endBar.VolumeLevel;
 
-                if (endLevels != null && endLevels.Count > 0 && startLevels != null && startLevels.Count > 0)
+                if (endLevels is { Count: > 0 } && startLevels is { Count: > 0 })
                 {
                     // Ambos os lados têm snapshot cumulativo → diff preciso do range
                     _filteredVolumeLevels = VolumeLevelStorageItem.Operation(endLevels, startLevels, "Diff").OrderBy(q => q.Price).ToList();
-                }
-                else if (startLevels != null && startLevels.Count > 0)
-                {
-                    // Só o start tem snapshot → usa volume ao vivo menos o start (range → agora)
-                    _filteredVolumeLevels = VolumeLevelStorageItem.Operation(VolumeLevels, startLevels, "Diff").OrderBy(q => q.Price).ToList();
+                    _volumeFilterActive = true;
+                    _filteredVolumeDataVersion++;
                 }
                 else
                 {
-                    // Nenhum snapshot disponível → usa o volume ao vivo como está
-                    _filteredVolumeLevels = VolumeLevels.OrderBy(q => q.Price).ToList();
-                }
+                    // Tenta encontrar snapshots alternativos mais próximos quando as barras exatas não têm VolumeLevel
+                    BarStorageItem? foundStart = startLevels is { Count: > 0 } ? startBar : null;
+                    BarStorageItem? foundEnd = endLevels is { Count: > 0 } ? endBar : null;
 
-                _volumeFilterActive = true;
-                _filteredVolumeDataVersion++;
+                    if (foundStart == null)
+                    {
+                        for (int i = Math.Max(0, newRange.Start - 1) - 1; i >= 0; i--)
+                        {
+                            if (bars[i].VolumeLevel is { Count: > 0 })
+                            { foundStart = bars[i]; break; }
+                        }
+                    }
+
+                    if (foundEnd == null && foundStart != null)
+                    {
+                        for (int i = newRange.End + 1; i < bars.Count; i++)
+                        {
+                            if (bars[i].VolumeLevel is { Count: > 0 })
+                            { foundEnd = bars[i]; break; }
+                        }
+                    }
+
+                    if (foundStart != null && foundEnd != null)
+                    {
+                        _filteredVolumeLevels = VolumeLevelStorageItem.Operation(foundEnd.VolumeLevel!, foundStart.VolumeLevel!, "Diff").OrderBy(q => q.Price).ToList();
+                        _volumeFilterActive = true;
+                        _filteredVolumeDataVersion++;
+                    }
+                    else if (foundStart != null)
+                    {
+                        _filteredVolumeLevels = VolumeLevelStorageItem.Operation(VolumeLevels, foundStart.VolumeLevel!, "Diff").OrderBy(q => q.Price).ToList();
+                        _volumeFilterActive = true;
+                        _filteredVolumeDataVersion++;
+                    }
+                }
             }
         }
 
@@ -856,24 +881,44 @@
 
         try
         {
-            var todayData = await httpClient.GetFromJsonAsync<List<BarStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbar/{Symbol}/{DateTime.Today:yyyy-MM-dd}").AbsoluteUri}");
-            BarStorageItem = todayData ?? new List<BarStorageItem>();
+            var bars = await httpClient.GetFromJsonAsync<List<BarStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbar/{Symbol}/{DateTime.Today:yyyy-MM-dd}").AbsoluteUri}");
+
+            DateTime effectiveDate;
+            if (bars is { Count: > 0 })
+            {
+                effectiveDate = DateTime.Today;
+            }
+            else
+            {
+                effectiveDate = await FindLastDateWithDataAsync(Symbol);
+                bars = await httpClient.GetFromJsonAsync<List<BarStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbar/{Symbol}/{effectiveDate:yyyy-MM-dd}").AbsoluteUri}");
+            }
+
+            BarStorageItem = bars ?? new List<BarStorageItem>();
 
             _dateRange = new MudExRange<int>(0, BarStorageItemTimeFrameFilter.Count);
             _volumeFilterActive = false;
             _filteredVolumeLevels = null;
 
+            var bubbles = await httpClient.GetFromJsonAsync<List<BubbleStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbubble/{Symbol}/{effectiveDate:yyyy-MM-dd}").AbsoluteUri}");
+            Bubbles = bubbles ?? new List<BubbleStorageItem>();
 
-            var todayBubble = await httpClient.GetFromJsonAsync<List<BubbleStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbubble/{Symbol}/{DateTime.Today:yyyy-MM-dd}").AbsoluteUri}");
-            Bubbles = todayBubble ?? new List<BubbleStorageItem>();
+            var volumeData = await httpClient.GetFromJsonAsync<VolumeLevelStorageItem>($"{Navigation.ToAbsoluteUri($"/api/data/getvolume/{Symbol}/{effectiveDate:yyyy-MM-dd}").AbsoluteUri}");
+            if (volumeData?.Volumes is { Count: > 0 })
+            {
+                VolumeLevels = volumeData.Volumes.ToList();
+            }
+            else
+            {
+                var lastBar = BarStorageItem.OrderByDescending(q => q.Date).FirstOrDefault();
+                if (lastBar?.VolumeLevel != null)
+                    VolumeLevels = lastBar.VolumeLevel;
+            }
+            _volumeDataVersion++;
+            Console.WriteLine($"VolumeLevels loaded: {VolumeLevels.Count} entries, filterActive={_volumeFilterActive}");
 
-            var lastBar = BarStorageItem.OrderByDescending(q => q.Date).FirstOrDefault();
-            if (lastBar != null && lastBar.VolumeLevel != null)
-                VolumeLevels = lastBar.VolumeLevel;
-
-            var todayStructure = await httpClient.GetFromJsonAsync<List<StructureStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getstructure/{Symbol}/{DateTime.Today:yyyy-MM-dd}/{MapFlowConfigDrawer.StructureRangeUpd.ToString(CultureInfo.InvariantCulture)}").AbsoluteUri}");
-            StructureStorageItem = todayStructure ?? new List<StructureStorageItem>();
-
+            var structure = await httpClient.GetFromJsonAsync<List<StructureStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getstructure/{Symbol}/{effectiveDate:yyyy-MM-dd}/{MapFlowConfigDrawer.StructureRangeUpd.ToString(CultureInfo.InvariantCulture)}").AbsoluteUri}");
+            StructureStorageItem = structure ?? new List<StructureStorageItem>();
         }
         catch (Exception ex)
         {
@@ -884,11 +929,27 @@
             isLoading = false;
             StateHasChanged();
 
-            if (HubClient != null && HubClient._started == false)
+            if (HubClient is { _started: false })
             {
                 await HubClient.StartConnection();
             }
+
+            // Aguarda a renderização do EChart antes de gerar o gráfico
+            await Task.Yield();
+            await GenerateChart();
         }
+    }
+
+    private async Task<DateTime> FindLastDateWithDataAsync(string symbol)
+    {
+        for (int i = 1; i <= 30; i++)
+        {
+            var date = DateTime.Today.AddDays(-i);
+            var probe = await httpClient.GetFromJsonAsync<List<BarStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getbar/{symbol}/{date:yyyy-MM-dd}").AbsoluteUri}");
+            if (probe is { Count: > 0 })
+                return date;
+        }
+        return DateTime.Today;
     }
     private async Task SetMinDistanceStructure(double minDistance)
     {
@@ -949,7 +1010,7 @@
                             @key="@($"chart_{Symbol}")" />
                         </div>
                         <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="1" Class="mt-2 py-2">
-                        <MudExRangeSlider T="int" Class="px-5 mx-5"
+                        <MudExRangeSlider @key="@("dateRangeSlider")" T="int" Class="px-5 mx-5"
                             Value="_dateRange"
                             ValueChanged="ApplyVolumeFilter"
                             SizeRange="@(new MudExRange<int>(0, Math.Max(0, BarStorageItemTimeFrameFilter.Count)))"
