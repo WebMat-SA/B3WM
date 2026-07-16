@@ -156,7 +156,7 @@ graph TD
 ### 1. Servidor Web (Obrigatório)
 
 ```bash
-dotnet run --project B3WM/B3WM
+dotnet run --project B3WM/B3WM --launch-profile https
 ```
 
 Acesse em: **https://localhost:5002**
@@ -180,7 +180,7 @@ e envia os dados para o servidor B3WM via SignalR.
 ```bash
 cd B3WM.Python
 pip install -r requirements.txt
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 O servidor FastAPI inicia em **http://localhost:8000** e o B3WM Server se conecta a ele automaticamente.

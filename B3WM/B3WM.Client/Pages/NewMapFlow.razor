@@ -11,6 +11,7 @@
 @using Vizor.ECharts
 @inject NavigationManager Navigation
 @inject HttpClient httpClient
+@implements IAsyncDisposable
 @page "/newmapflow/{Symbol}"
 @page "/newmapflow"
 @page "/"
@@ -23,6 +24,8 @@
     private List<(DateTime Time, double Vwap)> _forecastHistory = new();
 
     private bool _autoStarted;
+    private PeriodicTimer? _processTimer;
+    private CancellationTokenSource? _processCts;
 
     protected override void OnParametersSet()
     {
@@ -74,25 +77,40 @@
     {
         if (firstRender)
         {
-            _ = Task.Run(ProcessLoop);
+            _processCts = new CancellationTokenSource();
+            _processTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(throttlingDelayMs));
+            ProcessLoop();
         }
         base.OnAfterRender(firstRender);
     }
 
-    private async Task ProcessLoop()
+    private async void ProcessLoop()
     {
-        while (true)
+        var token = _processCts!.Token;
+        try
         {
-            try
+            while (await _processTimer!.WaitForNextTickAsync(token))
             {
-                await Task.Delay(throttlingDelayMs);
-                await GenerateChart();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error in ProcessLoop: " + ex);
+                try
+                {
+                    await InvokeAsync(GenerateChart);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error in ProcessLoop: " + ex);
+                }
             }
         }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _processCts?.Cancel();
+        _processCts?.Dispose();
+        _processTimer?.Dispose();
     }
 
     public async Task VolumeUpdate(VolumeLevelStorageItem volumes)
