@@ -143,8 +143,8 @@ public class BacktestEngineTests
         var trade = result.Trades[0];
         Assert.Equal(ExitReason.TakeProfit, trade.ExitReason);
         Assert.Equal(OrderSide.Buy, trade.Side);
-        Assert.Equal(70000, trade.EntryPrice);
-        Assert.Equal(70400, trade.ExitPrice);
+        Assert.Equal(70100, trade.EntryPrice);
+        Assert.Equal(70500, trade.ExitPrice);
         Assert.Equal(400, trade.Points);
     }
 
@@ -172,8 +172,8 @@ public class BacktestEngineTests
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
         Assert.Equal(ExitReason.StopLoss, trade.ExitReason);
-        Assert.Equal(70000, trade.EntryPrice);
-        Assert.Equal(69800, trade.ExitPrice);
+        Assert.Equal(69900, trade.EntryPrice);
+        Assert.Equal(69700, trade.ExitPrice);
         Assert.Equal(-200, trade.Points);
     }
 
@@ -201,6 +201,7 @@ public class BacktestEngineTests
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
         Assert.Equal(ExitReason.StopLoss, trade.ExitReason);
+        Assert.Equal(69900, trade.ExitPrice);
         Assert.Equal(-200, trade.Points);
     }
 
@@ -211,7 +212,7 @@ public class BacktestEngineTests
         keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
         {
             MakeBar(70000, 70100, 69900, 70000, 0),
-            MakeBar(69600, 69900, 69500, 69650, 5)
+            MakeBar(70000, 70100, 69500, 69800, 5)
         });
         var engine = CreateEngine(keeper);
         var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5));
@@ -241,7 +242,7 @@ public class BacktestEngineTests
         keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
         {
             MakeBar(70000, 70100, 69900, 70000, 0),
-            MakeBar(70200, 70300, 70100, 70250, 5)
+            MakeBar(70000, 70300, 69900, 70200, 5)
         });
         var engine = CreateEngine(keeper);
         var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5));
@@ -269,7 +270,7 @@ public class BacktestEngineTests
         keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
         {
             MakeBar(70000, 70100, 69900, 70000, 0),
-            MakeBar(70200, 70300, 69500, 70000, 5)
+            MakeBar(70000, 70300, 69500, 69900, 5)
         });
         var engine = CreateEngine(keeper);
         var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5));
@@ -286,6 +287,7 @@ public class BacktestEngineTests
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
         Assert.Equal(ExitReason.StopLoss, trade.ExitReason);
+        Assert.Equal(70200, trade.ExitPrice);
         Assert.Equal(-200, trade.Points);
     }
 
@@ -315,8 +317,9 @@ public class BacktestEngineTests
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
         Assert.Equal(ExitReason.StrategySignal, trade.ExitReason);
+        Assert.Equal(70050, trade.EntryPrice);
         Assert.Equal(70100, trade.ExitPrice);
-        Assert.Equal(100, trade.Points);
+        Assert.Equal(50, trade.Points);
     }
 
     [Fact]
@@ -325,10 +328,11 @@ public class BacktestEngineTests
         var keeper = new FakeDataKeeper();
         keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
         {
-            MakeBar(70000, 70100, 69900, 70000, 0)
+            MakeBar(70000, 70100, 69900, 70000, 0),
+            MakeBar(70100, 70200, 70000, 70150, 5)
         });
         var engine = CreateEngine(keeper);
-        var config = DefaultConfig;
+        var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5));
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
@@ -340,7 +344,9 @@ public class BacktestEngineTests
 
         Assert.Single(result.Trades);
         Assert.Equal(ExitReason.EndOfData, result.Trades[0].ExitReason);
-        Assert.Equal(70000, result.Trades[0].ExitPrice);
+        Assert.Equal(70100, result.Trades[0].EntryPrice);
+        Assert.Equal(70150, result.Trades[0].ExitPrice);
+        Assert.Equal(50, result.Trades[0].Points);
     }
 
     [Fact]
@@ -368,8 +374,9 @@ public class BacktestEngineTests
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
         Assert.Equal(ExitReason.TakeProfit, trade.ExitReason);
+        Assert.Equal(70100, trade.EntryPrice);
         Assert.Equal(70200, trade.ExitPrice);
-        Assert.Equal(200, trade.Points);
+        Assert.Equal(100, trade.Points);
     }
 
     [Fact]
@@ -395,6 +402,9 @@ public class BacktestEngineTests
 
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
+        Assert.Equal(70100, trade.EntryPrice);
+        Assert.Equal(70500, trade.ExitPrice);
+        Assert.Equal(400, trade.Points);
         Assert.Equal(10.0, trade.Commission);
         Assert.Equal(400 - 10.0, trade.ProfitLoss);
     }
@@ -409,7 +419,8 @@ public class BacktestEngineTests
             MakeBar(70100, 70500, 70100, 70450, 5)
         });
         var engine = CreateEngine(keeper);
-        var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5), slippage: 5);
+        var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5),
+            sl: 200, tp: 300, slippage: 5);
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
@@ -422,9 +433,9 @@ public class BacktestEngineTests
 
         Assert.Single(result.Trades);
         var trade = result.Trades[0];
-        Assert.Equal(70005, trade.EntryPrice);
+        Assert.Equal(70105, trade.EntryPrice);
         Assert.Equal(70400, trade.ExitPrice);
-        Assert.Equal(395, trade.Points);
+        Assert.Equal(295, trade.Points);
     }
 
     [Fact]

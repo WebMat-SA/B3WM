@@ -13,6 +13,7 @@ namespace B3WM.Services.Backtest
         public int Quantity { get; set; }
         public DateTime EntryDate { get; set; }
         public string? EntryReason { get; set; }
+        public int EntryBarIndex { get; set; }
     }
 
     public class BacktestEngine
@@ -46,30 +47,58 @@ namespace B3WM.Services.Backtest
             double cumulativePL = 0;
             double peak = 0;
             double maxDd = 0;
+            Signal? pendingEntry = null;
 
             for (int i = 0; i < bars.Count; i++)
             {
                 var bar = bars[i];
 
-                bool closed = false;
+                if (pendingEntry != null && position == null)
+                {
+                    var entryPrice = pendingEntry.Side == OrderSide.Buy
+                        ? bar.Open + config.SlippagePoints
+                        : bar.Open - config.SlippagePoints;
+
+                    var stopPrice = pendingEntry.StopLossPrice ?? (pendingEntry.Side == OrderSide.Buy
+                        ? entryPrice - config.StopLossPoints
+                        : entryPrice + config.StopLossPoints);
+
+                    var targetPrice = pendingEntry.TakeProfitPrice ?? (pendingEntry.Side == OrderSide.Buy
+                        ? entryPrice + config.TakeProfitPoints
+                        : entryPrice - config.TakeProfitPoints);
+
+                    position = new BacktestPosition
+                    {
+                        Side = pendingEntry.Side,
+                        EntryPrice = entryPrice,
+                        StopPrice = stopPrice,
+                        TargetPrice = targetPrice,
+                        Quantity = pendingEntry.Quantity > 0 ? pendingEntry.Quantity : config.Quantity,
+                        EntryDate = bar.Date,
+                        EntryReason = pendingEntry.Reason,
+                        EntryBarIndex = i
+                    };
+                    pendingEntry = null;
+                }
+
                 if (position != null)
                 {
+                    bool closed = false;
                     TryCloseByPrice(bar, position, config, pointValue, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve, out closed);
                     if (closed) position = null;
                 }
 
-                if (position != null && !closed)
+                if (position != null)
                 {
                     var signal = strategy.Evaluate(bar, hasPosition: true);
                     if (signal != null)
                     {
                         CloseTrade(position, bar.Close, ExitReason.StrategySignal, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
                         position = null;
-                        closed = true;
                     }
                 }
 
-                if (position != null && !closed && config.IsDayTrade)
+                if (position != null && config.IsDayTrade)
                 {
                     if (TimeSpan.TryParse(config.DayTradeCloseTime, out var closeTime))
                     {
@@ -78,38 +107,16 @@ namespace B3WM.Services.Backtest
                         {
                             CloseTrade(position, bar.Close, ExitReason.DayTradeClose, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
                             position = null;
-                            closed = true;
                         }
                     }
                 }
 
-                if (position == null)
+                if (position == null && pendingEntry == null)
                 {
                     var signal = strategy.Evaluate(bar, hasPosition: false);
-                    if (signal != null)
+                    if (signal != null && i < bars.Count - 1)
                     {
-                        var entryPrice = signal.Side == OrderSide.Buy
-                            ? bar.Close + config.SlippagePoints
-                            : bar.Close - config.SlippagePoints;
-
-                        var stopPrice = signal.StopLossPrice ?? (signal.Side == OrderSide.Buy
-                            ? entryPrice - config.StopLossPoints
-                            : entryPrice + config.StopLossPoints);
-
-                        var targetPrice = signal.TakeProfitPrice ?? (signal.Side == OrderSide.Buy
-                            ? entryPrice + config.TakeProfitPoints
-                            : entryPrice - config.TakeProfitPoints);
-
-                        position = new BacktestPosition
-                        {
-                            Side = signal.Side,
-                            EntryPrice = entryPrice,
-                            StopPrice = stopPrice,
-                            TargetPrice = targetPrice,
-                            Quantity = signal.Quantity > 0 ? signal.Quantity : config.Quantity,
-                            EntryDate = bar.Date,
-                            EntryReason = signal.Reason
-                        };
+                        pendingEntry = signal;
                     }
                 }
 

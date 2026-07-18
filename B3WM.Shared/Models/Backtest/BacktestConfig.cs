@@ -3,8 +3,8 @@ namespace B3WM.Shared.Models.Backtest
     public class BacktestConfig
     {
         public string Symbol { get; set; } = "WINFUT";
-        public int TimeFrame { get; set; } = 5;
-        public StrategyType StrategyName { get; set; } = StrategyType.Breakout;
+        public int TimeFrame { get; set; } = 2;
+        public StrategyType StrategyName { get; set; } = StrategyType.SmartBreakout;
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public double StopLossPoints { get; set; } = 200;
@@ -13,7 +13,7 @@ namespace B3WM.Shared.Models.Backtest
         public double SlippagePoints { get; set; } = 0;
         public double CommissionPerSide { get; set; } = 0.90;
         public int LookbackPeriod { get; set; } = 20;
-        public bool IsDayTrade { get; set; } = false;
-        public string DayTradeCloseTime { get; set; } = "17:00";
+        public bool IsDayTrade { get; set; } = true;
+        public string DayTradeCloseTime { get; set; } = "13:00";
     }
 }

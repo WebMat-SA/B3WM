@@ -152,6 +152,7 @@
             <ColGroup>
                 <col style="width: 40px;" />
                 <col style="width: 100px;" />
+                <col style="width: 100px;" />
                 <col style="width: 60px;" />
                 <col style="width: 100px;" />
                 <col style="width: 100px;" />
@@ -162,6 +163,7 @@
             <HeaderContent>
                 <MudTh>#</MudTh>
                 <MudTh>Entrada</MudTh>
+                <MudTh>Saída</MudTh>
                 <MudTh>Side</MudTh>
                 <MudTh>Entry Price</MudTh>
                 <MudTh>Exit Price</MudTh>
@@ -172,6 +174,7 @@
             <RowTemplate>
                 <MudTd DataLabel="#">@(result.Trades.IndexOf(context) + 1)</MudTd>
                 <MudTd DataLabel="Entrada">@context.EntryDate.ToString("dd/MM HH:mm")</MudTd>
+                <MudTd DataLabel="Saída">@context.ExitDate.ToString("dd/MM HH:mm")</MudTd>
                 <MudTd DataLabel="Side">
                     <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(context.Side == OrderSide.Buy ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
                         @(context.Side == OrderSide.Buy ? "BUY" : "SELL")
