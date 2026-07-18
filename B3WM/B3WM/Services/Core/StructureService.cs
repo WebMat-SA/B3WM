@@ -104,20 +104,37 @@ namespace B3WM.Services.Core
 
         public async Task<StructureStorageItem> Calculate(BarStorageItem newBar, bool skipPreLoad = false)
         {
-            var result = await Generate(newBar, skipPreLoad);
-
-            if (hubContext != null)
+            try
             {
-                await hubContext.Clients.Group(Symbol).ReceiveOnStructure(result);
+                var result = await Generate(newBar, skipPreLoad);
+
+                if (hubContext != null)
+                {
+                    await hubContext.Clients.Group(Symbol).ReceiveOnStructure(result);
+                }
+
+                if (OnUpdate != null) await OnUpdate.Invoke(result);
+
+                DataKeep.Add(result.Clone() as StructureStorageItem);
+
+                await SetDataAsync(DataKeep);
+
+                return result;
             }
-
-            if (OnUpdate != null) await OnUpdate.Invoke(result);
-
-            DataKeep.Add(result.Clone() as StructureStorageItem);
-
-            await SetDataAsync(DataKeep);
-
-            return result;
+            catch (Exception ex)
+            {
+                Console.WriteLine($"StructureService.Calculate error: {ex.Message}");
+                return _lastStructure ?? new StructureStorageItem
+                {
+                    Symbol = newBar.Symbol,
+                    Date = newBar.Date,
+                    TimeFrame = newBar.TimeFrame,
+                    UpBorder = newBar.High,
+                    DownBorder = newBar.Low,
+                    UpAuxBorder = newBar.High,
+                    DownAuxBorder = newBar.Low
+                };
+            }
         }
 
         private async Task<StructureStorageItem> Generate(BarStorageItem newBar, bool skipPreLoad = false)

@@ -43,37 +43,42 @@ namespace B3WM.Services.Core
 
         private async Task OnCandleUpdate(BarStorageItem bar)
         {
-            #region Volume in Candles
-            //se quiser fazer o input de outros serviços no finalizar de candle (como por exemplo indicadores, vwap, etc)
-            var volumeSnapshot = volumeService.FirstOrDefault()?.GetSnapshot();
-
-            if (volumeSnapshot != null)
-                bar.VolumeLevel = volumeSnapshot.Volumes;
-
-            #endregion
-
-            #region Forecast in Candles
-            var forecastSnapshot = adjustmentForecastService.FirstOrDefault()?.GetSnapshot();
-
-            if (forecastSnapshot != null && forecastSnapshot.Vwap > 0)
-                bar.ForecastPrice = forecastSnapshot.Vwap;
-
-            #endregion
-
-            #region Structure by Candles
-            var structureService = this.structureService.FirstOrDefault(q=>q.TimeFrame == bar.TimeFrame);
-
-            if (structureService != null)
+            try
             {
-                await structureService.Calculate(bar);
+                #region Volume in Candles
+                //se quiser fazer o input de outros serviços no finalizar de candle (como por exemplo indicadores, vwap, etc)
+                var volumeSnapshot = volumeService.FirstOrDefault()?.GetSnapshot();
+
+                if (volumeSnapshot != null)
+                    bar.VolumeLevel = volumeSnapshot.Volumes;
+
+                #endregion
+
+                #region Forecast in Candles
+                var forecastSnapshot = adjustmentForecastService.FirstOrDefault()?.GetSnapshot();
+
+                if (forecastSnapshot != null && forecastSnapshot.Vwap > 0)
+                    bar.ForecastPrice = forecastSnapshot.Vwap;
+
+                #endregion
+
+                #region Structure by Candles
+                var structureService = this.structureService.FirstOrDefault(q=>q.TimeFrame == bar.TimeFrame);
+
+                if (structureService != null)
+                {
+                    await structureService.Calculate(bar);
+                }
+
+                #endregion
+
+                Console.WriteLine(
+                    $"Bar atualizado: {bar} ");
             }
-
-            #endregion
-
-            Console.WriteLine(
-                $"Bar atualizado: {bar} ");
-
-            await Task.CompletedTask;
+            catch (Exception ex)
+            {
+                Console.WriteLine($"OrchestratorService.OnCandleUpdate error: {ex.Message}");
+            }
         }
 
         public void Dispose()

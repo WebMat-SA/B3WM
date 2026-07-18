@@ -51,19 +51,21 @@ namespace B3WM.Services.Core
 
             await foreach (var ticks in _channel.Reader.ReadAllAsync())
             {
-                // processamento aqui
-                IList<Ticks2> sortedTicks = new List<Ticks2>();
-
-                //os dados estão em ordem crescente de tempo
-                sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
-
-                var swTicks = Stopwatch.StartNew();
-                foreach (var t in sortedTicks)
+                try
                 {
-                    await ProcessTick(t);
-                }
-                swTicks.Stop();
+                    IList<Ticks2> sortedTicks = ticks.OrderBy(x => x.Time).ThenBy(x => x.TrydID).ToList();
 
+                    var swTicks = Stopwatch.StartNew();
+                    foreach (var t in sortedTicks)
+                    {
+                        await ProcessTick(t);
+                    }
+                    swTicks.Stop();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"CandleService.ProcessLoop error: {ex.Message}");
+                }
             }
         }
 

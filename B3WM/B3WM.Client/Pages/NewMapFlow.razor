@@ -23,9 +23,13 @@
     private AdjustmentForecastItem? _currentForecast;
     private List<(DateTime Time, double Vwap)> _forecastHistory = new();
 
+    private const int MaxBubbles = 2000;
+    private const int MaxForecastHistory = 500;
+
     private bool _autoStarted;
-    private PeriodicTimer? _processTimer;
     private CancellationTokenSource? _processCts;
+    private Task? _processTask;
+    private DateTime _lastChartUpdate = DateTime.UtcNow;
 
     protected override void OnParametersSet()
     {
@@ -78,31 +82,90 @@
         if (firstRender)
         {
             _processCts = new CancellationTokenSource();
-            _processTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(throttlingDelayMs));
-            ProcessLoop();
+            _processTask = ProcessLoopAsync();
+            _ = WatchdogAsync(_processCts.Token);
         }
         base.OnAfterRender(firstRender);
     }
 
-    private async void ProcessLoop()
+    private async Task ProcessLoopAsync()
     {
         var token = _processCts!.Token;
-        try
+        var chartGenTask = Task.CompletedTask;
+        while (!token.IsCancellationRequested)
         {
-            while (await _processTimer!.WaitForNextTickAsync(token))
+            var loopStart = DateTime.UtcNow;
+            try
             {
-                try
+                // Aguarda o intervalo entre gerações de chart
+                await Task.Delay(throttlingDelayMs, token);
+
+                // Gera o chart - se a chamada anterior ainda estiver pendente, pula
+                if (chartGenTask.IsCompleted)
                 {
-                    await InvokeAsync(GenerateChart);
+                    chartGenTask = InvokeAsync(GenerateChart);
+                    await chartGenTask;
+                    _lastChartUpdate = DateTime.UtcNow;
                 }
-                catch (Exception ex)
+                else
                 {
-                    Console.WriteLine("Error in ProcessLoop: " + ex);
+                    Console.WriteLine("[CHART] GenerateChart ainda ocupado, pulando tick");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CHART] ProcessLoop error: " + ex.Message);
+            }
+
+            // Garante pausa mínima entre chamadas
+            var elapsed = DateTime.UtcNow - loopStart;
+            if (elapsed.TotalMilliseconds < throttlingDelayMs)
+            {
+                try { await Task.Delay(throttlingDelayMs - (int)elapsed.TotalMilliseconds, token); }
+                catch (OperationCanceledException) { break; }
+            }
         }
-        catch (OperationCanceledException)
+    }
+
+    private async Task WatchdogAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
         {
+            try
+            {
+                await Task.Delay(5000, token);
+                var elapsed = DateTime.UtcNow - _lastChartUpdate;
+                if (elapsed.TotalSeconds > 10)
+                {
+                    Console.WriteLine($"[WATCHDOG] Chart sem update há {elapsed.TotalSeconds:F1}s - executando recovery");
+
+                    // 1. Tenta reiniciar o ProcessLoop se morreu
+                    if (_processTask?.IsCompleted == true)
+                    {
+                        Console.WriteLine("[WATCHDOG] Reiniciando ProcessLoop");
+                        _processTask = ProcessLoopAsync();
+                    }
+
+                    // 2. Tenta religar SignalR se desconectou
+                    if (HubClient is { _started: true })
+                    {
+                        Console.WriteLine("[WATCHDOG] Reconectando SignalR");
+                        _ = HubClient.StartConnection();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Watchdog error: " + ex);
+            }
         }
     }
 
@@ -110,17 +173,20 @@
     {
         _processCts?.Cancel();
         _processCts?.Dispose();
-        _processTimer?.Dispose();
+        if (_processTask != null)
+        {
+            try { await _processTask; } catch { /* ignore */ }
+        }
     }
 
     public async Task VolumeUpdate(VolumeLevelStorageItem volumes)
     {
         try
         {
-
             var sw = Stopwatch.StartNew();
             VolumeLevels = volumes.Volumes as List<VolumeLevel> ?? volumes.Volumes.ToList();
             _volumeDataVersion++;
+            Console.WriteLine($"[DATA] VolumeUpdate: {volumes.Date:HH:mm:ss} levels={volumes.Volumes?.Count ?? 0}");
 
             var count = BarStorageItemTimeFrameFilter.Count;
             var isFullRange = count > 0 && _dateRange.End >= count;
@@ -179,6 +245,8 @@
         if (MapFlowConfigDrawer._allBubbleAgents.Add((Ticks2.Agents)data.Agent) && !MapFlowConfigDrawer.SelectedAgents.Contains((Ticks2.Agents)data.Agent))
             MapFlowConfigDrawer.SelectedAgents.Add((Ticks2.Agents)data.Agent);
         Bubbles.Add(data);
+        if (Bubbles.Count > MaxBubbles)
+            Bubbles.RemoveRange(0, Bubbles.Count - MaxBubbles);
         // trigger immediate sound/notification in the bubble drawer
         try
         {
@@ -226,6 +294,8 @@
     {
         _currentForecast = forecast;
         _forecastHistory.Add((forecast.Time, forecast.Vwap));
+        if (_forecastHistory.Count > MaxForecastHistory)
+            _forecastHistory.RemoveRange(0, _forecastHistory.Count - MaxForecastHistory);
         return Task.CompletedTask;
     }
     public async Task NewBar(BarStorageItem bar)
@@ -281,18 +351,9 @@
     public Task NewCurrentBar(BarStorageItem bar)
     {
         var sw = Stopwatch.StartNew();
-
         CurrentBar = bar;
-
-        if (EChart != null)
-        {
-            //_ = GenerateChart();
-        }
-
-
+        Console.WriteLine($"[DATA] NewCurrentBar: {bar.Date:HH:mm:ss} C:{bar.Close} V:{bar.Volume}");
         sw.Stop();
-        //Console.WriteLine($"{sw.ElapsedMilliseconds} ms - NewCurrentBar - {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss:fff")}"); 
-
         return Task.CompletedTask;
     }
 
@@ -480,13 +541,14 @@
         #region Candles and graph setup
 
         //var swBars = Stopwatch.StartNew();
-        var hasCurrentBarInBars = CurrentBar != null && BarStorageItemTimeFrameFilter.Any(b => b.Date == CurrentBar.Date);
+        var filteredBars = BarStorageItemTimeFrameFilter;
+        var hasCurrentBarInBars = CurrentBar != null && filteredBars.Any(b => b.Date == CurrentBar.Date);
         var includeCurrentBar = !hasCurrentBarInBars && CurrentBar != null && CurrentBar.Date != default;
 
         List<BarStorageItem> bars;
 
-        bars = new List<BarStorageItem>(BarStorageItemTimeFrameFilter.Count);
-        foreach (var bar in BarStorageItemTimeFrameFilter/* .Where(q => q.Date.TimeOfDay >= _startTime && q.Date.TimeOfDay <= _endTime) */)
+        bars = new List<BarStorageItem>(filteredBars.Count);
+        foreach (var bar in filteredBars)
             bars.Add(bar);
 
         if (includeCurrentBar && CurrentBar != null)
@@ -780,9 +842,10 @@
                     indexLookup[categoryData[i]] = i;
 
             // Iterate structures (source of truth) and map into the aligned arrays
-            if (StructureStorageItemTimeFrameFilter != null && StructureStorageItemTimeFrameFilter.Count > 0)
+            var structures = StructureStorageItemTimeFrameFilter;
+            if (structures.Count > 0)
             {
-                foreach (var s in StructureStorageItemTimeFrameFilter)
+                foreach (var s in structures)
                 {
                     try
                     {
@@ -981,7 +1044,7 @@
         swTotal.Stop();
         //Console.WriteLine($"{swTotal.ElapsedMilliseconds} ms - GenerateChart");
 
-        await EChart.UpdateAsync(false);
+        await EChart.UpdateAsync(true);
     }
 
 
