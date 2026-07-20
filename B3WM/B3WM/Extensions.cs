@@ -23,6 +23,7 @@ namespace B3WM
             services.AddSingleton<IIndicator, BollingerBands>();
             services.AddSingleton<IIndicator, BollingerBounce>();
             services.AddSingleton<IndicatorService>();
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<IndicatorService>());
 
             return services;
         }

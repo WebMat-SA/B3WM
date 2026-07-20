@@ -25,15 +25,14 @@ namespace B3WM.Controllers
         [HttpGet("{symbol}/{date}")]
         public async Task<IActionResult> GetBarAsync(string symbol, DateTime date)
         {
-
-            List<BarStorageItem> data = new List<BarStorageItem>();
-
-            foreach(var timeFrame in Defaults.TimeFrames)
+            var tasks = Defaults.TimeFrames.Select(timeFrame =>
             {
                 string path = $"{symbol}_{nameof(CandleService)}_{timeFrame}MIN_{date:yyyy-MM-dd}.json";
+                return dataKeeper.ReadDataAsync<List<BarStorageItem>>(path);
+            });
 
-                data.AddRange(await dataKeeper.ReadDataAsync<List<BarStorageItem>>(path));
-            }
+            var results = await Task.WhenAll(tasks);
+            var data = results.SelectMany(r => r).ToList();
 
             return Ok(data);
         }
