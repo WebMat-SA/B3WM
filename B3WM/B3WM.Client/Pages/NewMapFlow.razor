@@ -76,6 +76,8 @@
     private List<Shared.Models.StructureStorageItem> StructureStorageItemTimeFrameFilter => StructureStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame && q.Symbol == Symbol).ToList();
     private List<Shared.Models.StructureStorageItem> StructureStorageItem { get; set; } = new List<Shared.Models.StructureStorageItem>();
 
+    private Dictionary<string, List<(DateTime Time, double? Value)>> _indicatorData = new();
+    private Dictionary<string, IndicatorPlotType> _indicatorPlotType = new();
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -213,16 +215,6 @@
             }
             //Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(volumes));
 
-            // trigger strategy evaluation
-            try
-            {
-                await (MapFlowConfigDrawer?.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
-            }
-            catch
-            {
-                // ignore errors
-            }
-
             // rebuild simplified chart when volume data arrives
             //await GenerateChart();
 
@@ -256,15 +248,6 @@
         {
             // ignore errors from JS interop
         }
-        // trigger strategy evaluation
-        try
-        {
-            await (MapFlowConfigDrawer.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
-        }
-        catch
-        {
-            // ignore errors
-        }
         // After adding a new bubble, rebuild the simple chart so bubbles are shown
 
 
@@ -280,15 +263,6 @@
         StructureStorageItem.Add(structure);
         if (MapFlowConfigDrawer?.ProfileAutoByPriceStructure == true)
             ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItemTimeFrameFilter.Count)));
-        // trigger strategy evaluation
-        try
-        {
-            await (MapFlowConfigDrawer?.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
-        }
-        catch
-        {
-            // ignore errors
-        }
     }
     public Task NewForecast(AdjustmentForecastItem forecast)
     {
@@ -297,6 +271,19 @@
         if (_forecastHistory.Count > MaxForecastHistory)
             _forecastHistory.RemoveRange(0, _forecastHistory.Count - MaxForecastHistory);
         return Task.CompletedTask;
+    }
+    public async Task NewIndicatorValue(IndicatorValue data)
+    {
+        var key = $"{data.IndicatorName}.{data.Key}";
+        if (!_indicatorData.ContainsKey(key))
+        {
+            _indicatorData[key] = new();
+            _indicatorPlotType[key] = data.PlotType;
+        }
+        _indicatorData[key].Add((data.Time, data.Value));
+        if (_indicatorData[key].Count > 500)
+            _indicatorData[key].RemoveRange(0, _indicatorData[key].Count - 500);
+        await InvokeAsync(StateHasChanged);
     }
     public async Task NewBar(BarStorageItem bar)
     {
@@ -329,16 +316,6 @@
         {
             _dateRange = new MudExRange<int>(_dateRange.Start, BarStorageItemTimeFrameFilter.Count);
             ApplyVolumeFilter(_dateRange);
-        }
-
-        // trigger strategy evaluation
-        try
-        {
-            await (MapFlowConfigDrawer?.MapFlowStrategyDrawer?.NotifyNewSignalAsync() ?? Task.CompletedTask);
-        }
-        catch
-        {
-            // ignore errors
         }
 
         //Console.WriteLine(bar);
@@ -1039,6 +1016,97 @@
 
         #endregion
 
+        #region Indicator Series
+
+        var indicatorColorDefaults = new Dictionary<string, string>
+        {
+            ["Bollinger Bands.Upper"] = "#ff6b6b",
+            ["Bollinger Bands.Middle"] = "#ffd93d",
+            ["Bollinger Bands.Lower"] = "#6bcb77",
+            ["Bollinger Bounce.Buy"] = "#00fa9a",
+            ["Bollinger Bounce.Sell"] = "#ff4500",
+        };
+
+        var markerDefaults = new Dictionary<string, (string Symbol, double Size)>
+        {
+            ["Bollinger Bounce.Buy"] = ("arrow", 24),
+            ["Bollinger Bounce.Sell"] = ("arrow", 24),
+        };
+
+        var markPointEntries = new List<MarkPointData>();
+
+        foreach (var (key, indicatorValues) in _indicatorData)
+        {
+            _indicatorPlotType.TryGetValue(key, out var plotType);
+
+            if (plotType == IndicatorPlotType.Marker)
+            {
+                var idxLookup = new Dictionary<string, int>(categoryData.Count);
+                for (int i = 0; i < categoryData.Count; i++)
+                    if (categoryData[i] != null && !idxLookup.ContainsKey(categoryData[i]))
+                        idxLookup[categoryData[i]] = i;
+
+                foreach (var (time, value) in indicatorValues)
+                {
+                    if (value == null) continue;
+                    var cat = time.ToString("dd/MM HH:mm");
+                    if (idxLookup.TryGetValue(cat, out var idx))
+                    {
+                        var color = indicatorColorDefaults.TryGetValue(key, out var c) ? c : "#888888";
+                        var (symbol, size) = markerDefaults.TryGetValue(key, out var md) ? md : ("pin", 20);
+                        markPointEntries.Add(new MarkPointData
+                        {
+                            Coord = new double[] { idx, value.Value },
+                            Value = value.Value,
+                            Name = key,
+                            Symbol = symbol,
+                            SymbolSize = size,
+                            ItemStyle = new ItemStyle { Color = color }
+                        });
+                    }
+                }
+            }
+            else
+            {
+                var data = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
+                var idxLookup = new Dictionary<string, int>(categoryData.Count);
+                for (int i = 0; i < categoryData.Count; i++)
+                    if (categoryData[i] != null && !idxLookup.ContainsKey(categoryData[i]))
+                        idxLookup[categoryData[i]] = i;
+
+                foreach (var (time, value) in indicatorValues)
+                {
+                    if (value == null) continue;
+                    var cat = time.ToString("dd/MM HH:mm");
+                    if (idxLookup.TryGetValue(cat, out var idx))
+                        data[idx] = value;
+                }
+
+                var color = indicatorColorDefaults.TryGetValue(key, out var c) ? c : "#888888";
+                seriesList.Add(new LineSeries
+                {
+                    Name = key,
+                    Data = data,
+                    Z = 6,
+                    ShowSymbol = false,
+                    LineStyle = new LineStyle { Color = color, Width = 1, Opacity = 0.8 }
+                });
+            }
+        }
+
+        if (markPointEntries.Count > 0)
+        {
+            _cachedCandleSeriesObj.MarkPoint = new MarkPoint
+            {
+                Data = markPointEntries,
+                SymbolSize = 0,
+                Symbol = null,
+                Silent = false
+            };
+        }
+
+        #endregion
+
         ChartOptions.Series = seriesList;
 
         swTotal.Stop();
@@ -1145,9 +1213,7 @@
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; openDrawerBubbleNotify = false; openDrawerStrategy = false; }" />
                 </MudTooltip>
                 <MudTooltip Text="Notificações de bubbles">
-                    <MudBadge Color="MudBlazor.Color.Transparent" Icon="@Icons.Material.Filled.BubbleChart" Overlap="true" Bordered="true">
-                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; openDrawerStrategy = false;}" />
-                    </MudBadge>
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.BubbleChart" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; openDrawerStrategy = false;}" />
                 </MudTooltip>
                 <MudTooltip Text="Notificações de estratégia">
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Leaderboard" Color="@(openDrawerStrategy ? MudBlazor.Color.Info : MudBlazor.Color.Default)" OnClick="() => { openDrawerStrategy = !openDrawerStrategy; openDrawer = false; openDrawerBubbleNotify = false; }" />
@@ -1164,7 +1230,7 @@
                 <MudTooltip Text="@($"Connect")" Arrow>
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayCircleOutline" OnClick="LoadData" Color="MudBlazor.Color.Default" />
                 </MudTooltip>
-                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnForecastUpdate="NewForecast" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
+                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnForecastUpdate="NewForecast" OnIndicatorValue="NewIndicatorValue" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
             </MudStack>
         </MudStack>
     </MudAppBar>

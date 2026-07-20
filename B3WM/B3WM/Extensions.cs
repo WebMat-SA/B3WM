@@ -1,6 +1,7 @@
 ﻿using B3WM.Services;
 using B3WM.Services.Backtest;
 using B3WM.Services.Core;
+using B3WM.Services.Indicators;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
@@ -18,6 +19,10 @@ namespace B3WM
             services.AddWinfutServices(config);
 
             services.AddWdofutServices(config);
+
+            services.AddSingleton<IIndicator, BollingerBands>();
+            services.AddSingleton<IIndicator, BollingerBounce>();
+            services.AddSingleton<IndicatorService>();
 
             return services;
         }

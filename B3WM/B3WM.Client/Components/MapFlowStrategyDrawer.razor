@@ -1,24 +1,13 @@
-@using B3WM.Shared.Models.Backtest
-@using B3WM.Shared.Entity
+@using System.Globalization
+@using System.Net.Http.Json
 @using B3WM.Shared.Extensions
+@using B3WM.Shared.Interfaces
 @using B3WM.Shared.Models
-@inject IJSRuntime JS
+@inject HttpClient Http
 @inherits Components.PersistentComponentBase
 
 @code {
     protected override string PersistenceKey => $"{nameof(MapFlowStrategyDrawer)}_{Symbol}_state";
-
-    public class StrategySignalRecord
-    {
-        public DateTime Time { get; set; }
-        public OrderSide Side { get; set; }
-        public string Reason { get; set; } = "";
-        public double Price { get; set; }
-        public double? StopLoss { get; set; }
-    }
-
-    string GetChipStyle(OrderSide side) =>
-        $"background-color: {(side == OrderSide.Buy ? "#00fa9a" : "#ff4500")}";
 
     [CascadingParameter]
     public string Symbol { get; set; } = "";
@@ -26,279 +15,213 @@
     [Parameter]
     public bool Open { get; set; }
 
-    [Parameter]
-    public int TimeFrame { get; set; } = 2;
-
-    [Parameter]
-    public List<BarStorageItem> Bars { get; set; } = new();
-
-    [Parameter]
-    public List<BubbleStorageItem> Bubbles { get; set; } = new();
-
-    [Parameter]
-    public List<StructureStorageItem> Structures { get; set; } = new();
-
-    [Parameter]
-    public List<VolumeLevel> VolumeLevels { get; set; } = new();
+    private List<IndicatorInfo> _indicators = new();
+    private Dictionary<string, Dictionary<string, double>> _pendingChanges = new();
+    private Dictionary<string, string> _indicatorColors = new();
+    private Dictionary<string, bool> _indicatorVisible = new();
 
     [PersistState]
-    public int EntryThreshold { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartEntryThreshold;
+    public string ColorsJson
+    {
+        get => System.Text.Json.JsonSerializer.Serialize(_indicatorColors);
+        set
+        {
+            try { _indicatorColors = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(value ?? "{}") ?? new(); }
+            catch { _indicatorColors = new(); }
+        }
+    }
 
     [PersistState]
-    public int ExitThreshold { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartExitThreshold;
+    public string VisibleJson
+    {
+        get => System.Text.Json.JsonSerializer.Serialize(_indicatorVisible);
+        set
+        {
+            try { _indicatorVisible = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, bool>>(value ?? "{}") ?? new(); }
+            catch { _indicatorVisible = new(); }
+        }
+    }
 
-    [PersistState]
-    public double VolumePct { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartVolumePct;
+    private Dictionary<string, double> _lastValues = new();
 
-    [PersistState]
-    public double BufferPct { get; set; } = B3WM.Shared.Models.Defaults.Backtest.SmartStructureBufferPct;
+    public void UpdateValue(IndicatorValue data)
+    {
+        var key = $"{data.IndicatorName}.{data.Key}";
+        _lastValues[key] = data.Value;
+    }
 
-    [PersistState]
-    public bool Sound { get; set; } = true;
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadIndicatorsAsync();
+    }
 
-    private bool _inPosition;
-    private List<StrategySignalRecord> _signals = new();
-    private HashSet<string> _seenKeys = new();
-    private bool _initialized;
+    public async Task RefreshAsync()
+    {
+        await LoadIndicatorsAsync();
+    }
 
-    string MakeKey(StrategySignalRecord s) => $"{s.Time.Ticks}_{s.Side}_{s.Reason}_{s.Price}";
-
-    async Task PlayNotificationSoundAsync()
+    private async Task LoadIndicatorsAsync()
     {
         try
         {
-            var script = @"(async function(){
-              var ctx = new (window.AudioContext || window.webkitAudioContext)();
-              if (ctx.state === 'suspended') await ctx.resume();
-              var o = ctx.createOscillator();
-              var g = ctx.createGain();
-              o.type = 'sine';
-              o.frequency.value = 660;
-              g.gain.value = 0.08;
-              o.connect(g);
-              g.connect(ctx.destination);
-              o.start(0);
-              return new Promise(function(resolve){
-                setTimeout(function(){ o.stop(0); ctx.close(); resolve(true); }, 500);
-              });
-            })()";
-            await JS.InvokeVoidAsync("eval", script);
+            var list = await Http.GetFromJsonAsync<List<IndicatorInfo>>("/api/indicator/list");
+            if (list != null)
+            {
+                _indicators = list;
+                foreach (var ind in _indicators)
+                {
+                    if (!_pendingChanges.ContainsKey(ind.Name))
+                        _pendingChanges[ind.Name] = new(ind.Parameters);
+                }
+            }
         }
         catch
         {
         }
     }
 
-    private bool IsLowVolumeLevel(double price)
+    private async Task ApplyConfigAsync(string name)
     {
-        if (VolumeLevels == null || VolumeLevels.Count == 0) return false;
+        if (!_pendingChanges.TryGetValue(name, out var parans)) return;
+        var ind = _indicators.FirstOrDefault(i => i.Name == name);
+        if (ind == null) return;
 
-        var tickSize = B3WM.Shared.Models.Defaults.GetTickSize(Symbol);
-        var avg = VolumeLevels.Average(v => (double)v.Total);
-        if (avg <= 0) return false;
-
-        var level = VolumeLevels
-            .Where(v => Math.Abs(v.Price - price) <= tickSize)
-            .OrderBy(v => Math.Abs(v.Price - price))
-            .FirstOrDefault();
-
-        return level != null && level.Total < avg * VolumePct;
+        try
+        {
+            await Http.PostAsJsonAsync("/api/indicator/config", new
+            {
+                Name = name,
+                Enabled = ind.Enabled,
+                Parameters = parans
+            });
+        }
+        catch
+        {
+        }
     }
 
-    public async Task NotifyNewSignalAsync()
+    private string GetColor(string key)
     {
-        var bar = Bars.LastOrDefault();
-        if (bar == null) return;
-
-        var structure = Structures.LastOrDefault();
-        if (structure == null) return;
-
-        var upBorder = structure.UpBorder;
-        var downBorder = structure.DownBorder;
-        if (double.IsNaN(upBorder) || double.IsNaN(downBorder)) return;
-
-        var range = upBorder - downBorder;
-        if (range <= 0) return;
-
-        var buffer = range * BufferPct;
-        var barStart = bar.Date.GetCandleStart(TimeFrame);
-        var barBubbles = Bubbles
-            .Where(b => b.Date.GetCandleStart(TimeFrame) == barStart)
-            .ToList();
-
-        if (barBubbles.Count == 0) return;
-
-        var largeBubbles = barBubbles.Where(b => b.Amount >= EntryThreshold).ToList();
-        if (largeBubbles.Count == 0) return;
-
-        List<StrategySignalRecord> newSignals = new();
-
-        if (_inPosition)
-        {
-            if (barBubbles.Any(b => b.Amount >= ExitThreshold))
-            {
-                newSignals.Add(new StrategySignalRecord
-                {
-                    Time = bar.Date,
-                    Side = bar.Close >= (upBorder + downBorder) / 2 ? OrderSide.Sell : OrderSide.Buy,
-                    Reason = "Exit: large bubble",
-                    Price = bar.Close,
-                });
-            }
-        }
-        else
-        {
-            foreach (var bubble in largeBubbles)
-            {
-                if (!IsLowVolumeLevel(bubble.Price)) continue;
-
-                if (Math.Abs(bubble.Price - upBorder) <= buffer ||
-                    Math.Abs(bubble.Price - downBorder) <= buffer)
-                    continue;
-
-                if (bubble.ActionType == Ticks2.ActionType.Buy && bubble.Price < upBorder)
-                {
-                    var slPrice = downBorder - buffer;
-                    newSignals.Add(new StrategySignalRecord
-                    {
-                        Time = bar.Date,
-                        Side = OrderSide.Buy,
-                        Reason = $"SmartB.Compra {bubble.Amount}@{(Ticks2.Agents)bubble.Agent}",
-                        Price = bubble.Price,
-                        StopLoss = slPrice,
-                    });
-                }
-
-                if (bubble.ActionType == Ticks2.ActionType.Sale && bubble.Price > downBorder)
-                {
-                    var slPrice = upBorder + buffer;
-                    newSignals.Add(new StrategySignalRecord
-                    {
-                        Time = bar.Date,
-                        Side = OrderSide.Sell,
-                        Reason = $"SmartB.Venda {bubble.Amount}@{(Ticks2.Agents)bubble.Agent}",
-                        Price = bubble.Price,
-                        StopLoss = slPrice,
-                    });
-                }
-            }
-        }
-
-        if (newSignals.Count == 0) return;
-
-        if (!_initialized)
-        {
-            foreach (var key in newSignals.Select(MakeKey))
-                _seenKeys.Add(key);
-            _initialized = true;
-            _signals.AddRange(newSignals);
-            return;
-        }
-
-        var unseen = newSignals.Where(s => !_seenKeys.Contains(MakeKey(s))).ToList();
-
-        if (unseen.Count > 0)
-        {
-            if (Sound)
-            {
-                try { await PlayNotificationSoundAsync(); }
-                catch { }
-            }
-
-            _signals.AddRange(unseen);
-            if (_signals.Count > 200) _signals.RemoveRange(0, _signals.Count - 200);
-
-            foreach (var s in unseen)
-            {
-                if (s.Side == OrderSide.Buy && !string.IsNullOrEmpty(s.Reason) && !s.Reason.StartsWith("Exit"))
-                    _inPosition = true;
-                else if (s.Side == OrderSide.Sell && !string.IsNullOrEmpty(s.Reason) && !s.Reason.StartsWith("Exit"))
-                    _inPosition = true;
-                else if (s.Reason.StartsWith("Exit"))
-                    _inPosition = false;
-            }
-        }
-
-        foreach (var key in newSignals.Select(MakeKey))
-            _seenKeys.Add(key);
-        await InvokeAsync(StateHasChanged);
+        return _indicatorColors.TryGetValue(key, out var c) ? c : "";
     }
 
-    public void ForceUpdate() => StateHasChanged();
+    private void SetColor(string key, string color)
+    {
+        _indicatorColors[key] = color;
+        MarkDirty();
+    }
+
+    private bool GetVisible(string key)
+    {
+        return _indicatorVisible.TryGetValue(key, out var v) ? v : true;
+    }
+
+    private void SetVisible(string key, bool visible)
+    {
+        _indicatorVisible[key] = visible;
+        MarkDirty();
+    }
+
+    public class IndicatorInfo
+    {
+        public string Name { get; set; } = "";
+        public bool Enabled { get; set; }
+        public int NeedsBarCount { get; set; }
+        public Dictionary<string, double> Parameters { get; set; } = new();
+    }
 }
 
 <MudDrawer Open="Open" Height="86vh" Width="400px" Anchor="MudBlazor.Anchor.Start" Variant="@DrawerVariant.Persistent">
-
-    <MudPaper Class="p-1 mt-1" Outlined Elevation="0">
-        <MudList ReadOnly=true Dense T="string">
-            <MudListItem Dense="true" T="string" Icon="@Icons.Material.Filled.TravelExplore">
-                <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.caption">Estratégia SmartBreakout</MudText>
-                    <MudStack Row Justify="Justify.FlexEnd" Spacing="1">
-                        <MudTooltip Text="Notificações Sonoras">
-                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => Sound =! Sound" Color="@(Sound ? MudBlazor.Color.Info : MudBlazor.Color.Default)" />
-                        </MudTooltip>
-                    </MudStack>
-                </MudStack>
-            </MudListItem>
-
-            <MudListItem Dense="true" T="string">
-                <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                    <MudIconButton Size="Size.Small" Icon="@(_inPosition ? Icons.Material.Filled.FiberManualRecord : Icons.Material.Filled.PauseCircleOutline)" Color="@(_inPosition ? MudBlazor.Color.Warning : MudBlazor.Color.Default)" Disabled="true" />
-                    <MudText Typo="Typo.caption">@(_inPosition ? "EM POSIÇÃO" : "AGUARDANDO")</MudText>
-                    <MudText Typo="Typo.caption">Sinais: @_signals.Count</MudText>
-                </MudStack>
-            </MudListItem>
-
-            <MudListItem Dense="true">
-                <MudStack Row Spacing="2" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.caption">Entry</MudText>
-                    <MudSlider Size="Size.Small" @bind-Value="@EntryThreshold" Step="25" Min=100 Max=5000 T=@int Variant="Variant.Filled" />
-                    <MudText Typo="Typo.caption">@EntryThreshold</MudText>
-                </MudStack>
-            </MudListItem>
-
-            <MudListItem Dense="true">
-                <MudStack Row Spacing="2" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.caption">Exit</MudText>
-                    <MudSlider Size="Size.Small" @bind-Value="@ExitThreshold" Step="25" Min=100 Max=5000 T=@int Variant="Variant.Filled" />
-                    <MudText Typo="Typo.caption">@ExitThreshold</MudText>
-                </MudStack>
-            </MudListItem>
-
-            <MudDivider />
-
-            <Virtualize TItem=StrategySignalRecord Items="_signals" Context="s">
-                <MudListItem Dense="true" T="string">
-                    <MudStack AlignItems="AlignItems.Center" Row Justify="Justify.SpaceBetween">
-                        <MudTooltip Text="@s.Price.ToString("0.##")">
-                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
-                                <MudChip Label="true" Text="@s.Time.ToString("HH:mm:ss")" Size="Size.Small" />
-                                @if (s.Side == OrderSide.Buy)
-                                {
-                                    <MudText Typo="Typo.caption" Style="color:#00fa9a">▲ COMPRA</MudText>
-                                }
-                                else
-                                {
-                                    <MudText Typo="Typo.caption" Style="color:#ff4500">▼ VENDA</MudText>
-                                }
-                            </MudStack>
-                        </MudTooltip>
-                        <MudTooltip Text="@s.Reason">
-                            <MudChip Label="true" Text="@s.Price.ToString("0.##")" Size="Size.Small" Style="@GetChipStyle(s.Side)" />
-                        </MudTooltip>
-                    </MudStack>
-                    @if (s.StopLoss.HasValue)
-                    {
-                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Style="padding-left: 8px">
-                            <MudText Typo="Typo.caption" Style="color:#888">SL:</MudText>
-                            <MudText Typo="Typo.caption" Style="color:#ff6b6b">@s.StopLoss.Value.ToString("0.##")</MudText>
-                        </MudStack>
-                    }
-                    <MudText Typo="Typo.caption" Style="color:#aaa; padding-left: 8px">@s.Reason</MudText>
-                </MudListItem>
-            </Virtualize>
-        </MudList>
+    <MudPaper Class="pa-2" Outlined Elevation="0">
+        <MudText Typo="Typo.subtitle2" Class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.TravelExplore" Size="Size.Small" Class="mr-1" />
+            Indicadores
+        </MudText>
     </MudPaper>
 
+    @if (_indicators.Count == 0)
+    {
+        <MudPaper Class="pa-2 mt-1" Outlined Elevation="0">
+            <MudText Typo="Typo.caption">Nenhum indicador disponível</MudText>
+        </MudPaper>
+    }
+
+    @foreach (var ind in _indicators)
+    {
+        var hasChanges = _pendingChanges.TryGetValue(ind.Name, out var pendingParams)
+            && pendingParams.Any(p => !ind.Parameters.TryGetValue(p.Key, out var v) || Math.Abs(v - p.Value) > 0.001);
+
+        <MudPaper Class="pa-2 mt-1" Outlined Elevation="0">
+            <MudStack Spacing="1">
+                <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                        <MudSwitch @bind-Value="ind.Enabled" Size="Size.Small" Color="MudBlazor.Color.Primary" />
+                        <MudText Typo="Typo.body2" Class="font-weight-bold">@ind.Name</MudText>
+                    </MudStack>
+                    <MudTooltip Text="Aplicar alterações">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Check"
+                                       Color="@(hasChanges ? MudBlazor.Color.Success : MudBlazor.Color.Default)"
+                                       Disabled="@(!hasChanges)"
+                                       OnClick="@(() => ApplyConfigAsync(ind.Name))" />
+                    </MudTooltip>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="text-medium">Período mínimo: @ind.NeedsBarCount candles</MudText>
+
+                @if (_pendingChanges.TryGetValue(ind.Name, out var parans))
+                {
+                    @foreach (var (paramName, paramValue) in parans)
+                    {
+                        var pName = paramName;
+                        var pValue = paramValue;
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                            <MudText Typo="Typo.caption" Class="flex-1">@pName</MudText>
+                            <MudNumericField @bind-Value="pValue"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Immediate="true"
+                                             Step="@(pName == "Period" ? 1 : 0.5)"
+                                             Min="@(pName == "Period" ? 2 : 0.1)"
+                                             Max="@(pName == "Period" ? 200 : 10)"
+                                             Class="flex-1" />
+                        </MudStack>
+                    }
+                }
+
+                @* Colors and visibility *@
+                @{
+                    var indicatorKeys = new[] { "Upper", "Middle", "Lower" };
+                }
+                @foreach (var key in indicatorKeys)
+                {
+                    var fullKey = $"{ind.Name}.{key}";
+                    var keyColor = GetColor(fullKey);
+                    var keyVisible = GetVisible(fullKey);
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.caption" Style="width: 60px">@key</MudText>
+                        <MudTextField @bind-Value="keyColor"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Immediate="true"
+                                      Placeholder="#rrggbb"
+                                      Class="flex-1" />
+                        <MudSwitch @bind-Value="keyVisible" Size="Size.Small" Color="MudBlazor.Color.Primary" />
+                    </MudStack>
+                }
+
+                @* Latest values *@
+                @if (_lastValues.Any(kv => kv.Key.StartsWith(ind.Name)))
+                {
+                    <MudDivider />
+                    <MudText Typo="Typo.caption" Class="text-medium">Últimos valores:</MudText>
+                    @foreach (var kv in _lastValues.Where(k => k.Key.StartsWith(ind.Name)))
+                    {
+                        <MudText Typo="Typo.caption" Style="padding-left: 8px">
+                            @kv.Key.Substring(ind.Name.Length + 1): @kv.Value.ToString("F2", CultureInfo.InvariantCulture)
+                        </MudText>
+                    }
+                }
+            </MudStack>
+        </MudPaper>
+    }
 </MudDrawer>
