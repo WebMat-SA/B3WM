@@ -4,10 +4,11 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace B3WM.Services.Core
 {
-    public class IndicatorService
+    public class IndicatorService : IHostedService
     {
         private readonly IHubContext<DataHub, IDataHubClient> _hub;
         private readonly IEnumerable<Indicators.IIndicator> _indicators;
+        private readonly IEnumerable<CandleService> _candleServices;
         private readonly Dictionary<string, List<BarStorageItem>> _history = new();
 
         public IndicatorService(
@@ -17,8 +18,21 @@ namespace B3WM.Services.Core
         {
             _hub = hub;
             _indicators = indicators;
-            foreach (var cs in candleServices)
+            _candleServices = candleServices;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            foreach (var cs in _candleServices)
                 cs.OnUpdate += OnCandleUpdate;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            foreach (var cs in _candleServices)
+                cs.OnUpdate -= OnCandleUpdate;
+            return Task.CompletedTask;
         }
 
         private async Task OnCandleUpdate(BarStorageItem bar)
