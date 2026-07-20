@@ -1,4 +1,5 @@
 ﻿@using System.Text.Json;
+@using B3WM.Shared.Interfaces
 @using B3WM.Shared.Models
 @using Microsoft.AspNetCore.SignalR.Client;
 @inject NavigationManager Navigation
@@ -27,6 +28,9 @@
 
     [Parameter]
     public Func<AdjustmentForecastItem, Task> OnForecastUpdate { get; set; } = default!;
+
+    [Parameter]
+    public Func<IndicatorValue, Task> OnIndicatorValue { get; set; } = default!;
 
     [Parameter]
     public bool ShowButtons { get; set; } = false;
@@ -86,6 +90,7 @@
             hubConnection.On<StructureStorageItem>(nameof(IDataHubClient.ReceiveOnStructure), OnNewStructure);
             hubConnection.On<AdjustmentForecastItem>(nameof(IDataHubClient.ReceiveOnForecast), OnForecastUpdate);
             hubConnection.On<ThrottlingData>(nameof(IDataHubClient.ReceiveThrottlingData), OnThrottlingData);
+            hubConnection.On<IndicatorValue>(nameof(IDataHubClient.ReceiveOnIndicatorValue), OnIndicatorValue);
 
             await hubConnection.StartAsync();
 

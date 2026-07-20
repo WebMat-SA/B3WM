@@ -16,5 +16,6 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveOnStructure(StructureStorageItem data);
         Task ReceiveOnForecast(AdjustmentForecastItem data);
         Task ReceiveThrottlingData(ThrottlingData data);
+        Task ReceiveOnIndicatorValue(IndicatorValue data);
     }
 }
