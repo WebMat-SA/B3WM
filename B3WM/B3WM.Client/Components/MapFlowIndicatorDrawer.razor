@@ -7,13 +7,16 @@
 @inherits Components.PersistentComponentBase
 
 @code {
-    protected override string PersistenceKey => $"{nameof(MapFlowStrategyDrawer)}_{Symbol}_state";
+    protected override string PersistenceKey => $"{nameof(MapFlowIndicatorDrawer)}_{Symbol}_state";
 
     [CascadingParameter]
     public string Symbol { get; set; } = "";
 
     [Parameter]
     public bool Open { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnIndicatorToggled { get; set; }
 
     private List<IndicatorInfo> _indicators = new();
     private Dictionary<string, Dictionary<string, double>> _pendingChanges = new();
@@ -94,6 +97,8 @@
                 Enabled = ind.Enabled,
                 Parameters = parans
             });
+
+            await OnIndicatorToggled.InvokeAsync(name);
         }
         catch
         {
