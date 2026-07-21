@@ -17,5 +17,6 @@ namespace B3WM.Services.Indicators
         public string Key { get; set; } = "";
         public double Value { get; set; }
         public IndicatorPlotType PlotType { get; set; } = IndicatorPlotType.Line;
+        public int TimeFrame { get; set; }
     }
 }

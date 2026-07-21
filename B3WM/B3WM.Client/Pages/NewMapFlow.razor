@@ -57,7 +57,6 @@
     private IRange<int> _dateRange { get; set; } = new MudExRange<int>(0, 0);
     public bool openDrawer { get; set; } = false;
     public bool openDrawerBubbleNotify { get; set; } = false;
-    public bool openDrawerStrategy { get; set; } = false;
     public bool showTradingPanel { get; set; } = false;
 
     private List<BarStorageItem> BarStorageItem { get; set; } = new List<BarStorageItem>();
@@ -274,15 +273,32 @@
     }
     public async Task NewIndicatorValue(IndicatorValue data)
     {
-        var key = $"{data.IndicatorName}.{data.Key}";
+        var key = $"{data.IndicatorName}.{data.Key}|{data.TimeFrame}";
         if (!_indicatorData.ContainsKey(key))
         {
             _indicatorData[key] = new();
-            _indicatorPlotType[key] = data.PlotType;
+            var baseKey = $"{data.IndicatorName}.{data.Key}";
+            if (!_indicatorPlotType.ContainsKey(baseKey))
+                _indicatorPlotType[baseKey] = data.PlotType;
         }
         _indicatorData[key].Add((data.Time, data.Value));
         if (_indicatorData[key].Count > 500)
             _indicatorData[key].RemoveRange(0, _indicatorData[key].Count - 500);
+        await InvokeAsync(StateHasChanged);
+    }
+    private void RemoveIndicatorData(string indicatorName)
+    {
+        var prefix = $"{indicatorName}.";
+        var dataKeysToRemove = _indicatorData.Keys.Where(k => k.StartsWith(prefix)).ToList();
+        foreach (var k in dataKeysToRemove)
+            _indicatorData.Remove(k);
+        var plotKeysToRemove = _indicatorPlotType.Keys.Where(k => k.StartsWith(prefix)).ToList();
+        foreach (var k in plotKeysToRemove)
+            _indicatorPlotType.Remove(k);
+    }
+    public async Task OnIndicatorToggled(string indicatorName)
+    {
+        RemoveIndicatorData(indicatorName);
         await InvokeAsync(StateHasChanged);
     }
     public async Task NewBar(BarStorageItem bar)
@@ -1034,10 +1050,20 @@
         };
 
         var markPointEntries = new List<MarkPointData>();
+        var indicatorTimeFrame = MapFlowConfigDrawer.IndicatorBaseTimeFrame;
 
-        foreach (var (key, indicatorValues) in _indicatorData)
+        foreach (var (fullKey, indicatorValues) in _indicatorData)
         {
+            var pipeIdx = fullKey.LastIndexOf('|');
+            if (pipeIdx < 0) continue;
+            var timeFrame = int.Parse(fullKey.AsSpan(pipeIdx + 1));
+            if (timeFrame != indicatorTimeFrame) continue;
+
+            var key = fullKey.Substring(0, pipeIdx);
             _indicatorPlotType.TryGetValue(key, out var plotType);
+
+            var visible = MapFlowConfigDrawer.GetIndicatorVisible(key);
+            var drawerOpacity = MapFlowConfigDrawer.IndicatorOpacity;
 
             if (plotType == IndicatorPlotType.Marker)
             {
@@ -1060,7 +1086,7 @@
                             Value = value.Value,
                             Name = key,
                             Symbol = symbol,
-                            SymbolSize = size,
+                            SymbolSize = visible ? size : 0,
                             ItemStyle = new ItemStyle { Color = color }
                         });
                     }
@@ -1089,7 +1115,7 @@
                     Data = data,
                     Z = 6,
                     ShowSymbol = false,
-                    LineStyle = new LineStyle { Color = color, Width = 1, Opacity = 0.8 }
+                    LineStyle = new LineStyle { Color = color, Width = visible ? 1 : 0, Opacity = drawerOpacity * (visible ? 1 : 0) }
                 });
             }
         }
@@ -1167,6 +1193,33 @@
 
             var structure = await httpClient.GetFromJsonAsync<List<StructureStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getstructure/{Symbol}/{effectiveDate:yyyy-MM-dd}/{MapFlowConfigDrawer.StructureRangeUpd.ToString(CultureInfo.InvariantCulture)}").AbsoluteUri}");
             StructureStorageItem = structure ?? new List<StructureStorageItem>();
+
+            _indicatorData.Clear();
+            _indicatorPlotType.Clear();
+            try
+            {
+                var indicatorHistory = await httpClient.GetFromJsonAsync<List<IndicatorValue>>(
+                    $"{Navigation.ToAbsoluteUri($"/api/indicator/evaluate/{Symbol}/{effectiveDate:yyyy-MM-dd}").AbsoluteUri}");
+                if (indicatorHistory != null)
+                {
+                    foreach (var iv in indicatorHistory)
+                    {
+                        var key = $"{iv.IndicatorName}.{iv.Key}|{iv.TimeFrame}";
+                        if (!_indicatorData.ContainsKey(key))
+                        {
+                            _indicatorData[key] = new();
+                            var baseKey = $"{iv.IndicatorName}.{iv.Key}";
+                            if (!_indicatorPlotType.ContainsKey(baseKey))
+                                _indicatorPlotType[baseKey] = iv.PlotType;
+                        }
+                        _indicatorData[key].Add((iv.Time, iv.Value));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Indicator Evaluate Error: " + ex.Message);
+            }
         }
         catch (Exception ex)
         {
@@ -1210,14 +1263,12 @@
         <MudStack AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Row Style="width:100%">
             <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
                 <MudTooltip Text="Configurações">
-                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; openDrawerBubbleNotify = false; openDrawerStrategy = false; }" />
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Settings" OnClick="() => { openDrawer = !openDrawer; openDrawerBubbleNotify = false; }" />
                 </MudTooltip>
                 <MudTooltip Text="Notificações de bubbles">
-                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.BubbleChart" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; openDrawerStrategy = false;}" />
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.BubbleChart" OnClick="() => { openDrawerBubbleNotify = !openDrawerBubbleNotify; openDrawer = false; }" />
                 </MudTooltip>
-                <MudTooltip Text="Notificações de estratégia">
-                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Leaderboard" Color="@(openDrawerStrategy ? MudBlazor.Color.Info : MudBlazor.Color.Default)" OnClick="() => { openDrawerStrategy = !openDrawerStrategy; openDrawer = false; openDrawerBubbleNotify = false; }" />
-                </MudTooltip>
+
                 <MudTooltip Text="Trading Panel">
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.TravelExplore" Color="@(showTradingPanel ? MudBlazor.Color.Info : MudBlazor.Color.Default)" OnClick="() => { showTradingPanel = !showTradingPanel; }" />
                 </MudTooltip>
@@ -1236,7 +1287,7 @@
     </MudAppBar>
 
     <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
-        <MapFlowConfigDrawer @ref="MapFlowConfigDrawer" openDrawer="openDrawer" openDrawerBubbleNotify="openDrawerBubbleNotify" openDrawerStrategy="openDrawerStrategy" Bubbles="Bubbles" Bars="BarStorageItemTimeFrameFilter.ToList()" Structures="StructureStorageItemTimeFrameFilter" VolumeLevels="VolumeLevels" OnNewStructureDistance="SetMinDistanceStructure">
+        <MapFlowConfigDrawer @ref="MapFlowConfigDrawer" openDrawer="openDrawer" openDrawerBubbleNotify="openDrawerBubbleNotify" Bubbles="Bubbles" Bars="BarStorageItemTimeFrameFilter.ToList()" Structures="StructureStorageItemTimeFrameFilter" VolumeLevels="VolumeLevels" OnNewStructureDistance="SetMinDistanceStructure" OnIndicatorToggled="OnIndicatorToggled">
             @if (isLoading)
             {
                 <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height:100%">
