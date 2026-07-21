@@ -136,9 +136,6 @@
             .OrderBy(k => k);
     }
 
-    [PersistState]
-    public int IndicatorBaseTimeFrame { get; set; } = 1;
-
     public void UpdateIndicatorValue(IndicatorValue data)
     {
         var key = $"{data.IndicatorName}.{data.Key}";
@@ -490,19 +487,6 @@
         <MudList T="string" Dense>
             <MudListItem Dense=true Icon="@Icons.Material.Filled.TravelExplore" Text="Indicators" Expanded=false>
                 <NestedList>
-                    <MudListItem Dense="true">
-                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                            <MudText Typo="Typo.body2">Base TimeFrame</MudText>
-                            <MudToggleGroup T=int @bind-Value="IndicatorBaseTimeFrame" Delimiters Size="Size.Small" Outlined>
-                                <MudToggleItem Value="1">1</MudToggleItem>
-                                <MudToggleItem Value="2">2</MudToggleItem>
-                                <MudToggleItem Value="5">5</MudToggleItem>
-                                <MudToggleItem Value="15">15</MudToggleItem>
-                                <MudToggleItem Value="30">30</MudToggleItem>
-                                <MudToggleItem Value="60">60</MudToggleItem>
-                            </MudToggleGroup>
-                        </MudStack>
-                    </MudListItem>
                     @if (_indicators.Count == 0)
                     {
                         <MudListItem Dense="true">
