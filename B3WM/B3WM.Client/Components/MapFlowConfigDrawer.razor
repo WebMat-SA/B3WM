@@ -120,8 +120,18 @@
         }
     }
 
+    private Dictionary<string, double> _indicatorOpacity = new();
+
     [PersistState]
-    public double IndicatorOpacity { get; set; } = 0.8;
+    public string IndicatorOpacityJson
+    {
+        get => System.Text.Json.JsonSerializer.Serialize(_indicatorOpacity);
+        set
+        {
+            try { _indicatorOpacity = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(value ?? "{}") ?? new(); }
+            catch { _indicatorOpacity = new(); }
+        }
+    }
 
     private Dictionary<string, double> _indicatorLastValues = new();
 
@@ -161,6 +171,17 @@
     public void SetIndicatorVisible(string key, bool visible)
     {
         _indicatorVisible[key] = visible;
+        MarkDirty();
+    }
+
+    public double GetIndicatorOpacity(string indicatorName)
+    {
+        return _indicatorOpacity.TryGetValue(indicatorName, out var o) ? o : 0.8;
+    }
+
+    public void SetIndicatorOpacity(string indicatorName, double opacity)
+    {
+        _indicatorOpacity[indicatorName] = opacity;
         MarkDirty();
     }
 
@@ -496,21 +517,31 @@
                     @foreach (var ind in _indicators)
                     {
                         var indKeys = GetKeysForIndicator(ind.Name).ToList();
+                        var indicatorEnabled = GetIndicatorVisible(ind.Name);
+                        var indicatorOpacity = GetIndicatorOpacity(ind.Name);
                         <MudListItem Dense=true Text="@ind.Name" Expanded=false>
                             <NestedList>
+                                <MudListItem Dense="true" OnClick="() => SetIndicatorVisible(ind.Name, !indicatorEnabled)">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                        <MudText Typo="Typo.body2">Show on Chart</MudText>
+                                        <MudSwitch Value="@indicatorEnabled"
+                                                   ValueChanged="@((bool v) => SetIndicatorVisible(ind.Name, v))"
+                                                   Color="MudBlazor.Color.Primary" Size="Size.Small" />
+                                    </MudStack>
+                                </MudListItem>
+                                <MudListItem Dense="true">
+                                    <MudSlider Size="Size.Small"
+                                               Value="@indicatorOpacity"
+                                               ValueChanged="@((double v) => SetIndicatorOpacity(ind.Name, v))"
+                                               Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Opacity</MudText>
+                                            <MudText Typo="Typo.caption">@indicatorOpacity.ToString("P2")</MudText>
+                                        </MudStack>
+                                    </MudSlider>
+                                </MudListItem>
                                 @if (indKeys.Count > 0)
                                 {
-                                    <MudListItem Dense="true">
-                                        <MudSlider Size="Size.Small"
-                                                   Value="@IndicatorOpacity"
-                                                   ValueChanged="@((double v) => IndicatorOpacity = v)"
-                                                   Step="0.0025" Min=0.0 Max=1.0 T=@double Variant="Variant.Filled">
-                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Justify="Justify.SpaceBetween">
-                                                <MudText Typo="Typo.body2">Opacity</MudText>
-                                                <MudText Typo="Typo.caption">@IndicatorOpacity.ToString("P2")</MudText>
-                                            </MudStack>
-                                        </MudSlider>
-                                    </MudListItem>
                                     @foreach (var key in indKeys)
                                     {
                                         var fullKey = $"{ind.Name}.{key}";

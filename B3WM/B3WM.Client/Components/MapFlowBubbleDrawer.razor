@@ -78,6 +78,8 @@
     HashSet<string> _seenKeys = new();
     bool _initialized = false;
 
+    private IJSObjectReference? _audioModule;
+
     string MakeKey(BubbleStorageItem b) => $"{b.Date.Ticks}_{b.Agent}_{(int)b.ActionType}_{b.Price}_{b.Symbol}";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -88,6 +90,7 @@
 
         if (firstRender)
         {
+            _audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "/js/audioHelper.js");
             // initialize seen keys but don't notify on first load
             _seenKeys = new HashSet<string>(currentKeys);
             _initialized = true;
@@ -95,38 +98,21 @@
         }
     }
 
-    ValueTask PlayNotificationSoundAsync()
+    async Task PlayNotificationSoundAsync()
     {
-        var script = @"(async function(){
-            try{
-              var ctx=new (window.AudioContext||window.webkitAudioContext)();
-              if (ctx.state==='suspended') await ctx.resume();
-              var o=ctx.createOscillator();
-              var g=ctx.createGain();
-
-              o.type='sawtooth';
-              o.frequency.value=950;
-              g.gain.value=0.06;
-
-              o.connect(g);
-              g.connect(ctx.destination);
-
-              o.start();
-              return new Promise(function(resolve){
-                setTimeout(function(){
-                  o.stop();
-                  ctx.close();
-                  resolve(true);
-                }, 400);
-              });
-            }catch(e){return false;}
-            })()";
-        
-        return JS.InvokeVoidAsync("eval", script);
+        if (_audioModule != null)
+            await _audioModule.InvokeVoidAsync("playBeep");
     }
 
     // Public helper so parent can request an immediate notification (play sound and refresh)
     // This verifies the same filtering/seen-key logic as OnParametersSetAsync before playing.
+    private async Task ToggleSound()
+    {
+        Sound = !Sound;
+        if (_audioModule != null)
+            await _audioModule.InvokeVoidAsync("init");
+    }
+
     public async Task NotifyNewBubbleAsync()
     {
         // compute current filtered list and their keys
@@ -176,7 +162,7 @@
                         </MudTooltip>
 
                         <MudTooltip Text="@($"Notificações Sonoras ({(Sound ? "Ligado" : "Desligado")})")">
-                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="() => Sound = !Sound" Color="@(Sound? Color.Info: Color.Default)" />
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.NotificationsActive" OnClick="ToggleSound" Color="@(Sound? Color.Info: Color.Default)" />
                         </MudTooltip>
                     </MudStack>
                 </MudStack>

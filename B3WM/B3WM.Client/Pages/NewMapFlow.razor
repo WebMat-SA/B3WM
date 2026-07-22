@@ -310,19 +310,19 @@
         return new BarStorageItem
         {
             Date = bar.Date,
+            Symbol = bar.Symbol,
+            TimeFrame = bar.TimeFrame,
             Open = bar.Open,
             High = bar.High,
             Low = bar.Low,
             Close = bar.Close,
             Volume = bar.Volume,
-            VolumeLevel = bar.VolumeLevel
+            VolumeLevel = bar.VolumeLevel,
+            ForecastPrice = bar.ForecastPrice
         };
     }
     public async Task NewBar(BarStorageItem bar)
     {
-        var count = BarStorageItem.Count;
-        var isFullRange = count > 0 && _dateRange.End >= count;
-
         var sw = Stopwatch.StartNew();
 
         if (bar == null || bar.Date == default) return;
@@ -346,10 +346,11 @@
         if (bar.Date > HubClient._lastBarTime)
             HubClient._lastBarTime = bar.Date;
 
-
+        var filteredCount = BarStorageItemTimeFrameFilter.Count;
+        var isFullRange = filteredCount > 0 && _dateRange.End >= filteredCount;
         if (isFullRange)
         {
-            _dateRange = new MudExRange<int>(_dateRange.Start, BarStorageItemTimeFrameFilter.Count);
+            _dateRange = new MudExRange<int>(_dateRange.Start, filteredCount);
             ApplyVolumeFilter(_dateRange);
         }
 
@@ -367,11 +368,10 @@
         //Console.WriteLine($"{sw.ElapsedMilliseconds} ms - NewCurrentBar");
         return Task.CompletedTask;
     }
-    public Task HandleMissedBars(List<BarStorageItem> bars)
+    public async Task HandleMissedBars(List<BarStorageItem> bars)
     {
         foreach (var bar in bars)
-            NewBar(bar);
-        return Task.CompletedTask;
+            await NewBar(bar);
     }
     public Task HandleMissedBubbles(List<BubbleStorageItem> bubbles)
     {
@@ -1062,7 +1062,7 @@
 
         #endregion
 
-        #region Indicator Series
+        @* #region Indicator Series
 
         var indicatorColorDefaults = new Dictionary<string, string>
         {
@@ -1092,8 +1092,12 @@
             var key = fullKey.Substring(0, pipeIdx);
             _indicatorPlotType.TryGetValue(key, out var plotType);
 
-            var visible = MapFlowConfigDrawer.GetIndicatorVisible(key);
-            var drawerOpacity = MapFlowConfigDrawer.IndicatorOpacity;
+            var lastDot = key.LastIndexOf('.');
+            var indicatorName = lastDot > 0 ? key.Substring(0, lastDot) : key;
+            var bandVisible = MapFlowConfigDrawer.GetIndicatorVisible(key);
+            var indicatorVisible = MapFlowConfigDrawer.GetIndicatorVisible(indicatorName);
+            var visible = bandVisible && indicatorVisible;
+            var drawerOpacity = MapFlowConfigDrawer.GetIndicatorOpacity(indicatorName);
 
             if (plotType == IndicatorPlotType.Marker)
             {
@@ -1161,7 +1165,7 @@
             };
         }
 
-        #endregion
+        #endregion *@
 
         ChartOptions.Series = seriesList;
 
