@@ -13,12 +13,16 @@ namespace B3WM.Controllers
     {
         private readonly DataKeeperBase dataKeeper;
         private readonly IEnumerable<StructureService> structureServices;
+        private readonly IEnumerable<CandleService> _candleServices;
+        private readonly IEnumerable<BubbleService> _bubbleServices;
         private readonly ILogger<DataController> _logger;
 
-        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, ILogger<DataController> logger)
+        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, ILogger<DataController> logger)
         {
             this.dataKeeper = dataKeeper;
             this.structureServices = structureServices;
+            _candleServices = candleServices;
+            _bubbleServices = bubbleServices;
             _logger = logger;
         }
 
@@ -127,6 +131,36 @@ namespace B3WM.Controllers
             string path = $"{symbol}_{nameof(VolumeService)}_{date:yyyy-MM-dd}.json";
             var data = await dataKeeper.ReadDataAsync<VolumeLevelStorageItem>(path);
             return Ok(data);
+        }
+
+        [HttpGet("{symbol}/{timeFrame}")]
+        public IActionResult GetLiveBarsSince(string symbol, int timeFrame, [FromQuery] DateTime since)
+        {
+            var candleService = _candleServices.FirstOrDefault(c => c.Symbol == symbol && c.TimeFrame == timeFrame);
+            if (candleService?.DataKeep == null)
+                return Ok(new List<BarStorageItem>());
+
+            var bars = candleService.DataKeep
+                .Where(b => b.Date > since)
+                .OrderBy(b => b.Date)
+                .ToList();
+
+            return Ok(bars);
+        }
+
+        [HttpGet("{symbol}")]
+        public IActionResult GetLiveBubblesSince(string symbol, [FromQuery] DateTime since)
+        {
+            var bubbleService = _bubbleServices.FirstOrDefault(b => b.Symbol == symbol);
+            if (bubbleService?.DataKeep == null)
+                return Ok(new List<BubbleStorageItem>());
+
+            var bubbles = bubbleService.DataKeep
+                .Where(b => b.Date > since)
+                .OrderBy(b => b.Date)
+                .ToList();
+
+            return Ok(bubbles);
         }
 
         [HttpGet("{symbol}/{minDistance:double}")]

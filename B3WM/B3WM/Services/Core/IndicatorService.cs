@@ -64,7 +64,8 @@ namespace B3WM.Services.Core
                             IndicatorName = ind.Name,
                             Key = r.Key,
                             Value = r.Value,
-                            PlotType = r.PlotType
+                            PlotType = r.PlotType,
+                            TimeFrame = bar.TimeFrame
                         });
                 }
             }
