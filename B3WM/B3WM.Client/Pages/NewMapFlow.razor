@@ -238,6 +238,10 @@
         Bubbles.Add(data);
         if (Bubbles.Count > MaxBubbles)
             Bubbles.RemoveRange(0, Bubbles.Count - MaxBubbles);
+
+        if (data.Date > HubClient._lastBubbleTime)
+            HubClient._lastBubbleTime = data.Date;
+
         // trigger immediate sound/notification in the bubble drawer
         try
         {
@@ -301,6 +305,19 @@
         RemoveIndicatorData(indicatorName);
         await InvokeAsync(StateHasChanged);
     }
+    private static BarStorageItem CloneBar(BarStorageItem bar)
+    {
+        return new BarStorageItem
+        {
+            Date = bar.Date,
+            Open = bar.Open,
+            High = bar.High,
+            Low = bar.Low,
+            Close = bar.Close,
+            Volume = bar.Volume,
+            VolumeLevel = bar.VolumeLevel
+        };
+    }
     public async Task NewBar(BarStorageItem bar)
     {
         var count = BarStorageItem.Count;
@@ -323,9 +340,11 @@
         }
         else
         {
-            // Cópia defensiva: armazenar nossa própria instância para não depender da referência do callback.
-            BarStorageItem.Add(bar);
+            BarStorageItem.Add(CloneBar(bar));
         }
+
+        if (bar.Date > HubClient._lastBarTime)
+            HubClient._lastBarTime = bar.Date;
 
 
         if (isFullRange)
@@ -334,19 +353,30 @@
             ApplyVolumeFilter(_dateRange);
         }
 
-        //Console.WriteLine(bar);
-        // rebuild simplified chart when new bar arrives
-        //await GenerateChart();
         sw.Stop();
-        //Console.WriteLine($"{sw.ElapsedMilliseconds} ms - NewBar - {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss:fff")}");
         return;
     }
     public Task NewCurrentBar(BarStorageItem bar)
     {
         var sw = Stopwatch.StartNew();
         CurrentBar = bar;
+        if (bar.Date > HubClient._lastBarTime)
+            HubClient._lastBarTime = bar.Date;
         Console.WriteLine($"[DATA] NewCurrentBar: {bar.Date:HH:mm:ss} C:{bar.Close} V:{bar.Volume}");
         sw.Stop();
+        //Console.WriteLine($"{sw.ElapsedMilliseconds} ms - NewCurrentBar");
+        return Task.CompletedTask;
+    }
+    public Task HandleMissedBars(List<BarStorageItem> bars)
+    {
+        foreach (var bar in bars)
+            NewBar(bar);
+        return Task.CompletedTask;
+    }
+    public Task HandleMissedBubbles(List<BubbleStorageItem> bubbles)
+    {
+        foreach (var b in bubbles)
+            NewBubble(b);
         return Task.CompletedTask;
     }
 
@@ -1281,7 +1311,7 @@
                 <MudTooltip Text="@($"Connect")" Arrow>
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayCircleOutline" OnClick="LoadData" Color="MudBlazor.Color.Default" />
                 </MudTooltip>
-                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnForecastUpdate="NewForecast" OnIndicatorValue="NewIndicatorValue" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
+                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnForecastUpdate="NewForecast" OnIndicatorValue="NewIndicatorValue" OnMissedBars="HandleMissedBars" OnMissedBubbles="HandleMissedBubbles" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
             </MudStack>
         </MudStack>
     </MudAppBar>
