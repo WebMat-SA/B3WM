@@ -295,12 +295,15 @@
         return new Shared.Models.BarStorageItem
         {
             Date = bar.Date,
+            Symbol = bar.Symbol,
+            TimeFrame = bar.TimeFrame,
             Open = bar.Open,
             High = bar.High,
             Low = bar.Low,
             Close = bar.Close,
             Volume = bar.Volume,
-            VolumeLevel = bar.VolumeLevel
+            VolumeLevel = bar.VolumeLevel,
+            ForecastPrice = bar.ForecastPrice
         };
     }
 
