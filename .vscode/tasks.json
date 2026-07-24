@@ -32,8 +32,23 @@
       "problemMatcher": []
     },
     {
+      "label": "flutter-win",
+      "type": "shell",
+      "command": "flutter pub get; flutter run -d windows",
+      "options": {
+        "cwd": "${workspaceFolder}/../B3WM/B3WM.Flutter"
+      },
+      "presentation": {
+        "group": "b3wm",
+        "panel": "dedicated",
+        "focus": true,
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "run-all",
-      "dependsOn": ["python-service", "dotnet-webapp"],
+      "dependsOn": ["python-service", "dotnet-webapp", "flutter-win"],
       "group": {
         "kind": "build",
         "isDefault": true
