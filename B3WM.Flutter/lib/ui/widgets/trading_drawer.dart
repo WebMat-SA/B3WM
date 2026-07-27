@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/trade_models.dart';
@@ -20,34 +19,41 @@ class _TradingDrawerState extends State<TradingDrawer> {
   bool _sendingOrder = false;
   bool _closingPosition = false;
 
-  double _volume = 1.0;
-  bool _isBuy = true;
-  double? _sl;
-  double? _tp;
-  String _comment = '';
-  int _deviation = 10;
+  int _volume = 1;
+  final _volumeController = TextEditingController(text: '1');
+  final _volumeFocusNode = FocusNode();
   OrderResult? _lastResult;
-
-  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _refreshAll();
+    _volumeFocusNode.addListener(() {
+      if (!_volumeFocusNode.hasFocus) _commitVolume();
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAll());
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _volumeController.dispose();
+    _volumeFocusNode.dispose();
     super.dispose();
+  }
+
+  void _commitVolume() {
+    final v = int.tryParse(_volumeController.text);
+    setState(() {
+      if (v == null || v < 1) {
+        _volume = 1;
+        _volumeController.text = '1';
+      } else {
+        _volume = v;
+        _volumeController.text = v.toString();
+      }
+    });
   }
 
   Future<void> _refreshAll() async {
     await Future.wait([
-      _refreshAccount(),
       _refreshPositions(),
     ]);
     if (mounted) setState(() {});
@@ -78,7 +84,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
     }
   }
 
-  Future<void> _executeOrder() async {
+  Future<void> _executeOrder({required bool isBuy}) async {
     final state = context.read<StateService>();
     _sendingOrder = true;
     _lastResult = null;
@@ -88,12 +94,8 @@ class _TradingDrawerState extends State<TradingDrawer> {
       final api = context.read<TradingApiService>();
       final request = MarketOrderRequest(
         symbol: state.symbol,
-        volume: _volume,
-        type: _isBuy ? 'buy' : 'sell',
-        sl: _sl,
-        tp: _tp,
-        comment: _comment,
-        deviation: _deviation,
+        volume: _volume.toDouble(),
+        type: isBuy ? 'buy' : 'sell',
       );
       final result = await api.placeMarketOrder(request);
       if (result != null && mounted) {
@@ -167,6 +169,44 @@ class _TradingDrawerState extends State<TradingDrawer> {
     }
   }
 
+  Future<void> _closeAllPositions() async {
+    _closingPosition = true;
+    setState(() {});
+
+    try {
+      final api = context.read<TradingApiService>();
+      for (final pos in _positions) {
+        final result = await api.closePosition(pos.ticket);
+        if (result != null && mounted && !result.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Failed to close ${pos.symbol}: ${result.message}'),
+                backgroundColor: Colors.red),
+          );
+        }
+      }
+      if (mounted && _positions.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('All positions closed'),
+              backgroundColor: Colors.green),
+        );
+      }
+      await _refreshAll();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      _closingPosition = false;
+      if (mounted) setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<StateService>();
@@ -200,36 +240,155 @@ class _TradingDrawerState extends State<TradingDrawer> {
 
           // Account Info
           _section(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(children: [
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                unselectedWidgetColor: Colors.grey,
+              ),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                childrenPadding: const EdgeInsets.only(top: 4),
+                title: const Row(children: [
                   Icon(Icons.account_balance_wallet, size: 16),
                   SizedBox(width: 4),
                   Text('Account',
                       style: TextStyle(
                           fontSize: 13, fontWeight: FontWeight.w600)),
                 ]),
-                const SizedBox(height: 4),
-                if (_account != null) ...[
-                  _infoRow('Login', '${_account!.login}'),
-                  _infoRow('Balance', _account!.balance.toStringAsFixed(2)),
-                  _infoRow(
-                    'Equity',
-                    _account!.equity.toStringAsFixed(2),
-                    color: _account!.equity >= _account!.balance
-                        ? Colors.green
-                        : Colors.red,
-                  ),
-                  _infoRow('Margin', _account!.margin.toStringAsFixed(2)),
-                  _infoRow('Free', _account!.marginFree.toStringAsFixed(2)),
-                  _infoRow('Level', '${_account!.marginLevel.toStringAsFixed(2)}%'),
-                ] else
-                  Text(_loadingAccount ? 'Loading...' : 'No data',
-                      style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
+                initiallyExpanded: false,
+                onExpansionChanged: (expanded) {
+                  if (expanded) _refreshAccount();
+                },
+                children: [
+                  if (_account != null) ...[
+                    _infoRow('Login', '${_account!.login}'),
+                    _infoRow('Balance', _account!.balance.toStringAsFixed(2)),
+                    _infoRow(
+                      'Equity',
+                      _account!.equity.toStringAsFixed(2),
+                      color: _account!.equity >= _account!.balance
+                          ? Colors.green
+                          : Colors.red,
+                    ),
+                    _infoRow('Margin', _account!.margin.toStringAsFixed(2)),
+                    _infoRow('Free', _account!.marginFree.toStringAsFixed(2)),
+                    _infoRow('Level', '${_account!.marginLevel.toStringAsFixed(2)}%'),
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _loadingAccount
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Tap to load',
+                              style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    ),
+                ],
+              ),
             ),
           ),
+
+          // Positions
+          _section(
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                unselectedWidgetColor: Colors.grey,
+              ),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                childrenPadding: const EdgeInsets.only(top: 4),
+                title: Row(children: [
+                  const Icon(Icons.assignment, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Positions (${_positions.length})',
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                ]),
+                initiallyExpanded: false,
+                onExpansionChanged: (expanded) {
+                  if (expanded) _refreshPositions();
+                },
+                children: [
+                  _positions.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Center(
+                            child: Text(
+                              _loadingPositions
+                                  ? 'Loading...'
+                                  : 'No open positions',
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _positions.length,
+                          separatorBuilder: (_, __) => const Divider(
+                              height: 1, color: Color(0xFF3d3d3d)),
+                          itemBuilder: (context, index) {
+                            final pos = _positions[index];
+                            final isProfitable = pos.profit >= 0;
+                            final isBuy = pos.type == 'buy';
+                            return ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 0),
+                              leading: Chip(
+                                label: Text(isBuy ? 'B' : 'S',
+                                    style: const TextStyle(
+                                        fontSize: 10, color: Colors.white)),
+                                backgroundColor:
+                                    isBuy ? Colors.green : Colors.red,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                              ),
+                              title: Text(pos.symbol,
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                              subtitle: Text(
+                                'Vol: ${pos.volume.toStringAsFixed(2)} @ ${pos.priceOpen.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${isProfitable ? "+" : ""}${pos.profit.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isProfitable
+                                          ? Colors.green
+                                          : Colors.red,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.close,
+                                        size: 14, color: Colors.red),
+                                    onPressed: _closingPosition
+                                        ? null
+                                        : () =>
+                                            _closePosition(pos.ticket),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ],
+              ),
+            ),
+          ),
+
+          const Spacer(),
 
           // Market Order
           _section(
@@ -245,87 +404,145 @@ class _TradingDrawerState extends State<TradingDrawer> {
                 ]),
                 const SizedBox(height: 8),
                 _infoRow('Symbol', state.symbol),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: const Color(0xFF3d3d3d),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                        ),
+                        onPressed: (int.tryParse(_volumeController.text) ?? 1) > 1
+                            ? () {
+                                _commitVolume();
+                                setState(() {
+                                  _volume--;
+                                  _volumeController.text = _volume.toString();
+                                });
+                              }
+                            : null,
+                        child: const Icon(Icons.remove, size: 18),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _volumeController,
+                        focusNode: _volumeFocusNode,
+                        style: const TextStyle(fontSize: 14),
+                        textAlign: TextAlign.center,
+                        keyboardType: TextInputType.number,
+                        onEditingComplete: _commitVolume,
+                        onSubmitted: (_) => _commitVolume(),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: const Color(0xFF3d3d3d),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                        ),
+                        onPressed: () {
+                          _commitVolume();
+                          setState(() {
+                            _volume++;
+                            _volumeController.text = _volume.toString();
+                          });
+                        },
+                        child: const Icon(Icons.add, size: 18),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _isBuy ? Colors.green : Colors.grey.shade800,
+                          backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4)),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          textStyle: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.bold),
                         ),
-                        onPressed: () => setState(() => _isBuy = true),
-                        child: const Text('COMPRAR',
-                            style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _sendingOrder ? null : () => _executeOrder(isBuy: true),
+                        child: _sendingOrder
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Text('Comprar'),
                       ),
                     ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: !_isBuy ? Colors.red : Colors.grey.shade800,
+                          backgroundColor: Colors.orange.shade700,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4)),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          textStyle: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.bold),
                         ),
-                        onPressed: () => setState(() => _isBuy = false),
-                        child: const Text('VENDER',
-                            style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _closingPosition ? null : _closeAllPositions,
+                        child: _closingPosition
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Text('Zerar tudo'),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _buildTextField('Volume', _volume.toString(),
-                    (v) => _volume = double.tryParse(v) ?? 1.0),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildTextField('Stop Loss', _sl?.toString() ?? '',
-                          (v) => _sl = double.tryParse(v)),
                     ),
                     const SizedBox(width: 4),
                     Expanded(
-                      child: _buildTextField('Take Profit', _tp?.toString() ?? '',
-                          (v) => _tp = double.tryParse(v)),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          textStyle: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: _sendingOrder ? null : () => _executeOrder(isBuy: false),
+                        child: _sendingOrder
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Text('Vender'),
+                      ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                _buildTextField('Deviation (pts)', '$_deviation',
-                    (v) => _deviation = int.tryParse(v) ?? 10),
-                const SizedBox(height: 4),
-                _buildTextField('Comment', _comment, (v) => _comment = v),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _isBuy ? Colors.green : Colors.red,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                    ),
-                    onPressed: _sendingOrder ? null : _executeOrder,
-                    child: _sendingOrder
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : Text(
-                            '${_isBuy ? "COMPRAR" : "VENDER"} ${state.symbol}',
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
                 ),
                 if (_lastResult != null)
                   Padding(
@@ -343,95 +560,6 @@ class _TradingDrawerState extends State<TradingDrawer> {
               ],
             ),
           ),
-
-
-          // Positions
-          Expanded(
-            child: _section(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.assignment, size: 16),
-                    const SizedBox(width: 4),
-                    Text('Positions (${_positions.length})',
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
-                  ]),
-                  const SizedBox(height: 4),
-                  if (_positions.isEmpty)
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          _loadingPositions ? 'Loading...' : 'No open positions',
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
-                        ),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: _positions.length,
-                        separatorBuilder: (_, __) => const Divider(
-                            height: 1, color: Color(0xFF3d3d3d)),
-                        itemBuilder: (context, index) {
-                          final pos = _positions[index];
-                          final isProfitable = pos.profit >= 0;
-                          final isBuy = pos.type == 'buy';
-                          return ListTile(
-                            dense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 0),
-                            leading: Chip(
-                              label: Text(isBuy ? 'B' : 'S',
-                                  style: const TextStyle(
-                                      fontSize: 10, color: Colors.white)),
-                              backgroundColor:
-                                  isBuy ? Colors.green : Colors.red,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                            ),
-                            title: Text(pos.symbol,
-                                style:
-                                    const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                            subtitle: Text(
-                              'Vol: ${pos.volume.toStringAsFixed(2)} @ ${pos.priceOpen.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${isProfitable ? "+" : ""}${pos.profit.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: isProfitable
-                                        ? Colors.green
-                                        : Colors.red,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  icon: const Icon(Icons.close,
-                                      size: 14, color: Colors.red),
-                                  onPressed: _closingPosition
-                                      ? null
-                                      : () => _closePosition(pos.ticket),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -439,7 +567,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
 
   Widget _section({required Widget child}) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
       decoration: BoxDecoration(
         border: Border(
             bottom: BorderSide(color: Colors.grey.shade800.withOpacity(0.3))),
