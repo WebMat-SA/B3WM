@@ -6,8 +6,7 @@ import 'services/preferences_service.dart';
 import 'services/state_service.dart';
 import 'services/trading_service.dart';
 import 'ui/widgets/app_bar_widget.dart';
-import 'ui/widgets/config_drawer.dart';
-import 'ui/widgets/bubble_drawer.dart';
+import 'ui/widgets/app_drawer.dart';
 import 'ui/widgets/trading_drawer.dart';
 import 'ui/widgets/time_range_slider.dart';
 import 'ui/widgets/chart/map_flow_chart.dart';
@@ -84,6 +83,7 @@ class NewMapFlowPage extends StatefulWidget {
 class _NewMapFlowPageState extends State<NewMapFlowPage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _showTrading = false;
+  int _drawerTabIndex = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -92,13 +92,18 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
         return Scaffold(
           key: _scaffoldKey,
           appBar: MapFlowAppBar(
-            onSettingsTap: () => _scaffoldKey.currentState?.openDrawer(),
-            onBubblesTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+            onSettingsTap: () {
+              setState(() => _drawerTabIndex = 0);
+              _scaffoldKey.currentState?.openDrawer();
+            },
+            onBubblesTap: () {
+              setState(() => _drawerTabIndex = 1);
+              _scaffoldKey.currentState?.openDrawer();
+            },
             onTradingTap: () => setState(() => _showTrading = !_showTrading),
             tradingActive: _showTrading,
           ),
-          drawer: const ConfigDrawer(),
-          endDrawer: const BubbleDrawer(),
+          drawer: AppDrawer(initialTab: _drawerTabIndex),
           body: SafeArea(
             child: state.isLoading
                 ? const Center(child: CircularProgressIndicator())

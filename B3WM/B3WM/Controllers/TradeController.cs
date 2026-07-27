@@ -63,6 +63,20 @@ public class TradeController : ControllerBase
         return await ForwardGet($"/api/symbol/{symbol}");
     }
 
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory(
+        [FromQuery] string symbol = "",
+        [FromQuery] string from_date = "",
+        [FromQuery] string to_date = "")
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrEmpty(symbol)) query.Add($"symbol={symbol}");
+        if (!string.IsNullOrEmpty(from_date)) query.Add($"from_date={from_date}");
+        if (!string.IsNullOrEmpty(to_date)) query.Add($"to_date={to_date}");
+        var qs = query.Count > 0 ? "?" + string.Join("&", query) : "";
+        return await ForwardGet($"/api/history{qs}");
+    }
+
     private async Task<IActionResult> ForwardPost(string path, JsonElement body)
     {
         var json = body.GetRawText();

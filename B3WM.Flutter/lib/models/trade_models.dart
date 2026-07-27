@@ -157,6 +157,54 @@ class PositionInfo {
       );
 }
 
+class HistoryDeal {
+  final int ticket;
+  final String symbol;
+  final String type;
+  final double volume;
+  final double price;
+  final double profit;
+  final String time;
+  final String comment;
+  final int magic;
+
+  HistoryDeal({
+    required this.ticket,
+    required this.symbol,
+    required this.type,
+    required this.volume,
+    required this.price,
+    required this.profit,
+    required this.time,
+    this.comment = '',
+    this.magic = 0,
+  });
+
+  factory HistoryDeal.fromJson(Map<String, dynamic> json) => HistoryDeal(
+        ticket: json['ticket'] as int? ?? 0,
+        symbol: json['symbol'] as String? ?? '',
+        type: json['type'] as String? ?? '',
+        volume: (json['volume'] as num?)?.toDouble() ?? 0,
+        price: (json['price'] as num?)?.toDouble() ?? 0,
+        profit: (json['profit'] as num?)?.toDouble() ?? 0,
+        time: json['time'] as String? ?? '',
+        comment: json['comment'] as String? ?? '',
+        magic: json['magic'] as int? ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'ticket': ticket,
+        'symbol': symbol,
+        'type': type,
+        'volume': volume,
+        'price': price,
+        'profit': profit,
+        'time': time,
+        'comment': comment,
+        'magic': magic,
+      };
+}
+
 class SymbolInfo {
   final String symbol;
   final double bid;

@@ -1,16 +1,18 @@
 import sys
+from datetime import datetime, timedelta
 from typing import Optional
 
 import MetaTrader5 as mt5
 
 from models.order import (
     AccountInfo,
+    HistoryDeal,
     MarketOrderRequest,
     OrderResult,
     PositionInfo,
     SymbolInfo,
 )
-from services.contract_utils import resolve_symbol
+from services.contract_utils import get_symbol_prefix, resolve_symbol
 
 
 class MT5OrderExecutor:
@@ -291,6 +293,37 @@ class MT5OrderExecutor:
         except Exception as e:
             print(f"[MT5] error building SymbolInfo for {symbol}: {e}", file=sys.stderr)
             return None
+
+    def get_history_deals(self, symbol: str = "", from_date: str = "", to_date: str = "") -> list[HistoryDeal]:
+        if not self.ensure_connected():
+            return []
+
+        try:
+            from_dt = datetime.fromisoformat(from_date) if from_date else datetime.now() - timedelta(days=30)
+            to_dt = datetime.fromisoformat(to_date) if to_date else datetime.now()
+        except Exception:
+            return []
+
+        prefix = get_symbol_prefix(symbol) if symbol else ""
+        group_filter = f"*{prefix}*" if prefix else ""
+        deals = mt5.history_deals_get(from_dt, to_dt, group=group_filter)
+        if deals is None:
+            return []
+
+        result = []
+        for d in deals:
+            result.append(HistoryDeal(
+                ticket=d.ticket,
+                symbol=d.symbol,
+                type="buy" if d.type == mt5.DEAL_TYPE_BUY else "sell",
+                volume=d.volume,
+                price=d.price,
+                profit=d.profit,
+                time=datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S") if d.time else "",
+                comment=d.comment,
+                magic=d.magic,
+            ))
+        return result
 
     def _retcode_name(self, retcode: int) -> str:
         mapping = {

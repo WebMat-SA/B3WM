@@ -14,8 +14,12 @@ class TradingDrawer extends StatefulWidget {
 class _TradingDrawerState extends State<TradingDrawer> {
   AccountInfo? _account;
   List<PositionInfo> _positions = [];
+  List<HistoryDeal> _history = [];
+  double _historyTotal = 0;
   bool _loadingAccount = false;
   bool _loadingPositions = false;
+  bool _loadingHistory = false;
+  bool _historyTodayOnly = true;
   bool _sendingOrder = false;
   bool _closingPosition = false;
 
@@ -69,6 +73,29 @@ class _TradingDrawerState extends State<TradingDrawer> {
       _account = null;
     } finally {
       _loadingAccount = false;
+    }
+  }
+
+  Future<void> _refreshHistory() async {
+    try {
+      _loadingHistory = true;
+      setState(() {});
+      final api = context.read<TradingApiService>();
+      final state = context.read<StateService>();
+      final today = DateTime.now();
+      final fromDate = _historyTodayOnly
+          ? '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}'
+          : '';
+      _history = (await api.getHistory(state.symbol, fromDate: fromDate))
+          .reversed
+          .toList();
+      _historyTotal = _history.fold(0.0, (sum, d) => sum + d.profit);
+    } catch (_) {
+      _history = [];
+      _historyTotal = 0;
+    } finally {
+      _loadingHistory = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -382,6 +409,123 @@ class _TradingDrawerState extends State<TradingDrawer> {
                               ),
                             );
                           },
+                        ),
+                ],
+              ),
+            ),
+          ),
+
+          // History
+          _section(
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                unselectedWidgetColor: Colors.grey,
+              ),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                childrenPadding: const EdgeInsets.only(top: 4),
+                title: Row(children: [
+                  const Icon(Icons.history, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Histórico (${_history.length})',
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 8),
+                  _history.isEmpty
+                      ? const SizedBox.shrink()
+                      : Text(
+                          '${_historyTotal >= 0 ? "+" : ""}${_historyTotal.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: _historyTotal >= 0
+                                ? Colors.green
+                                : Colors.red,
+                          ),
+                        ),
+                  const Spacer(),
+                  SizedBox(
+                    height: 24,
+                    child: Checkbox(
+                      value: _historyTodayOnly,
+                      onChanged: (v) {
+                        setState(() => _historyTodayOnly = v ?? false);
+                        _refreshHistory();
+                      },
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const Text('Hoje',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ]),
+                initiallyExpanded: false,
+                onExpansionChanged: (expanded) {
+                  if (expanded) _refreshHistory();
+                },
+                children: [
+                  _history.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Center(
+                            child: Text(
+                              _loadingHistory
+                                  ? 'Loading...'
+                                  : 'Nenhum histórico',
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ),
+                        )
+                      : ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 240),
+                          child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: _history.length,
+                              separatorBuilder: (_, __) => const Divider(
+                                  height: 1, color: Color(0xFF3d3d3d)),
+                              itemBuilder: (context, index) {
+                                final deal = _history[index];
+                                final isProfitable = deal.profit >= 0;
+                                final isBuy = deal.type == 'buy';
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 0),
+                                  leading: Chip(
+                                    label: Text(isBuy ? 'B' : 'S',
+                                        style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.white)),
+                                    backgroundColor:
+                                        isBuy ? Colors.green : Colors.red,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  title: Text(deal.symbol,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold)),
+                                  subtitle: Text(
+                                    'Vol: ${deal.volume.toInt()} @ ${deal.price.toStringAsFixed(2)}  •  ${deal.time}',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  trailing: Text(
+                                    '${isProfitable ? "+" : ""}${deal.profit.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isProfitable
+                                          ? Colors.green
+                                          : Colors.red,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                         ),
                 ],
               ),

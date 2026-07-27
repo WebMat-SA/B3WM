@@ -53,6 +53,19 @@ class TradingApiService {
         .toList();
   }
 
+  Future<List<HistoryDeal>> getHistory(String symbol,
+      {String fromDate = '', String toDate = ''}) async {
+    var url = '$_baseUrl/api/trade/history?symbol=$symbol';
+    if (fromDate.isNotEmpty) url += '&from_date=$fromDate';
+    if (toDate.isNotEmpty) url += '&to_date=$toDate';
+    final response = await _client.get(Uri.parse(url));
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => HistoryDeal.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<SymbolInfo?> getSymbolInfo(String symbol) async {
     final response =
         await _client.get(Uri.parse('$_baseUrl/api/trade/symbol/$symbol'));

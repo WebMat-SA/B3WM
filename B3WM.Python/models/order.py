@@ -69,6 +69,18 @@ class PositionInfo(BaseModel):
     time: str = ""
 
 
+class HistoryDeal(BaseModel):
+    ticket: int = 0
+    symbol: str = ""
+    type: str = ""
+    volume: float = 0.0
+    price: float = 0.0
+    profit: float = 0.0
+    time: str = ""
+    comment: str = ""
+    magic: int = 0
+
+
 class SymbolInfo(BaseModel):
     symbol: str = ""
     bid: float = 0.0

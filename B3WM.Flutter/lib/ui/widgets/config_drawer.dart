@@ -6,7 +6,8 @@ import '../../services/state_service.dart';
 import '../../services/extensions.dart';
 
 class ConfigDrawer extends StatefulWidget {
-  const ConfigDrawer({super.key});
+  final bool noDrawer;
+  const ConfigDrawer({super.key, this.noDrawer = false});
 
   @override
   State<ConfigDrawer> createState() => _ConfigDrawerState();
@@ -26,19 +27,18 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
   @override
   Widget build(BuildContext context) {
     return Consumer<StateService>(builder: (context, state, _) {
-      return Drawer(
-        width: 360,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            _sectionHeader('Configurações'),
-            _timeframeSection(state),
-            _volumeProfileSection(state),
-            _structureSection(state),
-            _bubbleSection(state),
-          ],
-        ),
+      final body = ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _sectionHeader('Configurações'),
+          _timeframeSection(state),
+          _volumeProfileSection(state),
+          _structureSection(state),
+          _bubbleSection(state),
+        ],
       );
+      if (widget.noDrawer) return body;
+      return Drawer(width: 360, child: body);
     });
   }
 

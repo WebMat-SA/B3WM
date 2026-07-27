@@ -73,3 +73,12 @@ def resolve_symbol(symbol: str, ref_date=None) -> str:
     if base == "WINFUT":
         return get_active_contract("WIN", ref_date)
     return symbol
+
+
+def get_symbol_prefix(symbol: str) -> str:
+    base = symbol.upper().strip()
+    if base == "WDOFUT":
+        return "WDO"
+    if base == "WINFUT":
+        return "WIN"
+    return base
