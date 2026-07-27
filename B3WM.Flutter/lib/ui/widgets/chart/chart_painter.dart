@@ -6,6 +6,7 @@ class ChartPainter extends CustomPainter {
   final ChartData data;
   final double candleWidth;
   final double candleSpacing;
+  final double yZoom;
 
   static const Color candleUpColor = Color(0xFFFFFFFF);
   static const Color candleDownColor = Color(0xFF000000);
@@ -17,6 +18,7 @@ class ChartPainter extends CustomPainter {
     required this.data,
     this.candleWidth = 6.0,
     this.candleSpacing = 2.0,
+    this.yZoom = 1.0,
   });
 
   @override
@@ -34,11 +36,8 @@ class ChartPainter extends CustomPainter {
     _drawDaySeparators(canvas, size, chartWidth, chartHeight, stepX);
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
-    _drawForecastLine(canvas, size, chartWidth, chartHeight, stepX);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
-    _drawIndicatorLines(canvas, size, chartWidth, chartHeight, stepX);
-    _drawIndicatorMarkers(canvas, size, chartWidth, chartHeight, stepX);
   }
 
   double _priceToY(double price, double chartHeight) {
@@ -47,20 +46,14 @@ class ChartPainter extends CustomPainter {
     final padding = range * 0.25;
     final minP = data.minPrice - padding;
     final maxP = data.maxPrice + padding;
-    final adjustedRange = maxP - minP;
+    final center = (minP + maxP) / 2;
+    final halfRange = (maxP - minP) / 2;
+    final zoomedHalf = halfRange / yZoom;
+    final adjustedMin = center - zoomedHalf;
+    final adjustedMax = center + zoomedHalf;
+    final adjustedRange = adjustedMax - adjustedMin;
     if (adjustedRange <= 0) return chartHeight / 2;
-    return chartHeight - ((price - minP) / adjustedRange) * chartHeight;
-  }
-
-  double _yToPrice(double y, double chartHeight) {
-    final range = data.priceRange;
-    if (range <= 0) return 0;
-    final padding = range * 0.25;
-    final minP = data.minPrice - padding;
-    final maxP = data.maxPrice + padding;
-    final adjustedRange = maxP - minP;
-    if (adjustedRange <= 0) return 0;
-    return minP + ((chartHeight - y) / chartHeight) * adjustedRange;
+    return chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
   }
 
   double _indexToX(int index, double stepX) {
@@ -156,12 +149,12 @@ class ChartPainter extends CustomPainter {
       }
     }
 
-    drawLine(s.upBorder, const Color(0xFF9696ff), true);
-    drawLine(s.downBorder, const Color(0xFFff9696), true);
+    drawLine(s.upBorder, const Color(0xFF9696ff), false);
+    drawLine(s.downBorder, const Color(0xFFff9696), false);
 
     if (s.auxVisible) {
-      drawLine(s.upAuxBorder, const Color(0xFF5555aa), false);
-      drawLine(s.downAuxBorder, const Color(0xFFaa5555), false);
+      drawLine(s.upAuxBorder, const Color(0xFF5555aa), true);
+      drawLine(s.downAuxBorder, const Color(0xFFaa5555), true);
     }
   }
 
@@ -182,50 +175,6 @@ class ChartPainter extends CustomPainter {
       final start = Offset(p1.dx + i * total * ux, p1.dy + i * total * uy);
       final end = Offset(start.dx + dashLen * ux, start.dy + dashLen * uy);
       canvas.drawLine(start, end, paint);
-    }
-  }
-
-  void _drawForecastLine(
-      Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
-    final f = data.forecast;
-    if (f == null || !f.visible) return;
-
-    final paint = Paint()
-      ..color = const Color(0xFFffaa00)
-      ..strokeWidth = 2;
-
-    Offset? prev;
-    for (int i = 0; i < f.values.length; i++) {
-      final v = f.values[i];
-      if (v == null) {
-        prev = null;
-        continue;
-      }
-      final x = _indexToX(i, stepX);
-      if (x < 0 || x > chartWidth) { prev = null; continue; }
-      final y = _priceToY(v, chartHeight);
-      final pt = Offset(x, y);
-      if (prev != null) canvas.drawLine(prev, pt, paint);
-      prev = pt;
-    }
-
-    if (f.currentVwap != null) {
-      final y = _priceToY(f.currentVwap!, chartHeight);
-      final mlPaint = Paint()
-        ..color = const Color(0xB3ffaa00)
-        ..strokeWidth = 1;
-
-      _drawDashedLine(canvas, Offset(0, y), Offset(chartWidth, y), mlPaint);
-
-      final label = '${f.currentVwap!.toStringAsFixed(2)}';
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: const TextStyle(color: Colors.white, fontSize: 10, backgroundColor: Color(0xFFffaa00)),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      textPainter.paint(canvas, Offset(chartWidth - textPainter.width - 4, y - textPainter.height / 2));
     }
   }
 
@@ -275,7 +224,8 @@ class ChartPainter extends CustomPainter {
     for (final b in data.redBubbles) {
       final x = _indexToX(b.candleIndex.clamp(0, data.candles.length - 1), stepX);
       final y = _priceToY(b.price, chartHeight);
-      final r = sqrt(b.amount) * 1.5;
+      var r = sqrt(b.amount) * 1.5;
+      r = r.clamp(data.bubbleSizeMin, data.bubbleSizeMax);
       if (r < 2) continue;
       final fillPaint = Paint()
         ..color = data.colorSeller.withOpacity(data.bubbleOpacity)
@@ -292,7 +242,8 @@ class ChartPainter extends CustomPainter {
     for (final b in data.blueBubbles) {
       final x = _indexToX(b.candleIndex.clamp(0, data.candles.length - 1), stepX);
       final y = _priceToY(b.price, chartHeight);
-      final r = sqrt(b.amount) * 1.5;
+      var r = sqrt(b.amount) * 1.5;
+      r = r.clamp(data.bubbleSizeMin, data.bubbleSizeMax);
       if (r < 2) continue;
       final fillPaint = Paint()
         ..color = data.colorBuyer.withOpacity(data.bubbleOpacity)
@@ -305,61 +256,6 @@ class ChartPainter extends CustomPainter {
         ..strokeWidth = 0.1;
       canvas.drawCircle(Offset(x, y), r, strokePaint);
     }
-  }
-
-  void _drawIndicatorLines(
-      Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
-    for (final entry in data.indicatorLines.entries) {
-      final line = entry.value;
-      if (!line.visible) continue;
-
-      final color = _parseHex(line.color);
-      final paint = Paint()
-        ..color = color.withOpacity(line.opacity)
-        ..strokeWidth = 1;
-
-      Offset? prev;
-      for (int i = 0; i < line.values.length; i++) {
-        final v = line.values[i];
-        if (v == null) {
-          prev = null;
-          continue;
-        }
-        final x = _indexToX(i, stepX);
-        if (x < 0 || x > chartWidth) { prev = null; continue; }
-        final y = _priceToY(v, chartHeight);
-        final pt = Offset(x, y);
-        if (prev != null) canvas.drawLine(prev, pt, paint);
-        prev = pt;
-      }
-    }
-  }
-
-  void _drawIndicatorMarkers(
-      Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
-    for (final m in data.indicatorMarkers) {
-      if (!m.visible) continue;
-      final x = _indexToX(m.index, stepX);
-      if (x < 0 || x > chartWidth) continue;
-      final y = _priceToY(m.value, chartHeight);
-
-      final color = _parseHex(m.color);
-      final paint = Paint()..color = color;
-
-      final path = Path()
-        ..moveTo(x, y - 8)
-        ..lineTo(x - 6, y)
-        ..lineTo(x + 6, y)
-        ..close();
-
-      canvas.drawPath(path, paint..style = PaintingStyle.fill);
-    }
-  }
-
-  Color _parseHex(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) hex = 'FF$hex';
-    return Color(int.parse(hex, radix: 16));
   }
 
   @override

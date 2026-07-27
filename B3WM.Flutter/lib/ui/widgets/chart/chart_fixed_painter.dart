@@ -6,6 +6,7 @@ class ChartFixedPainter extends CustomPainter {
   final ChartData data;
   final double candleAreaWidth;
   final double candleAreaHeight;
+  final double yZoom;
 
   static const double marginLeft = 8;
   static const double marginRight = 8;
@@ -19,6 +20,7 @@ class ChartFixedPainter extends CustomPainter {
     required this.data,
     required this.candleAreaWidth,
     required this.candleAreaHeight,
+    this.yZoom = 1.0,
   });
 
   double get chartRight => marginLeft + candleAreaWidth;
@@ -30,9 +32,14 @@ class ChartFixedPainter extends CustomPainter {
     final padding = range * 0.25;
     final minP = data.minPrice - padding;
     final maxP = data.maxPrice + padding;
-    final adjustedRange = maxP - minP;
+    final center = (minP + maxP) / 2;
+    final halfRange = (maxP - minP) / 2;
+    final zoomedHalf = halfRange / yZoom;
+    final adjustedMin = center - zoomedHalf;
+    final adjustedMax = center + zoomedHalf;
+    final adjustedRange = adjustedMax - adjustedMin;
     if (adjustedRange <= 0) return marginTop + chartHeight / 2;
-    return marginTop + chartHeight - ((price - minP) / adjustedRange) * chartHeight;
+    return marginTop + chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
   }
 
   double _yToPrice(double y) {
@@ -41,14 +48,23 @@ class ChartFixedPainter extends CustomPainter {
     final padding = range * 0.25;
     final minP = data.minPrice - padding;
     final maxP = data.maxPrice + padding;
-    final adjustedRange = maxP - minP;
+    final center = (minP + maxP) / 2;
+    final halfRange = (maxP - minP) / 2;
+    final zoomedHalf = halfRange / yZoom;
+    final adjustedMin = center - zoomedHalf;
+    final adjustedMax = center + zoomedHalf;
+    final adjustedRange = adjustedMax - adjustedMin;
     if (adjustedRange <= 0) return 0;
-    return minP + ((marginTop + chartHeight - y) / chartHeight) * adjustedRange;
+    return adjustedMin + ((marginTop + chartHeight - y) / chartHeight) * adjustedRange;
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (data.candles.isEmpty) return;
+    if (data.candles.isEmpty) {
+      debugPrint('[ChartFixedPainter] candles empty - skip paint');
+      return;
+    }
+    debugPrint('[ChartFixedPainter] paint: size=$size dates=${data.dates.length} volProf=${data.volumeProfile.length} remainingSec=${data.remainingSeconds}');
 
     _drawBackground(canvas, size);
     _drawYAxis(canvas);

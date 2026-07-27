@@ -1,7 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'dart:ui' show Color;
 import '../../../services/state_service.dart';
 import '../../../models/ticks2.dart';
-import '../../../models/indicator_value.dart';
 
 class CandlePoint {
   final DateTime date;
@@ -42,12 +42,14 @@ class VolumeBarData {
   final double total;
   final double step;
   final bool isPoc;
+  final double delta;
 
   VolumeBarData({
     required this.price,
     required this.total,
     required this.step,
     required this.isPoc,
+    this.delta = 0,
   });
 }
 
@@ -71,59 +73,12 @@ class StructureLineData {
   });
 }
 
-class ForecastLineData {
-  final List<double?> values;
-  final double? currentVwap;
-  final bool visible;
-
-  ForecastLineData({
-    required this.values,
-    this.currentVwap,
-    required this.visible,
-  });
-}
-
-class IndicatorLineData {
-  final List<double?> values;
-  final String color;
-  final double opacity;
-  final bool visible;
-
-  IndicatorLineData({
-    required this.values,
-    this.color = '#888888',
-    this.opacity = 0.8,
-    this.visible = true,
-  });
-}
-
-class IndicatorMarkerData {
-  final int index;
-  final double value;
-  final String color;
-  final String label;
-  final double size;
-  final bool visible;
-
-  IndicatorMarkerData({
-    required this.index,
-    required this.value,
-    required this.color,
-    this.label = '',
-    this.size = 20,
-    this.visible = true,
-  });
-}
-
 class ChartData {
   final List<CandlePoint> candles;
   final List<BubblePoint> redBubbles;
   final List<BubblePoint> blueBubbles;
   final List<VolumeBarData> volumeProfile;
   final StructureLineData? structures;
-  final ForecastLineData? forecast;
-  final Map<String, IndicatorLineData> indicatorLines;
-  final List<IndicatorMarkerData> indicatorMarkers;
   final double minPrice;
   final double maxPrice;
   final double lastPrice;
@@ -141,6 +96,9 @@ class ChartData {
   final double profileOpacity;
   final Color colorBuyer;
   final Color colorSeller;
+  final double yZoom;
+  final double bubbleSizeMin;
+  final double bubbleSizeMax;
 
   ChartData({
     required this.candles,
@@ -148,9 +106,6 @@ class ChartData {
     required this.blueBubbles,
     required this.volumeProfile,
     this.structures,
-    this.forecast,
-    this.indicatorLines = const {},
-    this.indicatorMarkers = const [],
     required this.minPrice,
     required this.maxPrice,
     required this.lastPrice,
@@ -168,18 +123,38 @@ class ChartData {
     this.profileOpacity = 0.5,
     this.colorBuyer = const Color(0xFF4488ff),
     this.colorSeller = const Color(0xFFFF4444),
+    this.yZoom = 1.0,
+    this.bubbleSizeMin = 20,
+    this.bubbleSizeMax = 100,
   });
 
   double get priceRange => maxPrice - minPrice;
 }
 
+String _formatCandleKey(DateTime dt) {
+  return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+}
+
+Map<String, int> _buildDateLookup(List<DateTime> dates) {
+  final lookup = <String, int>{};
+  for (int i = 0; i < dates.length; i++) {
+    final key = _formatCandleKey(dates[i]);
+    if (!lookup.containsKey(key)) lookup[key] = i;
+  }
+  return lookup;
+}
+
 ChartData buildChartData(StateService state) {
   final bars = state.barsTimeFrameFilter;
+  debugPrint('[buildChartData] bars=${bars.length} range=[${state.dateRangeStart},${state.dateRangeEnd}]');
+
   final rangeStart = state.dateRangeStart.clamp(0, bars.length);
   final rangeEnd = state.dateRangeEnd > 0
       ? state.dateRangeEnd.clamp(0, bars.length)
       : bars.length;
   final visible = bars.sublist(rangeStart, rangeEnd);
+  debugPrint('[buildChartData] visible=${visible.length} min=${visible.isNotEmpty ? visible.first.date : "none"} max=${visible.isNotEmpty ? visible.last.date : "none"}');
 
   final candles = visible.map((b) => CandlePoint(
     date: b.date,
@@ -195,20 +170,23 @@ ChartData buildChartData(StateService state) {
     if (dates[i].day != dates[i - 1].day) daySepIndices.add(i);
   }
 
-  double _min4(double a, double b, double c, double d) =>
+  double min4(double a, double b, double c, double d) =>
       a < b ? (a < c ? (a < d ? a : d) : (c < d ? c : d)) : (b < c ? (b < d ? b : d) : (c < d ? c : d));
-  double _max4(double a, double b, double c, double d) =>
+  double max4(double a, double b, double c, double d) =>
       a > b ? (a > c ? (a > d ? a : d) : (c > d ? c : d)) : (b > c ? (b > d ? b : d) : (c > d ? c : d));
   final minPrice = visible.fold<double>(double.infinity,
-      (p, b) => _min4(p, b.low, b.close, b.open));
+      (p, b) => min4(p, b.low, b.close, b.open));
   final maxPrice = visible.fold<double>(double.negativeInfinity,
-      (p, b) => _max4(p, b.high, b.close, b.open));
+      (p, b) => max4(p, b.high, b.close, b.open));
 
-  int _findCandleIndex(DateTime bubbleDate) {
+  final candleDateLookup = _buildDateLookup(dates);
+
+  int findCandleIndex(DateTime bubbleDate) {
+    final key = _formatCandleKey(bubbleDate);
+    final exact = candleDateLookup[key];
+    if (exact != null) return exact;
     for (int i = 0; i < visible.length; i++) {
-      if (visible[i].date.compareTo(bubbleDate) >= 0) {
-        return i;
-      }
+      if (visible[i].date.compareTo(bubbleDate) >= 0) return i;
     }
     return visible.length - 1;
   }
@@ -233,7 +211,7 @@ ChartData buildChartData(StateService state) {
         amount: b.amount * state.bubbleSize,
         isBuy: b.actionType == ActionType.buy,
         agentName: Agents.fromValue(b.agent)?.description ?? '',
-        candleIndex: _findCandleIndex(b.date),
+        candleIndex: findCandleIndex(b.date),
       );
       if (b.actionType == ActionType.buy) {
         blueBubbles.add(pt);
@@ -260,6 +238,7 @@ ChartData buildChartData(StateService state) {
           total: v.total.toDouble(),
           step: step,
           isPoc: v.total >= maxVol,
+          delta: v.delta.toDouble(),
         ));
       }
     }
@@ -269,12 +248,27 @@ ChartData buildChartData(StateService state) {
   if (state.structureVisible) {
     final sList = state.structuresTimeFrameFilter;
     if (sList.isNotEmpty) {
-      final last = sList.last;
+      final up = List<double?>.filled(visible.length, null);
+      final down = List<double?>.filled(visible.length, null);
+      final upAux = List<double?>.filled(visible.length, null);
+      final downAux = List<double?>.filled(visible.length, null);
+
+      for (final s in sList) {
+        final key = _formatCandleKey(s.date);
+        final idx = candleDateLookup[key];
+        if (idx != null && idx < visible.length) {
+          up[idx] = s.upBorder;
+          down[idx] = s.downBorder;
+          upAux[idx] = s.upAuxBorder;
+          downAux[idx] = s.downAuxBorder;
+        }
+      }
+
       structures = StructureLineData(
-        upBorder: List.filled(visible.length, last.upBorder),
-        downBorder: List.filled(visible.length, last.downBorder),
-        upAuxBorder: List.filled(visible.length, last.upAuxBorder),
-        downAuxBorder: List.filled(visible.length, last.downAuxBorder),
+        upBorder: up,
+        downBorder: down,
+        upAuxBorder: upAux,
+        downAuxBorder: downAux,
         visible: true,
         auxVisible: state.structureAuxVisible,
         opacity: state.structureOpacity,
@@ -282,43 +276,20 @@ ChartData buildChartData(StateService state) {
     }
   }
 
-  ForecastLineData? forecast;
-  if (state.forecastVisible && state.currentForecast != null) {
-    forecast = ForecastLineData(
-      values: state.forecastHistory.map((e) => e.$2).toList(),
-      currentVwap: state.currentForecast!.vwap,
-      visible: true,
+  int calcRemainingSeconds() {
+    if (state.currentBar == null || state.timeFrame <= 0) return 0;
+    final totalMinutes = state.currentBar!.date.hour * 60 + state.currentBar!.date.minute;
+    final candleStartMin = (totalMinutes ~/ state.timeFrame) * state.timeFrame;
+    final candleEndMin = candleStartMin + state.timeFrame;
+    final now = DateTime.now();
+    final candleEnd = DateTime(
+      state.currentBar!.date.year,
+      state.currentBar!.date.month,
+      state.currentBar!.date.day,
+      candleEndMin ~/ 60,
+      candleEndMin % 60,
     );
-  }
-
-  final indicatorLines = <String, IndicatorLineData>{};
-  final indicatorMarkers = <IndicatorMarkerData>[];
-  for (final entry in state.indicatorData.entries) {
-    final lines = entry.value;
-    final plotType = state.indicatorPlotType[entry.key] ?? IndicatorPlotType.line;
-    if (plotType == IndicatorPlotType.line) {
-      indicatorLines[entry.key] = IndicatorLineData(
-        values: lines.map((e) => e.$2).toList(),
-        color: '#888888',
-        opacity: 0.8,
-        visible: true,
-      );
-    } else {
-      for (final l in lines) {
-        if (l.$2 != null) {
-          final idx = bars.indexWhere((b) => b.date == l.$1);
-          if (idx >= 0) {
-            indicatorMarkers.add(IndicatorMarkerData(
-              index: idx - rangeStart,
-              value: l.$2!,
-              color: '#ffaa00',
-              label: entry.key,
-              visible: true,
-            ));
-          }
-        }
-      }
-    }
+    return candleEnd.difference(now).inSeconds.clamp(0, 9999);
   }
 
   return ChartData(
@@ -327,9 +298,6 @@ ChartData buildChartData(StateService state) {
     blueBubbles: blueBubbles,
     volumeProfile: volumeProfile,
     structures: structures,
-    forecast: forecast,
-    indicatorLines: indicatorLines,
-    indicatorMarkers: indicatorMarkers,
     minPrice: minPrice,
     maxPrice: maxPrice,
     lastPrice: visible.isNotEmpty ? visible.last.close : 0,
@@ -339,13 +307,16 @@ ChartData buildChartData(StateService state) {
     rangeEnd: rangeEnd,
     symbol: state.symbol,
     timeFrame: state.timeFrame,
-    remainingSeconds: 0,
+    remainingSeconds: calcRemainingSeconds(),
     bubbleOpacity: state.bubbleOpacity,
     profileSizeH: state.profileSizeH,
     profileSizeV: state.profileSizeV,
     profileOpacity: state.profileOpacity,
     colorBuyer: _parseHexColor(state.colorBuyer),
     colorSeller: _parseHexColor(state.colorSeller),
+    yZoom: state.yZoom,
+    bubbleSizeMin: state.bubbleSizeMin,
+    bubbleSizeMax: state.bubbleSizeMax,
   );
 }
 

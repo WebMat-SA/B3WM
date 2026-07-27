@@ -5,8 +5,6 @@ import '../models/bubble_storage_item.dart';
 import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
-import '../models/adjustment_forecast_item.dart';
-import '../models/indicator_value.dart';
 import 'api_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
@@ -70,17 +68,6 @@ class StateService extends ChangeNotifier {
           .where((s) => s.timeFrame == _timeFrame && s.symbol == _symbol)
           .toList();
 
-  AdjustmentForecastItem? _currentForecast;
-  AdjustmentForecastItem? get currentForecast => _currentForecast;
-
-  List<(DateTime time, double vwap)> _forecastHistory = [];
-  List<(DateTime time, double vwap)> get forecastHistory => _forecastHistory;
-
-  Map<String, List<(DateTime time, double? value)>> _indicatorData = {};
-  Map<String, IndicatorPlotType> _indicatorPlotType = {};
-  Map<String, List<(DateTime time, double? value)>> get indicatorData => _indicatorData;
-  Map<String, IndicatorPlotType> get indicatorPlotType => _indicatorPlotType;
-
   // Bubble drawer filters
   bool _bubbleAmountFilter = true;
   bool get bubbleAmountFilter => _bubbleAmountFilter;
@@ -107,6 +94,10 @@ class StateService extends ChangeNotifier {
   double get bubbleOpacity => _bubbleOpacity;
   bool _bubbleVisible = true;
   bool get bubbleVisible => _bubbleVisible;
+  double _bubbleSizeMin = 20;
+  double get bubbleSizeMin => _bubbleSizeMin;
+  double _bubbleSizeMax = 100;
+  double get bubbleSizeMax => _bubbleSizeMax;
 
   double _profileSizeH = 1.0;
   double get profileSizeH => _profileSizeH;
@@ -126,9 +117,6 @@ class StateService extends ChangeNotifier {
   double _structureOpacity = 0.8;
   double get structureOpacity => _structureOpacity;
 
-  bool _forecastVisible = true;
-  bool get forecastVisible => _forecastVisible;
-
   double _structureRangeUpd = 250;
   double get structureRangeUpd => _structureRangeUpd;
 
@@ -145,6 +133,9 @@ class StateService extends ChangeNotifier {
   int _thresholdBubble = 250;
   int get thresholdBubble => _thresholdBubble;
 
+  double _yZoom = 1.0;
+  double get yZoom => _yZoom;
+
   bool get isConnected => _signalRService.isConnected;
 
   // Config setters
@@ -152,6 +143,8 @@ class StateService extends ChangeNotifier {
   void setBubbleVisible(bool v) { _bubbleVisible = v; notifyListeners(); _savePreferences(); }
   void setBubbleSize(double v) { _bubbleSize = v; notifyListeners(); _savePreferences(); }
   void setBubbleOpacity(double v) { _bubbleOpacity = v; notifyListeners(); _savePreferences(); }
+  void setBubbleSizeMin(double v) { _bubbleSizeMin = v; notifyListeners(); _savePreferences(); }
+  void setBubbleSizeMax(double v) { _bubbleSizeMax = v; notifyListeners(); _savePreferences(); }
   void setThresholdBubble(int v) { _thresholdBubble = v; notifyListeners(); _savePreferences(); }
 
   void setProfileVisible(bool v) { _profileVisible = v; notifyListeners(); _savePreferences(); }
@@ -164,12 +157,12 @@ class StateService extends ChangeNotifier {
   void setStructureOpacity(double v) { _structureOpacity = v; notifyListeners(); _savePreferences(); }
   void setStructureRangeUpd(double v) { _structureRangeUpd = v; notifyListeners(); _savePreferences(); }
 
-  void setForecastVisible(bool v) { _forecastVisible = v; notifyListeners(); _savePreferences(); }
-
   void setColorBuyer(String v) { _colorBuyer = v; notifyListeners(); _savePreferences(); }
   void setColorSeller(String v) { _colorSeller = v; notifyListeners(); _savePreferences(); }
 
   void setProfileAutoByPriceStructure(bool v) { _profileAutoByPriceStructure = v; notifyListeners(); _savePreferences(); }
+
+  void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
   void selectAllAgents() {
     if (_selectedAgents.length == _allBubbleAgents.length) {
@@ -209,7 +202,6 @@ class StateService extends ChangeNotifier {
 
   // Constants
   static const int maxBubbles = 2000;
-  static const int maxForecastHistory = 500;
 
   void _init() {
     _loadPreferences();
@@ -218,8 +210,6 @@ class StateService extends ChangeNotifier {
     _signalRService.onVolumeUpdate = _handleVolumeUpdate;
     _signalRService.onCurrentBar = _handleCurrentBar;
     _signalRService.onNewStructure = _handleNewStructure;
-    _signalRService.onForecastUpdate = _handleForecastUpdate;
-    _signalRService.onIndicatorValue = _handleIndicatorValue;
     _signalRService.onMissedBars = _handleMissedBars;
     _signalRService.onMissedBubbles = _handleMissedBubbles;
   }
@@ -235,12 +225,13 @@ class StateService extends ChangeNotifier {
     _bubbleSize = p.getDouble('BubbleSize') ?? _bubbleSize;
     _bubbleOpacity = p.getDouble('BubbleOpacity') ?? _bubbleOpacity;
     _bubbleVisible = p.getBool('BubbleVisible') ?? _bubbleVisible;
+    _bubbleSizeMin = p.getDouble('BubbleSizeMin') ?? _bubbleSizeMin;
+    _bubbleSizeMax = p.getDouble('BubbleSizeMax') ?? _bubbleSizeMax;
     _profileSizeH = p.getDouble('ProfileSizeH') ?? _profileSizeH;
     _profileSizeV = p.getDouble('ProfileSizeV') ?? _profileSizeV;
     _profileOpacity = p.getDouble('ProfileOpacity') ?? _profileOpacity;
     _profileVisible = p.getBool('ProfileVisible') ?? _profileVisible;
     _profileAutoByPriceStructure = p.getBool('ProfileAutoByPriceStructure') ?? _profileAutoByPriceStructure;
-    _forecastVisible = p.getBool('ForecastVisible') ?? _forecastVisible;
     _colorBuyer = p.getString('ColorBuyer') ?? _colorBuyer;
     _colorSeller = p.getString('ColorSeller') ?? _colorSeller;
     final selected = p.getIntList('SelectedAgents');
@@ -265,12 +256,13 @@ class StateService extends ChangeNotifier {
     p.setDouble('BubbleSize', _bubbleSize);
     p.setDouble('BubbleOpacity', _bubbleOpacity);
     p.setBool('BubbleVisible', _bubbleVisible);
+    p.setDouble('BubbleSizeMin', _bubbleSizeMin);
+    p.setDouble('BubbleSizeMax', _bubbleSizeMax);
     p.setDouble('ProfileSizeH', _profileSizeH);
     p.setDouble('ProfileSizeV', _profileSizeV);
     p.setDouble('ProfileOpacity', _profileOpacity);
     p.setBool('ProfileVisible', _profileVisible);
     p.setBool('ProfileAutoByPriceStructure', _profileAutoByPriceStructure);
-    p.setBool('ForecastVisible', _forecastVisible);
     p.setString('ColorBuyer', _colorBuyer);
     p.setString('ColorSeller', _colorSeller);
     p.setIntList('SelectedAgents', _selectedAgents);
@@ -295,18 +287,25 @@ class StateService extends ChangeNotifier {
 
     try {
       var effectiveDate = DateTime.now();
+      debugPrint('[loadData] Trying today: ${_formatDate(effectiveDate)}');
 
-      // Try today first
       var bars = await _apiService.getBars(_symbol, effectiveDate);
+      debugPrint('[loadData] Today bars count: ${bars.length}');
+      debugPrint('[loadData] Available timeframes: ${bars.map((b) => b.timeFrame).toSet()}');
+
       if (bars.isEmpty) {
         effectiveDate = await _apiService.findLastDateWithData(_symbol);
+        debugPrint('[loadData] Falling back to date: ${_formatDate(effectiveDate)}');
         bars = await _apiService.getBars(_symbol, effectiveDate);
+        debugPrint('[loadData] Fallback bars count: ${bars.length}');
       }
 
       _bars = bars;
       notifyListeners();
 
       final filteredCount = barsTimeFrameFilter.length;
+      debugPrint('[loadData] _timeFrame=$_timeFrame, filteredCount=$filteredCount, totalBars=${_bars.length}');
+
       _dateRangeStart = 0;
       _dateRangeEnd = filteredCount;
       _volumeFilterActive = false;
@@ -315,17 +314,23 @@ class StateService extends ChangeNotifier {
       // Load bubbles
       final bubbles = await _apiService.getBubbles(_symbol, effectiveDate);
       _bubbles = bubbles;
+      debugPrint('[loadData] Bubbles count: ${bubbles.length}');
 
       // Load volume
-      final volumeData =
-          await _apiService.getVolume(_symbol, effectiveDate);
+      final volumeData = await _apiService.getVolume(_symbol, effectiveDate);
       if (volumeData != null && volumeData.volumes.isNotEmpty) {
         _volumeLevels = volumeData.volumes;
-      } else {
-        final lastBar = _bars
+        debugPrint('[loadData] Volume levels loaded: ${_volumeLevels.length}');
+      } else if (_bars.isNotEmpty) {
+        final barsWithVol = _bars
             .where((b) => b.volumeLevel != null && b.volumeLevel!.isNotEmpty)
-            .reduce((a, b) => a.date.compareTo(b.date) > 0 ? a : b);
-        _volumeLevels = lastBar.volumeLevel ?? [];
+            .toList();
+        debugPrint('[loadData] Bars with volumeLevel: ${barsWithVol.length}');
+        if (barsWithVol.isNotEmpty) {
+          _volumeLevels = barsWithVol.reduce(
+            (a, b) => a.date.compareTo(b.date) > 0 ? a : b).volumeLevel ?? [];
+          debugPrint('[loadData] Volume from last bar: ${_volumeLevels.length}');
+        }
       }
       notifyListeners();
 
@@ -333,37 +338,28 @@ class StateService extends ChangeNotifier {
       final structures = await _apiService.getStructure(
           _symbol, effectiveDate, _structureRangeUpd);
       _structures = structures;
+      debugPrint('[loadData] Structures count: ${structures.length}');
       notifyListeners();
 
-      // Load indicator history
-      _indicatorData.clear();
-      _indicatorPlotType.clear();
-      try {
-        final indicatorHistory =
-            await _apiService.evaluateIndicators(_symbol, effectiveDate);
-        for (final iv in indicatorHistory) {
-          final key = '${iv.indicatorName}.${iv.key}|${iv.timeFrame}';
-          _indicatorData.putIfAbsent(key, () => []);
-          final baseKey = '${iv.indicatorName}.${iv.key}';
-          _indicatorPlotType.putIfAbsent(baseKey, () => iv.plotType);
-          _indicatorData[key]!.add((iv.time, iv.value));
-        }
-      } catch (e) {
-        debugPrint('Indicator Evaluate Error: $e');
-      }
     } catch (e) {
-      debugPrint('LoadData Error: $e');
+      debugPrint('[loadData] Error: $e');
+      debugPrint('[loadData] Stack: ${StackTrace.current}');
     } finally {
       _isLoading = false;
 
-      // Start SignalR
+      debugPrint('[loadData] Starting SignalR...');
       await _signalRService.startConnection(_symbol, _timeFrame);
       _startProcessLoop();
       _startWatchdog();
 
+      debugPrint('[loadData] Complete. Connected: ${_signalRService.isConnected}');
       notifyListeners();
     }
   }
+
+  String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
 
   void _startProcessLoop() {
     _processTimer?.cancel();
@@ -423,7 +419,7 @@ class StateService extends ChangeNotifier {
     }
 
     final filteredCount = barsTimeFrameFilter.length;
-    if (_dateRangeEnd >= filteredCount && filteredCount > 0) {
+    if (filteredCount > 0 && _dateRangeEnd >= filteredCount - 1) {
       _dateRangeEnd = filteredCount;
       _applyVolumeFilter(_dateRangeStart, _dateRangeEnd);
     }
@@ -433,6 +429,21 @@ class StateService extends ChangeNotifier {
 
   void _handleCurrentBar(BarStorageItem bar) {
     _currentBar = bar;
+
+    final existingIndex =
+        _bars.indexWhere((b) => b.date == bar.date && b.timeFrame == bar.timeFrame);
+    if (existingIndex >= 0) {
+      _bars[existingIndex] = bar;
+    } else {
+      _bars.add(bar);
+    }
+
+    final filteredCount = barsTimeFrameFilter.length;
+    if (filteredCount > 0 && _dateRangeEnd >= filteredCount - 1) {
+      _dateRangeEnd = filteredCount;
+      _applyVolumeFilter(_dateRangeStart, _dateRangeEnd);
+    }
+
     notifyListeners();
   }
 
@@ -451,25 +462,14 @@ class StateService extends ChangeNotifier {
     _volumeLevels = volumes.volumes;
 
     final count = barsTimeFrameFilter.length;
-    final isFullRange = count > 0 && _dateRangeEnd >= count;
-
-    if (isFullRange && _profileAutoByPriceStructure) {
-      final startBar = barsTimeFrameFilter
-          .elementAtOrNull((_dateRangeStart - 1).clamp(0, count));
-      if (startBar?.volumeLevel != null) {
-        _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-            volumes.volumes, startBar!.volumeLevel!, 'Diff');
-        _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-        _volumeFilterActive = true;
-      }
-    } else if (_volumeFilterActive && _filteredVolumeLevels != null) {
-      final bars = barsTimeFrameFilter;
-      final startBar =
-          bars.elementAtOrNull((_dateRangeStart - 1).clamp(0, bars.length));
+    if (count > 0) {
+      final startIdx = (_dateRangeStart - 1).clamp(0, count - 1);
+      final startBar = barsTimeFrameFilter.elementAtOrNull(startIdx);
       if (startBar?.volumeLevel != null && startBar!.volumeLevel!.isNotEmpty) {
         _filteredVolumeLevels = VolumeLevelStorageItem.operation(
             volumes.volumes, startBar.volumeLevel!, 'Diff');
         _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+        _volumeFilterActive = true;
       }
     }
 
@@ -481,30 +481,6 @@ class StateService extends ChangeNotifier {
     _structures.add(structure);
     if (_profileAutoByPriceStructure) {
       _applyVolumeFilter(0, barsTimeFrameFilter.length);
-    }
-    notifyListeners();
-  }
-
-  void _handleForecastUpdate(AdjustmentForecastItem forecast) {
-    _currentForecast = forecast;
-    _forecastHistory.add((forecast.time, forecast.vwap));
-    if (_forecastHistory.length > maxForecastHistory) {
-      _forecastHistory.removeRange(
-          0, _forecastHistory.length - maxForecastHistory);
-    }
-    notifyListeners();
-  }
-
-  void _handleIndicatorValue(IndicatorValue data) {
-    final key = '${data.indicatorName}.${data.key}|${data.timeFrame}';
-    _indicatorData.putIfAbsent(key, () => []);
-    final baseKey = '${data.indicatorName}.${data.key}';
-    if (!_indicatorPlotType.containsKey(baseKey)) {
-      _indicatorPlotType[baseKey] = data.plotType;
-    }
-    _indicatorData[key]!.add((data.time, data.value));
-    if (_indicatorData[key]!.length > 500) {
-      _indicatorData[key]!.removeRange(0, _indicatorData[key]!.length - 500);
     }
     notifyListeners();
   }
@@ -534,22 +510,53 @@ class StateService extends ChangeNotifier {
     final count = barsTimeFrameFilter.length;
     if (count == 0) return;
 
-    final isFullRange = start == 0 && end >= count;
-    if (isFullRange) {
-      _volumeFilterActive = false;
-      _filteredVolumeLevels = null;
-    } else {
-      final bars = barsTimeFrameFilter;
-      final startBar = bars.elementAtOrNull((start - 1).clamp(0, count - 1));
-      final endBar = bars.elementAtOrNull(end.clamp(0, count - 1));
+    final bars = barsTimeFrameFilter;
+    final startIdx = (start - 1).clamp(0, count - 1);
+    final endIdx = end.clamp(0, count - 1);
+    var startBar = bars.elementAtOrNull(startIdx);
+    var endBar = bars.elementAtOrNull(endIdx);
 
-      if (startBar != null && endBar != null) {
-        if (endBar.volumeLevel != null &&
-            endBar.volumeLevel!.isNotEmpty &&
-            startBar.volumeLevel != null &&
-            startBar.volumeLevel!.isNotEmpty) {
+    if (startBar != null && endBar != null) {
+      final startLevels = startBar.volumeLevel;
+      final endLevels = endBar.volumeLevel;
+
+      if (endLevels != null && endLevels.isNotEmpty && startLevels != null && startLevels.isNotEmpty) {
+        _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+            endLevels, startLevels, 'Diff');
+        _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+        _volumeFilterActive = true;
+      } else {
+        BarStorageItem? foundStart = (startLevels != null && startLevels.isNotEmpty) ? startBar : null;
+        BarStorageItem? foundEnd = (endLevels != null && endLevels.isNotEmpty) ? endBar : null;
+
+        if (foundStart == null) {
+          for (int i = startIdx - 1; i >= 0; i--) {
+            final b = bars[i];
+            if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
+              foundStart = b;
+              break;
+            }
+          }
+        }
+
+        if (foundEnd == null && foundStart != null) {
+          for (int i = endIdx + 1; i < bars.length; i++) {
+            final b = bars[i];
+            if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
+              foundEnd = b;
+              break;
+            }
+          }
+        }
+
+        if (foundStart != null && foundEnd != null) {
           _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-              endBar.volumeLevel!, startBar.volumeLevel!, 'Diff');
+              foundEnd.volumeLevel!, foundStart.volumeLevel!, 'Diff');
+          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+          _volumeFilterActive = true;
+        } else if (foundStart != null) {
+          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+              _volumeLevels, foundStart.volumeLevel!, 'Diff');
           _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
           _volumeFilterActive = true;
         }
@@ -568,13 +575,6 @@ class StateService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void onIndicatorToggled(String indicatorName) {
-    final prefix = '$indicatorName.';
-    _indicatorData.removeWhere((k, _) => k.startsWith(prefix));
-    _indicatorPlotType.removeWhere((k, _) => k.startsWith(prefix));
-    notifyListeners();
-  }
-
   // --- Chart callback ---
 
   void _onChartUpdate() {
@@ -584,9 +584,11 @@ class StateService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Map<int, int> get agentThresholds => Map.unmodifiable(_agentThresholds);
+
   int getThreshold(int? agent) {
     if (agent == null) return 0;
-    return _agentThresholds[agent] ?? 250;
+    return _agentThresholds[agent] ?? _thresholdBubble;
   }
 
   // --- Dispose ---

@@ -5,7 +5,6 @@ import '../models/bar_storage_item.dart';
 import '../models/bubble_storage_item.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
-import '../models/adjustment_forecast_item.dart';
 import '../models/indicator_value.dart';
 import '../models/throttling_data.dart';
 import 'api_service.dart';
@@ -30,7 +29,6 @@ class SignalRService {
   void Function(VolumeLevelStorageItem)? onVolumeUpdate;
   void Function(BarStorageItem)? onCurrentBar;
   void Function(StructureStorageItem)? onNewStructure;
-  void Function(AdjustmentForecastItem)? onForecastUpdate;
   void Function(IndicatorValue)? onIndicatorValue;
   void Function(List<BarStorageItem>)? onMissedBars;
   void Function(List<BubbleStorageItem>)? onMissedBubbles;
@@ -83,7 +81,6 @@ class SignalRService {
       _hubConnection!.on('ReceiveOnCloseBar', (List<dynamic>? args) => _handleCloseBar(args));
       _hubConnection!.on('ReceiveOnBubble', (List<dynamic>? args) => _handleBubble(args));
       _hubConnection!.on('ReceiveOnStructure', (List<dynamic>? args) => _handleStructure(args));
-      _hubConnection!.on('ReceiveOnForecast', (List<dynamic>? args) => _handleForecast(args));
       _hubConnection!.on('ReceiveThrottlingData', (List<dynamic>? args) => _handleThrottlingData(args));
       _hubConnection!.on('ReceiveOnIndicatorValue', (List<dynamic>? args) => _handleIndicatorValue(args));
 
@@ -112,6 +109,7 @@ class SignalRService {
     final json = args[0] as Map<String, dynamic>;
     final bar = BarStorageItem.fromJson(json);
     _lastBarTime = bar.date;
+    debugPrint('[SignalR] CloseBar: ${bar.date} O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} V=${bar.volume}');
     onCloseBar?.call(bar);
   }
 
@@ -120,6 +118,7 @@ class SignalRService {
     final json = args[0] as Map<String, dynamic>;
     final bubble = BubbleStorageItem.fromJson(json);
     _lastBubbleTime = bubble.date;
+    debugPrint('[SignalR] Bubble: ${bubble.date} agent=${bubble.agent} amount=${bubble.amount} price=${bubble.price}');
     onNewBubble?.call(bubble);
   }
 
@@ -127,14 +126,8 @@ class SignalRService {
     if (args == null || args.isEmpty) return;
     final json = args[0] as Map<String, dynamic>;
     final structure = StructureStorageItem.fromJson(json);
+    debugPrint('[SignalR] Structure: ${structure.date} up=${structure.upBorder} down=${structure.downBorder}');
     onNewStructure?.call(structure);
-  }
-
-  void _handleForecast(List<dynamic>? args) {
-    if (args == null || args.isEmpty) return;
-    final json = args[0] as Map<String, dynamic>;
-    final forecast = AdjustmentForecastItem.fromJson(json);
-    onForecastUpdate?.call(forecast);
   }
 
   void _handleThrottlingData(List<dynamic>? args) {
@@ -154,13 +147,11 @@ class SignalRService {
 
     if (currentBar != null) {
       _lastBarTime = currentBar.date;
+      debugPrint('[SignalR] Throttle bar: ${currentBar.date} O=${currentBar.open} H=${currentBar.high} L=${currentBar.low} C=${currentBar.close} V=${currentBar.volume}');
       onCurrentBar?.call(currentBar);
     }
     if (currentVolume != null) {
       onVolumeUpdate?.call(currentVolume);
-    }
-    if (data.forecast != null) {
-      onForecastUpdate?.call(data.forecast!);
     }
   }
 

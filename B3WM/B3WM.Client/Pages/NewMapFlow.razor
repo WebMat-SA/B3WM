@@ -20,11 +20,7 @@
     [Parameter]
     public string Symbol { get; set; } = "";
 
-    private AdjustmentForecastItem? _currentForecast;
-    private List<(DateTime Time, double Vwap)> _forecastHistory = new();
-
     private const int MaxBubbles = 2000;
-    private const int MaxForecastHistory = 500;
 
     private bool _autoStarted;
     private CancellationTokenSource? _processCts;
@@ -74,9 +70,6 @@
 
     private List<Shared.Models.StructureStorageItem> StructureStorageItemTimeFrameFilter => StructureStorageItem.Where(q => q.TimeFrame == MapFlowConfigDrawer?.TimeFrame && q.Symbol == Symbol).ToList();
     private List<Shared.Models.StructureStorageItem> StructureStorageItem { get; set; } = new List<Shared.Models.StructureStorageItem>();
-
-    private Dictionary<string, List<(DateTime Time, double? Value)>> _indicatorData = new();
-    private Dictionary<string, IndicatorPlotType> _indicatorPlotType = new();
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -266,44 +259,6 @@
         StructureStorageItem.Add(structure);
         if (MapFlowConfigDrawer?.ProfileAutoByPriceStructure == true)
             ApplyVolumeFilter(new MudExRange<int>(0, Math.Max(0, BarStorageItemTimeFrameFilter.Count)));
-    }
-    public Task NewForecast(AdjustmentForecastItem forecast)
-    {
-        _currentForecast = forecast;
-        _forecastHistory.Add((forecast.Time, forecast.Vwap));
-        if (_forecastHistory.Count > MaxForecastHistory)
-            _forecastHistory.RemoveRange(0, _forecastHistory.Count - MaxForecastHistory);
-        return Task.CompletedTask;
-    }
-    public async Task NewIndicatorValue(IndicatorValue data)
-    {
-        var key = $"{data.IndicatorName}.{data.Key}|{data.TimeFrame}";
-        if (!_indicatorData.ContainsKey(key))
-        {
-            _indicatorData[key] = new();
-            var baseKey = $"{data.IndicatorName}.{data.Key}";
-            if (!_indicatorPlotType.ContainsKey(baseKey))
-                _indicatorPlotType[baseKey] = data.PlotType;
-        }
-        _indicatorData[key].Add((data.Time, data.Value));
-        if (_indicatorData[key].Count > 500)
-            _indicatorData[key].RemoveRange(0, _indicatorData[key].Count - 500);
-        await InvokeAsync(StateHasChanged);
-    }
-    private void RemoveIndicatorData(string indicatorName)
-    {
-        var prefix = $"{indicatorName}.";
-        var dataKeysToRemove = _indicatorData.Keys.Where(k => k.StartsWith(prefix)).ToList();
-        foreach (var k in dataKeysToRemove)
-            _indicatorData.Remove(k);
-        var plotKeysToRemove = _indicatorPlotType.Keys.Where(k => k.StartsWith(prefix)).ToList();
-        foreach (var k in plotKeysToRemove)
-            _indicatorPlotType.Remove(k);
-    }
-    public async Task OnIndicatorToggled(string indicatorName)
-    {
-        RemoveIndicatorData(indicatorName);
-        await InvokeAsync(StateHasChanged);
     }
     private static BarStorageItem CloneBar(BarStorageItem bar)
     {
@@ -975,92 +930,7 @@
         seriesList.Add(new Vizor.ECharts.LineSeries { Name = "UpAuxBorder", Data = upBorderAuxVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#5555aa", Width = 1, Opacity = (MapFlowConfigDrawer.StructureOpacity - 0.25 <= 0 ? 0.01 : MapFlowConfigDrawer.StructureOpacity - 0.25) * (MapFlowConfigDrawer.StructureAuxVisible ? 1 : 0) } });
         seriesList.Add(new Vizor.ECharts.LineSeries { Name = "DownAuxBorder", Data = downBorderAuxVals, Z = 4, ShowSymbol = false, LineStyle = new LineStyle { Type = new LineType(LineTypeStyle.Dashed), Color = "#aa5555", Width = 1, Opacity = (MapFlowConfigDrawer.StructureOpacity - 0.25 <= 0 ? 0.01 : MapFlowConfigDrawer.StructureOpacity - 0.25) * (MapFlowConfigDrawer.StructureAuxVisible ? 1 : 0) } });
         
-        #region Adjustment Forecast
 
-        var forecastVals = Enumerable.Repeat((object?)null, categoryData.Count).ToList();
-        if (MapFlowConfigDrawer.ForecastVisible)
-        {
-            var indexLookup = new Dictionary<string, int>(categoryData.Count);
-            for (int i = 0; i < categoryData.Count; i++)
-                if (categoryData[i] != null && !indexLookup.ContainsKey(categoryData[i]))
-                    indexLookup[categoryData[i]] = i;
-
-            // bars são a fonte primária (dados persistidos)
-            for (int i = 0; i < bars.Count; i++)
-            {
-                if (bars[i].ForecastPrice.HasValue)
-                {
-                    var key = bars[i].Date.ToString("dd/MM HH:mm");
-                    if (indexLookup.TryGetValue(key, out var idx) && idx >= 0 && idx < forecastVals.Count)
-                        forecastVals[idx] = bars[i].ForecastPrice.Value;
-                }
-            }
-
-            // _forecastHistory complementa com pontos ao vivo não persistidos
-            foreach (var f in _forecastHistory)
-            {
-                var key = f.Time.ToString("dd/MM HH:mm");
-                if (indexLookup.TryGetValue(key, out var idx) && idx >= 0 && idx < forecastVals.Count && forecastVals[idx] == null)
-                {
-                    forecastVals[idx] = f.Vwap;
-                }
-            }
-        }
-
-        var forecastSeries = new Vizor.ECharts.LineSeries
-        {
-            Name = "Ajuste Previsto",
-            Data = forecastVals,
-            Z = 5,
-            ShowSymbol = false,
-            LineStyle = new LineStyle
-            {
-                Color = "#ffaa00",
-                Width = MapFlowConfigDrawer.ForecastVisible ? 2 : 0,
-                Opacity = MapFlowConfigDrawer.ForecastVisible ? 1 : 0
-            },
-            MarkLine = MapFlowConfigDrawer.ForecastVisible && _currentForecast != null
-                ? new MarkLine
-                {
-                    Silent = true,
-                    Symbol = null,
-                    SymbolSize = 0,
-                    Data = new object[]
-                    {
-                        new
-                        {
-                            yAxis = _currentForecast.Vwap,
-                            animation = true,
-                            symbol = new[] { "none" },
-                            symbolSize = new[] { 0 },
-                            label = new
-                            {
-                                show = true,
-                                position = "end",
-                                distance = 0,
-                                verticalAlign = "middle",
-                                align = "left",
-                                color = "#ffffff",
-                                backgroundColor = "#ffaa00",
-                                padding = new[] { 2, 6, 2, 6 },
-                                borderRadius = 4,
-                                formatter = new JavascriptFunction($"function() {{ return '{_currentForecast.Vwap.ToString(inv)}'; }}")
-                            },
-                            lineStyle = new
-                            {
-                                type = "dashed",
-                                color = "#ffaa00",
-                                width = 1,
-                                opacity = 0.7
-                            }
-                        }
-                    }
-                }
-                : new MarkLine { Data = Array.Empty<object>() }
-        };
-        seriesList.Add(forecastSeries);
-
-        #endregion
 
         @* #region Indicator Series
 
@@ -1198,12 +1068,6 @@
 
             BarStorageItem = bars ?? new List<BarStorageItem>();
 
-            _forecastHistory.Clear();
-            foreach (var bar in BarStorageItem.Where(b => b.ForecastPrice.HasValue).OrderBy(b => b.Date))
-            {
-                _forecastHistory.Add((bar.Date, bar.ForecastPrice.Value));
-            }
-
             _dateRange = new MudExRange<int>(0, BarStorageItemTimeFrameFilter.Count);
             _volumeFilterActive = false;
             _filteredVolumeLevels = null;
@@ -1228,32 +1092,6 @@
             var structure = await httpClient.GetFromJsonAsync<List<StructureStorageItem>>($"{Navigation.ToAbsoluteUri($"/api/data/getstructure/{Symbol}/{effectiveDate:yyyy-MM-dd}/{MapFlowConfigDrawer.StructureRangeUpd.ToString(CultureInfo.InvariantCulture)}").AbsoluteUri}");
             StructureStorageItem = structure ?? new List<StructureStorageItem>();
 
-            _indicatorData.Clear();
-            _indicatorPlotType.Clear();
-            try
-            {
-                var indicatorHistory = await httpClient.GetFromJsonAsync<List<IndicatorValue>>(
-                    $"{Navigation.ToAbsoluteUri($"/api/indicator/evaluate/{Symbol}/{effectiveDate:yyyy-MM-dd}").AbsoluteUri}");
-                if (indicatorHistory != null)
-                {
-                    foreach (var iv in indicatorHistory)
-                    {
-                        var key = $"{iv.IndicatorName}.{iv.Key}|{iv.TimeFrame}";
-                        if (!_indicatorData.ContainsKey(key))
-                        {
-                            _indicatorData[key] = new();
-                            var baseKey = $"{iv.IndicatorName}.{iv.Key}";
-                            if (!_indicatorPlotType.ContainsKey(baseKey))
-                                _indicatorPlotType[baseKey] = iv.PlotType;
-                        }
-                        _indicatorData[key].Add((iv.Time, iv.Value));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Indicator Evaluate Error: " + ex.Message);
-            }
         }
         catch (Exception ex)
         {
@@ -1315,13 +1153,13 @@
                 <MudTooltip Text="@($"Connect")" Arrow>
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PlayCircleOutline" OnClick="LoadData" Color="MudBlazor.Color.Default" />
                 </MudTooltip>
-                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnForecastUpdate="NewForecast" OnIndicatorValue="NewIndicatorValue" OnMissedBars="HandleMissedBars" OnMissedBubbles="HandleMissedBubbles" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
+                <MainHubClient @ref="HubClient" OnCloseBar="NewBar" OnCurrentBar="NewCurrentBar" OnNewBubble="NewBubble" OnVolumeUpdate="VolumeUpdate" OnNewStructure="NewStructure" OnMissedBars="HandleMissedBars" OnMissedBubbles="HandleMissedBubbles" TimeFrame="MapFlowConfigDrawer?.TimeFrame" />
             </MudStack>
         </MudStack>
     </MudAppBar>
 
     <MudDrawerContainer Class="mud-height-full" Style="height: 100%">
-        <MapFlowConfigDrawer @ref="MapFlowConfigDrawer" openDrawer="openDrawer" openDrawerBubbleNotify="openDrawerBubbleNotify" Bubbles="Bubbles" Bars="BarStorageItemTimeFrameFilter.ToList()" Structures="StructureStorageItemTimeFrameFilter" VolumeLevels="VolumeLevels" OnNewStructureDistance="SetMinDistanceStructure" OnIndicatorToggled="OnIndicatorToggled">
+        <MapFlowConfigDrawer @ref="MapFlowConfigDrawer" openDrawer="openDrawer" openDrawerBubbleNotify="openDrawerBubbleNotify" Bubbles="Bubbles" Bars="BarStorageItemTimeFrameFilter.ToList()" Structures="StructureStorageItemTimeFrameFilter" VolumeLevels="VolumeLevels" OnNewStructureDistance="SetMinDistanceStructure">
             @if (isLoading)
             {
                 <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height:100%">

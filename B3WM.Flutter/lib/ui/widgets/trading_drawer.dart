@@ -15,10 +15,8 @@ class TradingDrawer extends StatefulWidget {
 class _TradingDrawerState extends State<TradingDrawer> {
   AccountInfo? _account;
   List<PositionInfo> _positions = [];
-  SymbolInfo? _symbolInfo;
   bool _loadingAccount = false;
   bool _loadingPositions = false;
-  bool _loadingSymbolInfo = false;
   bool _sendingOrder = false;
   bool _closingPosition = false;
 
@@ -51,7 +49,6 @@ class _TradingDrawerState extends State<TradingDrawer> {
     await Future.wait([
       _refreshAccount(),
       _refreshPositions(),
-      _refreshSymbolInfo(),
     ]);
     if (mounted) setState(() {});
   }
@@ -78,20 +75,6 @@ class _TradingDrawerState extends State<TradingDrawer> {
       _positions = [];
     } finally {
       _loadingPositions = false;
-    }
-  }
-
-  Future<void> _refreshSymbolInfo() async {
-    final state = context.read<StateService>();
-    if (state.symbol.isEmpty) return;
-    try {
-      _loadingSymbolInfo = true;
-      final api = context.read<TradingApiService>();
-      _symbolInfo = await api.getSymbolInfo(state.symbol);
-    } catch (_) {
-      _symbolInfo = null;
-    } finally {
-      _loadingSymbolInfo = false;
     }
   }
 
@@ -361,29 +344,6 @@ class _TradingDrawerState extends State<TradingDrawer> {
             ),
           ),
 
-          // Symbol Info
-          _section(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  const Icon(Icons.monitor_heart, size: 16),
-                  const SizedBox(width: 4),
-                  Text(state.symbol,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
-                ]),
-                const SizedBox(height: 4),
-                if (_symbolInfo != null) ...[
-                  _infoRow('Bid', _symbolInfo!.bid.toStringAsFixed(2)),
-                  _infoRow('Ask', _symbolInfo!.ask.toStringAsFixed(2)),
-                  _infoRow('Spread', '${_symbolInfo!.spread}'),
-                ] else
-                  Text(_loadingSymbolInfo ? 'Loading...' : 'No data',
-                      style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-          ),
 
           // Positions
           Expanded(

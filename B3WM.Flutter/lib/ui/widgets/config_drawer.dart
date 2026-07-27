@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flex_color_picker/flex_color_picker.dart';
 import '../../models/defaults.dart';
 import '../../services/state_service.dart';
 import '../../services/extensions.dart';
@@ -13,7 +14,15 @@ class ConfigDrawer extends StatefulWidget {
 
 class _ConfigDrawerState extends State<ConfigDrawer> {
   int? _editingAgent;
+  final Map<int, TextEditingController> _thresholdControllers = {};
 
+  @override
+  void dispose() {
+    for (final c in _thresholdControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) {
     return Consumer<StateService>(builder: (context, state, _) {
@@ -26,7 +35,6 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
             _timeframeSection(state),
             _volumeProfileSection(state),
             _structureSection(state),
-            _forecastSection(state),
             _bubbleSection(state),
           ],
         ),
@@ -78,7 +86,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
 
   Widget _sliderRow(String label, double value, double min, double max,
       ValueChanged<double> onChanged,
-      {int decimals = 3, double step = 0.001}) {
+      {int decimals = 2, double step = 0.01}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -143,33 +151,15 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
       title: 'Price Structure',
       child: Column(
         children: [
-          _toggleRow('Show on Chart', state.structureVisible,
+          _toggleRow('Structure (Solid)', state.structureVisible,
               (v) => state.setStructureVisible(v)),
-          _toggleRow('Show Aux on Chart', state.structureAuxVisible,
+          _toggleRow('Aux Lines (Dashed)', state.structureAuxVisible,
               (v) => state.setStructureAuxVisible(v)),
           _sliderRow('Opacity', state.structureOpacity, 0, 1,
               (v) => state.setStructureOpacity(v)),
-          _sliderRow('Range to Update', state.structureRangeUpd, 0, 3000,
+          _sliderRow('Range to Update', state.structureRangeUpd, 0, 2000,
               (v) => state.setStructureRangeUpd(v),
-              decimals: 1, step: 0.5),
-        ],
-      ),
-    );
-  }
-
-  Widget _forecastSection(StateService state) {
-    return _expandableSection(
-      icon: Icons.ssid_chart,
-      title: 'Ajuste Previsto',
-      child: Column(
-        children: [
-          _toggleRow('Show on Chart', state.forecastVisible,
-              (v) => state.setForecastVisible(v)),
-          const Padding(
-            padding: EdgeInsets.only(top: 4),
-            child: Text('VWAP Diário (acumulado do pregão)',
-                style: TextStyle(fontSize: 11, color: Colors.grey)),
-          ),
+              decimals: 1, step: 0.05),
         ],
       ),
     );
@@ -194,6 +184,10 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
               step: 25),
           _sliderRow('Size', state.bubbleSize, 0, 1,
               (v) => state.setBubbleSize(v)),
+          _sliderRow('Min Size (px)', state.bubbleSizeMin, 5, 200,
+              (v) => state.setBubbleSizeMin(v), decimals: 0, step: 1),
+          _sliderRow('Max Size (px)', state.bubbleSizeMax, 5, 200,
+              (v) => state.setBubbleSizeMax(v), decimals: 0, step: 1),
           _sliderRow('Opacity', state.bubbleOpacity, 0, 1,
               (v) => state.setBubbleOpacity(v)),
           _colorsSection(state),
@@ -223,10 +217,50 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
       String label, String hexColor, ValueChanged<String> onChanged) {
     return Row(
       children: [
-        SizedBox(
-          width: 32,
-          height: 32,
+        GestureDetector(
+          onTap: () async {
+            final currentColor = _parseColor(hexColor);
+            final Color? picked = await showColorPickerDialog(
+              context,
+              currentColor,
+              title: Text('Selecionar cor - $label',
+                  style: const TextStyle(fontSize: 16)),
+              width: 40,
+              height: 40,
+              borderRadius: 4,
+              spacing: 5,
+              runSpacing: 5,
+              wheelDiameter: 180,
+              enableOpacity: false,
+              showColorCode: true,
+              colorCodeHasColor: true,
+              pickersEnabled: const <ColorPickerType, bool>{
+                ColorPickerType.wheel: true,
+                ColorPickerType.primary: true,
+                ColorPickerType.accent: true,
+                ColorPickerType.both: false,
+                ColorPickerType.bw: false,
+                ColorPickerType.custom: false,
+              },
+              actionButtons: const ColorPickerActionButtons(
+                okButton: true,
+                closeButton: true,
+              ),
+              constraints: const BoxConstraints(
+                minHeight: 420,
+                minWidth: 300,
+                maxWidth: 320,
+              ),
+            );
+            if (picked != null) {
+              final hex =
+                  '#${picked.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+              onChanged(hex);
+            }
+          },
           child: Container(
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: _parseColor(hexColor),
               borderRadius: BorderRadius.circular(4),
@@ -236,21 +270,6 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
         ),
         const SizedBox(width: 8),
         Text(label, style: const TextStyle(fontSize: 13)),
-        const Spacer(),
-        SizedBox(
-          width: 80,
-          child: TextField(
-            controller: TextEditingController(text: hexColor),
-            style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-              isDense: true,
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: onChanged,
-          ),
-        ),
       ],
     );
   }
@@ -286,10 +305,16 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
     );
   }
 
+  TextEditingController _controllerFor(int agent, int currentValue) {
+    return _thresholdControllers.putIfAbsent(
+        agent, () => TextEditingController(text: currentValue.toString()));
+  }
+
   Widget _agentTile(StateService state, int agentValue) {
     final agentName = agentsDescription(agentValue);
     final isSelected = state.selectedAgents.contains(agentValue);
     final threshold = state.getThreshold(agentValue);
+    final isCustom = state.agentThresholds.containsKey(agentValue);
     final isEditing = _editingAgent == agentValue;
 
     return Column(
@@ -308,12 +333,12 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
                   icon: Icon(
                     Icons.tune,
                     size: 18,
-                    color: threshold != state.thresholdBubble
-                        ? Colors.amber
-                        : Colors.grey,
+                    color: isCustom ? Colors.amber : Colors.grey,
                   ),
-                  onPressed: () =>
-                      setState(() => _editingAgent = isEditing ? null : agentValue),
+                  onPressed: () => setState(() {
+                    _editingAgent = isEditing ? null : agentValue;
+                    _thresholdControllers.remove(agentValue);
+                  }),
                 )
               : null,
         ),
@@ -325,29 +350,33 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
                 SizedBox(
                   width: 120,
                   child: TextField(
-                    controller: TextEditingController(
-                        text: threshold.toString()),
+                    controller: _controllerFor(agentValue, isCustom ? threshold : state.thresholdBubble),
                     style: const TextStyle(fontSize: 12),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       isDense: true,
-                      labelText: 'Threshold',
-                      border: OutlineInputBorder(),
+                      labelText: isCustom ? 'Threshold' : 'Threshold (opcional)',
+                      border: const OutlineInputBorder(),
                     ),
                     onSubmitted: (v) {
                       final val = int.tryParse(v);
-                      state.setAgentThreshold(agentValue, val);
+                      if (val != null && val >= Defaults.thresholdBubbleSize(state.symbol)) {
+                        state.setAgentThreshold(agentValue, val);
+                      }
                     },
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (threshold != state.thresholdBubble)
+                if (isCustom)
                   IconButton(
                     icon:
                         const Icon(Icons.clear, size: 16, color: Colors.red),
                     onPressed: () {
                       state.setAgentThreshold(agentValue, null);
-                      setState(() => _editingAgent = null);
+                      setState(() {
+                        _editingAgent = null;
+                        _thresholdControllers.remove(agentValue);
+                      });
                     },
                   )
                 else
