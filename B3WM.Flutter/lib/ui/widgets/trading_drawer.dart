@@ -334,7 +334,9 @@ class _TradingDrawerState extends State<TradingDrawer> {
                     title: Row(children: [
                       const Icon(Icons.assignment, size: 16),
                       const SizedBox(width: 4),
-                      Text('Positions (${_positions.length})',
+                      Text(_positions.isEmpty
+                          ? 'Positions'
+                          : 'Positions (${_positions.length})',
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
