@@ -281,7 +281,8 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
   }
 
   Widget _agentsSection(StateService state) {
-    final allAgents = state.allBubbleAgents.toList();
+    final allAgents = state.allBubbleAgents.toList()
+      ..sort((a, b) => agentsDescription(a).compareTo(agentsDescription(b)));
     if (allAgents.isEmpty) return const SizedBox.shrink();
 
     return ExpansionTile(
@@ -333,7 +334,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
                   icon: Icon(
                     Icons.tune,
                     size: 18,
-                    color: isCustom ? Colors.amber : Colors.grey,
+                    color: isCustom ? Colors.blue : Colors.grey,
                   ),
                   onPressed: () => setState(() {
                     _editingAgent = isEditing ? null : agentValue;

@@ -157,7 +157,7 @@ class _BubbleDrawerState extends State<BubbleDrawer> {
       message: tooltip,
       child: IconButton(
         icon: Icon(icon, size: 18),
-        color: active ? Colors.amber : Colors.grey,
+        color: active ? Colors.blue : Colors.grey,
         onPressed: onPressed,
       ),
     );

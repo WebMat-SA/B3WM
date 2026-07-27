@@ -83,13 +83,13 @@
 
             hubConnection.Reconnecting += error =>
             {
-                Console.WriteLine($"SignalR reconnecting: {error?.Message}");
+                //Console.WriteLine($"SignalR reconnecting: {error?.Message}");
                 return Task.CompletedTask;
             };
 
             hubConnection.Closed += async error =>
             {
-                Console.WriteLine($"SignalR closed: {error?.Message}");
+                //Console.WriteLine($"SignalR closed: {error?.Message}");
 
                 await Task.Delay(3000);
 
@@ -99,7 +99,7 @@
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"SignalR restart failed: {ex.Message}");
+                    //Console.WriteLine($"SignalR restart failed: {ex.Message}");
                 }
             };
 

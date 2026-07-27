@@ -43,13 +43,6 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                 onPressed: onBubblesTap,
                 tooltip: 'Notificações de bubbles',
               ),
-              IconButton(
-                icon: Icon(Icons.travel_explore,
-                    size: 20,
-                    color: tradingActive ? Colors.amber : Colors.grey),
-                onPressed: onTradingTap,
-                tooltip: 'Trading Panel',
-              ),
             ],
           ),
           actions: [
@@ -93,6 +86,13 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                         },
                 ),
               ),
+            ),
+            IconButton(
+              icon: Icon(Icons.monetization_on,
+                  size: 20,
+                  color: tradingActive ? Colors.blue : Colors.grey),
+              onPressed: onTradingTap,
+              tooltip: 'Trading Panel',
             ),
           ],
         );

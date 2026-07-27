@@ -147,14 +147,14 @@ Map<String, int> _buildDateLookup(List<DateTime> dates) {
 
 ChartData buildChartData(StateService state) {
   final bars = state.barsTimeFrameFilter;
-  debugPrint('[buildChartData] bars=${bars.length} range=[${state.dateRangeStart},${state.dateRangeEnd}]');
+  //debugPrint('[buildChartData] bars=${bars.length} range=[${state.dateRangeStart},${state.dateRangeEnd}]');
 
   final rangeStart = state.dateRangeStart.clamp(0, bars.length);
   final rangeEnd = state.dateRangeEnd > 0
       ? state.dateRangeEnd.clamp(0, bars.length)
       : bars.length;
   final visible = bars.sublist(rangeStart, rangeEnd);
-  debugPrint('[buildChartData] visible=${visible.length} min=${visible.isNotEmpty ? visible.first.date : "none"} max=${visible.isNotEmpty ? visible.last.date : "none"}');
+  //debugPrint('[buildChartData] visible=${visible.length} min=${visible.isNotEmpty ? visible.first.date : "none"} max=${visible.isNotEmpty ? visible.last.date : "none"}');
 
   final candles = visible.map((b) => CandlePoint(
     date: b.date,

@@ -38,14 +38,16 @@ class _AppDrawerState extends State<AppDrawer>
   Widget build(BuildContext context) {
     return Drawer(
       width: 360,
-      child: Column(
+      child: ListTileTheme(
+        tileColor: const Color(0xFF2d2d2d),
+        child: Column(
         children: [
           Container(
             color: const Color(0xFF2d2d2d),
             child: TabBar(
               controller: _tabController,
-              indicatorColor: Colors.amber,
-              labelColor: Colors.amber,
+              indicatorColor: Colors.blue,
+              labelColor: Colors.blue,
               unselectedLabelColor: Colors.grey,
               tabs: const [
                 Tab(text: 'Configurações', icon: Icon(Icons.settings, size: 18)),
@@ -63,6 +65,7 @@ class _AppDrawerState extends State<AppDrawer>
             ),
           ),
         ],
+      ),
       ),
     );
   }

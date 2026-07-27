@@ -61,10 +61,10 @@ class ChartFixedPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (data.candles.isEmpty) {
-      debugPrint('[ChartFixedPainter] candles empty - skip paint');
+      //debugPrint('[ChartFixedPainter] candles empty - skip paint');
       return;
     }
-    debugPrint('[ChartFixedPainter] paint: size=$size dates=${data.dates.length} volProf=${data.volumeProfile.length} remainingSec=${data.remainingSeconds}');
+    //debugPrint('[ChartFixedPainter] paint: size=$size dates=${data.dates.length} volProf=${data.volumeProfile.length} remainingSec=${data.remainingSeconds}');
 
     _drawBackground(canvas, size);
     _drawYAxis(canvas);

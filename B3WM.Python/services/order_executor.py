@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import MetaTrader5 as mt5
@@ -319,7 +319,7 @@ class MT5OrderExecutor:
                 volume=d.volume,
                 price=d.price,
                 profit=d.profit,
-                time=datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S") if d.time else "",
+                time=datetime.fromtimestamp(d.time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if d.time else "",
                 comment=d.comment,
                 magic=d.magic,
             ))
