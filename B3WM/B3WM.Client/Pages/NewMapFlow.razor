@@ -103,8 +103,6 @@
                 }
                 else
                 {
-                    //Console.WriteLine("[CHART] GenerateChart ainda ocupado, pulando tick");
-                }
             }
             catch (OperationCanceledException)
             {
@@ -112,7 +110,7 @@
             }
             catch (Exception ex)
             {
-                //Console.WriteLine("[CHART] ProcessLoop error: " + ex.Message);
+
             }
 
             // Garante pausa mínima entre chamadas
@@ -135,7 +133,7 @@
                 var elapsed = DateTime.UtcNow - _lastChartUpdate;
                 if (elapsed.TotalSeconds > 10)
                 {
-                    //Console.WriteLine($"[WATCHDOG] Chart sem update há {elapsed.TotalSeconds:F1}s - executando recovery");
+
 
                     // 1. Tenta reiniciar o ProcessLoop se morreu
                     if (_processTask?.IsCompleted == true)
@@ -147,7 +145,7 @@
                     // 2. Tenta religar SignalR se desconectou
                     if (HubClient is { _started: true })
                     {
-                        //Console.WriteLine("[WATCHDOG] Reconectando SignalR");
+
                         _ = HubClient.StartConnection();
                     }
                 }

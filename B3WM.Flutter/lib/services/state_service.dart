@@ -347,12 +347,9 @@ class StateService extends ChangeNotifier {
     } finally {
       _isLoading = false;
 
-      //debugPrint('[loadData] Starting SignalR...');
       await _signalRService.startConnection(_symbol, _timeFrame);
       _startProcessLoop();
       _startWatchdog();
-
-      //debugPrint('[loadData] Complete. Connected: ${_signalRService.isConnected}');
       notifyListeners();
     }
   }

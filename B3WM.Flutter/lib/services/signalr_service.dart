@@ -55,7 +55,6 @@ class SignalRService {
           .build();
 
       _hubConnection!.onreconnecting((Exception? error) {
-        //debugPrint('SignalR reconnecting: ${error?.toString()}');
       });
 
       _hubConnection!.onreconnected((String? connectionId) async {
@@ -71,7 +70,6 @@ class SignalRService {
       });
 
       _hubConnection!.onclose((Exception? error) async {
-        //debugPrint('SignalR closed: ${error?.toString()}');
         await Future.delayed(const Duration(seconds: 3));
         if (_started && _symbol != null) {
           await startConnection(_symbol!, _timeFrame);
@@ -90,9 +88,7 @@ class SignalRService {
         await _hubConnection!.invoke('JoinGroup', args: [_symbol!]);
       }
 
-      //debugPrint('SignalR connected');
     } catch (e) {
-      //debugPrint('Error starting SignalR connection: $e');
     }
   }
 
@@ -109,7 +105,6 @@ class SignalRService {
     final json = args[0] as Map<String, dynamic>;
     final bar = BarStorageItem.fromJson(json);
     _lastBarTime = bar.date;
-    //debugPrint('[SignalR] CloseBar: ${bar.date} O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} V=${bar.volume}');
     onCloseBar?.call(bar);
   }
 
@@ -118,7 +113,6 @@ class SignalRService {
     final json = args[0] as Map<String, dynamic>;
     final bubble = BubbleStorageItem.fromJson(json);
     _lastBubbleTime = bubble.date;
-    //debugPrint('[SignalR] Bubble: ${bubble.date} agent=${bubble.agent} amount=${bubble.amount} price=${bubble.price}');
     onNewBubble?.call(bubble);
   }
 
@@ -126,7 +120,6 @@ class SignalRService {
     if (args == null || args.isEmpty) return;
     final json = args[0] as Map<String, dynamic>;
     final structure = StructureStorageItem.fromJson(json);
-    //debugPrint('[SignalR] Structure: ${structure.date} up=${structure.upBorder} down=${structure.downBorder}');
     onNewStructure?.call(structure);
   }
 
@@ -147,7 +140,6 @@ class SignalRService {
 
     if (currentBar != null) {
       _lastBarTime = currentBar.date;
-      //debugPrint('[SignalR] Throttle bar: ${currentBar.date} O=${currentBar.open} H=${currentBar.high} L=${currentBar.low} C=${currentBar.close} V=${currentBar.volume}');
       onCurrentBar?.call(currentBar);
     }
     if (currentVolume != null) {
