@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter/gestures.dart';
 import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
@@ -20,11 +20,19 @@ class _MapFlowChartState extends State<MapFlowChart> {
   double _yZoom = 1.0;
   OverlayEntry? _tooltipOverlay;
   Timer? _tapTimer;
+  bool _initialFitDone = false;
+  double _lastCandleAreaWidth = 0;
+  double _lastVirtualCandleWidth = 0;
 
   @override
   void initState() {
     super.initState();
     _yZoom = widget.data.yZoom;
+    _controller.addListener(_onTransformChanged);
+  }
+
+  void _onTransformChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -38,6 +46,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
   @override
   void dispose() {
     _dismissTooltip();
+    _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -48,23 +57,35 @@ class _MapFlowChartState extends State<MapFlowChart> {
     _tooltipOverlay = null;
   }
 
-  void _snapYTranslation() {
+  void _snapYTransform() {
     final m = _controller.value;
     if (!m.getTranslation().x.isFinite) return;
+    final tx = m.getTranslation().x;
+    final scaleX = m[0];
     final ty = m.getTranslation().y;
-    if (ty.isFinite && ty != 0.0) {
-      final corrected = m.clone();
-      corrected.setTranslationRaw(m.getTranslation().x, 0.0, 0.0);
+    if (ty != 0.0 || m[5] != 1.0) {
+      final corrected = Matrix4.identity();
+      corrected.setTranslationRaw(tx, 0.0, 0.0);
+      corrected[0] = scaleX;
       _controller.value = corrected;
     }
   }
 
-  void _zoomYIn() {
-    setState(() => _yZoom = (_yZoom * 1.25).clamp(0.3, 10.0));
+  void _fitChart(double areaWidth, double virtualWidth) {
+    final rightMargin = areaWidth * 0.15;
+    final leftMargin = areaWidth * 0.02;
+    final fitWidth = areaWidth - leftMargin - rightMargin;
+    final scale = max(0.1, fitWidth / virtualWidth);
+    final m = Matrix4.identity();
+    m.setTranslationRaw(leftMargin, 0.0, 0.0);
+    m[0] = scale;
+    _controller.value = m;
   }
 
-  void _zoomYOut() {
-    setState(() => _yZoom = (_yZoom / 1.25).clamp(0.3, 10.0));
+  void _handleScroll(PointerScrollEvent event) {
+    setState(() {
+      _yZoom = (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.3, 10.0);
+    });
   }
 
   void _handleTap(TapDownDetails details, double candleAreaWidth, double candleAreaHeight, double stepX) {
@@ -114,6 +135,17 @@ class _MapFlowChartState extends State<MapFlowChart> {
           return const SizedBox();
         }
 
+        _lastCandleAreaWidth = candleAreaWidth;
+        _lastVirtualCandleWidth = virtualCandleWidth;
+
+        if (!_initialFitDone && data.candles.isNotEmpty) {
+          _initialFitDone = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _fitChart(candleAreaWidth, virtualCandleWidth);
+          });
+        }
+
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -124,6 +156,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
                   candleAreaWidth: candleAreaWidth,
                   candleAreaHeight: candleAreaHeight,
                   yZoom: _yZoom,
+                  controller: _controller,
                 ),
               ),
             ),
@@ -133,24 +166,31 @@ class _MapFlowChartState extends State<MapFlowChart> {
               width: candleAreaWidth,
               height: candleAreaHeight,
               child: ClipRect(
-                child: MouseRegion(
-                  onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
-                  child: GestureDetector(
-                    onTapDown: (details) => _handleTap(details, candleAreaWidth, candleAreaHeight, stepX),
-                    child: InteractiveViewer(
-                      transformationController: _controller,
-                      constrained: false,
-                      boundaryMargin: const EdgeInsets.all(double.infinity),
-                      minScale: 0.5,
-                      maxScale: 5.0,
-                      onInteractionEnd: (_) => _snapYTranslation(),
-                      child: CustomPaint(
-                        size: Size(virtualCandleWidth, candleAreaHeight),
-                        painter: ChartPainter(
-                          data: data,
-                          candleWidth: candleWidth,
-                          candleSpacing: candleSpacing,
-                          yZoom: _yZoom,
+                child: Listener(
+                  onPointerSignal: (event) {
+                    if (event is PointerScrollEvent) {
+                      _handleScroll(event);
+                    }
+                  },
+                  child: MouseRegion(
+                    onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
+                    child: GestureDetector(
+                      onTapDown: (details) => _handleTap(details, candleAreaWidth, candleAreaHeight, stepX),
+                      child: InteractiveViewer(
+                        transformationController: _controller,
+                        constrained: false,
+                        boundaryMargin: const EdgeInsets.all(double.infinity),
+                        minScale: 0.5,
+                        maxScale: 5.0,
+                        onInteractionEnd: (_) => _snapYTransform(),
+                        child: CustomPaint(
+                          size: Size(virtualCandleWidth, candleAreaHeight),
+                          painter: ChartPainter(
+                            data: data,
+                            candleWidth: candleWidth,
+                            candleSpacing: candleSpacing,
+                            yZoom: _yZoom,
+                          ),
                         ),
                       ),
                     ),
@@ -161,42 +201,29 @@ class _MapFlowChartState extends State<MapFlowChart> {
             Positioned(
               right: 4.0,
               top: 4.0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _zoomButton('+', _zoomYIn),
-                  _zoomButton('-', _zoomYOut),
-                  if (_yZoom != 1.0)
-                    _zoomButton(
-                      '${(_yZoom * 100).round()}%',
-                      () => setState(() => _yZoom = 1.0),
-                    ),
-                ],
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _yZoom = 1.0;
+                  });
+                  _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    '⟲',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
               ),
             ),
           ],
         );
       },
-    );
-  }
-
-  Widget _zoomButton(String label, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 10),
-          ),
-        ),
-      ),
     );
   }
 

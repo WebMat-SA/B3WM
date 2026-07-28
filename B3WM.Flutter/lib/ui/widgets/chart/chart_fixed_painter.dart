@@ -7,12 +7,14 @@ class ChartFixedPainter extends CustomPainter {
   final double candleAreaWidth;
   final double candleAreaHeight;
   final double yZoom;
+  final TransformationController controller;
 
   static const double marginLeft = 8;
   static const double marginRight = 8;
   static const double marginTop = 8;
   static const double marginBottom = 24;
   static const double profileWidth = 60;
+  static const double candleStep = 8.0;
 
   static const Color textColor = Color(0xFFaaaaaa);
 
@@ -21,6 +23,7 @@ class ChartFixedPainter extends CustomPainter {
     required this.candleAreaWidth,
     required this.candleAreaHeight,
     this.yZoom = 1.0,
+    required this.controller,
   });
 
   double get chartRight => marginLeft + candleAreaWidth;
@@ -109,19 +112,35 @@ class ChartFixedPainter extends CustomPainter {
 
   void _drawXAxis(Canvas canvas) {
     final y = marginTop + chartHeight + 2;
-    final stepX = 8.0;
+    final m = controller.value;
+    final tx = m.getTranslation().x;
+    final scaleX = m[0];
 
-    for (int i = 0; i < data.dates.length; i += max(1, (data.dates.length / 10).round())) {
-      final x = marginLeft + i * stepX + stepX / 2;
-      if (x < marginLeft || x > chartRight) continue;
+    final visibleStart = -tx / scaleX;
+    final visibleEnd = (candleAreaWidth - tx) / scaleX;
+
+    final firstIdx =
+        max(0, ((visibleStart - candleStep / 2) / candleStep).floor());
+    final lastIdx = min(data.dates.length - 1,
+        ((visibleEnd - candleStep / 2) / candleStep).ceil());
+
+    final count = lastIdx - firstIdx + 1;
+    if (count <= 0) return;
+    final step = max(1, (count / 10).round());
+
+    for (int i = firstIdx; i <= lastIdx; i += step) {
+      final childX = i * candleStep + candleStep / 2;
+      final screenX = marginLeft + childX * scaleX + tx;
+      if (screenX < marginLeft || screenX > chartRight) continue;
 
       final fmt = data.dates[i];
-      final label = '${fmt.hour.toString().padLeft(2, '0')}:${fmt.minute.toString().padLeft(2, '0')}';
+      final label =
+          '${fmt.hour.toString().padLeft(2, '0')}:${fmt.minute.toString().padLeft(2, '0')}';
       final tp = TextPainter(
         text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(canvas, Offset(x - tp.width / 2, y));
+      tp.paint(canvas, Offset(screenX - tp.width / 2, y));
     }
   }
 

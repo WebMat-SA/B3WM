@@ -68,16 +68,25 @@ class VolumeLevelStorageItem {
   }
 
   static List<VolumeLevel> operation(
-      List<VolumeLevel> vol1, List<VolumeLevel> vol2, String operation) {
+      List<VolumeLevel> vol1, List<VolumeLevel> vol2, String op) {
     final map = <double, VolumeLevel>{};
     for (final item in vol1) {
       final match = vol2.where((v) => v.price == item.price).firstOrNull;
-      map[item.price] = VolumeLevel(
-        total: item.total - (match?.total ?? 0),
-        buyVolume: item.buyVolume - (match?.buyVolume ?? 0),
-        sellVolume: item.sellVolume - (match?.sellVolume ?? 0),
-        price: item.price,
-      );
+      if (op == 'Sum') {
+        map[item.price] = VolumeLevel(
+          total: item.total + (match?.total ?? 0),
+          buyVolume: item.buyVolume + (match?.buyVolume ?? 0),
+          sellVolume: item.sellVolume + (match?.sellVolume ?? 0),
+          price: item.price,
+        );
+      } else {
+        map[item.price] = VolumeLevel(
+          total: item.total - (match?.total ?? 0),
+          buyVolume: item.buyVolume - (match?.buyVolume ?? 0),
+          sellVolume: item.sellVolume - (match?.sellVolume ?? 0),
+          price: item.price,
+        );
+      }
     }
     return map.values.toList();
   }

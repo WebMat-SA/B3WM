@@ -332,6 +332,11 @@ class StateService extends ChangeNotifier {
           debugPrint('[loadData] Volume from last bar: ${_volumeLevels.length}');
         }
       }
+
+      if (_volumeLevels.isNotEmpty) {
+        _filteredVolumeLevels = List.from(_volumeLevels);
+        _volumeFilterActive = true;
+      }
       notifyListeners();
 
       // Load structure
@@ -461,11 +466,25 @@ class StateService extends ChangeNotifier {
     final count = barsTimeFrameFilter.length;
     if (count > 0) {
       final startIdx = (_dateRangeStart - 1).clamp(0, count - 1);
+      final endIdx = _dateRangeEnd.clamp(0, count - 1);
       final startBar = barsTimeFrameFilter.elementAtOrNull(startIdx);
-      if (startBar?.volumeLevel != null && startBar!.volumeLevel!.isNotEmpty) {
+      final endBar = barsTimeFrameFilter.elementAtOrNull(endIdx);
+      if (startBar?.volumeLevel != null &&
+          startBar!.volumeLevel!.isNotEmpty &&
+          endBar?.volumeLevel != null &&
+          endBar!.volumeLevel!.isNotEmpty) {
         _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-            volumes.volumes, startBar.volumeLevel!, 'Diff');
+            endBar.volumeLevel!, startBar.volumeLevel!, 'Diff');
         _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+        _volumeFilterActive = true;
+      } else if (startBar?.volumeLevel != null &&
+          startBar!.volumeLevel!.isNotEmpty) {
+        _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+            _volumeLevels, startBar.volumeLevel!, 'Diff');
+        _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+        _volumeFilterActive = true;
+      } else {
+        _filteredVolumeLevels = List.from(_volumeLevels);
         _volumeFilterActive = true;
       }
     }
@@ -558,6 +577,11 @@ class StateService extends ChangeNotifier {
           _volumeFilterActive = true;
         }
       }
+    }
+
+    if (_filteredVolumeLevels == null && _volumeLevels.isNotEmpty) {
+      _filteredVolumeLevels = List.from(_volumeLevels);
+      _volumeFilterActive = true;
     }
 
     notifyListeners();
