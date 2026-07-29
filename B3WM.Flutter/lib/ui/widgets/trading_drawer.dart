@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/trade_models.dart';
@@ -14,19 +15,23 @@ class TradingDrawer extends StatefulWidget {
 class _TradingDrawerState extends State<TradingDrawer> {
   AccountInfo? _account;
   List<PositionInfo> _positions = [];
+  List<OrderInfo> _orders = [];
   List<HistoryDeal> _history = [];
   double _historyTotal = 0;
   bool _loadingAccount = false;
   bool _loadingPositions = false;
+  bool _loadingOrders = false;
   bool _loadingHistory = false;
   bool _historyTodayOnly = true;
   bool _sendingOrder = false;
-  bool _closingPosition = false;
+  final Set<int> _closingTickets = {};
+  final Set<int> _cancellingTickets = {};
 
   int _volume = 1;
   final _volumeController = TextEditingController(text: '1');
   final _volumeFocusNode = FocusNode();
   OrderResult? _lastResult;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -34,10 +39,15 @@ class _TradingDrawerState extends State<TradingDrawer> {
     _volumeFocusNode.addListener(() {
       if (!_volumeFocusNode.hasFocus) _commitVolume();
     });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _refreshPositions();
+      _refreshOrders();
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _volumeController.dispose();
     _volumeFocusNode.dispose();
     super.dispose();
@@ -57,9 +67,8 @@ class _TradingDrawerState extends State<TradingDrawer> {
   }
 
   Future<void> _refreshAll() async {
-    await Future.wait([
-      _refreshPositions(),
-    ]);
+    await _refreshPositions();
+    await _refreshOrders();
     if (mounted) setState(() {});
   }
 
@@ -103,15 +112,66 @@ class _TradingDrawerState extends State<TradingDrawer> {
     try {
       _loadingPositions = true;
       final api = context.read<TradingApiService>();
-      _positions = await api.getPositions();
+      final fresh = await api.getPositions();
+      _positions = fresh;
     } catch (_) {
-      _positions = [];
+      // keep old list on error
     } finally {
       _loadingPositions = false;
     }
   }
 
+  Future<void> _refreshOrders() async {
+    try {
+      _loadingOrders = true;
+      final api = context.read<TradingApiService>();
+      final fresh = await api.getOpenOrders();
+      _orders = fresh;
+    } catch (_) {
+      // keep old list on error
+    } finally {
+      _loadingOrders = false;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _cancelOrder(int ticket) async {
+    if (!_cancellingTickets.add(ticket)) return;
+    setState(() {});
+
+    try {
+      final api = context.read<TradingApiService>();
+      final result = await api.cancelOrder(ticket);
+      if (result != null && mounted) {
+        if (result.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Order $ticket cancelled'),
+                backgroundColor: Colors.green),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Failed to cancel: ${result.message}'),
+                backgroundColor: Colors.red),
+          );
+        }
+      }
+      await _refreshAll();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      _cancellingTickets.remove(ticket);
+      if (mounted) setState(() {});
+    }
+  }
+
   Future<void> _executeOrder({required bool isBuy}) async {
+    if (_sendingOrder) return;
     final state = context.read<StateService>();
     _sendingOrder = true;
     _lastResult = null;
@@ -157,7 +217,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
   }
 
   Future<void> _closePosition(int ticket) async {
-    _closingPosition = true;
+    if (!_closingTickets.add(ticket)) return;
     setState(() {});
 
     try {
@@ -187,13 +247,14 @@ class _TradingDrawerState extends State<TradingDrawer> {
         );
       }
     } finally {
-      _closingPosition = false;
+      _closingTickets.remove(ticket);
       if (mounted) setState(() {});
     }
   }
 
   Future<void> _closeAllPositions() async {
-    _closingPosition = true;
+    if (_sendingOrder) return;
+    _sendingOrder = true;
     setState(() {});
 
     try {
@@ -224,7 +285,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
         );
       }
     } finally {
-      _closingPosition = false;
+      _sendingOrder = false;
       if (mounted) setState(() {});
     }
   }
@@ -321,6 +382,108 @@ class _TradingDrawerState extends State<TradingDrawer> {
                 ),
               ),
 
+              // Open Orders
+              _section(
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.transparent,
+                    unselectedWidgetColor: Colors.grey,
+                  ),
+                  child: ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                    childrenPadding: const EdgeInsets.only(top: 4),
+                    title: Row(children: [
+                      const Icon(Icons.pending, size: 16),
+                      const SizedBox(width: 4),
+                      Text(_orders.isEmpty
+                          ? 'Open Orders'
+                          : 'Open Orders (${_orders.length})',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ]),
+                    initiallyExpanded: false,
+                    onExpansionChanged: (expanded) {
+                      if (expanded) _refreshOrders();
+                    },
+                    children: [
+                      _orders.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: Center(
+                                child: Text(
+                                  _loadingOrders
+                                      ? 'Loading...'
+                                      : 'No open orders',
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 12),
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: _orders.length,
+                              separatorBuilder: (_, __) => const Divider(
+                                  height: 1, color: Color(0xFF3d3d3d)),
+                              itemBuilder: (context, index) {
+                                final order = _orders[index];
+                                final isBuy = order.type.startsWith('buy');
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 0),
+                                  leading: Chip(
+                                    label: Text(isBuy ? 'B' : 'S',
+                                        style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.white)),
+                                    backgroundColor:
+                                        isBuy ? Colors.green : Colors.red,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  title: Text(order.symbol,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold)),
+                                  subtitle: Text(
+                                    '${order.volume.toStringAsFixed(2)} @ ${order.priceOpen.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _formatOrderType(order.type),
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      _cancellingTickets.contains(order.ticket)
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                  strokeWidth: 2))
+                                          : IconButton(
+                                              icon: const Icon(Icons.close,
+                                                  size: 14, color: Colors.red),
+                                              onPressed: () =>
+                                                  _cancelOrder(order.ticket),
+                                            ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ],
+                  ),
+                ),
+              ),
+
               // Positions
               _section(
                 child: Theme(
@@ -404,13 +567,18 @@ class _TradingDrawerState extends State<TradingDrawer> {
                                         ),
                                       ),
                                       const SizedBox(width: 4),
-                                      IconButton(
-                                        icon: const Icon(Icons.close,
-                                            size: 14, color: Colors.red),
-                                        onPressed: _closingPosition
-                                            ? null
-                                            : () => _closePosition(pos.ticket),
-                                      ),
+                                      _closingTickets.contains(pos.ticket)
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                  strokeWidth: 2))
+                                          : IconButton(
+                                              icon: const Icon(Icons.close,
+                                                  size: 14, color: Colors.red),
+                                              onPressed: () =>
+                                                  _closePosition(pos.ticket),
+                                            ),
                                     ],
                                   ),
                                 );
@@ -553,8 +721,8 @@ Text(state.symbol,
                                   fontSize: 11, fontWeight: FontWeight.bold),
                             ),
                             onPressed:
-                                _closingPosition ? null : _closeAllPositions,
-                            child: _closingPosition
+                                _sendingOrder ? null : _closeAllPositions,
+                            child: _sendingOrder
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
@@ -781,5 +949,24 @@ Text(state.symbol,
     if (!_historyTodayOnly) return time;
     final parts = time.split(' ');
     return parts.length > 1 ? parts[1] : time;
+  }
+
+  String _formatOrderType(String type) {
+    switch (type) {
+      case 'buy_limit':
+        return 'Limit';
+      case 'sell_limit':
+        return 'Limit';
+      case 'buy_stop':
+        return 'Stop';
+      case 'sell_stop':
+        return 'Stop';
+      case 'buy_stop_limit':
+        return 'Stop Limit';
+      case 'sell_stop_limit':
+        return 'Stop Limit';
+      default:
+        return type;
+    }
   }
 }

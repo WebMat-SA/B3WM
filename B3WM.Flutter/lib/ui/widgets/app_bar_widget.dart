@@ -46,14 +46,6 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
           actions: [
-            if (isLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: DropdownButtonHideUnderline(
@@ -77,7 +69,15 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
             ),
-            if (!isLoading)
+            if (isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else
               IconButton(
                 icon: Icon(
                   connected ? Icons.play_circle_filled : Icons.play_circle_outline,

@@ -61,6 +61,51 @@ class OrderResult {
       );
 }
 
+class OrderInfo {
+  final int ticket;
+  final String symbol;
+  final String type;
+  final double volume;
+  final double priceOpen;
+  final double sl;
+  final double tp;
+  final String timeSetup;
+  final String timeExpiration;
+  final String state;
+  final String comment;
+  final int magic;
+
+  OrderInfo({
+    required this.ticket,
+    required this.symbol,
+    required this.type,
+    required this.volume,
+    required this.priceOpen,
+    this.sl = 0,
+    this.tp = 0,
+    this.timeSetup = '',
+    this.timeExpiration = '',
+    this.state = '',
+    this.comment = '',
+    this.magic = 0,
+  });
+
+  factory OrderInfo.fromJson(Map<String, dynamic> json) => OrderInfo(
+        ticket: json['ticket'] as int? ?? 0,
+        symbol: json['symbol'] as String? ?? '',
+        type: json['type'] as String? ?? '',
+        volume: (json['volume'] as num?)?.toDouble() ?? 0,
+        priceOpen: (json['price_open'] as num?)?.toDouble() ?? 0,
+        sl: (json['sl'] as num?)?.toDouble() ?? 0,
+        tp: (json['tp'] as num?)?.toDouble() ?? 0,
+        timeSetup: json['time_setup'] as String? ?? '',
+        timeExpiration: json['time_expiration'] as String? ?? '',
+        state: json['state'] as String? ?? '',
+        comment: json['comment'] as String? ?? '',
+        magic: json['magic'] as int? ?? 0,
+      );
+}
+
 class AccountInfo {
   final int login;
   final double balance;

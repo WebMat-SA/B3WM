@@ -5,6 +5,7 @@ import 'services/signalr_service.dart';
 import 'services/preferences_service.dart';
 import 'services/state_service.dart';
 import 'services/trading_service.dart';
+import 'services/audio_service.dart';
 import 'ui/widgets/app_bar_widget.dart';
 import 'ui/widgets/app_drawer.dart';
 import 'ui/widgets/trading_drawer.dart';
@@ -24,6 +25,7 @@ void main() async {
   );
   final preferencesService = PreferencesService();
   await preferencesService.init();
+  final audioService = AudioService();
 
   runApp(
     MultiProvider(
@@ -32,11 +34,13 @@ void main() async {
         Provider<TradingApiService>.value(value: tradingApiService),
         Provider<SignalRService>.value(value: signalRService),
         Provider<PreferencesService>.value(value: preferencesService),
+        Provider<AudioService>.value(value: audioService),
         ChangeNotifierProvider<StateService>(
           create: (_) => StateService(
             apiService: apiService,
             signalRService: signalRService,
             preferencesService: preferencesService,
+            audioService: audioService,
           ),
         ),
       ],

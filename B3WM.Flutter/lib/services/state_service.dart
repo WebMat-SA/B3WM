@@ -10,19 +10,23 @@ import '../models/symbol_config.dart';
 import 'api_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
+import 'audio_service.dart';
 
 class StateService extends ChangeNotifier {
   final ApiService _apiService;
   final SignalRService _signalRService;
   final PreferencesService _preferencesService;
+  final AudioService _audioService;
 
   StateService({
     required ApiService apiService,
     required SignalRService signalRService,
     required PreferencesService preferencesService,
+    required AudioService audioService,
   })  : _apiService = apiService,
         _signalRService = signalRService,
-        _preferencesService = preferencesService {
+        _preferencesService = preferencesService,
+        _audioService = audioService {
     _init();
   }
 
@@ -100,6 +104,7 @@ class StateService extends ChangeNotifier {
   bool get bubbleAmountFilter => _currentConfig.bubbleAmountFilter;
   bool get bubbleAgentsFilter => _currentConfig.bubbleAgentsFilter;
   bool get bubbleSoundEnabled => _currentConfig.bubbleSoundEnabled;
+  double get bubbleSoundVolume => _currentConfig.bubbleSoundVolume;
 
   // Data-driven (not persisted config)
   final Set<int> _allBubbleAgents = {};
@@ -136,6 +141,7 @@ class StateService extends ChangeNotifier {
   void setBubbleAmountFilter(bool v) { _currentConfig.bubbleAmountFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleAgentsFilter(bool v) { _currentConfig.bubbleAgentsFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleSoundEnabled(bool v) { _currentConfig.bubbleSoundEnabled = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSoundVolume(double v) { _currentConfig.bubbleSoundVolume = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
@@ -227,6 +233,7 @@ class StateService extends ChangeNotifier {
       bubbleAmountFilter: p.getBool('BubbleAmountFilter') ?? true,
       bubbleAgentsFilter: p.getBool('BubbleAgentsFilter') ?? true,
       bubbleSoundEnabled: p.getBool('BubbleSoundEnabled') ?? true,
+      bubbleSoundVolume: p.getDouble('BubbleSoundVolume') ?? 0.5,
     );
   }
 
@@ -444,7 +451,21 @@ class StateService extends ChangeNotifier {
     if (_bubbles.length > maxBubbles) {
       _bubbles.removeRange(0, _bubbles.length - maxBubbles);
     }
+    if (bubbleSoundEnabled && _bubblePassesFilters(data)) {
+      _audioService.playNotification(volume: bubbleSoundVolume);
+    }
     notifyListeners();
+  }
+
+  bool _bubblePassesFilters(BubbleStorageItem b) {
+    if (bubbleAmountFilter) {
+      final threshold = getThreshold(b.agent);
+      if (b.amount < threshold) return false;
+    }
+    if (bubbleAgentsFilter) {
+      if (!selectedAgents.contains(b.agent)) return false;
+    }
+    return true;
   }
 
   void _handleVolumeUpdate(VolumeLevelStorageItem volumes) {
@@ -600,6 +621,7 @@ class StateService extends ChangeNotifier {
     _processTimer?.cancel();
     _watchdogTimer?.cancel();
     _signalRService.dispose();
+    _audioService.dispose();
   }
 
   @override

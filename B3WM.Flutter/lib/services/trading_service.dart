@@ -66,6 +66,27 @@ class TradingApiService {
         .toList();
   }
 
+  Future<OrderResult?> cancelOrder(int orderTicket) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/trade/order-cancel'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'position_ticket': orderTicket}),
+    );
+    if (response.statusCode != 200) return null;
+    return OrderResult.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<List<OrderInfo>> getOpenOrders() async {
+    final response =
+        await _client.get(Uri.parse('$_baseUrl/api/trade/orders'));
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => OrderInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<SymbolInfo?> getSymbolInfo(String symbol) async {
     final response =
         await _client.get(Uri.parse('$_baseUrl/api/trade/symbol/$symbol'));

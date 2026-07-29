@@ -83,6 +83,32 @@ class _BubbleDrawerState extends State<BubbleDrawer> {
               ],
             ),
           ),
+          if (state.bubbleSoundEnabled)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.volume_up, size: 16, color: Colors.grey),
+                  Expanded(
+                    child: Slider(
+                      value: state.bubbleSoundVolume,
+                      min: 0.0,
+                      max: 1.0,
+                      divisions: 20,
+                      label: '${(state.bubbleSoundVolume * 100).round()}%',
+                      onChanged: (v) => state.setBubbleSoundVolume(v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 32,
+                    child: Text(
+                      '${(state.bubbleSoundVolume * 100).round()}%',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: bubbles.isEmpty
                 ? const Center(

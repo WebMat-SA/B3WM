@@ -30,6 +30,7 @@ class SymbolConfig {
   bool bubbleAmountFilter;
   bool bubbleAgentsFilter;
   bool bubbleSoundEnabled;
+  double bubbleSoundVolume;
 
   SymbolConfig({
     required this.timeFrame,
@@ -55,6 +56,7 @@ class SymbolConfig {
     required this.bubbleAmountFilter,
     required this.bubbleAgentsFilter,
     required this.bubbleSoundEnabled,
+    required this.bubbleSoundVolume,
   });
 
   SymbolConfig.withDefaults(String symbol)
@@ -80,7 +82,8 @@ class SymbolConfig {
         agentThresholds = {},
         bubbleAmountFilter = true,
         bubbleAgentsFilter = true,
-        bubbleSoundEnabled = true;
+        bubbleSoundEnabled = true,
+        bubbleSoundVolume = 0.5;
 
   factory SymbolConfig.fromJson(Map<String, dynamic> json) => SymbolConfig(
         timeFrame: json['timeFrame'] as int? ?? 2,
@@ -112,6 +115,8 @@ class SymbolConfig {
         bubbleAmountFilter: json['bubbleAmountFilter'] as bool? ?? true,
         bubbleAgentsFilter: json['bubbleAgentsFilter'] as bool? ?? true,
         bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
+        bubbleSoundVolume:
+            (json['bubbleSoundVolume'] as num?)?.toDouble() ?? 0.5,
       );
 
   Map<String, dynamic> toJson() => {
@@ -139,5 +144,6 @@ class SymbolConfig {
         'bubbleAmountFilter': bubbleAmountFilter,
         'bubbleAgentsFilter': bubbleAgentsFilter,
         'bubbleSoundEnabled': bubbleSoundEnabled,
+        'bubbleSoundVolume': bubbleSoundVolume,
       };
 }

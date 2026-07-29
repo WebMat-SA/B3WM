@@ -33,10 +33,22 @@ public class TradeController : ControllerBase
         return await ForwardPost("/api/order/close", body);
     }
 
+    [HttpPost("order-cancel")]
+    public async Task<IActionResult> CancelOrder([FromBody] JsonElement body)
+    {
+        return await ForwardPost("/api/order/cancel", body);
+    }
+
     [HttpPost("order-modify")]
     public async Task<IActionResult> ModifyPosition([FromBody] JsonElement body)
     {
         return await ForwardPost("/api/order/modify", body);
+    }
+
+    [HttpGet("orders")]
+    public async Task<IActionResult> GetOrders()
+    {
+        return await ForwardGet("/api/orders");
     }
 
     [HttpGet("account")]

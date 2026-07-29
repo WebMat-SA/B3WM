@@ -28,63 +28,15 @@ class _MapFlowChartState extends State<MapFlowChart> {
   double _lastVirtualCandleWidth = 0;
   double _lastFitAreaWidth = 0;
   double _lastCandleAreaHeight = 0;
-  bool _isUpdating = false;
-  double _lastScale = 0;
-  double _lastTy = 0;
+  Matrix4? _gestureStartMatrix;
+  double _gestureStartScale = 1;
+  Offset _gestureAccumDelta = Offset.zero;
+  double _minAllowedScale = 0.7;
 
   @override
   void initState() {
     super.initState();
     _yZoom = widget.data.yZoom;
-    _controller.addListener(_onTransformChanged);
-  }
-
-  void _onTransformChanged() {
-    if (_isUpdating) return;
-    _clampTransform();
-    if (mounted) setState(() {});
-  }
-
-  void _clampTransform() {
-    final areaW = _lastCandleAreaWidth;
-    final areaH = _lastCandleAreaHeight;
-    final vw = _lastVirtualCandleWidth;
-    if (areaW <= 0 || areaH <= 0 || vw <= 0) return;
-
-    final m = Matrix4.copy(_controller.value);
-    final s = m.getMaxScaleOnAxis();
-    final tx = m.getTranslation().x;
-    final ty = m.getTranslation().y;
-
-    final fitTx = areaW * 0.02;
-    final rawTxMin = areaW * 0.85 - vw * s;
-    final rawTxMax = areaW - ChartFixedPainter.rightReserved - vw * s;
-    final txMin = min(rawTxMin, fitTx);
-    final txMax = max(rawTxMax, fitTx);
-    final clampedTx = tx.clamp(txMin, txMax);
-
-    double clampedTy = ty;
-    if (_lastScale > 0) {
-      final delta = s / _lastScale;
-      if (delta > 1.005 || delta < 0.995) {
-        clampedTy = _lastTy;
-      } else {
-        _lastTy = ty;
-      }
-    }
-
-    final tyMin = -areaH * s;
-    final tyMax = areaH;
-    clampedTy = clampedTy.clamp(tyMin, tyMax);
-
-    if (clampedTx != tx || clampedTy != ty) {
-      _isUpdating = true;
-      m.setTranslationRaw(clampedTx, clampedTy, m.getTranslation().z);
-      _controller.value = m;
-      _isUpdating = false;
-    }
-
-    _lastScale = s;
   }
 
   @override
@@ -96,16 +48,18 @@ class _MapFlowChartState extends State<MapFlowChart> {
     if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
       final areaW = _lastCandleAreaWidth;
       if (areaW > 0) {
+        final viewerW = areaW - ChartFixedPainter.rightReserved;
+        if (viewerW <= 0) return;
         const stepX = 6.0 + 2.0;
         final vw = (widget.data.candles.length * stepX).clamp(200, 50000).toDouble();
         final t = _controller.value.getTranslation();
         final tx = t.x;
         final ty = t.y;
         final s = _controller.value[0];
-        final rightOffset = areaW - (tx + vw * s);
+        final rightOffset = viewerW - (tx + vw * s);
         const defaultRightMargin = 0.15;
-        if (rightOffset < areaW * defaultRightMargin) {
-          final newTx = areaW * (1 - defaultRightMargin) - vw * s;
+        if (rightOffset < viewerW * defaultRightMargin) {
+          final newTx = viewerW * (1 - defaultRightMargin) - vw * s;
           final m = _controller.value.clone();
           m.setTranslationRaw(newTx, ty, 0.0);
           _controller.value = m;
@@ -117,7 +71,6 @@ class _MapFlowChartState extends State<MapFlowChart> {
   @override
   void dispose() {
     _dismissTooltip();
-    _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -130,17 +83,20 @@ class _MapFlowChartState extends State<MapFlowChart> {
   }
 
   void _fitChart(double areaWidth, double virtualWidth, double areaHeight) {
-    final rightMargin = areaWidth * 0.15;
-    final leftMargin = areaWidth * 0.02;
-    final fitWidth = areaWidth - leftMargin - rightMargin;
-    final scale = max(0.1, min(1.0, fitWidth / virtualWidth));
+    final viewerW = areaWidth - ChartFixedPainter.rightReserved;
+    if (viewerW <= 0) return;
+    final leftMargin = viewerW * 0.02;
+    final rightMargin = viewerW * 0.15;
+    final fitWidth = viewerW - leftMargin - rightMargin;
+    final fitScale = max(0.1, min(1.0, fitWidth / virtualWidth));
+    _minAllowedScale = max(0.7, fitScale);
+    final scale = _minAllowedScale;
 
     final m = Matrix4.identity();
-    m.setTranslationRaw(leftMargin, 0.0, 0.0);
+    final tx = (viewerW - rightMargin) - virtualWidth * scale;
+    m.setTranslationRaw(tx, 0.0, 0.0);
     m[0] = scale;
     m[5] = scale;
-    _lastScale = scale;
-    _lastTy = 0.0;
     _controller.value = m;
   }
 
@@ -151,9 +107,75 @@ class _MapFlowChartState extends State<MapFlowChart> {
     _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth, _lastCandleAreaHeight);
   }
 
+  void _onScaleStart(ScaleStartDetails details) {
+    _gestureStartMatrix = Matrix4.copy(_controller.value);
+    _gestureStartScale = _controller.value.getMaxScaleOnAxis();
+    _gestureAccumDelta = Offset.zero;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final startM = _gestureStartMatrix;
+    if (startM == null) return;
+
+    final newScale = (_gestureStartScale * details.scale).clamp(_minAllowedScale, 5.0);
+    _gestureAccumDelta += details.focalPointDelta;
+    final newTx = startM.getTranslation().x + _gestureAccumDelta.dx;
+
+    final areaH = _lastCandleAreaHeight;
+    double newTy = 0;
+    if (areaH > 0) {
+      final range = widget.data.priceRange;
+      if (range > 0) {
+        final padding = range * 0.25;
+        final minP = widget.data.minPrice - padding;
+        final maxP = widget.data.maxPrice + padding;
+        final center = (minP + maxP) / 2;
+        final halfRange = (maxP - minP) / 2;
+        final zoomedHalf = halfRange / _yZoom;
+        final adjustedMin = center - zoomedHalf;
+        final adjustedMax = center + zoomedHalf;
+        final adjustedRange = adjustedMax - adjustedMin;
+        if (adjustedRange > 0) {
+          final lastPrice = widget.data.lastPrice;
+          final yLast = areaH - ((lastPrice - adjustedMin) / adjustedRange) * areaH;
+          newTy = areaH / 2 - yLast * newScale;
+        }
+      }
+    }
+
+    final m = Matrix4.copy(startM);
+    m[0] = newScale;
+    m[5] = newScale;
+    m.setTranslationRaw(newTx, newTy, m.getTranslation().z);
+    _controller.value = m;
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    _gestureStartMatrix = null;
+    final areaW = _lastCandleAreaWidth;
+    final vw = _lastVirtualCandleWidth;
+    if (areaW > 0 && vw > 0) {
+      final viewerW = areaW - ChartFixedPainter.rightReserved;
+      if (viewerW > 0) {
+        final m2 = _controller.value;
+        final s2 = m2.getMaxScaleOnAxis();
+        final tx2 = m2.getTranslation().x;
+        const margin = 0.02;
+        final txMin = -(vw * s2) + viewerW * margin;
+        final txMax = viewerW - vw * s2;
+        final clampedTx = tx2.clamp(txMin, txMax);
+        if (clampedTx != tx2) {
+          final m3 = _controller.value.clone();
+          m3.setTranslationRaw(clampedTx, m3.getTranslation().y, m3.getTranslation().z);
+          _controller.value = m3;
+        }
+      }
+    }
+  }
+
   void _handleScroll(PointerScrollEvent event) {
     setState(() {
-      _yZoom = (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.3, 10.0);
+      _yZoom = (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.9, 10.0);
     });
     _centerLastCandleY();
   }
@@ -183,14 +205,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
     final tx = m.getTranslation().x;
     final ty = areaH / 2 - yLast * s;
     m.setTranslationRaw(tx, ty, m.getTranslation().z);
-    _lastTy = ty;
-    _lastScale = s;
-    _isUpdating = true;
     _controller.value = m;
-    _isUpdating = false;
-  }
-
-  void _handleTap(TapDownDetails details, double candleAreaWidth, double candleAreaHeight, double stepX) {
   }
 
   void _handleHover(PointerEvent event, double candleAreaWidth, double candleAreaHeight, double stepX) {
@@ -357,22 +372,31 @@ class _MapFlowChartState extends State<MapFlowChart> {
                     child: GestureDetector(
                       onTapDown: (details) {
                         _focusNode.requestFocus();
-                        _handleTap(details, candleAreaWidth, candleAreaHeight, stepX);
                       },
-                      child: InteractiveViewer(
-                        transformationController: _controller,
-                        constrained: false,
-                        boundaryMargin: const EdgeInsets.all(double.infinity),
-                        minScale: 0.5,
-                        maxScale: 5.0,
-
-                        child: CustomPaint(
-                          size: Size(virtualCandleWidth, candleAreaHeight),
-                          painter: ChartPainter(
-                            data: data,
-                            candleWidth: candleWidth,
-                            candleSpacing: candleSpacing,
-                            yZoom: _yZoom,
+                      onScaleStart: _onScaleStart,
+                      onScaleUpdate: _onScaleUpdate,
+                      onScaleEnd: _onScaleEnd,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => OverflowBox(
+                          minWidth: constraints.maxWidth,
+                          maxWidth: double.infinity,
+                          minHeight: constraints.maxHeight,
+                          maxHeight: constraints.maxHeight,
+                          alignment: Alignment.topLeft,
+                          child: ValueListenableBuilder<Matrix4>(
+                            valueListenable: _controller,
+                            builder: (context, matrix, _) => Transform(
+                              transform: matrix,
+                              child: CustomPaint(
+                                size: Size(virtualCandleWidth, candleAreaHeight),
+                                painter: ChartPainter(
+                                  data: data,
+                                  candleWidth: candleWidth,
+                                  candleSpacing: candleSpacing,
+                                  yZoom: _yZoom,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),

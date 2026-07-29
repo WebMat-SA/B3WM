@@ -12,6 +12,7 @@ from models.order import (
     HistoryDeal,
     MarketOrderRequest,
     ModifyOrderRequest,
+    OrderInfo,
     OrderResult,
     PositionInfo,
     SymbolInfo,
@@ -62,6 +63,12 @@ async def close_position(request: CloseOrderRequest):
     return result
 
 
+@app.post("/api/order/cancel", response_model=OrderResult)
+async def cancel_order(request: CloseOrderRequest):
+    result = executor.cancel_order(request.position_ticket)
+    return result
+
+
 @app.post("/api/order/modify", response_model=OrderResult)
 async def modify_position(request: ModifyOrderRequest):
     result = executor.modify_position(
@@ -78,6 +85,11 @@ async def get_account_info():
     if info is None:
         raise HTTPException(status_code=500, detail="Failed to get account info")
     return info
+
+
+@app.get("/api/orders", response_model=list[OrderInfo])
+async def get_orders():
+    return executor.get_orders()
 
 
 @app.get("/api/positions", response_model=list[PositionInfo])
