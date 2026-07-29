@@ -21,8 +21,8 @@ class _MapFlowChartState extends State<MapFlowChart> {
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
   double? _hoverY;
-  OverlayEntry? _tooltipOverlay;
-  Timer? _tapTimer;
+  BubblePoint? _hoveredBubble;
+  Offset? _hoverPos;
   bool _initialFitDone = false;
   double _lastCandleAreaWidth = 0;
   double _lastVirtualCandleWidth = 0;
@@ -124,10 +124,9 @@ class _MapFlowChartState extends State<MapFlowChart> {
   }
 
   void _dismissTooltip() {
-    _tapTimer?.cancel();
-    _tooltipOverlay?.remove();
-    _tooltipOverlay = null;
-    if (_hoverY != null) _hoverY = null;
+    _hoveredBubble = null;
+    _hoverPos = null;
+    _hoverY = null;
   }
 
   void _fitChart(double areaWidth, double virtualWidth, double areaHeight) {
@@ -196,8 +195,46 @@ class _MapFlowChartState extends State<MapFlowChart> {
 
   void _handleHover(PointerEvent event, double candleAreaWidth, double candleAreaHeight, double stepX) {
     if (!_initialFitDone) return;
+
+    final localX = event.localPosition.dx;
+    final localY = event.localPosition.dy;
+
+    final m = _controller.value;
+    final scaleX = m[0];
+    final scaleY = m[5];
+    final tx = m.getTranslation().x;
+    final ty = m.getTranslation().y;
+
+    final childX = (localX - tx) / scaleX;
+    final childY = (localY - ty) / scaleY;
+
+    final data = widget.data;
+
+    BubblePoint? hit;
+
+    void checkBubbles(List<BubblePoint> bubbles) {
+      for (final b in bubbles) {
+        final bx = b.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
+        final by = _toChildY(b.price, candleAreaHeight);
+        var r = sqrt(b.amount) * 1.5;
+        r = r.clamp(data.bubbleSizeMin, data.bubbleSizeMax);
+        if (r < 2) continue;
+        final dx = childX - bx;
+        final dy = childY - by;
+        if (dx * dx + dy * dy <= r * r) {
+          hit = b;
+          return;
+        }
+      }
+    }
+
+    checkBubbles(data.blueBubbles);
+    if (hit == null) checkBubbles(data.redBubbles);
+
     setState(() {
-      _hoverY = event.localPosition.dy;
+      _hoverY = localY;
+      _hoveredBubble = hit;
+      _hoverPos = hit != null ? event.localPosition : null;
     });
   }
 
@@ -215,6 +252,22 @@ class _MapFlowChartState extends State<MapFlowChart> {
     final adjustedRange = adjustedMax - adjustedMin;
     if (adjustedRange <= 0) return 0;
     return adjustedMin + ((chartHeight - y) / chartHeight) * adjustedRange;
+  }
+
+  double _toChildY(double price, double chartHeight) {
+    final range = widget.data.priceRange;
+    if (range <= 0) return chartHeight / 2;
+    final padding = range * 0.25;
+    final minP = widget.data.minPrice - padding;
+    final maxP = widget.data.maxPrice + padding;
+    final center = (minP + maxP) / 2;
+    final halfRange = (maxP - minP) / 2;
+    final zoomedHalf = halfRange / _yZoom;
+    final adjustedMin = center - zoomedHalf;
+    final adjustedMax = center + zoomedHalf;
+    final adjustedRange = adjustedMax - adjustedMin;
+    if (adjustedRange <= 0) return chartHeight / 2;
+    return chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
   }
 
   @override
@@ -300,7 +353,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
                   },
                   child: MouseRegion(
                     onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
-                    onExit: (e) { if (_hoverY != null) setState(() => _hoverY = null); },
+                    onExit: (e) { if (_hoverY != null || _hoveredBubble != null) setState(() { _hoverY = null; _hoveredBubble = null; _hoverPos = null; }); },
                     child: GestureDetector(
                       onTapDown: (details) {
                         _focusNode.requestFocus();
@@ -345,15 +398,37 @@ class _MapFlowChartState extends State<MapFlowChart> {
                     style: TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                 ),
-              ),
             ),
-          ],
-        );
-      },
+          ),
+          if (_hoveredBubble != null && _hoverPos != null)
+            Positioned(
+              left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
+              top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
+              child: _buildBubbleTooltip(_hoveredBubble!),
+            ),
+        ],
+      );
+    },
+  );
+ }
+
+  Widget _buildBubbleTooltip(BubblePoint bubble) {
+    final color = bubble.isBuy ? widget.data.colorBuyer : widget.data.colorSeller;
+    final dt = bubble.date;
+    final timeStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+    return _buildTooltip(
+      bubble.agentName,
+      [
+        _TooltipRow('Qtd', bubble.amount.toStringAsFixed(0)),
+        _TooltipRow('Preço', bubble.price.toStringAsFixed(1)),
+        _TooltipRow('Hora', timeStr),
+      ],
+      titleColor: color,
     );
   }
 
-  Widget _buildTooltip(String title, List<_TooltipRow> rows) {
+  Widget _buildTooltip(String title, List<_TooltipRow> rows, {Color? titleColor}) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 180),
       padding: const EdgeInsets.all(8),
@@ -370,7 +445,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
               title,
-              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              style: TextStyle(color: titleColor ?? Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
             ),
           ),
           for (final row in rows)

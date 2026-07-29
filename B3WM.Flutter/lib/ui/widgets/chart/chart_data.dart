@@ -27,6 +27,7 @@ class BubblePoint {
   final bool isBuy;
   final String agentName;
   final int candleIndex;
+  final DateTime date;
 
   BubblePoint({
     required this.price,
@@ -34,6 +35,7 @@ class BubblePoint {
     required this.isBuy,
     required this.agentName,
     required this.candleIndex,
+    required this.date,
   });
 }
 
@@ -210,6 +212,7 @@ ChartData buildChartData(StateService state) {
         isBuy: b.actionType == ActionType.buy,
         agentName: Agents.fromValue(b.agent)?.description ?? '',
         candleIndex: findCandleIndex(b.date),
+        date: b.date,
       );
       if (b.actionType == ActionType.buy) {
         blueBubbles.add(pt);
