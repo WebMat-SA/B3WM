@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'chart_data.dart';
+import '../../../models/defaults.dart';
 
 class ChartFixedPainter extends CustomPainter {
   final ChartData data;
@@ -15,7 +16,7 @@ class ChartFixedPainter extends CustomPainter {
   static const double marginBottom = 24;
   static const double profileWidth = 60;
   static const double rightLabelMargin = 64;
-  static const double rightReserved = profileWidth + rightLabelMargin;
+  static const double rightReserved = 168;
   static const double candleStep = 8.0;
 
   static const Color textColor = Color(0xFFaaaaaa);
@@ -89,9 +90,12 @@ class ChartFixedPainter extends CustomPainter {
     _drawBackground(canvas, size);
     _drawGridLines(canvas);
     _drawXAxis(canvas);
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
-    _drawYAxis(canvas);
     _drawMarkLine(canvas);
+    canvas.restore();
+    _drawYAxis(canvas);
     if (hoverY != null) _drawHoverLine(canvas, hoverY!);
     _drawWatermark(canvas, size);
   }
@@ -117,12 +121,17 @@ class ChartFixedPainter extends CustomPainter {
     }
   }
 
+  double _snapToTick(double price, double tick) {
+    return (price / tick).round() * tick;
+  }
+
   void _drawYAxis(Canvas canvas) {
     const lines = 8;
+    final tick = Defaults.tickSize(data.symbol);
     for (int i = 0; i <= lines; i++) {
       final y = marginTop + (chartHeight / lines) * i;
-      final price = _yToPrice(y);
-      final label = price.round().toString();
+      final price = _snapToTick(_yToPrice(y), tick);
+      final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
 
       final tp = TextPainter(
         text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
@@ -133,8 +142,8 @@ class ChartFixedPainter extends CustomPainter {
 
     for (int i = 0; i <= lines; i++) {
       final y = marginTop + (chartHeight / lines) * i;
-      final price = _yToPrice(y);
-      final label = price.round().toString();
+      final price = _snapToTick(_yToPrice(y), tick);
+      final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
 
       final tp = TextPainter(
         text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
@@ -217,6 +226,14 @@ class ChartFixedPainter extends CustomPainter {
     }
   }
 
+  int _decimalPlaces(String symbol) {
+    final tick = Defaults.tickSize(symbol);
+    if (tick == tick.roundToDouble()) return 0;
+    final str = tick.toStringAsFixed(10);
+    final dot = str.indexOf('.');
+    return str.substring(dot + 1).replaceAll(RegExp(r'0+$'), '').length;
+  }
+
   void _drawMarkLine(Canvas canvas) {
     final y = _priceToY(data.lastPrice);
 
@@ -225,7 +242,7 @@ class ChartFixedPainter extends CustomPainter {
       ..strokeWidth = 1;
     _drawDashedLine(canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
 
-    final label = data.lastPrice.toStringAsFixed(2);
+    final label = data.lastPrice.toStringAsFixed(_decimalPlaces(data.symbol));
     final textPainter = TextPainter(
       text: TextSpan(
         text: label,
@@ -249,14 +266,15 @@ class ChartFixedPainter extends CustomPainter {
 
   void _drawHoverLine(Canvas canvas, double chartY) {
     final canvasY = marginTop + chartY;
-    final price = _yToPrice(canvasY);
+    final tick = Defaults.tickSize(data.symbol);
+    final price = _snapToTick(_yToPrice(canvasY), tick);
 
     final paint = Paint()
       ..color = const Color(0xFFaaaaaa)
       ..strokeWidth = 1;
     _drawDashedLine(canvas, Offset(marginLeft, canvasY), Offset(chartRight, canvasY), paint);
 
-    final label = price.toStringAsFixed(2);
+    final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
     final textPainter = TextPainter(
       text: TextSpan(
         text: label,

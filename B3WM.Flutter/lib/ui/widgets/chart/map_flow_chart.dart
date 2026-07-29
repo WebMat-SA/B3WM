@@ -279,7 +279,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
             Positioned(
               left: ChartFixedPainter.marginLeft,
               top: ChartFixedPainter.marginTop,
-              width: candleAreaWidth,
+              width: max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
               height: candleAreaHeight,
               child: ClipRect(
                 child: Focus(
