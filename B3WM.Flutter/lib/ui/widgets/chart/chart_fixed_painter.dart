@@ -141,6 +141,7 @@ class ChartFixedPainter extends CustomPainter {
     }
 
     for (int i = 0; i <= lines; i++) {
+      if (i == 0 || i == lines) continue;
       final y = marginTop + (chartHeight / lines) * i;
       final price = _snapToTick(_yToPrice(y), tick);
       final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
