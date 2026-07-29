@@ -35,6 +35,8 @@ class ChartPainter extends CustomPainter {
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
+    _drawPositions(canvas, chartWidth, chartHeight);
+    _drawOrders(canvas, chartWidth, chartHeight);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
   }
 
@@ -236,6 +238,118 @@ class ChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.1;
       canvas.drawCircle(Offset(x, y), r, strokePaint);
+    }
+  }
+
+  void _drawPositions(Canvas canvas, double chartWidth, double chartHeight) {
+    for (final pos in data.positions) {
+      final y = _priceToY(pos.priceOpen, chartHeight);
+      if (y < 0 || y > chartHeight) continue;
+
+      final isBuy = pos.type == 'buy';
+      final color = isBuy ? Colors.green : Colors.red;
+
+      final paint = Paint()
+        ..color = color.withOpacity(0.8)
+        ..strokeWidth = 2;
+      canvas.drawLine(Offset(0, y), Offset(chartWidth, y), paint);
+
+      _drawCloseButton(canvas, y, Colors.red);
+
+      const btnWithGap = 20.0;
+      final label = '${isBuy ? 'B' : 'S'} ${pos.volume.toStringAsFixed(2)}';
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final bgRect = Rect.fromLTWH(
+        btnWithGap - 4,
+        y - tp.height / 2 - 2,
+        tp.width + 8,
+        tp.height + 4,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
+        Paint()..color = color.withOpacity(0.8),
+      );
+      tp.paint(canvas, Offset(btnWithGap, y - tp.height / 2));
+    }
+  }
+
+  void _drawOrders(Canvas canvas, double chartWidth, double chartHeight) {
+    for (final order in data.orders) {
+      final y = _priceToY(order.priceOpen, chartHeight);
+      if (y < 0 || y > chartHeight) continue;
+
+      final isBuy = order.type.startsWith('buy');
+      final color = isBuy ? Colors.green : Colors.red;
+
+      final paint = Paint()
+        ..color = color.withOpacity(0.6)
+        ..strokeWidth = 1.5;
+      _drawDashedLine(canvas, Offset(0, y), Offset(chartWidth, y), paint);
+
+      _drawCloseButton(canvas, y, Colors.red);
+
+      const btnWithGap = 20.0;
+      final typeLabel = _orderTypeShort(order.type);
+      final label = '$typeLabel ${order.volume.toStringAsFixed(2)}';
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(color: Colors.white, fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final bgRect = Rect.fromLTWH(
+        btnWithGap - 4,
+        y - tp.height / 2 - 2,
+        tp.width + 8,
+        tp.height + 4,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
+        Paint()..color = color.withOpacity(0.6),
+      );
+      tp.paint(canvas, Offset(btnWithGap, y - tp.height / 2));
+    }
+  }
+
+  void _drawCloseButton(Canvas canvas, double cy, Color color) {
+    const size = 14.0;
+    final r = Rect.fromLTWH(2, cy - size / 2, size, size);
+    canvas.drawCircle(r.center, size / 2, Paint()..color = color);
+    final xPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const m = 4.0;
+    canvas.drawLine(Offset(r.left + m, r.top + m), Offset(r.right - m, r.bottom - m), xPaint);
+    canvas.drawLine(Offset(r.right - m, r.top + m), Offset(r.left + m, r.bottom - m), xPaint);
+  }
+
+  String _orderTypeShort(String type) {
+    switch (type) {
+      case 'buy_limit':
+        return 'Buy Limit';
+      case 'sell_limit':
+        return 'Sell Limit';
+      case 'buy_stop':
+        return 'Buy Stop';
+      case 'sell_stop':
+        return 'Sell Stop';
+      case 'buy_stop_limit':
+        return 'Buy S/L';
+      case 'sell_stop_limit':
+        return 'Sell S/L';
+      default:
+        return type;
     }
   }
 

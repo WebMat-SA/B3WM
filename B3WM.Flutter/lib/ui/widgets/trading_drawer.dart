@@ -114,6 +114,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
       final api = context.read<TradingApiService>();
       final fresh = await api.getPositions();
       _positions = fresh;
+      if (mounted) context.read<StateService>().updatePositions(_positions);
     } catch (_) {
       // keep old list on error
     } finally {
@@ -127,6 +128,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
       final api = context.read<TradingApiService>();
       final fresh = await api.getOpenOrders();
       _orders = fresh;
+      if (mounted) context.read<StateService>().updateOrders(_orders);
     } catch (_) {
       // keep old list on error
     } finally {

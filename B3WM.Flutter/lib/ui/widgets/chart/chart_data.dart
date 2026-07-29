@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:ui' show Color;
 import '../../../services/state_service.dart';
 import '../../../models/ticks2.dart';
+import '../../../models/trade_models.dart';
 
 class CandlePoint {
   final DateTime date;
@@ -103,6 +104,8 @@ class ChartData {
   final double yZoom;
   final double bubbleSizeMin;
   final double bubbleSizeMax;
+  final List<PositionInfo> positions;
+  final List<OrderInfo> orders;
 
   ChartData({
     required this.candles,
@@ -130,6 +133,8 @@ class ChartData {
     this.yZoom = 1.0,
     this.bubbleSizeMin = 20,
     this.bubbleSizeMax = 100,
+    this.positions = const [],
+    this.orders = const [],
   });
 
   double get priceRange => maxPrice - minPrice;
@@ -293,6 +298,13 @@ ChartData buildChartData(StateService state) {
     return candleEnd.difference(now).inSeconds.clamp(0, 9999);
   }
 
+  final positions = state.positions
+      .where((p) => _normalizeTradeSymbol(p.symbol) == state.symbol)
+      .toList();
+  final orders = state.orders
+      .where((o) => _normalizeTradeSymbol(o.symbol) == state.symbol)
+      .toList();
+
   return ChartData(
     candles: candles,
     redBubbles: redBubbles,
@@ -318,7 +330,16 @@ ChartData buildChartData(StateService state) {
     yZoom: state.yZoom,
     bubbleSizeMin: state.bubbleSizeMin,
     bubbleSizeMax: state.bubbleSizeMax,
+    positions: positions,
+    orders: orders,
   );
+}
+
+String _normalizeTradeSymbol(String mt5Symbol) {
+  final s = mt5Symbol.toUpperCase();
+  if (s.startsWith('WIN')) return 'WINFUT';
+  if (s.startsWith('WDO')) return 'WDOFUT';
+  return s;
 }
 
 Color _parseHexColor(String hex) {

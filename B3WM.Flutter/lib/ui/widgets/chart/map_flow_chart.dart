@@ -3,9 +3,12 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
+import '../../../services/trading_service.dart';
+import '../../../services/state_service.dart';
 
 class MapFlowChart extends StatefulWidget {
   final ChartData data;
@@ -28,15 +31,17 @@ class _MapFlowChartState extends State<MapFlowChart> {
   double _lastVirtualCandleWidth = 0;
   double _lastFitAreaWidth = 0;
   double _lastCandleAreaHeight = 0;
-  Matrix4? _gestureStartMatrix;
-  double _gestureStartScale = 1;
-  Offset _gestureAccumDelta = Offset.zero;
   double _minAllowedScale = 0.7;
 
   @override
   void initState() {
     super.initState();
     _yZoom = widget.data.yZoom;
+    _controller.addListener(_onTransformChanged);
+  }
+
+  void _onTransformChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -71,6 +76,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
   @override
   void dispose() {
     _dismissTooltip();
+    _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -107,70 +113,27 @@ class _MapFlowChartState extends State<MapFlowChart> {
     _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth, _lastCandleAreaHeight);
   }
 
-  void _onScaleStart(ScaleStartDetails details) {
-    _gestureStartMatrix = Matrix4.copy(_controller.value);
-    _gestureStartScale = _controller.value.getMaxScaleOnAxis();
-    _gestureAccumDelta = Offset.zero;
-  }
-
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    final startM = _gestureStartMatrix;
-    if (startM == null) return;
-
-    final newScale = (_gestureStartScale * details.scale).clamp(_minAllowedScale, 5.0);
-    _gestureAccumDelta += details.focalPointDelta;
-    final newTx = startM.getTranslation().x + _gestureAccumDelta.dx;
-
-    final areaH = _lastCandleAreaHeight;
-    double newTy = 0;
-    if (areaH > 0) {
-      final range = widget.data.priceRange;
-      if (range > 0) {
-        final padding = range * 0.25;
-        final minP = widget.data.minPrice - padding;
-        final maxP = widget.data.maxPrice + padding;
-        final center = (minP + maxP) / 2;
-        final halfRange = (maxP - minP) / 2;
-        final zoomedHalf = halfRange / _yZoom;
-        final adjustedMin = center - zoomedHalf;
-        final adjustedMax = center + zoomedHalf;
-        final adjustedRange = adjustedMax - adjustedMin;
-        if (adjustedRange > 0) {
-          final lastPrice = widget.data.lastPrice;
-          final yLast = areaH - ((lastPrice - adjustedMin) / adjustedRange) * areaH;
-          newTy = areaH / 2 - yLast * newScale;
-        }
-      }
-    }
-
-    final m = Matrix4.copy(startM);
-    m[0] = newScale;
-    m[5] = newScale;
-    m.setTranslationRaw(newTx, newTy, m.getTranslation().z);
-    _controller.value = m;
-  }
-
-  void _onScaleEnd(ScaleEndDetails details) {
-    _gestureStartMatrix = null;
+  void _onInteractionEnd() {
     final areaW = _lastCandleAreaWidth;
     final vw = _lastVirtualCandleWidth;
     if (areaW > 0 && vw > 0) {
       final viewerW = areaW - ChartFixedPainter.rightReserved;
       if (viewerW > 0) {
-        final m2 = _controller.value;
-        final s2 = m2.getMaxScaleOnAxis();
-        final tx2 = m2.getTranslation().x;
+        final m = _controller.value;
+        final s = m.getMaxScaleOnAxis();
+        final tx = m.getTranslation().x;
         const margin = 0.02;
-        final txMin = -(vw * s2) + viewerW * margin;
-        final txMax = viewerW - vw * s2;
-        final clampedTx = tx2.clamp(txMin, txMax);
-        if (clampedTx != tx2) {
-          final m3 = _controller.value.clone();
-          m3.setTranslationRaw(clampedTx, m3.getTranslation().y, m3.getTranslation().z);
-          _controller.value = m3;
+        final txMin = -(vw * s) + viewerW * margin;
+        final txMax = viewerW * margin;
+        final clampedTx = tx.clamp(txMin, txMax);
+        if (clampedTx != tx) {
+          final m2 = _controller.value.clone();
+          m2.setTranslationRaw(clampedTx, m2.getTranslation().y, m2.getTranslation().z);
+          _controller.value = m2;
         }
       }
     }
+    _centerLastCandleY();
   }
 
   void _handleScroll(PointerScrollEvent event) {
@@ -251,6 +214,83 @@ class _MapFlowChartState extends State<MapFlowChart> {
       _hoveredBubble = hit;
       _hoverPos = hit != null ? event.localPosition : null;
     });
+  }
+
+  void _handleTap(TapDownDetails details, double candleAreaWidth, double candleAreaHeight) {
+    final m = _controller.value;
+    final childX = (details.localPosition.dx - m.getTranslation().x) / m[0];
+    final childY = (details.localPosition.dy - m.getTranslation().y) / m[5];
+
+    const btnSize = 14.0;
+    for (final pos in widget.data.positions) {
+      final y = _toChildY(pos.priceOpen, candleAreaHeight);
+      if (Rect.fromLTWH(2, y - btnSize / 2, btnSize, btnSize).contains(Offset(childX, childY))) {
+        _closePosition(pos.ticket);
+        return;
+      }
+    }
+
+    for (final order in widget.data.orders) {
+      final y = _toChildY(order.priceOpen, candleAreaHeight);
+      if (Rect.fromLTWH(2, y - btnSize / 2, btnSize, btnSize).contains(Offset(childX, childY))) {
+        _cancelOrder(order.ticket);
+        return;
+      }
+    }
+  }
+
+  Future<void> _closePosition(int ticket) async {
+    try {
+      final api = context.read<TradingApiService>();
+      final result = await api.closePosition(ticket);
+      if (result != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.success
+                ? 'Position $ticket closed @ ${result.price.toStringAsFixed(2)}'
+                : 'Failed to close: ${result.message}'),
+            backgroundColor: result.success ? Colors.green : Colors.red,
+          ),
+        );
+      }
+      if (mounted) {
+        final fresh = await context.read<TradingApiService>().getPositions();
+        if (mounted) context.read<StateService>().updatePositions(fresh);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _cancelOrder(int ticket) async {
+    try {
+      final api = context.read<TradingApiService>();
+      final result = await api.cancelOrder(ticket);
+      if (result != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.success
+                ? 'Order $ticket cancelled'
+                : 'Failed to cancel: ${result.message}'),
+            backgroundColor: result.success ? Colors.green : Colors.red,
+          ),
+        );
+      }
+      if (mounted) {
+        final fresh = await context.read<TradingApiService>().getOpenOrders();
+        if (mounted) context.read<StateService>().updateOrders(fresh);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   double _yToPrice(double y, double chartHeight) {
@@ -372,31 +412,23 @@ class _MapFlowChartState extends State<MapFlowChart> {
                     child: GestureDetector(
                       onTapDown: (details) {
                         _focusNode.requestFocus();
+                        _handleTap(details, candleAreaWidth, candleAreaHeight);
                       },
-                      onScaleStart: _onScaleStart,
-                      onScaleUpdate: _onScaleUpdate,
-                      onScaleEnd: _onScaleEnd,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) => OverflowBox(
-                          minWidth: constraints.maxWidth,
-                          maxWidth: double.infinity,
-                          minHeight: constraints.maxHeight,
-                          maxHeight: constraints.maxHeight,
-                          alignment: Alignment.topLeft,
-                          child: ValueListenableBuilder<Matrix4>(
-                            valueListenable: _controller,
-                            builder: (context, matrix, _) => Transform(
-                              transform: matrix,
-                              child: CustomPaint(
-                                size: Size(virtualCandleWidth, candleAreaHeight),
-                                painter: ChartPainter(
-                                  data: data,
-                                  candleWidth: candleWidth,
-                                  candleSpacing: candleSpacing,
-                                  yZoom: _yZoom,
-                                ),
-                              ),
-                            ),
+                      child: InteractiveViewer(
+                        transformationController: _controller,
+                        constrained: false,
+                        boundaryMargin: const EdgeInsets.all(double.infinity),
+                        minScale: _minAllowedScale,
+                        maxScale: 5.0,
+                        onInteractionEnd: (_) => _onInteractionEnd(),
+
+                        child: CustomPaint(
+                          size: Size(virtualCandleWidth, candleAreaHeight),
+                          painter: ChartPainter(
+                            data: data,
+                            candleWidth: candleWidth,
+                            candleSpacing: candleSpacing,
+                            yZoom: _yZoom,
                           ),
                         ),
                       ),

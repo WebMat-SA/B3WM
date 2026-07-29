@@ -11,6 +11,7 @@ import 'api_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
 import 'audio_service.dart';
+import '../models/trade_models.dart';
 
 class StateService extends ChangeNotifier {
   final ApiService _apiService;
@@ -69,6 +70,12 @@ class StateService extends ChangeNotifier {
       _structures
           .where((s) => s.timeFrame == _currentConfig.timeFrame && s.symbol == _symbol)
           .toList();
+
+  List<PositionInfo> _positions = [];
+  List<PositionInfo> get positions => _positions;
+
+  List<OrderInfo> _orders = [];
+  List<OrderInfo> get orders => _orders;
 
   // --- Per-symbol configs ---
   final Map<String, SymbolConfig> _configs = {};
@@ -606,6 +613,18 @@ class StateService extends ChangeNotifier {
     final structures =
         await _apiService.setStructureDistance(_symbol, minDistance);
     _structures = structures;
+    notifyListeners();
+  }
+
+  // --- Positions & Orders ---
+
+  void updatePositions(List<PositionInfo> positions) {
+    _positions = positions;
+    notifyListeners();
+  }
+
+  void updateOrders(List<OrderInfo> orders) {
+    _orders = orders;
     notifyListeners();
   }
 
