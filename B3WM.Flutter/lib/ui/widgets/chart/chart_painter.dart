@@ -7,6 +7,9 @@ class ChartPainter extends CustomPainter {
   final double candleWidth;
   final double candleSpacing;
   final double yZoom;
+  final Set<int> closingTickets;
+  final Set<int> cancellingTickets;
+  final double loadingAnimation;
 
   static const Color candleUpColor = Color(0xFFFFFFFF);
   static const Color candleDownColor = Color(0xFF000000);
@@ -18,6 +21,9 @@ class ChartPainter extends CustomPainter {
     this.candleWidth = 6.0,
     this.candleSpacing = 2.0,
     this.yZoom = 1.0,
+    this.closingTickets = const {},
+    this.cancellingTickets = const {},
+    this.loadingAnimation = 0,
   });
 
   @override
@@ -254,7 +260,7 @@ class ChartPainter extends CustomPainter {
         ..strokeWidth = 2;
       canvas.drawLine(Offset(0, y), Offset(chartWidth, y), paint);
 
-      _drawCloseButton(canvas, y, Colors.red);
+      _drawCloseButton(canvas, y, Colors.red, closingTickets.contains(pos.ticket));
 
       const btnWithGap = 20.0;
       final label = '${isBuy ? 'B' : 'S'} ${pos.volume.toStringAsFixed(2)}';
@@ -294,7 +300,7 @@ class ChartPainter extends CustomPainter {
         ..strokeWidth = 1.5;
       _drawDashedLine(canvas, Offset(0, y), Offset(chartWidth, y), paint);
 
-      _drawCloseButton(canvas, y, Colors.red);
+      _drawCloseButton(canvas, y, Colors.red, cancellingTickets.contains(order.ticket));
 
       const btnWithGap = 20.0;
       final typeLabel = _orderTypeShort(order.type);
@@ -321,7 +327,11 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  void _drawCloseButton(Canvas canvas, double cy, Color color) {
+  void _drawCloseButton(Canvas canvas, double cy, Color color, bool isLoading) {
+    if (isLoading) {
+      _drawLoadingSpinner(canvas, cy);
+      return;
+    }
     const size = 14.0;
     final r = Rect.fromLTWH(2, cy - size / 2, size, size);
     canvas.drawCircle(r.center, size / 2, Paint()..color = color);
@@ -332,6 +342,23 @@ class ChartPainter extends CustomPainter {
     const m = 4.0;
     canvas.drawLine(Offset(r.left + m, r.top + m), Offset(r.right - m, r.bottom - m), xPaint);
     canvas.drawLine(Offset(r.right - m, r.top + m), Offset(r.left + m, r.bottom - m), xPaint);
+  }
+
+  void _drawLoadingSpinner(Canvas canvas, double cy) {
+    const size = 14.0;
+    final cx = 2.0 + size / 2;
+    final center = Offset(cx, cy);
+    final bgPaint = Paint()..color = Colors.grey.withOpacity(0.5);
+    canvas.drawCircle(center, size / 2, bgPaint);
+    final arcPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final rect = Rect.fromCircle(center: center, radius: size / 2 - 2);
+    final startAngle = loadingAnimation * 2 * pi - pi / 2;
+    const sweepAngle = 4 * pi / 3;
+    canvas.drawArc(rect, startAngle, sweepAngle, false, arcPaint);
   }
 
   String _orderTypeShort(String type) {

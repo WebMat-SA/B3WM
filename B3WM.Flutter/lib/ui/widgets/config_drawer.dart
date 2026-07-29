@@ -15,6 +15,7 @@ class ConfigDrawer extends StatefulWidget {
 
 class _ConfigDrawerState extends State<ConfigDrawer> {
   int? _editingAgent;
+  bool _isStructureRangeLoading = false;
   final Map<int, TextEditingController> _thresholdControllers = {};
 
   @override
@@ -86,7 +87,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
 
   Widget _sliderRow(String label, double value, double min, double max,
       ValueChanged<double> onChanged,
-      {int decimals = 2, double step = 0.01}) {
+      {int decimals = 2, double step = 0.01, Widget? trailing}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -95,6 +96,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
             Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
             Text(value.toStringAsFixed(decimals),
                 style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            if (trailing != null) trailing,
           ],
         ),
         Slider(
@@ -160,7 +162,32 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
           _sliderRow('Range to Update', state.structureRangeUpd, 0,
               Defaults.structureRangeUpdMax(state.symbol),
               (v) => state.setStructureRangeUpd(v),
-              decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol)),
+              decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol),
+              trailing: state.isStructureUpdating
+                  ? _isStructureRangeLoading
+                      ? const Padding(
+                          padding: EdgeInsets.only(left: 4),
+                          child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2)))
+                      : IconButton(
+                          icon: const Icon(Icons.upload,
+                              color: Colors.orange),
+                          onPressed: () async {
+                            setState(
+                                () => _isStructureRangeLoading = true);
+                            await state.confirmStructureRangeUpd();
+                            if (mounted) {
+                              setState(() =>
+                                  _isStructureRangeLoading = false);
+                            }
+                          },
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        )
+                  : null),
         ],
       ),
     );

@@ -113,6 +113,9 @@ class StateService extends ChangeNotifier {
   bool get bubbleSoundEnabled => _currentConfig.bubbleSoundEnabled;
   double get bubbleSoundVolume => _currentConfig.bubbleSoundVolume;
 
+  bool _isStructureUpdating = false;
+  bool get isStructureUpdating => _isStructureUpdating;
+
   // Data-driven (not persisted config)
   final Set<int> _allBubbleAgents = {};
   Set<int> get allBubbleAgents => _allBubbleAgents;
@@ -140,10 +143,16 @@ class StateService extends ChangeNotifier {
   void setStructureVisible(bool v) { _currentConfig.structureVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setStructureAuxVisible(bool v) { _currentConfig.structureAuxVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setStructureOpacity(double v) { _currentConfig.structureOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setStructureRangeUpd(double v) { _currentConfig.structureRangeUpd = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureRangeUpd(double v) { _currentConfig.structureRangeUpd = v; _isStructureUpdating = true; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setColorBuyer(String v) { _currentConfig.colorBuyer = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setColorSeller(String v) { _currentConfig.colorSeller = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+
+  Future<void> confirmStructureRangeUpd() async {
+    await setMinDistanceStructure(_currentConfig.structureRangeUpd);
+    _isStructureUpdating = false;
+    notifyListeners();
+  }
 
   void setBubbleAmountFilter(bool v) { _currentConfig.bubbleAmountFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleAgentsFilter(bool v) { _currentConfig.bubbleAgentsFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }

@@ -19,7 +19,8 @@ class MapFlowChart extends StatefulWidget {
   _MapFlowChartState createState() => _MapFlowChartState();
 }
 
-class _MapFlowChartState extends State<MapFlowChart> {
+class _MapFlowChartState extends State<MapFlowChart>
+    with SingleTickerProviderStateMixin {
   final TransformationController _controller = TransformationController();
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
@@ -31,13 +32,25 @@ class _MapFlowChartState extends State<MapFlowChart> {
   double _lastVirtualCandleWidth = 0;
   double _lastFitAreaWidth = 0;
   double _lastCandleAreaHeight = 0;
+  Matrix4? _gestureStartMatrix;
+  double _gestureStartScale = 1;
+  Offset _gestureAccumDelta = Offset.zero;
   double _minAllowedScale = 0.7;
+  final Set<int> _closingTickets = {};
+  final Set<int> _cancellingTickets = {};
+  late final AnimationController _loadingCtrl;
 
   @override
   void initState() {
     super.initState();
     _yZoom = widget.data.yZoom;
     _controller.addListener(_onTransformChanged);
+    _loadingCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   void _onTransformChanged() {
@@ -79,6 +92,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     _focusNode.dispose();
+    _loadingCtrl.dispose();
     super.dispose();
   }
 
@@ -114,25 +128,6 @@ class _MapFlowChartState extends State<MapFlowChart> {
   }
 
   void _onInteractionEnd() {
-    final areaW = _lastCandleAreaWidth;
-    final vw = _lastVirtualCandleWidth;
-    if (areaW > 0 && vw > 0) {
-      final viewerW = areaW - ChartFixedPainter.rightReserved;
-      if (viewerW > 0) {
-        final m = _controller.value;
-        final s = m.getMaxScaleOnAxis();
-        final tx = m.getTranslation().x;
-        const margin = 0.02;
-        final txMin = -(vw * s) + viewerW * margin;
-        final txMax = viewerW * margin;
-        final clampedTx = tx.clamp(txMin, txMax);
-        if (clampedTx != tx) {
-          final m2 = _controller.value.clone();
-          m2.setTranslationRaw(clampedTx, m2.getTranslation().y, m2.getTranslation().z);
-          _controller.value = m2;
-        }
-      }
-    }
     _centerLastCandleY();
   }
 
@@ -216,13 +211,14 @@ class _MapFlowChartState extends State<MapFlowChart> {
     });
   }
 
-  void _handleTap(TapDownDetails details, double candleAreaWidth, double candleAreaHeight) {
+  void _handleTap(PointerDownEvent event, double candleAreaWidth, double candleAreaHeight) {
     final m = _controller.value;
-    final childX = (details.localPosition.dx - m.getTranslation().x) / m[0];
-    final childY = (details.localPosition.dy - m.getTranslation().y) / m[5];
+    final childX = (event.localPosition.dx - m.getTranslation().x) / m[0];
+    final childY = (event.localPosition.dy - m.getTranslation().y) / m[5];
 
     const btnSize = 14.0;
     for (final pos in widget.data.positions) {
+      if (_closingTickets.contains(pos.ticket)) continue;
       final y = _toChildY(pos.priceOpen, candleAreaHeight);
       if (Rect.fromLTWH(2, y - btnSize / 2, btnSize, btnSize).contains(Offset(childX, childY))) {
         _closePosition(pos.ticket);
@@ -231,6 +227,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
     }
 
     for (final order in widget.data.orders) {
+      if (_cancellingTickets.contains(order.ticket)) continue;
       final y = _toChildY(order.priceOpen, candleAreaHeight);
       if (Rect.fromLTWH(2, y - btnSize / 2, btnSize, btnSize).contains(Offset(childX, childY))) {
         _cancelOrder(order.ticket);
@@ -239,7 +236,34 @@ class _MapFlowChartState extends State<MapFlowChart> {
     }
   }
 
+  void _cleanupStaleTickets() {
+    bool changed = false;
+    final posTickets = widget.data.positions.map((p) => p.ticket).toSet();
+    _closingTickets.removeWhere((t) {
+      if (!posTickets.contains(t)) {
+        changed = true;
+        return true;
+      }
+      return false;
+    });
+    final ordTickets = widget.data.orders.map((o) => o.ticket).toSet();
+    _cancellingTickets.removeWhere((t) {
+      if (!ordTickets.contains(t)) {
+        changed = true;
+        return true;
+      }
+      return false;
+    });
+    if (changed) {
+      _stopLoadingAnimationIfNeeded();
+    }
+  }
+
   Future<void> _closePosition(int ticket) async {
+    if (!_closingTickets.add(ticket)) return;
+    _startLoadingAnimation();
+    setState(() {});
+    bool success = false;
     try {
       final api = context.read<TradingApiService>();
       final result = await api.closePosition(ticket);
@@ -252,10 +276,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
             backgroundColor: result.success ? Colors.green : Colors.red,
           ),
         );
-      }
-      if (mounted) {
-        final fresh = await context.read<TradingApiService>().getPositions();
-        if (mounted) context.read<StateService>().updatePositions(fresh);
+        success = result.success;
       }
     } catch (e) {
       if (mounted) {
@@ -264,9 +285,18 @@ class _MapFlowChartState extends State<MapFlowChart> {
         );
       }
     }
+    if (!success && mounted) {
+      _closingTickets.remove(ticket);
+      _stopLoadingAnimationIfNeeded();
+      setState(() {});
+    }
   }
 
   Future<void> _cancelOrder(int ticket) async {
+    if (!_cancellingTickets.add(ticket)) return;
+    _startLoadingAnimation();
+    setState(() {});
+    bool success = false;
     try {
       final api = context.read<TradingApiService>();
       final result = await api.cancelOrder(ticket);
@@ -279,10 +309,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
             backgroundColor: result.success ? Colors.green : Colors.red,
           ),
         );
-      }
-      if (mounted) {
-        final fresh = await context.read<TradingApiService>().getOpenOrders();
-        if (mounted) context.read<StateService>().updateOrders(fresh);
+        success = result.success;
       }
     } catch (e) {
       if (mounted) {
@@ -290,6 +317,21 @@ class _MapFlowChartState extends State<MapFlowChart> {
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+    if (!success && mounted) {
+      _cancellingTickets.remove(ticket);
+      _stopLoadingAnimationIfNeeded();
+      setState(() {});
+    }
+  }
+
+  void _startLoadingAnimation() {
+    if (!_loadingCtrl.isAnimating) _loadingCtrl.repeat();
+  }
+
+  void _stopLoadingAnimationIfNeeded() {
+    if (_closingTickets.isEmpty && _cancellingTickets.isEmpty) {
+      _loadingCtrl.stop();
     }
   }
 
@@ -327,6 +369,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
 
   @override
   Widget build(BuildContext context) {
+    _cleanupStaleTickets();
     final data = widget.data;
     if (data.candles.isEmpty) {
       return const SizedBox();
@@ -401,6 +444,10 @@ class _MapFlowChartState extends State<MapFlowChart> {
                     return KeyEventResult.ignored;
                   },
                   child: Listener(
+                  onPointerDown: (event) {
+                    _focusNode.requestFocus();
+                    _handleTap(event, candleAreaWidth, candleAreaHeight);
+                  },
                   onPointerSignal: (event) {
                     if (event is PointerScrollEvent) {
                       _handleScroll(event);
@@ -409,12 +456,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
                   child: MouseRegion(
                     onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
                     onExit: (e) { if (_hoverY != null || _hoveredBubble != null) setState(() { _hoverY = null; _hoveredBubble = null; _hoverPos = null; }); },
-                    child: GestureDetector(
-                      onTapDown: (details) {
-                        _focusNode.requestFocus();
-                        _handleTap(details, candleAreaWidth, candleAreaHeight);
-                      },
-                      child: InteractiveViewer(
+                    child: InteractiveViewer(
                         transformationController: _controller,
                         constrained: false,
                         boundaryMargin: const EdgeInsets.all(double.infinity),
@@ -429,13 +471,15 @@ class _MapFlowChartState extends State<MapFlowChart> {
                             candleWidth: candleWidth,
                             candleSpacing: candleSpacing,
                             yZoom: _yZoom,
+                            closingTickets: _closingTickets,
+                            cancellingTickets: _cancellingTickets,
+                            loadingAnimation: _loadingCtrl.value,
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
               ),
             ),
             Positioned(

@@ -86,7 +86,7 @@ class NewMapFlowPage extends StatefulWidget {
 
 class _NewMapFlowPageState extends State<NewMapFlowPage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  bool _showTrading = false;
+  bool _showTrading = true;
   int _drawerTabIndex = 0;
 
   @override

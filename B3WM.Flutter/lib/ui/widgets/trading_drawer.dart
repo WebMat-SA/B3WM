@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/trade_models.dart';
@@ -31,7 +30,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
   final _volumeController = TextEditingController(text: '1');
   final _volumeFocusNode = FocusNode();
   OrderResult? _lastResult;
-  Timer? _refreshTimer;
+  bool _autoRefreshRunning = true;
 
   @override
   void initState() {
@@ -39,18 +38,22 @@ class _TradingDrawerState extends State<TradingDrawer> {
     _volumeFocusNode.addListener(() {
       if (!_volumeFocusNode.hasFocus) _commitVolume();
     });
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _refreshPositions();
-      _refreshOrders();
-    });
+    _startAutoRefresh();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _autoRefreshRunning = false;
     _volumeController.dispose();
     _volumeFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _startAutoRefresh() async {
+    while (mounted && _autoRefreshRunning) {
+      await Future.wait([_refreshPositions(), _refreshOrders()]);
+      if (mounted) await Future.delayed(const Duration(seconds: 2));
+    }
   }
 
   void _commitVolume() {
