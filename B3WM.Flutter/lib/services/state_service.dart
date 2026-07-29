@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/bar_storage_item.dart';
 import '../models/bubble_storage_item.dart';
 import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
+import '../models/symbol_config.dart';
 import 'api_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
@@ -12,7 +14,6 @@ import 'preferences_service.dart';
 class StateService extends ChangeNotifier {
   final ApiService _apiService;
   final SignalRService _signalRService;
-  // ignore: unused_field
   final PreferencesService _preferencesService;
 
   StateService({
@@ -29,9 +30,6 @@ class StateService extends ChangeNotifier {
   String _symbol = '';
   String get symbol => _symbol;
 
-  int _timeFrame = 2;
-  int get timeFrame => _timeFrame;
-
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
@@ -42,7 +40,7 @@ class StateService extends ChangeNotifier {
   List<BarStorageItem> get bars => _bars;
 
   List<BarStorageItem> get barsTimeFrameFilter =>
-      _bars.where((b) => b.timeFrame == _timeFrame).toList()
+      _bars.where((b) => b.timeFrame == _currentConfig.timeFrame).toList()
         ..sort((a, b) => a.date.compareTo(b.date));
 
   BarStorageItem? _currentBar;
@@ -65,73 +63,47 @@ class StateService extends ChangeNotifier {
 
   List<StructureStorageItem> get structuresTimeFrameFilter =>
       _structures
-          .where((s) => s.timeFrame == _timeFrame && s.symbol == _symbol)
+          .where((s) => s.timeFrame == _currentConfig.timeFrame && s.symbol == _symbol)
           .toList();
 
-  // Bubble drawer filters
-  bool _bubbleAmountFilter = true;
-  bool get bubbleAmountFilter => _bubbleAmountFilter;
-  bool _bubbleAgentsFilter = true;
-  bool get bubbleAgentsFilter => _bubbleAgentsFilter;
-  bool _bubbleSoundEnabled = true;
-  bool get bubbleSoundEnabled => _bubbleSoundEnabled;
+  // --- Per-symbol configs ---
+  final Map<String, SymbolConfig> _configs = {};
 
-  void setBubbleAmountFilter(bool v) { _bubbleAmountFilter = v; notifyListeners(); _savePreferences(); }
-  void setBubbleAgentsFilter(bool v) { _bubbleAgentsFilter = v; notifyListeners(); _savePreferences(); }
-  void setBubbleSoundEnabled(bool v) { _bubbleSoundEnabled = v; notifyListeners(); _savePreferences(); }
+  SymbolConfig get _currentConfig =>
+      _configs.putIfAbsent(_symbol, () => _loadConfigForSymbol(_symbol));
 
-  // Range
-  int _dateRangeStart = 0;
-  int _dateRangeEnd = 0;
-  int get dateRangeStart => _dateRangeStart;
-  int get dateRangeEnd => _dateRangeEnd;
-  int get barsCount => barsTimeFrameFilter.length;
+  int get timeFrame => _currentConfig.timeFrame;
+  bool get bubbleVisible => _currentConfig.bubbleVisible;
+  double get bubbleSize => _currentConfig.bubbleSize;
+  double get bubbleOpacity => _currentConfig.bubbleOpacity;
+  double get bubbleSizeMin => _currentConfig.bubbleSizeMin;
+  double get bubbleSizeMax => _currentConfig.bubbleSizeMax;
+  int get thresholdBubble => _currentConfig.thresholdBubble;
 
-  // Config
-  double _bubbleSize = 1.0;
-  double get bubbleSize => _bubbleSize;
-  double _bubbleOpacity = 0.7;
-  double get bubbleOpacity => _bubbleOpacity;
-  bool _bubbleVisible = true;
-  bool get bubbleVisible => _bubbleVisible;
-  double _bubbleSizeMin = 20;
-  double get bubbleSizeMin => _bubbleSizeMin;
-  double _bubbleSizeMax = 100;
-  double get bubbleSizeMax => _bubbleSizeMax;
+  bool get profileVisible => _currentConfig.profileVisible;
+  double get profileSizeH => _currentConfig.profileSizeH;
+  double get profileSizeV => _currentConfig.profileSizeV;
+  double get profileOpacity => _currentConfig.profileOpacity;
+  bool get profileAutoByPriceStructure => _currentConfig.profileAutoByPriceStructure;
 
-  double _profileSizeH = 1.0;
-  double get profileSizeH => _profileSizeH;
-  double _profileSizeV = 1.0;
-  double get profileSizeV => _profileSizeV;
-  double _profileOpacity = 0.5;
-  double get profileOpacity => _profileOpacity;
-  bool _profileVisible = true;
-  bool get profileVisible => _profileVisible;
-  bool _profileAutoByPriceStructure = false;
-  bool get profileAutoByPriceStructure => _profileAutoByPriceStructure;
+  bool get structureVisible => _currentConfig.structureVisible;
+  bool get structureAuxVisible => _currentConfig.structureAuxVisible;
+  double get structureOpacity => _currentConfig.structureOpacity;
+  double get structureRangeUpd => _currentConfig.structureRangeUpd;
 
-  bool _structureVisible = true;
-  bool get structureVisible => _structureVisible;
-  bool _structureAuxVisible = true;
-  bool get structureAuxVisible => _structureAuxVisible;
-  double _structureOpacity = 0.8;
-  double get structureOpacity => _structureOpacity;
+  String get colorBuyer => _currentConfig.colorBuyer;
+  String get colorSeller => _currentConfig.colorSeller;
 
-  double _structureRangeUpd = 250;
-  double get structureRangeUpd => _structureRangeUpd;
+  List<int> get selectedAgents => _currentConfig.selectedAgents;
+  Map<int, int> get agentThresholds => Map.unmodifiable(_currentConfig.agentThresholds);
 
-  String _colorBuyer = '#4488ff';
-  String get colorBuyer => _colorBuyer;
-  String _colorSeller = '#ff4444';
-  String get colorSeller => _colorSeller;
+  bool get bubbleAmountFilter => _currentConfig.bubbleAmountFilter;
+  bool get bubbleAgentsFilter => _currentConfig.bubbleAgentsFilter;
+  bool get bubbleSoundEnabled => _currentConfig.bubbleSoundEnabled;
 
-  List<int> _selectedAgents = [];
-  List<int> get selectedAgents => _selectedAgents;
+  // Data-driven (not persisted config)
   final Set<int> _allBubbleAgents = {};
   Set<int> get allBubbleAgents => _allBubbleAgents;
-  final Map<int, int> _agentThresholds = {};
-  int _thresholdBubble = 250;
-  int get thresholdBubble => _thresholdBubble;
 
   double _yZoom = 1.0;
   double get yZoom => _yZoom;
@@ -139,59 +111,129 @@ class StateService extends ChangeNotifier {
   bool get isConnected => _signalRService.isConnected;
 
   // Config setters
-  void setTimeFrame(int v) { _timeFrame = v; notifyListeners(); _savePreferences(); }
-  void setBubbleVisible(bool v) { _bubbleVisible = v; notifyListeners(); _savePreferences(); }
-  void setBubbleSize(double v) { _bubbleSize = v; notifyListeners(); _savePreferences(); }
-  void setBubbleOpacity(double v) { _bubbleOpacity = v; notifyListeners(); _savePreferences(); }
-  void setBubbleSizeMin(double v) { _bubbleSizeMin = v; notifyListeners(); _savePreferences(); }
-  void setBubbleSizeMax(double v) { _bubbleSizeMax = v; notifyListeners(); _savePreferences(); }
-  void setThresholdBubble(int v) { _thresholdBubble = v; notifyListeners(); _savePreferences(); }
+  Future<void> setTimeFrame(int v) async { _currentConfig.timeFrame = v; notifyListeners(); _saveConfigForSymbol(_symbol); await loadData(); }
+  void setBubbleVisible(bool v) { _currentConfig.bubbleVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSize(double v) { _currentConfig.bubbleSize = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleOpacity(double v) { _currentConfig.bubbleOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSizeMin(double v) { _currentConfig.bubbleSizeMin = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSizeMax(double v) { _currentConfig.bubbleSizeMax = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setThresholdBubble(int v) { _currentConfig.thresholdBubble = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setProfileVisible(bool v) { _profileVisible = v; notifyListeners(); _savePreferences(); }
-  void setProfileSizeH(double v) { _profileSizeH = v; notifyListeners(); _savePreferences(); }
-  void setProfileSizeV(double v) { _profileSizeV = v; notifyListeners(); _savePreferences(); }
-  void setProfileOpacity(double v) { _profileOpacity = v; notifyListeners(); _savePreferences(); }
+  void setProfileVisible(bool v) { _currentConfig.profileVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileSizeH(double v) { _currentConfig.profileSizeH = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileSizeV(double v) { _currentConfig.profileSizeV = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileOpacity(double v) { _currentConfig.profileOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileAutoByPriceStructure(bool v) { _currentConfig.profileAutoByPriceStructure = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setStructureVisible(bool v) { _structureVisible = v; notifyListeners(); _savePreferences(); }
-  void setStructureAuxVisible(bool v) { _structureAuxVisible = v; notifyListeners(); _savePreferences(); }
-  void setStructureOpacity(double v) { _structureOpacity = v; notifyListeners(); _savePreferences(); }
-  void setStructureRangeUpd(double v) { _structureRangeUpd = v; notifyListeners(); _savePreferences(); }
+  void setStructureVisible(bool v) { _currentConfig.structureVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureAuxVisible(bool v) { _currentConfig.structureAuxVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureOpacity(double v) { _currentConfig.structureOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureRangeUpd(double v) { _currentConfig.structureRangeUpd = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setColorBuyer(String v) { _colorBuyer = v; notifyListeners(); _savePreferences(); }
-  void setColorSeller(String v) { _colorSeller = v; notifyListeners(); _savePreferences(); }
+  void setColorBuyer(String v) { _currentConfig.colorBuyer = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setColorSeller(String v) { _currentConfig.colorSeller = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setProfileAutoByPriceStructure(bool v) { _profileAutoByPriceStructure = v; notifyListeners(); _savePreferences(); }
+  void setBubbleAmountFilter(bool v) { _currentConfig.bubbleAmountFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleAgentsFilter(bool v) { _currentConfig.bubbleAgentsFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSoundEnabled(bool v) { _currentConfig.bubbleSoundEnabled = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
   void selectAllAgents() {
-    if (_selectedAgents.length == _allBubbleAgents.length) {
-      _selectedAgents = [];
+    if (_currentConfig.selectedAgents.length == _allBubbleAgents.length) {
+      _currentConfig.selectedAgents = [];
     } else {
-      _selectedAgents = _allBubbleAgents.toList();
+      _currentConfig.selectedAgents = _allBubbleAgents.toList();
     }
     notifyListeners();
-    _savePreferences();
+    _saveConfigForSymbol(_symbol);
   }
 
   void toggleAgent(int agent) {
-    if (_selectedAgents.contains(agent)) {
-      _selectedAgents.remove(agent);
+    if (_currentConfig.selectedAgents.contains(agent)) {
+      _currentConfig.selectedAgents.remove(agent);
     } else {
-      _selectedAgents.add(agent);
+      _currentConfig.selectedAgents.add(agent);
     }
     notifyListeners();
-    _savePreferences();
+    _saveConfigForSymbol(_symbol);
   }
 
   void setAgentThreshold(int agent, int? threshold) {
     if (threshold != null) {
-      _agentThresholds[agent] = threshold;
+      _currentConfig.agentThresholds[agent] = threshold;
     } else {
-      _agentThresholds.remove(agent);
+      _currentConfig.agentThresholds.remove(agent);
     }
     notifyListeners();
-    _savePreferences();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  int getThreshold(int? agent) {
+    if (agent == null) return 0;
+    return _currentConfig.agentThresholds[agent] ?? _currentConfig.thresholdBubble;
+  }
+
+  // --- Per-symbol persistence ---
+  bool _migrated = false;
+
+  SymbolConfig _loadConfigForSymbol(String symbol) {
+    final json = _preferencesService.getString('Config_$symbol');
+    if (json != null) {
+      try {
+        return SymbolConfig.fromJson(jsonDecode(json));
+      } catch (_) {}
+    }
+
+    if (!_migrated) {
+      _migrated = true;
+      final old = _tryMigrateFromOldKeys();
+      if (old != null) {
+        _configs[symbol] = old;
+        _saveConfigForSymbol(symbol);
+        return old;
+      }
+    }
+
+    return SymbolConfig.withDefaults(symbol);
+  }
+
+  SymbolConfig? _tryMigrateFromOldKeys() {
+    final p = _preferencesService;
+    if (p.getInt('TimeFrame') == null) return null;
+
+    return SymbolConfig(
+      timeFrame: p.getInt('TimeFrame') ?? 2,
+      thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
+      structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
+      structureVisible: p.getBool('StructureVisible') ?? true,
+      structureAuxVisible: p.getBool('StructureAuxVisible') ?? true,
+      structureOpacity: p.getDouble('StructureOpacity') ?? 0.8,
+      bubbleSize: p.getDouble('BubbleSize') ?? 1.0,
+      bubbleOpacity: p.getDouble('BubbleOpacity') ?? 0.7,
+      bubbleVisible: p.getBool('BubbleVisible') ?? true,
+      bubbleSizeMin: p.getDouble('BubbleSizeMin') ?? 20,
+      bubbleSizeMax: p.getDouble('BubbleSizeMax') ?? 100,
+      profileSizeH: p.getDouble('ProfileSizeH') ?? 1.0,
+      profileSizeV: p.getDouble('ProfileSizeV') ?? 1.0,
+      profileOpacity: p.getDouble('ProfileOpacity') ?? 0.5,
+      profileVisible: p.getBool('ProfileVisible') ?? true,
+      profileAutoByPriceStructure:
+          p.getBool('ProfileAutoByPriceStructure') ?? false,
+      colorBuyer: p.getString('ColorBuyer') ?? '#4488ff',
+      colorSeller: p.getString('ColorSeller') ?? '#ff4444',
+      selectedAgents: p.getIntList('SelectedAgents') ?? [],
+      agentThresholds: p.getIntIntMap('AgentThresholds') ?? {},
+      bubbleAmountFilter: p.getBool('BubbleAmountFilter') ?? true,
+      bubbleAgentsFilter: p.getBool('BubbleAgentsFilter') ?? true,
+      bubbleSoundEnabled: p.getBool('BubbleSoundEnabled') ?? true,
+    );
+  }
+
+  void _saveConfigForSymbol(String symbol) {
+    if (symbol.isEmpty || !_configs.containsKey(symbol)) return;
+    _preferencesService.setString(
+        'Config_$symbol', jsonEncode(_configs[symbol]!.toJson()));
   }
 
   // --- Process Loop ---
@@ -200,11 +242,9 @@ class StateService extends ChangeNotifier {
   DateTime _lastChartUpdate = DateTime.now();
   bool _chartGenInProgress = false;
 
-  // Constants
   static const int maxBubbles = 2000;
 
   void _init() {
-    _loadPreferences();
     _signalRService.onCloseBar = _handleCloseBar;
     _signalRService.onNewBubble = _handleNewBubble;
     _signalRService.onVolumeUpdate = _handleVolumeUpdate;
@@ -214,67 +254,10 @@ class StateService extends ChangeNotifier {
     _signalRService.onMissedBubbles = _handleMissedBubbles;
   }
 
-  void _loadPreferences() {
-    final p = _preferencesService;
-    _timeFrame = p.getInt('TimeFrame') ?? _timeFrame;
-    _thresholdBubble = p.getInt('ThresholdBubble') ?? _thresholdBubble;
-    _structureRangeUpd = p.getDouble('StructureRangeUpd') ?? _structureRangeUpd;
-    _structureVisible = p.getBool('StructureVisible') ?? _structureVisible;
-    _structureAuxVisible = p.getBool('StructureAuxVisible') ?? _structureAuxVisible;
-    _structureOpacity = p.getDouble('StructureOpacity') ?? _structureOpacity;
-    _bubbleSize = p.getDouble('BubbleSize') ?? _bubbleSize;
-    _bubbleOpacity = p.getDouble('BubbleOpacity') ?? _bubbleOpacity;
-    _bubbleVisible = p.getBool('BubbleVisible') ?? _bubbleVisible;
-    _bubbleSizeMin = p.getDouble('BubbleSizeMin') ?? _bubbleSizeMin;
-    _bubbleSizeMax = p.getDouble('BubbleSizeMax') ?? _bubbleSizeMax;
-    _profileSizeH = p.getDouble('ProfileSizeH') ?? _profileSizeH;
-    _profileSizeV = p.getDouble('ProfileSizeV') ?? _profileSizeV;
-    _profileOpacity = p.getDouble('ProfileOpacity') ?? _profileOpacity;
-    _profileVisible = p.getBool('ProfileVisible') ?? _profileVisible;
-    _profileAutoByPriceStructure = p.getBool('ProfileAutoByPriceStructure') ?? _profileAutoByPriceStructure;
-    _colorBuyer = p.getString('ColorBuyer') ?? _colorBuyer;
-    _colorSeller = p.getString('ColorSeller') ?? _colorSeller;
-    final selected = p.getIntList('SelectedAgents');
-    if (selected != null) _selectedAgents = selected;
-    final all = p.getIntList('_allBubbleAgents');
-    if (all != null) { _allBubbleAgents.clear(); _allBubbleAgents.addAll(all); }
-    final thresholds = p.getIntIntMap('AgentThresholds');
-    if (thresholds != null) { _agentThresholds.clear(); _agentThresholds.addAll(thresholds); }
-    _bubbleAmountFilter = p.getBool('BubbleAmountFilter') ?? _bubbleAmountFilter;
-    _bubbleAgentsFilter = p.getBool('BubbleAgentsFilter') ?? _bubbleAgentsFilter;
-    _bubbleSoundEnabled = p.getBool('BubbleSoundEnabled') ?? _bubbleSoundEnabled;
-  }
-
-  void _savePreferences() {
-    final p = _preferencesService;
-    p.setInt('TimeFrame', _timeFrame);
-    p.setInt('ThresholdBubble', _thresholdBubble);
-    p.setDouble('StructureRangeUpd', _structureRangeUpd);
-    p.setBool('StructureVisible', _structureVisible);
-    p.setBool('StructureAuxVisible', _structureAuxVisible);
-    p.setDouble('StructureOpacity', _structureOpacity);
-    p.setDouble('BubbleSize', _bubbleSize);
-    p.setDouble('BubbleOpacity', _bubbleOpacity);
-    p.setBool('BubbleVisible', _bubbleVisible);
-    p.setDouble('BubbleSizeMin', _bubbleSizeMin);
-    p.setDouble('BubbleSizeMax', _bubbleSizeMax);
-    p.setDouble('ProfileSizeH', _profileSizeH);
-    p.setDouble('ProfileSizeV', _profileSizeV);
-    p.setDouble('ProfileOpacity', _profileOpacity);
-    p.setBool('ProfileVisible', _profileVisible);
-    p.setBool('ProfileAutoByPriceStructure', _profileAutoByPriceStructure);
-    p.setString('ColorBuyer', _colorBuyer);
-    p.setString('ColorSeller', _colorSeller);
-    p.setIntList('SelectedAgents', _selectedAgents);
-    p.setIntList('_allBubbleAgents', _allBubbleAgents.toList());
-    p.setIntIntMap('AgentThresholds', _agentThresholds);
-    p.setBool('BubbleAmountFilter', _bubbleAmountFilter);
-    p.setBool('BubbleAgentsFilter', _bubbleAgentsFilter);
-    p.setBool('BubbleSoundEnabled', _bubbleSoundEnabled);
-  }
-
   Future<void> setSymbol(String value) async {
+    _saveConfigForSymbol(_symbol);
     _symbol = value.toUpperCase();
+    _allBubbleAgents.clear();
     notifyListeners();
     await loadData();
   }
@@ -304,7 +287,7 @@ class StateService extends ChangeNotifier {
       notifyListeners();
 
       final filteredCount = barsTimeFrameFilter.length;
-      debugPrint('[loadData] _timeFrame=$_timeFrame, filteredCount=$filteredCount, totalBars=${_bars.length}');
+      debugPrint('[loadData] _timeFrame=${_currentConfig.timeFrame}, filteredCount=$filteredCount, totalBars=${_bars.length}');
 
       _dateRangeStart = 0;
       _dateRangeEnd = filteredCount;
@@ -314,6 +297,10 @@ class StateService extends ChangeNotifier {
       // Load bubbles
       final bubbles = await _apiService.getBubbles(_symbol, effectiveDate);
       _bubbles = bubbles;
+      _allBubbleAgents.clear();
+      for (final b in bubbles) {
+        _allBubbleAgents.add(b.agent);
+      }
       debugPrint('[loadData] Bubbles count: ${bubbles.length}');
 
       // Load volume
@@ -341,7 +328,7 @@ class StateService extends ChangeNotifier {
 
       // Load structure
       final structures = await _apiService.getStructure(
-          _symbol, effectiveDate, _structureRangeUpd);
+          _symbol, effectiveDate, _currentConfig.structureRangeUpd);
       _structures = structures;
       debugPrint('[loadData] Structures count: ${structures.length}');
       notifyListeners();
@@ -352,7 +339,7 @@ class StateService extends ChangeNotifier {
     } finally {
       _isLoading = false;
 
-      await _signalRService.startConnection(_symbol, _timeFrame);
+      await _signalRService.startConnection(_symbol, _currentConfig.timeFrame);
       _startProcessLoop();
       _startWatchdog();
       notifyListeners();
@@ -401,7 +388,7 @@ class StateService extends ChangeNotifier {
             '[WATCHDOG] Chart sem update há ${elapsed.inSeconds}s - recovery');
 
         if (_signalRService.started && !_signalRService.isConnected) {
-          await _signalRService.startConnection(_symbol, _timeFrame);
+          await _signalRService.startConnection(_symbol, _currentConfig.timeFrame);
         }
       }
     });
@@ -451,7 +438,7 @@ class StateService extends ChangeNotifier {
 
   void _handleNewBubble(BubbleStorageItem data) {
     if (_allBubbleAgents.add(data.agent)) {
-      _selectedAgents.add(data.agent);
+      _currentConfig.selectedAgents.add(data.agent);
     }
     _bubbles.add(data);
     if (_bubbles.length > maxBubbles) {
@@ -495,7 +482,7 @@ class StateService extends ChangeNotifier {
   void _handleNewStructure(StructureStorageItem structure) {
     if (structure.symbol != _symbol) return;
     _structures.add(structure);
-    if (_profileAutoByPriceStructure) {
+    if (_currentConfig.profileAutoByPriceStructure) {
       _applyVolumeFilter(0, barsTimeFrameFilter.length);
     }
     notifyListeners();
@@ -514,6 +501,11 @@ class StateService extends ChangeNotifier {
   }
 
   // --- Volume Filter ---
+  int _dateRangeStart = 0;
+  int _dateRangeEnd = 0;
+  int get dateRangeStart => _dateRangeStart;
+  int get dateRangeEnd => _dateRangeEnd;
+  int get barsCount => barsTimeFrameFilter.length;
 
   void applyVolumeFilter(int start, int end) {
     _applyVolumeFilter(start, end);
@@ -599,17 +591,7 @@ class StateService extends ChangeNotifier {
   // --- Chart callback ---
 
   void _onChartUpdate() {
-    // Called when chart needs to regenerate.
-    // The Flutter CustomPainter will read state directly from this service.
-    // Notify listeners to trigger repaint.
     notifyListeners();
-  }
-
-  Map<int, int> get agentThresholds => Map.unmodifiable(_agentThresholds);
-
-  int getThreshold(int? agent) {
-    if (agent == null) return 0;
-    return _agentThresholds[agent] ?? _thresholdBubble;
   }
 
   // --- Dispose ---

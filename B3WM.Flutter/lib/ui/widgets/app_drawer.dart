@@ -38,6 +38,10 @@ class _AppDrawerState extends State<AppDrawer>
   Widget build(BuildContext context) {
     return Drawer(
       width: 360,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.zero,
+        side: BorderSide(color: Color(0xFF3d3d3d)),
+      ),
       child: ListTileTheme(
         tileColor: const Color(0xFF2d2d2d),
         child: Column(

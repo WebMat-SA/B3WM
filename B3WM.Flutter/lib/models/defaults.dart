@@ -48,4 +48,22 @@ class Defaults {
         return 1.0;
     }
   }
+
+  static double structureRangeUpdStep(String symbol) {
+    switch (symbol) {
+      case 'WDOFUT':
+        return 0.5;
+      default:
+        return 5.0;
+    }
+  }
+
+  static double structureRangeUpdMax(String symbol) {
+    switch (symbol) {
+      case 'WDOFUT':
+        return 100;
+      default:
+        return 2000;
+    }
+  }
 }

@@ -157,9 +157,10 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
               (v) => state.setStructureAuxVisible(v)),
           _sliderRow('Opacity', state.structureOpacity, 0, 1,
               (v) => state.setStructureOpacity(v)),
-          _sliderRow('Range to Update', state.structureRangeUpd, 0, 2000,
+          _sliderRow('Range to Update', state.structureRangeUpd, 0,
+              Defaults.structureRangeUpdMax(state.symbol),
               (v) => state.setStructureRangeUpd(v),
-              decimals: 1, step: 0.05),
+              decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol)),
         ],
       ),
     );
@@ -169,7 +170,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
     return _expandableSection(
       icon: Icons.bubble_chart,
       title: 'Bubbles',
-      defaultExpanded: true,
+      defaultExpanded: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -288,7 +289,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
     return ExpansionTile(
       leading: const Icon(Icons.people, size: 20),
       title: const Text('Agents', style: const TextStyle(fontSize: 13)),
-      initiallyExpanded: true,
+      initiallyExpanded: false,
       tilePadding: const EdgeInsets.symmetric(horizontal: 8),
       childrenPadding: const EdgeInsets.only(bottom: 8),
       children: [
