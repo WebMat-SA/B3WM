@@ -24,6 +24,7 @@ class CandlePoint {
 class BubblePoint {
   final double price;
   final double amount;
+  final double originalAmount;
   final bool isBuy;
   final String agentName;
   final int candleIndex;
@@ -32,6 +33,7 @@ class BubblePoint {
   BubblePoint({
     required this.price,
     required this.amount,
+    required this.originalAmount,
     required this.isBuy,
     required this.agentName,
     required this.candleIndex,
@@ -209,6 +211,7 @@ ChartData buildChartData(StateService state) {
       final pt = BubblePoint(
         price: b.price,
         amount: b.amount * state.bubbleSize,
+        originalAmount: b.amount,
         isBuy: b.actionType == ActionType.buy,
         agentName: Agents.fromValue(b.agent)?.description ?? '',
         candleIndex: findCandleIndex(b.date),

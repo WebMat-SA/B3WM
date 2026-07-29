@@ -385,17 +385,21 @@ class _MapFlowChartState extends State<MapFlowChart> {
             Positioned(
               right: 4.0,
               top: 4.0,
-              child: GestureDetector(
-                onTap: _resetChart,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    '⟲',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
+              child: Tooltip(
+                message: 'Press space',
+                preferBelow: false,
+                child: GestureDetector(
+                  onTap: _resetChart,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      '⟲',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
                   ),
                 ),
             ),
@@ -420,7 +424,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
     return _buildTooltip(
       bubble.agentName,
       [
-        _TooltipRow('Qtd', bubble.amount.toStringAsFixed(0)),
+        _TooltipRow('Qtd', bubble.originalAmount.toStringAsFixed(0)),
         _TooltipRow('Preço', bubble.price.toStringAsFixed(1)),
         _TooltipRow('Hora', timeStr),
       ],
