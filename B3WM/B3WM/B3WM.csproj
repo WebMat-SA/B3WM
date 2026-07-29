@@ -10,6 +10,10 @@
     <ProjectReference Include="..\..\B3WM.Shared\B3WM.Shared.csproj" />
     <ProjectReference Include="..\B3WM.Client\B3WM.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.8" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Analyzers" Version="10.0.8">
+      <IncludeAssets>analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <!-- SignalR is included in Microsoft.AspNetCore.App for net10.0 -->
   </ItemGroup>
 

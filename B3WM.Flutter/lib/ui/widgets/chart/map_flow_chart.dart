@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
@@ -17,12 +18,19 @@ class MapFlowChart extends StatefulWidget {
 
 class _MapFlowChartState extends State<MapFlowChart> {
   final TransformationController _controller = TransformationController();
+  final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
+  double? _hoverY;
   OverlayEntry? _tooltipOverlay;
   Timer? _tapTimer;
   bool _initialFitDone = false;
   double _lastCandleAreaWidth = 0;
   double _lastVirtualCandleWidth = 0;
+  double _lastFitAreaWidth = 0;
+  double _lastCandleAreaHeight = 0;
+  bool _isUpdating = false;
+  double _lastScale = 0;
+  double _lastTy = 0;
 
   @override
   void initState() {
@@ -32,7 +40,51 @@ class _MapFlowChartState extends State<MapFlowChart> {
   }
 
   void _onTransformChanged() {
+    if (_isUpdating) return;
+    _clampTransform();
     if (mounted) setState(() {});
+  }
+
+  void _clampTransform() {
+    final areaW = _lastCandleAreaWidth;
+    final areaH = _lastCandleAreaHeight;
+    final vw = _lastVirtualCandleWidth;
+    if (areaW <= 0 || areaH <= 0 || vw <= 0) return;
+
+    final m = Matrix4.copy(_controller.value);
+    final s = m.getMaxScaleOnAxis();
+    final tx = m.getTranslation().x;
+    final ty = m.getTranslation().y;
+
+    final fitTx = areaW * 0.02;
+    final rawTxMin = areaW * 0.85 - vw * s;
+    final rawTxMax = areaW - ChartFixedPainter.rightReserved - vw * s;
+    final txMin = min(rawTxMin, fitTx);
+    final txMax = max(rawTxMax, fitTx);
+    final clampedTx = tx.clamp(txMin, txMax);
+
+    double clampedTy = ty;
+    if (_lastScale > 0) {
+      final delta = s / _lastScale;
+      if (delta > 1.005 || delta < 0.995) {
+        clampedTy = _lastTy;
+      } else {
+        _lastTy = ty;
+      }
+    }
+
+    final tyMin = -areaH * s;
+    final tyMax = areaH;
+    clampedTy = clampedTy.clamp(tyMin, tyMax);
+
+    if (clampedTx != tx || clampedTy != ty) {
+      _isUpdating = true;
+      m.setTranslationRaw(clampedTx, clampedTy, m.getTranslation().z);
+      _controller.value = m;
+      _isUpdating = false;
+    }
+
+    _lastScale = s;
   }
 
   @override
@@ -41,6 +93,25 @@ class _MapFlowChartState extends State<MapFlowChart> {
     if (widget.data.yZoom != oldWidget.data.yZoom && _yZoom != widget.data.yZoom) {
       _yZoom = widget.data.yZoom;
     }
+    if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
+      final areaW = _lastCandleAreaWidth;
+      if (areaW > 0) {
+        const stepX = 6.0 + 2.0;
+        final vw = (widget.data.candles.length * stepX).clamp(200, 50000).toDouble();
+        final t = _controller.value.getTranslation();
+        final tx = t.x;
+        final ty = t.y;
+        final s = _controller.value[0];
+        final rightOffset = areaW - (tx + vw * s);
+        const defaultRightMargin = 0.15;
+        if (rightOffset < areaW * defaultRightMargin) {
+          final newTx = areaW * (1 - defaultRightMargin) - vw * s;
+          final m = _controller.value.clone();
+          m.setTranslationRaw(newTx, ty, 0.0);
+          _controller.value = m;
+        }
+      }
+    }
   }
 
   @override
@@ -48,6 +119,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
     _dismissTooltip();
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -55,43 +127,79 @@ class _MapFlowChartState extends State<MapFlowChart> {
     _tapTimer?.cancel();
     _tooltipOverlay?.remove();
     _tooltipOverlay = null;
+    if (_hoverY != null) _hoverY = null;
   }
 
-  void _snapYTransform() {
-    final m = _controller.value;
-    if (!m.getTranslation().x.isFinite) return;
-    final tx = m.getTranslation().x;
-    final scaleX = m[0];
-    final ty = m.getTranslation().y;
-    if (ty != 0.0 || m[5] != 1.0) {
-      final corrected = Matrix4.identity();
-      corrected.setTranslationRaw(tx, 0.0, 0.0);
-      corrected[0] = scaleX;
-      _controller.value = corrected;
-    }
-  }
-
-  void _fitChart(double areaWidth, double virtualWidth) {
+  void _fitChart(double areaWidth, double virtualWidth, double areaHeight) {
     final rightMargin = areaWidth * 0.15;
     final leftMargin = areaWidth * 0.02;
     final fitWidth = areaWidth - leftMargin - rightMargin;
-    final scale = max(0.1, fitWidth / virtualWidth);
+    final scale = max(0.1, min(1.0, fitWidth / virtualWidth));
+
     final m = Matrix4.identity();
     m.setTranslationRaw(leftMargin, 0.0, 0.0);
     m[0] = scale;
+    m[5] = scale;
+    _lastScale = scale;
+    _lastTy = 0.0;
     _controller.value = m;
+  }
+
+  void _resetChart() {
+    setState(() {
+      _yZoom = 1.0;
+    });
+    _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth, _lastCandleAreaHeight);
   }
 
   void _handleScroll(PointerScrollEvent event) {
     setState(() {
       _yZoom = (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.3, 10.0);
     });
+    _centerLastCandleY();
+  }
+
+  void _centerLastCandleY() {
+    final areaH = _lastCandleAreaHeight;
+    if (areaH <= 0) return;
+    final range = widget.data.priceRange;
+    if (range <= 0) return;
+
+    final padding = range * 0.25;
+    final minP = widget.data.minPrice - padding;
+    final maxP = widget.data.maxPrice + padding;
+    final center = (minP + maxP) / 2;
+    final halfRange = (maxP - minP) / 2;
+    final zoomedHalf = halfRange / _yZoom;
+    final adjustedMin = center - zoomedHalf;
+    final adjustedMax = center + zoomedHalf;
+    final adjustedRange = adjustedMax - adjustedMin;
+    if (adjustedRange <= 0) return;
+
+    final lastPrice = widget.data.lastPrice;
+    final yLast = areaH - ((lastPrice - adjustedMin) / adjustedRange) * areaH;
+
+    final m = Matrix4.copy(_controller.value);
+    final s = m.getMaxScaleOnAxis();
+    final tx = m.getTranslation().x;
+    final ty = areaH / 2 - yLast * s;
+    m.setTranslationRaw(tx, ty, m.getTranslation().z);
+    _lastTy = ty;
+    _lastScale = s;
+    _isUpdating = true;
+    _controller.value = m;
+    _isUpdating = false;
   }
 
   void _handleTap(TapDownDetails details, double candleAreaWidth, double candleAreaHeight, double stepX) {
   }
 
-  void _handleHover(PointerEvent event, double candleAreaWidth, double candleAreaHeight, double stepX) {}
+  void _handleHover(PointerEvent event, double candleAreaWidth, double candleAreaHeight, double stepX) {
+    if (!_initialFitDone) return;
+    setState(() {
+      _hoverY = event.localPosition.dy;
+    });
+  }
 
   double _yToPrice(double y, double chartHeight) {
     final range = widget.data.priceRange;
@@ -127,7 +235,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
         final fullWidth = constraints.maxWidth;
         final fullHeight = constraints.maxHeight;
         final candleAreaWidth =
-            fullWidth - ChartFixedPainter.marginLeft - ChartFixedPainter.profileWidth - ChartFixedPainter.marginRight;
+            fullWidth - ChartFixedPainter.marginLeft - ChartFixedPainter.marginRight;
         final candleAreaHeight =
             fullHeight - ChartFixedPainter.marginTop - ChartFixedPainter.marginBottom;
 
@@ -137,12 +245,19 @@ class _MapFlowChartState extends State<MapFlowChart> {
 
         _lastCandleAreaWidth = candleAreaWidth;
         _lastVirtualCandleWidth = virtualCandleWidth;
+        _lastCandleAreaHeight = candleAreaHeight;
 
         if (!_initialFitDone && data.candles.isNotEmpty) {
           _initialFitDone = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _fitChart(candleAreaWidth, virtualCandleWidth);
+            _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
+          });
+        } else if (_initialFitDone && candleAreaWidth != _lastFitAreaWidth) {
+          _lastFitAreaWidth = candleAreaWidth;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
           });
         }
 
@@ -157,6 +272,7 @@ class _MapFlowChartState extends State<MapFlowChart> {
                   candleAreaHeight: candleAreaHeight,
                   yZoom: _yZoom,
                   controller: _controller,
+                  hoverY: _hoverY,
                 ),
               ),
             ),
@@ -166,7 +282,17 @@ class _MapFlowChartState extends State<MapFlowChart> {
               width: candleAreaWidth,
               height: candleAreaHeight,
               child: ClipRect(
-                child: Listener(
+                child: Focus(
+                  focusNode: _focusNode,
+                  autofocus: true,
+                  onKeyEvent: (node, event) {
+                    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.space) {
+                      _resetChart();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: Listener(
                   onPointerSignal: (event) {
                     if (event is PointerScrollEvent) {
                       _handleScroll(event);
@@ -174,15 +300,19 @@ class _MapFlowChartState extends State<MapFlowChart> {
                   },
                   child: MouseRegion(
                     onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
+                    onExit: (e) { if (_hoverY != null) setState(() => _hoverY = null); },
                     child: GestureDetector(
-                      onTapDown: (details) => _handleTap(details, candleAreaWidth, candleAreaHeight, stepX),
+                      onTapDown: (details) {
+                        _focusNode.requestFocus();
+                        _handleTap(details, candleAreaWidth, candleAreaHeight, stepX);
+                      },
                       child: InteractiveViewer(
                         transformationController: _controller,
                         constrained: false,
                         boundaryMargin: const EdgeInsets.all(double.infinity),
                         minScale: 0.5,
                         maxScale: 5.0,
-                        onInteractionEnd: (_) => _snapYTransform(),
+
                         child: CustomPaint(
                           size: Size(virtualCandleWidth, candleAreaHeight),
                           painter: ChartPainter(
@@ -197,17 +327,13 @@ class _MapFlowChartState extends State<MapFlowChart> {
                   ),
                 ),
               ),
+              ),
             ),
             Positioned(
               right: 4.0,
               top: 4.0,
               child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _yZoom = 1.0;
-                  });
-                  _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth);
-                },
+                onTap: _resetChart,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(

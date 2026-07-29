@@ -53,16 +53,6 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2)),
-              )
-            else
-              IconButton(
-                icon: Icon(
-                  connected ? Icons.play_circle_filled : Icons.play_circle_outline,
-                  size: 20,
-                  color: connected ? Colors.green : Colors.grey,
-                ),
-                onPressed: () => state.loadData(),
-                tooltip: connected ? 'Conectado' : 'Conectar',
               ),
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -75,9 +65,9 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                       style: TextStyle(color: Colors.grey)),
                   items: const [
                     DropdownMenuItem(
-                        value: 'WINFUT', child: Text('WINFUT (Profit)')),
+                        value: 'WINFUT', child: Text('WINFUT')),
                     DropdownMenuItem(
-                        value: 'WDOFUT', child: Text('WDOFUT (Profit)')),
+                        value: 'WDOFUT', child: Text('WDOFUT')),
                   ],
                   onChanged: isLoading
                       ? null
@@ -87,6 +77,16 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
             ),
+            if (!isLoading)
+              IconButton(
+                icon: Icon(
+                  connected ? Icons.play_circle_filled : Icons.play_circle_outline,
+                  size: 20,
+                  color: connected ? Colors.green : Colors.grey,
+                ),
+                onPressed: () => state.loadData(),
+                tooltip: connected ? 'Conectado' : 'Conectar',
+              ),
             IconButton(
               icon: Icon(Icons.monetization_on,
                   size: 20,

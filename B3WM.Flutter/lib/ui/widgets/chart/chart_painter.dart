@@ -11,7 +11,6 @@ class ChartPainter extends CustomPainter {
   static const Color candleUpColor = Color(0xFFFFFFFF);
   static const Color candleDownColor = Color(0xFF000000);
   static const Color candleBorderColor = Color(0xFFFFFFFF);
-  static const Color gridColor = Color(0x08000000);
   static const Color daySepColor = Color(0x26c8c8c8);
 
   ChartPainter({
@@ -32,7 +31,6 @@ class ChartPainter extends CustomPainter {
 
     final stepX = candleWidth + candleSpacing;
 
-    _drawGridLines(canvas, size, chartWidth, chartHeight);
     _drawDaySeparators(canvas, size, chartWidth, chartHeight, stepX);
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
@@ -58,23 +56,6 @@ class ChartPainter extends CustomPainter {
 
   double _indexToX(int index, double stepX) {
     return index * stepX + stepX / 2;
-  }
-
-  void _drawGridLines(Canvas canvas, Size size, double chartWidth, double chartHeight) {
-    final paint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 0.5;
-
-    const lines = 8;
-    for (int i = 0; i <= lines; i++) {
-      final y = (chartHeight / lines) * i;
-      canvas.drawLine(Offset(0, y), Offset(chartWidth, y), paint);
-    }
-
-    for (int i = 0; i <= 10; i++) {
-      final x = (chartWidth / 10) * i;
-      canvas.drawLine(Offset(x, 0), Offset(x, chartHeight), paint);
-    }
   }
 
   void _drawDaySeparators(
