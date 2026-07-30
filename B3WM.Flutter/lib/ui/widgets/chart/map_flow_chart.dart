@@ -25,6 +25,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
   double? _hoverY;
+  int? _hoverCandleIndex;
   BubblePoint? _hoveredBubble;
   Offset? _hoverPos;
   bool _initialFitDone = false;
@@ -36,6 +37,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   double _gestureStartScale = 1;
   Offset _gestureAccumDelta = Offset.zero;
   double _minAllowedScale = 0.7;
+  bool _isClamping = false;
   final Set<int> _closingTickets = {};
   final Set<int> _cancellingTickets = {};
   late final AnimationController _loadingCtrl;
@@ -54,7 +56,38 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _onTransformChanged() {
+    if (!_isClamping) _clampPan();
     if (mounted) setState(() {});
+  }
+
+  void _clampPan() {
+    final m = _controller.value;
+    final s = m.getMaxScaleOnAxis();
+    final tx = m.getTranslation().x;
+    final ty = m.getTranslation().y;
+
+    final childW = _lastVirtualCandleWidth;
+    final childH = _lastCandleAreaHeight;
+    final viewerW = _lastCandleAreaWidth - ChartFixedPainter.rightReserved;
+    final viewerH = _lastCandleAreaHeight;
+
+    if (childW <= 0 || childH <= 0 || viewerW <= 0 || viewerH <= 0) return;
+
+    const margin = 200.0;
+    final minX = -margin - childW * s;
+    final maxX = viewerW + margin;
+    final minY = -margin - childH * s;
+    final maxY = viewerH + margin;
+
+    final clampedX = tx.clamp(minX, maxX);
+    final clampedY = ty.clamp(minY, maxY);
+
+    if (clampedX != tx || clampedY != ty) {
+      _isClamping = true;
+      m.setTranslationRaw(clampedX, clampedY, 0.0);
+      _controller.value = m;
+      _isClamping = false;
+    }
   }
 
   @override
@@ -105,7 +138,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _fitChart(double areaWidth, double virtualWidth, double areaHeight) {
     final viewerW = areaWidth - ChartFixedPainter.rightReserved;
     if (viewerW <= 0) return;
-    final leftMargin = viewerW * 0.02;
+    final leftMargin = viewerW * 0.10;
     final rightMargin = viewerW * 0.15;
     final fitWidth = viewerW - leftMargin - rightMargin;
     final fitScale = max(0.1, min(1.0, fitWidth / virtualWidth));
@@ -128,14 +161,12 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _onInteractionEnd() {
-    _centerLastCandleY();
   }
 
   void _handleScroll(PointerScrollEvent event) {
     setState(() {
       _yZoom = (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.9, 10.0);
     });
-    _centerLastCandleY();
   }
 
   void _centerLastCandleY() {
@@ -204,8 +235,11 @@ class _MapFlowChartState extends State<MapFlowChart>
     checkBubbles(data.blueBubbles);
     if (hit == null) checkBubbles(data.redBubbles);
 
+    final candleIndex = (childX / stepX).round().clamp(0, data.candles.length - 1);
+
     setState(() {
       _hoverY = localY;
+      _hoverCandleIndex = candleIndex;
       _hoveredBubble = hit;
       _hoverPos = hit != null ? event.localPosition : null;
     });
@@ -213,14 +247,15 @@ class _MapFlowChartState extends State<MapFlowChart>
 
   void _handleTap(PointerDownEvent event, double candleAreaWidth, double candleAreaHeight) {
     final m = _controller.value;
-    final childX = (event.localPosition.dx - m.getTranslation().x) / m[0];
-    final childY = (event.localPosition.dy - m.getTranslation().y) / m[5];
+    final scaleY = m[5];
+    final ty = m.getTranslation().y;
 
     const btnSize = 14.0;
     for (final pos in widget.data.positions) {
       if (_closingTickets.contains(pos.ticket)) continue;
       final y = _toChildY(pos.priceOpen, candleAreaHeight);
-      if (Rect.fromLTWH(2, y - btnSize / 2, btnSize, btnSize).contains(Offset(childX, childY))) {
+      final screenPosY = y * scaleY + ty;
+      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize).contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
         _closePosition(pos.ticket);
         return;
       }
@@ -229,7 +264,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     for (final order in widget.data.orders) {
       if (_cancellingTickets.contains(order.ticket)) continue;
       final y = _toChildY(order.priceOpen, candleAreaHeight);
-      if (Rect.fromLTWH(2, y - btnSize / 2, btnSize, btnSize).contains(Offset(childX, childY))) {
+      final screenPosY = y * scaleY + ty;
+      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize).contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
         _cancelOrder(order.ticket);
         return;
       }
@@ -417,14 +453,18 @@ class _MapFlowChartState extends State<MapFlowChart>
           children: [
             Positioned.fill(
               child: CustomPaint(
-                painter: ChartFixedPainter(
-                  data: data,
-                  candleAreaWidth: candleAreaWidth,
-                  candleAreaHeight: candleAreaHeight,
-                  yZoom: _yZoom,
-                  controller: _controller,
-                  hoverY: _hoverY,
-                ),
+                  painter: ChartFixedPainter(
+                    data: data,
+                    candleAreaWidth: candleAreaWidth,
+                    candleAreaHeight: candleAreaHeight,
+                    yZoom: _yZoom,
+                    controller: _controller,
+                    hoverY: _hoverY,
+                    hoverCandleIndex: _hoverCandleIndex,
+                    closingTickets: _closingTickets,
+                    cancellingTickets: _cancellingTickets,
+                    loadingAnimation: _loadingCtrl.value,
+                  ),
               ),
             ),
             Positioned(
@@ -455,7 +495,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                   },
                   child: MouseRegion(
                     onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
-                    onExit: (e) { if (_hoverY != null || _hoveredBubble != null) setState(() { _hoverY = null; _hoveredBubble = null; _hoverPos = null; }); },
+                    onExit: (e) { if (_hoverY != null || _hoveredBubble != null) setState(() { _hoverY = null; _hoverCandleIndex = null; _hoveredBubble = null; _hoverPos = null; }); },
                     child: InteractiveViewer(
                         transformationController: _controller,
                         constrained: false,
@@ -471,9 +511,6 @@ class _MapFlowChartState extends State<MapFlowChart>
                             candleWidth: candleWidth,
                             candleSpacing: candleSpacing,
                             yZoom: _yZoom,
-                            closingTickets: _closingTickets,
-                            cancellingTickets: _cancellingTickets,
-                            loadingAnimation: _loadingCtrl.value,
                           ),
                         ),
                       ),

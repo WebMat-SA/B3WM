@@ -5,6 +5,7 @@ import '../../services/state_service.dart';
 class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onSettingsTap;
   final VoidCallback onBubblesTap;
+  final VoidCallback onStructureTap;
   final VoidCallback onTradingTap;
   final bool tradingActive;
 
@@ -12,6 +13,7 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.onSettingsTap,
     required this.onBubblesTap,
+    required this.onStructureTap,
     required this.onTradingTap,
     this.tradingActive = false,
   });
@@ -42,6 +44,11 @@ class MapFlowAppBar extends StatelessWidget implements PreferredSizeWidget {
                 icon: const Icon(Icons.bubble_chart, size: 20),
                 onPressed: onBubblesTap,
                 tooltip: 'Notificações de bubbles',
+              ),
+              IconButton(
+                icon: const Icon(Icons.stacked_line_chart, size: 20),
+                onPressed: onStructureTap,
+                tooltip: 'Notificações de estrutura',
               ),
             ],
           ),

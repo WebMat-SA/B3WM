@@ -9,6 +9,9 @@ class ChartFixedPainter extends CustomPainter {
   final double candleAreaHeight;
   final double yZoom;
   final TransformationController controller;
+  final Set<int> closingTickets;
+  final Set<int> cancellingTickets;
+  final double loadingAnimation;
 
   static const double marginLeft = 8;
   static const double marginRight = 8;
@@ -17,11 +20,13 @@ class ChartFixedPainter extends CustomPainter {
   static const double profileWidth = 60;
   static const double rightLabelMargin = 64;
   static const double rightReserved = 168;
+  static const double bottomLabelHeight = 20;
   static const double candleStep = 8.0;
 
   static const Color textColor = Color(0xFFaaaaaa);
 
   final double? hoverY;
+  final int? hoverCandleIndex;
 
   ChartFixedPainter({
     required this.data,
@@ -30,6 +35,10 @@ class ChartFixedPainter extends CustomPainter {
     this.yZoom = 1.0,
     required this.controller,
     this.hoverY,
+    this.hoverCandleIndex,
+    this.closingTickets = const {},
+    this.cancellingTickets = const {},
+    this.loadingAnimation = 0,
   });
 
   double get chartRight => marginLeft + candleAreaWidth;
@@ -94,9 +103,12 @@ class ChartFixedPainter extends CustomPainter {
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
     _drawMarkLine(canvas);
+    _drawPositionLines(canvas);
+    _drawOrderLines(canvas);
     canvas.restore();
     _drawYAxis(canvas);
     if (hoverY != null) _drawHoverLine(canvas, hoverY!);
+    if (hoverCandleIndex != null) _drawHoverXLabel(canvas, hoverCandleIndex!);
     _drawWatermark(canvas, size);
   }
 
@@ -265,6 +277,41 @@ class ChartFixedPainter extends CustomPainter {
     textPainter.paint(canvas, Offset(chartRight - textPainter.width - 4, y - textPainter.height / 2));
   }
 
+  void _drawHoverXLabel(Canvas canvas, int index) {
+    final m = controller.value;
+    final tx = m.getTranslation().x;
+    final scaleX = m[0];
+
+    final childX = index * candleStep + candleStep / 2;
+    final screenX = marginLeft + childX * scaleX + tx;
+    if (screenX < marginLeft || screenX > chartRight) return;
+
+    final d = data.dates[index];
+    final label = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final y = marginTop + chartHeight + bottomLabelHeight / 2;
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Color(0xFF444444),
+          fontSize: 10,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final labelRect = Rect.fromLTWH(
+      screenX - tp.width / 2 - 4, y - tp.height / 2 - 2,
+      tp.width + 8, tp.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(labelRect, const Radius.circular(4)),
+      Paint()..color = const Color(0xFFaaaaaa),
+    );
+    tp.paint(canvas, Offset(screenX - tp.width / 2, y - tp.height / 2));
+  }
+
   void _drawHoverLine(Canvas canvas, double chartY) {
     final canvasY = marginTop + chartY;
     final tick = Defaults.tickSize(data.symbol);
@@ -337,6 +384,139 @@ class ChartFixedPainter extends CustomPainter {
           Offset(
               size.width - marginRight - timeTp.width,
               marginTop + chartHeight - timeTp.height));
+    }
+  }
+
+  void _drawPositionLines(Canvas canvas) {
+    for (final pos in data.positions) {
+      final y = _priceToY(pos.priceOpen);
+      if (y < marginTop || y > marginTop + chartHeight) continue;
+
+      final isBuy = pos.type == 'buy';
+      final color = isBuy ? Colors.green : Colors.red;
+
+      final paint = Paint()
+        ..color = color.withOpacity(0.8)
+        ..strokeWidth = 2;
+      canvas.drawLine(Offset(marginLeft, y), Offset(chartRight, y), paint);
+
+      _drawCloseButton(canvas, y, Colors.red, closingTickets.contains(pos.ticket));
+
+      const btnWithGap = 20.0;
+      final label = '${isBuy ? 'B' : 'S'} ${pos.volume.toStringAsFixed(2)}';
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final bgRect = Rect.fromLTWH(
+        marginLeft + btnWithGap - 4,
+        y - tp.height / 2 - 2,
+        tp.width + 8,
+        tp.height + 4,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
+        Paint()..color = color.withOpacity(0.8),
+      );
+      tp.paint(canvas, Offset(marginLeft + btnWithGap, y - tp.height / 2));
+    }
+  }
+
+  void _drawOrderLines(Canvas canvas) {
+    for (final order in data.orders) {
+      final y = _priceToY(order.priceOpen);
+      if (y < marginTop || y > marginTop + chartHeight) continue;
+
+      final isBuy = order.type.startsWith('buy');
+      final color = isBuy ? Colors.green : Colors.red;
+
+      final paint = Paint()
+        ..color = color.withOpacity(0.6)
+        ..strokeWidth = 1.5;
+      _drawDashedLine(canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
+
+      _drawCloseButton(canvas, y, Colors.red, cancellingTickets.contains(order.ticket));
+
+      const btnWithGap = 20.0;
+      final typeLabel = _orderTypeShort(order.type);
+      final label = '$typeLabel ${order.volume.toStringAsFixed(2)}';
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(color: Colors.white, fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final bgRect = Rect.fromLTWH(
+        marginLeft + btnWithGap - 4,
+        y - tp.height / 2 - 2,
+        tp.width + 8,
+        tp.height + 4,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
+        Paint()..color = color.withOpacity(0.6),
+      );
+      tp.paint(canvas, Offset(marginLeft + btnWithGap, y - tp.height / 2));
+    }
+  }
+
+  void _drawCloseButton(Canvas canvas, double cy, Color color, bool isLoading) {
+    if (isLoading) {
+      _drawLoadingSpinner(canvas, cy);
+      return;
+    }
+    const size = 14.0;
+    final r = Rect.fromLTWH(marginLeft + 2, cy - size / 2, size, size);
+    canvas.drawCircle(r.center, size / 2, Paint()..color = color);
+    final xPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const m = 4.0;
+    canvas.drawLine(Offset(r.left + m, r.top + m), Offset(r.right - m, r.bottom - m), xPaint);
+    canvas.drawLine(Offset(r.right - m, r.top + m), Offset(r.left + m, r.bottom - m), xPaint);
+  }
+
+  void _drawLoadingSpinner(Canvas canvas, double cy) {
+    const size = 14.0;
+    final cx = marginLeft + 2.0 + size / 2;
+    final center = Offset(cx, cy);
+    final bgPaint = Paint()..color = Colors.grey.withOpacity(0.5);
+    canvas.drawCircle(center, size / 2, bgPaint);
+    final arcPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final rect = Rect.fromCircle(center: center, radius: size / 2 - 2);
+    final startAngle = loadingAnimation * 2 * pi - pi / 2;
+    const sweepAngle = 4 * pi / 3;
+    canvas.drawArc(rect, startAngle, sweepAngle, false, arcPaint);
+  }
+
+  String _orderTypeShort(String type) {
+    switch (type) {
+      case 'buy_limit':
+        return 'Buy Limit';
+      case 'sell_limit':
+        return 'Sell Limit';
+      case 'buy_stop':
+        return 'Buy Stop';
+      case 'sell_stop':
+        return 'Sell Stop';
+      case 'buy_stop_limit':
+        return 'Buy S/L';
+      case 'sell_stop_limit':
+        return 'Sell S/L';
+      default:
+        return type;
     }
   }
 

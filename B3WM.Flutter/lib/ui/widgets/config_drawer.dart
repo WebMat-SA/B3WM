@@ -31,7 +31,7 @@ class _ConfigDrawerState extends State<ConfigDrawer> {
       final body = ListView(
         padding: EdgeInsets.zero,
         children: [
-          _sectionHeader('Configurações'),
+          // _sectionHeader('Configurações'),
           _timeframeSection(state),
           _volumeProfileSection(state),
           _structureSection(state),

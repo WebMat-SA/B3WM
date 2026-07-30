@@ -6,6 +6,7 @@ import '../models/bubble_storage_item.dart';
 import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
+import '../models/structure_change_item.dart';
 import '../models/symbol_config.dart';
 import 'api_service.dart';
 import 'signalr_service.dart';
@@ -70,6 +71,26 @@ class StateService extends ChangeNotifier {
       _structures
           .where((s) => s.timeFrame == _currentConfig.timeFrame && s.symbol == _symbol)
           .toList();
+
+  double? _lastUpBorder;
+  double? _lastDownBorder;
+  final List<StructureChangeItem> _structureChanges = [];
+  List<StructureChangeItem> get structureChanges => _structureChanges;
+
+  List<StructureChangeItem> get visibleStructureChanges {
+    final bars = barsTimeFrameFilter;
+    if (bars.isEmpty) return [];
+    final startIdx = _dateRangeStart.clamp(0, bars.length);
+    final endIdx = _dateRangeEnd > 0
+        ? _dateRangeEnd.clamp(0, bars.length)
+        : bars.length;
+    if (startIdx >= endIdx) return [];
+    final startDate = bars[startIdx].date;
+    final endDate = bars[endIdx - 1].date;
+    return _structureChanges
+        .where((c) => !c.date.isBefore(startDate) && !c.date.isAfter(endDate))
+        .toList();
+  }
 
   List<PositionInfo> _positions = [];
   List<PositionInfo> get positions => _positions;
@@ -353,6 +374,7 @@ class StateService extends ChangeNotifier {
       final structures = await _apiService.getStructure(
           _symbol, effectiveDate, _currentConfig.structureRangeUpd);
       _structures = structures;
+      _recomputeStructureChanges(structures);
       debugPrint('[loadData] Structures count: ${structures.length}');
       notifyListeners();
 
@@ -517,12 +539,72 @@ class StateService extends ChangeNotifier {
   }
 
   void _handleNewStructure(StructureStorageItem structure) {
-    if (structure.symbol != _symbol) return;
+    if (structure.symbol != _symbol || structure.timeFrame != _currentConfig.timeFrame) return;
     _structures.add(structure);
+    if (_lastUpBorder != null && structure.upBorder != _lastUpBorder) {
+      _structureChanges.insert(0, StructureChangeItem(
+        date: structure.date,
+        isUp: true,
+        oldValue: _lastUpBorder!,
+        newValue: structure.upBorder,
+      ));
+    }
+    if (_lastDownBorder != null && structure.downBorder != _lastDownBorder) {
+      _structureChanges.insert(0, StructureChangeItem(
+        date: structure.date,
+        isUp: false,
+        oldValue: _lastDownBorder!,
+        newValue: structure.downBorder,
+      ));
+    }
+    _lastUpBorder = structure.upBorder;
+    _lastDownBorder = structure.downBorder;
     if (_currentConfig.profileAutoByPriceStructure) {
       _applyVolumeFilter(0, barsTimeFrameFilter.length);
     }
     notifyListeners();
+  }
+
+  void _recomputeStructureChanges(List<StructureStorageItem> structures) {
+    _structureChanges.clear();
+    final relevant = structures
+        .where((s) => s.symbol == _symbol && s.timeFrame == _currentConfig.timeFrame)
+        .toList();
+    if (relevant.length < 2) {
+      if (relevant.isNotEmpty) {
+        _lastUpBorder = relevant.last.upBorder;
+        _lastDownBorder = relevant.last.downBorder;
+      }
+      return;
+    }
+    final sorted = List<StructureStorageItem>.from(relevant)
+      ..sort((a, b) => a.date.compareTo(b.date));
+    for (int i = 1; i < sorted.length; i++) {
+      final prev = sorted[i - 1];
+      final curr = sorted[i];
+      if (curr.upBorder != prev.upBorder) {
+        _structureChanges.add(StructureChangeItem(
+          date: curr.date,
+          isUp: true,
+          oldValue: prev.upBorder,
+          newValue: curr.upBorder,
+        ));
+      }
+      if (curr.downBorder != prev.downBorder) {
+        _structureChanges.add(StructureChangeItem(
+          date: curr.date,
+          isUp: false,
+          oldValue: prev.downBorder,
+          newValue: curr.downBorder,
+        ));
+      }
+    }
+    _lastUpBorder = sorted.last.upBorder;
+    _lastDownBorder = sorted.last.downBorder;
+    final reversed = _structureChanges.reversed.toList();
+    _structureChanges
+      ..clear()
+      ..addAll(reversed);
   }
 
   void _handleMissedBars(List<BarStorageItem> bars) {
@@ -622,6 +704,7 @@ class StateService extends ChangeNotifier {
     final structures =
         await _apiService.setStructureDistance(_symbol, minDistance);
     _structures = structures;
+    _recomputeStructureChanges(structures);
     notifyListeners();
   }
 

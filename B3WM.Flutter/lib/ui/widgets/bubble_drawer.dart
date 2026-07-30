@@ -29,7 +29,7 @@ class _BubbleDrawerState extends State<BubbleDrawer> {
           .toList();
     }
     filtered.sort((a, b) => b.date.compareTo(a.date));
-    return filtered.take(45).toList();
+    return filtered.toList();
   }
 
   @override
@@ -94,7 +94,6 @@ class _BubbleDrawerState extends State<BubbleDrawer> {
                       value: state.bubbleSoundVolume,
                       min: 0.0,
                       max: 1.0,
-                      divisions: 20,
                       label: '${(state.bubbleSoundVolume * 100).round()}%',
                       onChanged: (v) => state.setBubbleSoundVolume(v),
                     ),
