@@ -96,15 +96,15 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
         return Scaffold(
           key: _scaffoldKey,
           appBar: MapFlowAppBar(
-            onSettingsTap: () {
+            onBubblesTap: () {
               setState(() => _drawerTabIndex = 0);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onBubblesTap: () {
+            onStructureTap: () {
               setState(() => _drawerTabIndex = 1);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onStructureTap: () {
+            onVolumeProfileTap: () {
               setState(() => _drawerTabIndex = 2);
               _scaffoldKey.currentState?.openDrawer();
             },

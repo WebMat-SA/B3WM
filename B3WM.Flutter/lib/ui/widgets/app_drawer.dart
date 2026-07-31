@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'config_drawer.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
+import 'volume_profile_drawer.dart';
 
 class AppDrawer extends StatefulWidget {
   final int initialTab;
@@ -55,9 +55,9 @@ class _AppDrawerState extends State<AppDrawer>
               labelColor: Colors.blue,
               unselectedLabelColor: Colors.grey,
               tabs: const [
-                Tab(text: 'Configurações', icon: Icon(Icons.settings, size: 18)),
                 Tab(text: 'Bubbles', icon: Icon(Icons.bubble_chart, size: 18)),
                 Tab(text: 'Estrutura', icon: Icon(Icons.stacked_line_chart, size: 18)),
+                Tab(text: 'Volume Profile', icon: Icon(Icons.align_horizontal_right, size: 18)),
               ],
             ),
           ),
@@ -65,9 +65,9 @@ class _AppDrawerState extends State<AppDrawer>
             child: TabBarView(
               controller: _tabController,
               children: const [
-                ConfigDrawer(noDrawer: true),
                 BubbleDrawer(noDrawer: true),
                 StructureDrawer(noDrawer: true),
+                VolumeProfileDrawer(noDrawer: true),
               ],
             ),
           ),
