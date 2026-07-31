@@ -2,9 +2,7 @@
 using B3WM.Shared.Extensions;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
-using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR;
-using MudBlazor.Charts;
 using System.Diagnostics;
 using System.Threading.Channels;
 

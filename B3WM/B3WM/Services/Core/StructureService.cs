@@ -1,5 +1,4 @@
-﻿using B3WM.Client.Services;
-using B3WM.Shared.Entity;
+﻿using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;

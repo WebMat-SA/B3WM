@@ -1,11 +1,9 @@
-﻿using B3WM.Client.Services;
-using B3WM.Services;
+﻿using B3WM.Services;
 using B3WM.Services.Core;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
-using MudBlazor.Charts;
 using System.Globalization;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 

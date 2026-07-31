@@ -5,7 +5,7 @@ using static B3WM.Shared.Entity.Ticks2;
 namespace B3WM.Shared.Models
 {
     /// <summary>
-    /// Bubbles para IndexedDB. KeyPath "id" (case-sensitive). Sem timeframe.
+    /// Bubbles persistidos em JSON pelo servidor. Sem timeframe.
     /// </summary>
     public class BubbleStorageItem
     {

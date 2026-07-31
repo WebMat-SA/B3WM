@@ -42,4 +42,6 @@
 - `/mnt/c/Users/webma/b3wm/B3WM.Flutter/lib/ui/widgets/chart/chart_fixed_painter.dart` — `_priceToY` / `_yToPrice` with `yZoom`
 - `/mnt/c/Users/webma/b3wm/B3WM.Flutter/lib/ui/widgets/chart/map_flow_chart.dart` — Y‑zoom buttons, `_onMatrixChanged` (vertical‑pan lock), `MouseRegion` hover, tap tooltip with inverse matrix, Positioned fix
 - `/mnt/c/Users/webma/b3wm/B3WM.Flutter/lib/ui/widgets/config_drawer.dart` — Delta, bubble range sections (no indicators)
-- `/mnt/c/Users/webma/b3wm/B3WM/B3WM.Client/Pages/NewMapFlow.razor` — Reference Blazor page (target parity)
+
+> **Nota:** o frontend Blazor (`B3WM/B3WM.Client`, incluindo `NewMapFlow.razor`) foi removido do
+> repositório (issue #8). O Flutter `MapFlowChart` é agora a implementação canônica do cliente.

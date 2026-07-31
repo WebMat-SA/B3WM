@@ -20,6 +20,7 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 **Objetivo:** Estudar a dinâmica do fluxo de ordens, perfil de volume, agressividade dos participantes e estrutura de preços — tudo em tempo real.
 
 ---
+
 > 💡 **Quer ver na prática?** As imagens abaixo mostram o B3WM rodando com dados reais da B3.
 > Se você tiver sugestões de outros prints que ajudariam a entender melhor o projeto,
 > fique à vontade para contribuir! (veja sugestões ao final da seção)
@@ -73,11 +74,11 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 | Camada | Tecnologia |
 |---|---|
 | Backend | .NET 10 / ASP.NET Core / SignalR |
-| Frontend | Blazor WebAssembly / MudBlazor 9 |
-| Charting | ECharts (Vizor.ECharts wrapper) |
+| Frontend | Flutter (desktop / mobile) |
+| Charting | CustomPainter (Flutter) |
 | Real-time | SignalR (WebSocket) |
 | Trading Bridge | Python 3 / FastAPI / MetaTrader 5 |
-| Persistência | JSON (arquivos) + IndexedDB (navegador) |
+| Persistência | JSON (arquivos) |
 | Coleta de Dados | WPF / Profit COM RTD (Excel Interop) |
 
 ---
@@ -90,21 +91,20 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 graph TB
     subgraph SOL["📦 B3WM.sln - Solução .NET"]
         direction TB
-        API["B3WM/<br/>Servidor ASP.NET Core<br/>Program.cs → dotnet run"]
-        CLIENT["B3WM.Client/<br/>Blazor WebAssembly<br/>Frontend"]
+        API["B3WM/<br/>Servidor ASP.NET Core<br/>API REST + SignalR"]
         SHARED["B3WM.Shared/<br/>Modelos & DTOs"]
         TESTS["B3WM.Tests/<br/>Testes Unitários xUnit"]
-        API --- CLIENT
         API --- SHARED
-        CLIENT --- SHARED
         TESTS --- SHARED
     end
 
     subgraph EXT["Projetos Externos"]
+        FLUTTER["B3WM.Flutter/<br/>Frontend Flutter<br/>Map Flow Chart"]
         PYTHON["B3WM.Python/<br/>Bridge MetaTrader 5<br/>FastAPI :8000<br/>(Opcional)"]
         RTD["ExtractorRTD/<br/>Coletor WPF (Profit)<br/>COM RTD (Excel Interop)<br/>(Obrigatório p/ dados reais)"]
     end
 
+    FLUTTER -.->|HTTP + SignalR| API
     PYTHON -.->|HTTP| API
     RTD -.->|SignalR| API
 ```
@@ -121,9 +121,9 @@ graph TD
         CORE --> REST["🌐 REST API"]
     end
 
-    subgraph CLIENTE["Cliente Web"]
-        REST --> WASM["🖥️ Blazor WASM<br/>NewMapFlow · BacktestPage"]
-        HUB -->|WebSocket<br/>Tempo Real| WASM
+    subgraph CLIENTE["Cliente Flutter"]
+        REST --> APP["📱 Flutter App<br/>Map Flow Chart"]
+        HUB -->|WebSocket<br/>Tempo Real| APP
     end
 
     subgraph TRADING["Trading (Opcional)"]
@@ -140,6 +140,7 @@ graph TD
 
 ### Pré-requisitos
 - .NET 10 SDK
+- Flutter SDK (para o frontend)
 - Python 3.12+ (opcional, para trading)
 - MetaTrader 5 (opcional, para trading)
 - Profit (Carteira Profissional) ou fonte de dados B3 (opcional, para dados reais)
@@ -148,9 +149,10 @@ graph TD
 
 ```
 1️⃣ Servidor Web (obrigatório) — inicia primeiro
-2️⃣ Fonte de dados (real) — conecta ao servidor
-3️⃣ Trading Bridge (opcional) — conecta ao servidor
-4️⃣ Testes — podem rodar a qualquer momento
+2️⃣ App Flutter — conecta ao servidor via API/SignalR
+3️⃣ Fonte de dados (real) — conecta ao servidor
+4️⃣ Trading Bridge (opcional) — conecta ao servidor
+5️⃣ Testes — podem rodar a qualquer momento
 ```
 
 ### 1. Servidor Web (Obrigatório)
@@ -159,11 +161,21 @@ graph TD
 dotnet run --project B3WM/B3WM --launch-profile https
 ```
 
-Acesse em: **https://localhost:5002**
+O servidor inicia em **https://localhost:5002** expondo apenas a **API REST** e o **SignalR Hub** (`/api/datahub`).
 
-> O servidor já inclui o frontend Blazor WASM. Tudo em um único processo.
+### 2. App Flutter (Frontend)
 
-### 2. Fonte de Dados
+O frontend foi reescrito em **Flutter** e substitui o antigo cliente Blazor WebAssembly.
+
+```bash
+cd B3WM.Flutter
+flutter pub get
+flutter run -d windows   # ou -d chrome / -d android
+```
+
+> O app conecta-se a **https://localhost:5002** por padrão (veja `lib/main.dart`).
+
+### 3. Fonte de Dados
 
 #### Opção A — Dados Reais (requer Profit Carteira Profissional)
 
@@ -175,7 +187,7 @@ e envia os dados para o servidor B3WM via SignalR.
 > ⚠️ O Profit Carteira Profissional deve estar aberto com o **suplemento RTD Trading** habilitado
 > para que o servidor COM `rtdtrading.rtdserver` esteja disponível.
 
-### 3. Trading Bridge — MetaTrader 5 (Opcional)
+### 4. Trading Bridge — MetaTrader 5 (Opcional)
 
 ```bash
 cd B3WM.Python
@@ -185,7 +197,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 O servidor FastAPI inicia em **http://localhost:8000** e o B3WM Server se conecta a ele automaticamente.
 
-### 4. Testes
+### 5. Testes
 
 ```bash
 dotnet test B3WM.Tests
@@ -203,18 +215,16 @@ B3WM.sln                          # Solução principal (.NET 10)
 │   ├── Services/Core/            #    Candle, Bubble, Volume, Structure
 │   ├── Services/Backtest/        #    BacktestEngine, SmartBreakoutStrategy
 │   ├── Controllers/              #    REST API endpoints
-│   ├── Data/                     #    Persistência (JSON)
-│   ├── Components/               #    Componentes Server-Side
-│   └── wwwroot/                  #    Arquivos estáticos
-│
-├── B3WM.Client/                  # 🌐 Frontend Blazor WebAssembly
-│   ├── Pages/                    #    NewMapFlow, BacktestPage
-│   ├── Components/               #    TradingDrawer, Charts
-│   └── Services/                 #    Serviços HTTP/SignalR (cliente)
+│   └── Data/                     #    Persistência (JSON)
 │
 ├── B3WM.Shared/                  # 📦 Modelos, DTOs, Interfaces
 │
 ├── B3WM.Tests/                   # ✅ Testes unitários (xUnit)
+│
+├── B3WM.Flutter/                 # 📱 Frontend Flutter (Map Flow Chart)
+│   ├── lib/main.dart             #    Entry point do app
+│   ├── lib/services/             #    Serviços HTTP/SignalR (cliente)
+│   └── lib/ui/widgets/chart/     #    Gráfico Map Flow (CustomPainter)
 │
 ├── B3WM.Python/                  # 🐍 Bridge MetaTrader 5 (FastAPI)
 │   └── main.py                   #    Entry point (python main.py)
@@ -222,6 +232,15 @@ B3WM.sln                          # Solução principal (.NET 10)
 └── ExtractorRTD/                 # 📡 Coletor WPF (Profit RTD via COM)
     └── B3WM.ExtractorRTD.sln     #    Solução separada (.NET Framework)
 ```
+
+---
+
+## Nota de Migração
+
+O antigo frontend **Blazor WebAssembly** (`B3WM/B3WM.Client`) foi **removido** do repositório
+e substituído pelo cliente **Flutter** (`B3WM.Flutter`). O servidor .NET permanece como backend
+(API REST + SignalR) consumido pelo novo frontend. O histórico do git preserva o código Blazor
+removido, caso seja necessário consultá-lo.
 
 ---
 
