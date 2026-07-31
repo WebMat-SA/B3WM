@@ -189,13 +189,18 @@ ChartData buildChartData(StateService state) {
   final candleDateLookup = _buildDateLookup(dates);
 
   int findCandleIndex(DateTime bubbleDate) {
-    final key = _formatCandleKey(bubbleDate);
-    final exact = candleDateLookup[key];
+    final totalMinutes = bubbleDate.hour * 60 + bubbleDate.minute;
+    final candleStartMin = (totalMinutes ~/ state.timeFrame) * state.timeFrame;
+    final candleStartKey = _formatCandleKey(DateTime(
+      bubbleDate.year, bubbleDate.month, bubbleDate.day,
+      candleStartMin ~/ 60, candleStartMin % 60,
+    ));
+    final exact = candleDateLookup[candleStartKey];
     if (exact != null) return exact;
-    for (int i = 0; i < visible.length; i++) {
-      if (visible[i].date.compareTo(bubbleDate) >= 0) return i;
+    for (int i = visible.length - 1; i >= 0; i--) {
+      if (visible[i].date.compareTo(bubbleDate) <= 0) return i;
     }
-    return visible.length - 1;
+    return 0;
   }
 
   final redBubbles = <BubblePoint>[];

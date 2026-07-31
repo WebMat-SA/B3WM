@@ -48,7 +48,7 @@
     },
     {
       "label": "run-all",
-      "dependsOn": ["python-service", "dotnet-webapp", "flutter-win"],
+      "dependsOn": ["python-service", "dotnet-webapp"],
       "group": {
         "kind": "build",
         "isDefault": true
