@@ -186,7 +186,6 @@ window.vizorECharts = {
 		var parsedOptions = eval('(' + chartOptions + ')');
 
 		if (vizorECharts.logging) {
-			console.log("CHART");
 			console.log(parsedOptions);
 		}
 
@@ -200,7 +199,6 @@ window.vizorECharts = {
 	updateChart: async function (id, chartOptions, mapOptions, fetchOptions) {
 		var chart = vizorECharts.charts.get(id);
 		if (chart == null) {
-			console.error("Failed to retrieve chart " + id);
 			return;
 		}
 
@@ -228,7 +226,6 @@ window.vizorECharts = {
 	attachClickEvent: function (id, objRef) {
 		var chart = vizorECharts.charts.get(id);
 		if (chart == null) {
-			console.error("Failed to retrieve chart " + id);
 			return;
 		}
 
@@ -250,7 +247,6 @@ window.vizorECharts = {
 	disposeChart: function (id) {
 		var chart = vizorECharts.charts.get(id);
 		if (chart == null) {
-			console.error("Failed to dispose chart " + id);
 			return;
 		}
 

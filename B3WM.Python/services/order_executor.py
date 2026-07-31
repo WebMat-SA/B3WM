@@ -1,16 +1,19 @@
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import MetaTrader5 as mt5
 
 from models.order import (
     AccountInfo,
+    HistoryDeal,
     MarketOrderRequest,
+    OrderInfo,
     OrderResult,
     PositionInfo,
     SymbolInfo,
 )
-from services.contract_utils import resolve_symbol
+from services.contract_utils import get_symbol_prefix, resolve_symbol
 
 
 class MT5OrderExecutor:
@@ -157,6 +160,27 @@ class MT5OrderExecutor:
             message=result.comment or retcode_name,
         )
 
+    def cancel_order(self, order_ticket: int) -> OrderResult:
+        if not self.ensure_connected():
+            return OrderResult(message="MT5 not connected")
+
+        cancel_request = {
+            "action": mt5.TRADE_ACTION_REMOVE,
+            "order": order_ticket,
+        }
+
+        result = mt5.order_send(cancel_request)
+        if result is None:
+            return OrderResult(message="order_send returned None")
+
+        retcode_name = self._retcode_name(result.retcode)
+        return OrderResult(
+            success=result.retcode == mt5.TRADE_RETCODE_DONE,
+            retcode=result.retcode,
+            retcode_name=retcode_name,
+            message=retcode_name,
+        )
+
     def modify_position(self, position_ticket: int, sl: Optional[float] = None, tp: Optional[float] = None) -> OrderResult:
         if not self.ensure_connected():
             return OrderResult(message="MT5 not connected")
@@ -249,6 +273,53 @@ class MT5OrderExecutor:
             ))
         return result
 
+    def get_orders(self) -> list[OrderInfo]:
+        if not self.ensure_connected():
+            return []
+
+        orders = mt5.orders_get()
+        if orders is None:
+            return []
+
+        type_map = {
+            mt5.ORDER_TYPE_BUY_LIMIT: "buy_limit",
+            mt5.ORDER_TYPE_SELL_LIMIT: "sell_limit",
+            mt5.ORDER_TYPE_BUY_STOP: "buy_stop",
+            mt5.ORDER_TYPE_SELL_STOP: "sell_stop",
+            mt5.ORDER_TYPE_BUY_STOP_LIMIT: "buy_stop_limit",
+            mt5.ORDER_TYPE_SELL_STOP_LIMIT: "sell_stop_limit",
+        }
+        state_map = {
+            mt5.ORDER_STATE_STARTED: "started",
+            mt5.ORDER_STATE_PLACED: "placed",
+            mt5.ORDER_STATE_CANCELED: "canceled",
+            mt5.ORDER_STATE_PARTIAL: "partial",
+            mt5.ORDER_STATE_FILLED: "filled",
+            mt5.ORDER_STATE_REJECTED: "rejected",
+            mt5.ORDER_STATE_EXPIRED: "expired",
+            mt5.ORDER_STATE_REQUEST_ADD: "request_add",
+            mt5.ORDER_STATE_REQUEST_MODIFY: "request_modify",
+            mt5.ORDER_STATE_REQUEST_CANCEL: "request_cancel",
+        }
+
+        result = []
+        for o in orders:
+            result.append(OrderInfo(
+                ticket=o.ticket,
+                symbol=o.symbol,
+                type=type_map.get(o.type, f"unknown_{o.type}"),
+                volume=o.volume_current,
+                price_open=o.price_open,
+                sl=o.sl,
+                tp=o.tp,
+                time_setup=str(o.time_setup),
+                time_expiration=str(o.time_expiration),
+                state=state_map.get(o.state, f"unknown_{o.state}"),
+                comment=o.comment,
+                magic=o.magic,
+            ))
+        return result
+
     def get_symbol_info(self, symbol: str) -> Optional[SymbolInfo]:
         if not self.ensure_connected():
             return None
@@ -291,6 +362,37 @@ class MT5OrderExecutor:
         except Exception as e:
             print(f"[MT5] error building SymbolInfo for {symbol}: {e}", file=sys.stderr)
             return None
+
+    def get_history_deals(self, symbol: str = "", from_date: str = "", to_date: str = "") -> list[HistoryDeal]:
+        if not self.ensure_connected():
+            return []
+
+        try:
+            from_dt = datetime.fromisoformat(from_date) if from_date else datetime.now() - timedelta(days=30)
+            to_dt = datetime.fromisoformat(to_date) if to_date else datetime.now()
+        except Exception:
+            return []
+
+        prefix = get_symbol_prefix(symbol) if symbol else ""
+        group_filter = f"*{prefix}*" if prefix else ""
+        deals = mt5.history_deals_get(from_dt, to_dt, group=group_filter)
+        if deals is None:
+            return []
+
+        result = []
+        for d in deals:
+            result.append(HistoryDeal(
+                ticket=d.ticket,
+                symbol=d.symbol,
+                type="buy" if d.type == mt5.DEAL_TYPE_BUY else "sell",
+                volume=d.volume,
+                price=d.price,
+                profit=d.profit,
+                time=datetime.fromtimestamp(d.time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if d.time else "",
+                comment=d.comment,
+                magic=d.magic,
+            ))
+        return result
 
     def _retcode_name(self, retcode: int) -> str:
         mapping = {

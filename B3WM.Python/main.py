@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from models.order import (
     AccountInfo,
     CloseOrderRequest,
+    HistoryDeal,
     MarketOrderRequest,
     ModifyOrderRequest,
+    OrderInfo,
     OrderResult,
     PositionInfo,
     SymbolInfo,
@@ -61,6 +63,12 @@ async def close_position(request: CloseOrderRequest):
     return result
 
 
+@app.post("/api/order/cancel", response_model=OrderResult)
+async def cancel_order(request: CloseOrderRequest):
+    result = executor.cancel_order(request.position_ticket)
+    return result
+
+
 @app.post("/api/order/modify", response_model=OrderResult)
 async def modify_position(request: ModifyOrderRequest):
     result = executor.modify_position(
@@ -79,10 +87,20 @@ async def get_account_info():
     return info
 
 
+@app.get("/api/orders", response_model=list[OrderInfo])
+async def get_orders():
+    return executor.get_orders()
+
+
 @app.get("/api/positions", response_model=list[PositionInfo])
 @app.get("/api/positions/{symbol}", response_model=list[PositionInfo])
 async def get_positions(symbol: str = ""):
     return executor.get_positions(symbol)
+
+
+@app.get("/api/history", response_model=list[HistoryDeal])
+async def get_history(symbol: str = "", from_date: str = "", to_date: str = ""):
+    return executor.get_history_deals(symbol, from_date, to_date)
 
 
 @app.get("/api/symbol/{symbol}", response_model=SymbolInfo)

@@ -33,10 +33,22 @@ public class TradeController : ControllerBase
         return await ForwardPost("/api/order/close", body);
     }
 
+    [HttpPost("order-cancel")]
+    public async Task<IActionResult> CancelOrder([FromBody] JsonElement body)
+    {
+        return await ForwardPost("/api/order/cancel", body);
+    }
+
     [HttpPost("order-modify")]
     public async Task<IActionResult> ModifyPosition([FromBody] JsonElement body)
     {
         return await ForwardPost("/api/order/modify", body);
+    }
+
+    [HttpGet("orders")]
+    public async Task<IActionResult> GetOrders()
+    {
+        return await ForwardGet("/api/orders");
     }
 
     [HttpGet("account")]
@@ -61,6 +73,20 @@ public class TradeController : ControllerBase
     public async Task<IActionResult> GetSymbolInfo(string symbol)
     {
         return await ForwardGet($"/api/symbol/{symbol}");
+    }
+
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory(
+        [FromQuery] string symbol = "",
+        [FromQuery] string from_date = "",
+        [FromQuery] string to_date = "")
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrEmpty(symbol)) query.Add($"symbol={symbol}");
+        if (!string.IsNullOrEmpty(from_date)) query.Add($"from_date={from_date}");
+        if (!string.IsNullOrEmpty(to_date)) query.Add($"to_date={to_date}");
+        var qs = query.Count > 0 ? "?" + string.Join("&", query) : "";
+        return await ForwardGet($"/api/history{qs}");
     }
 
     private async Task<IActionResult> ForwardPost(string path, JsonElement body)
