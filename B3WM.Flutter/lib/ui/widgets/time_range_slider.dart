@@ -193,17 +193,6 @@ class TimeRangeSlider extends StatelessWidget {
                   tooltip: 'Reset range',
                 ),
                 const Spacer(),
-                IconButton(
-                  icon: Icon(
-                    Icons.auto_mode,
-                    size: 16,
-                    color: state.profileAutoByPriceStructure
-                        ? Colors.green
-                        : Colors.red,
-                  ),
-                  onPressed: () => state.setProfileAutoByPriceStructure(!state.profileAutoByPriceStructure),
-                  tooltip: state.profileAutoByPriceStructure ? 'Auto Mode: On' : 'Auto Mode: Off',
-                ),
                 Text(
                   '$start - $end',
                   style: const TextStyle(fontSize: 10, color: Colors.grey),

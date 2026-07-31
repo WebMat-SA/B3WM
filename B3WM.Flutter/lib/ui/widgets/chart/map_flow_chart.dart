@@ -144,12 +144,13 @@ class _MapFlowChartState extends State<MapFlowChart>
     final rightMargin = viewerW * 0.15;
     final fitWidth = viewerW - leftMargin - rightMargin;
     final fitScale = max(0.1, min(1.0, fitWidth / virtualWidth));
-    _minAllowedScale = max(0.7, fitScale);
-    final scale = _minAllowedScale;
+    _minAllowedScale = fitScale;
+    final scale = fitScale;
 
     final m = Matrix4.identity();
-    final tx = (viewerW - rightMargin) - virtualWidth * scale;
-    m.setTranslationRaw(tx, 0.0, 0.0);
+    final tx = (viewerW - virtualWidth * scale) / 2;
+    final ty = max(0.0, (areaHeight - areaHeight * scale) / 2);
+    m.setTranslationRaw(tx, ty, 0.0);
     m[0] = scale;
     m[5] = scale;
     _controller.value = m;
