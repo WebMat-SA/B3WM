@@ -3,7 +3,7 @@ using B3WM.Shared.Entity;
 namespace B3WM.Shared.Models
 {
     /// <summary>
-    /// Barras para IndexedDB com timeframe. KeyPath "id" (case-sensitive).
+    /// Barras com timeframe persistidas em JSON pelo servidor.
     /// </summary>
     public class BarStorageItem
     {

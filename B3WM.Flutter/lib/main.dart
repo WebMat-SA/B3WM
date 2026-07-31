@@ -9,7 +9,6 @@ import 'services/audio_service.dart';
 import 'ui/widgets/app_bar_widget.dart';
 import 'ui/widgets/app_drawer.dart';
 import 'ui/widgets/trading_drawer.dart';
-import 'ui/widgets/time_range_slider.dart';
 import 'ui/widgets/chart/map_flow_chart.dart';
 import 'ui/widgets/chart/chart_data.dart';
 
@@ -135,8 +134,6 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                               ],
                             ),
                           ),
-                          // Time Range Slider
-                          const TimeRangeSlider(),
                         ],
                       ),
           ),

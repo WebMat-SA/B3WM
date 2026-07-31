@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 namespace B3WM.Shared.Models
 {
     /// <summary>
-    /// VolumeLevel para IndexedDB com data da barra. KeyPath "id" (case-sensitive).
+    /// VolumeLevel persistido em JSON pelo servidor.
     /// BarDate permite filtrar volume por intervalo de datas ao remontar.
     /// </summary>
     public class VolumeLevelStorageItem

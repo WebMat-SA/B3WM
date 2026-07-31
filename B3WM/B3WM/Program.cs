@@ -1,5 +1,3 @@
-using B3WM.Client.Services;
-using B3WM.Components;
 using B3WM.Services;
 using B3WM.Services.Core;
 using B3WM.Shared.Entity;
@@ -8,7 +6,6 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.SignalR;
-using MudBlazor.Services;
 
 namespace B3WM
 {
@@ -29,14 +26,7 @@ namespace B3WM
                 options.MultipartBodyLengthLimit = long.MaxValue;
             });
 
-
-            // Only enable WebAssembly interactive components (client-side rendering)
-            builder.Services.AddRazorComponents()
-                .AddInteractiveServerComponents()
-                .AddInteractiveWebAssemblyComponents();
-
             // Add services to the container.
-            builder.Services.AddMudServices();
 
             builder.Services.AddCors(options => 
             {   
@@ -98,11 +88,10 @@ namespace B3WM
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
-                app.UseWebAssemblyDebugging();
+                app.UseDeveloperExceptionPage();
             }
             else
             {
-                app.UseExceptionHandler("/Error");
                 // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
                 app.UseHsts();
             }
@@ -115,18 +104,12 @@ namespace B3WM
 
             app.UseRouting();
 
-            app.UseAntiforgery();
-
             app.UseAuthorization();
 
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
                 endpoints.MapHub<DataHub>("/api/datahub");
-                endpoints.MapRazorComponents<App>()
-                    .AddInteractiveServerRenderMode()
-                    .AddInteractiveWebAssemblyRenderMode()
-                    .AddAdditionalAssemblies(typeof(B3WM.Client.Pages.NewMapFlow).Assembly);
             });
 
             app.Run();
