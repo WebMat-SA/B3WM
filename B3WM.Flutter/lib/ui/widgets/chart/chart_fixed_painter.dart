@@ -118,7 +118,8 @@ class ChartFixedPainter extends CustomPainter {
 
     final chartPaint = Paint()..color = const Color(0xFF252525);
     canvas.drawRect(
-        Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight), chartPaint);
+        Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth - rightLabelMargin, chartHeight),
+        chartPaint);
   }
 
   void _drawGridLines(Canvas canvas) {
@@ -129,7 +130,7 @@ class ChartFixedPainter extends CustomPainter {
     const lines = 8;
     for (int i = 0; i <= lines; i++) {
       final y = marginTop + (chartHeight / lines) * i;
-      canvas.drawLine(Offset(marginLeft, y), Offset(chartRight, y), paint);
+      canvas.drawLine(Offset(marginLeft, y), Offset(chartRight - rightLabelMargin, y), paint);
     }
   }
 
@@ -140,18 +141,6 @@ class ChartFixedPainter extends CustomPainter {
   void _drawYAxis(Canvas canvas) {
     const lines = 8;
     final tick = Defaults.tickSize(data.symbol);
-    for (int i = 0; i <= lines; i++) {
-      final y = marginTop + (chartHeight / lines) * i;
-      final price = _snapToTick(_yToPrice(y), tick);
-      final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
-
-      final tp = TextPainter(
-        text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(marginLeft + 2, y - tp.height / 2));
-    }
-
     for (int i = 0; i <= lines; i++) {
       if (i == 0 || i == lines) continue;
       final y = marginTop + (chartHeight / lines) * i;
@@ -182,7 +171,9 @@ class ChartFixedPainter extends CustomPainter {
 
     final count = lastIdx - firstIdx + 1;
     if (count <= 0) return;
-    final step = max(1, (count / 10).round());
+    final screenStep = candleStep * scaleX;
+    const minLabelSpacing = 50.0;
+    final step = max(1, (minLabelSpacing / screenStep).ceil());
 
     for (int i = firstIdx; i <= lastIdx; i += step) {
       final childX = i * candleStep + candleStep / 2;
