@@ -27,6 +27,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   double? _hoverY;
   int? _hoverCandleIndex;
   BubblePoint? _hoveredBubble;
+  HistoryDealPoint? _hoveredHistory;
   Offset? _hoverPos;
   bool _initialFitDone = false;
   double _lastCandleAreaWidth = 0;
@@ -131,6 +132,7 @@ class _MapFlowChartState extends State<MapFlowChart>
 
   void _dismissTooltip() {
     _hoveredBubble = null;
+    _hoveredHistory = null;
     _hoverPos = null;
     _hoverY = null;
   }
@@ -164,9 +166,31 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _handleScroll(PointerScrollEvent event) {
+    final areaH = _lastCandleAreaHeight;
+    final range = widget.data.priceRange;
+    if (areaH <= 0 || range <= 0) return;
+
+    final m = _controller.value;
+    final scaleY = (m[5].isFinite && m[5] > 0) ? m[5] : 1.0;
+    final ty = m.getTranslation().y.isFinite ? m.getTranslation().y : 0.0;
+
+    final childY = (event.localPosition.dy - ty) / scaleY;
+    final price = _yToPrice(childY, areaH);
+
+    final newZoom =
+        (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.9, 10.0);
+    if (newZoom == _yZoom) return;
+
+    final newChildY = _toChildY(price, areaH, newZoom);
+    final newTy = ty + (childY - newChildY) * scaleY;
+
     setState(() {
-      _yZoom = (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.9, 10.0);
+      _yZoom = newZoom;
     });
+
+    final mm = Matrix4.copy(_controller.value);
+    mm.setTranslationRaw(mm.getTranslation().x, newTy, mm.getTranslation().z);
+    _controller.value = mm;
   }
 
   void _centerLastCandleY() {
@@ -235,13 +259,29 @@ class _MapFlowChartState extends State<MapFlowChart>
     checkBubbles(data.blueBubbles);
     if (hit == null) checkBubbles(data.redBubbles);
 
+    HistoryDealPoint? hitHistory;
+    if (hit == null && data.historyPoints.isNotEmpty) {
+      const hitRadius = 11.0;
+      for (final hp in data.historyPoints) {
+        final hx = hp.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
+        final hy = _toChildY(hp.price, candleAreaHeight);
+        final dx = childX - hx;
+        final dy = childY - hy;
+        if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+          hitHistory = hp;
+          break;
+        }
+      }
+    }
+
     final candleIndex = (childX / stepX).round().clamp(0, data.candles.length - 1);
 
     setState(() {
       _hoverY = localY;
       _hoverCandleIndex = candleIndex;
       _hoveredBubble = hit;
-      _hoverPos = hit != null ? event.localPosition : null;
+      _hoveredHistory = hitHistory;
+      _hoverPos = (hit ?? hitHistory) != null ? event.localPosition : null;
     });
   }
 
@@ -371,15 +411,16 @@ class _MapFlowChartState extends State<MapFlowChart>
     }
   }
 
-  double _yToPrice(double y, double chartHeight) {
+  double _yToPrice(double y, double chartHeight, [double? zoom]) {
     final range = widget.data.priceRange;
     if (range <= 0) return 0;
+    final z = zoom ?? _yZoom;
     final padding = range * 0.25;
     final minP = widget.data.minPrice - padding;
     final maxP = widget.data.maxPrice + padding;
     final center = (minP + maxP) / 2;
     final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / _yZoom;
+    final zoomedHalf = halfRange / z;
     final adjustedMin = center - zoomedHalf;
     final adjustedMax = center + zoomedHalf;
     final adjustedRange = adjustedMax - adjustedMin;
@@ -387,15 +428,16 @@ class _MapFlowChartState extends State<MapFlowChart>
     return adjustedMin + ((chartHeight - y) / chartHeight) * adjustedRange;
   }
 
-  double _toChildY(double price, double chartHeight) {
+  double _toChildY(double price, double chartHeight, [double? zoom]) {
     final range = widget.data.priceRange;
     if (range <= 0) return chartHeight / 2;
+    final z = zoom ?? _yZoom;
     final padding = range * 0.25;
     final minP = widget.data.minPrice - padding;
     final maxP = widget.data.maxPrice + padding;
     final center = (minP + maxP) / 2;
     final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / _yZoom;
+    final zoomedHalf = halfRange / z;
     final adjustedMin = center - zoomedHalf;
     final adjustedMax = center + zoomedHalf;
     final adjustedRange = adjustedMax - adjustedMin;
@@ -495,7 +537,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                   },
                   child: MouseRegion(
                     onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
-                    onExit: (e) { if (_hoverY != null || _hoveredBubble != null) setState(() { _hoverY = null; _hoverCandleIndex = null; _hoveredBubble = null; _hoverPos = null; }); },
+                    onExit: (e) { if (_hoverY != null || _hoveredBubble != null || _hoveredHistory != null) setState(() { _hoverY = null; _hoverCandleIndex = null; _hoveredBubble = null; _hoveredHistory = null; _hoverPos = null; }); },
                     child: InteractiveViewer(
                         transformationController: _controller,
                         constrained: false,
@@ -547,6 +589,12 @@ class _MapFlowChartState extends State<MapFlowChart>
               top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
               child: _buildBubbleTooltip(_hoveredBubble!),
             ),
+          if (_hoveredHistory != null && _hoverPos != null)
+            Positioned(
+              left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
+              top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
+              child: _buildHistoryTooltip(_hoveredHistory!),
+            ),
         ],
       );
     },
@@ -564,6 +612,22 @@ class _MapFlowChartState extends State<MapFlowChart>
         _TooltipRow('Qtd', bubble.originalAmount.toStringAsFixed(0)),
         _TooltipRow('Preço', bubble.price.toStringAsFixed(1)),
         _TooltipRow('Hora', timeStr),
+      ],
+      titleColor: color,
+    );
+  }
+
+  Widget _buildHistoryTooltip(HistoryDealPoint hp) {
+    final deal = hp.deal;
+    final color = hp.isBuy ? Colors.green : Colors.red;
+    return _buildTooltip(
+      hp.isBuy ? 'Buy' : 'Sell',
+      [
+        _TooltipRow('Preço', deal.price.toStringAsFixed(2)),
+        _TooltipRow('Hora', deal.time),
+        _TooltipRow('Volume', deal.volume.toStringAsFixed(2)),
+        _TooltipRow(
+            'P/L', '${deal.profit >= 0 ? '+' : ''}${deal.profit.toStringAsFixed(2)}'),
       ],
       titleColor: color,
     );

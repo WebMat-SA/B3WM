@@ -78,6 +78,20 @@ class StructureLineData {
   });
 }
 
+class HistoryDealPoint {
+  final int candleIndex;
+  final double price;
+  final bool isBuy;
+  final HistoryDeal deal;
+
+  HistoryDealPoint({
+    required this.candleIndex,
+    required this.price,
+    required this.isBuy,
+    required this.deal,
+  });
+}
+
 class ChartData {
   final List<CandlePoint> candles;
   final List<BubblePoint> redBubbles;
@@ -106,6 +120,7 @@ class ChartData {
   final double bubbleSizeMax;
   final List<PositionInfo> positions;
   final List<OrderInfo> orders;
+  final List<HistoryDealPoint> historyPoints;
 
   ChartData({
     required this.candles,
@@ -135,6 +150,7 @@ class ChartData {
     this.bubbleSizeMax = 100,
     this.positions = const [],
     this.orders = const [],
+    this.historyPoints = const [],
   });
 
   double get priceRange => maxPrice - minPrice;
@@ -310,6 +326,30 @@ ChartData buildChartData(StateService state) {
       .where((o) => _normalizeTradeSymbol(o.symbol) == state.symbol)
       .toList();
 
+  final historyPoints = <HistoryDealPoint>[];
+  if (state.timeFrame > 0) {
+    for (final deal in state.history) {
+      if (_normalizeTradeSymbol(deal.symbol) != state.symbol) continue;
+      if (deal.price <= 0) continue;
+      final dealDate = DateTime.tryParse(deal.time);
+      if (dealDate == null) continue;
+      final totalMinutes = dealDate.hour * 60 + dealDate.minute;
+      final candleStartMin = (totalMinutes ~/ state.timeFrame) * state.timeFrame;
+      final candleStartKey = _formatCandleKey(DateTime(
+        dealDate.year, dealDate.month, dealDate.day,
+        candleStartMin ~/ 60, candleStartMin % 60,
+      ));
+      final idx = candleDateLookup[candleStartKey];
+      if (idx == null || idx >= visible.length) continue;
+      historyPoints.add(HistoryDealPoint(
+        candleIndex: idx,
+        price: deal.price,
+        isBuy: deal.type == 'buy',
+        deal: deal,
+      ));
+    }
+  }
+
   return ChartData(
     candles: candles,
     redBubbles: redBubbles,
@@ -337,6 +377,7 @@ ChartData buildChartData(StateService state) {
     bubbleSizeMax: state.bubbleSizeMax,
     positions: positions,
     orders: orders,
+    historyPoints: historyPoints,
   );
 }
 

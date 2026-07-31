@@ -98,6 +98,9 @@ class StateService extends ChangeNotifier {
   List<OrderInfo> _orders = [];
   List<OrderInfo> get orders => _orders;
 
+  List<HistoryDeal> _history = [];
+  List<HistoryDeal> get history => _history;
+
   // --- Per-symbol configs ---
   final Map<String, SymbolConfig> _configs = {};
 
@@ -717,6 +720,11 @@ class StateService extends ChangeNotifier {
 
   void updateOrders(List<OrderInfo> orders) {
     _orders = orders;
+    notifyListeners();
+  }
+
+  void updateHistory(List<HistoryDeal> history) {
+    _history = history;
     notifyListeners();
   }
 

@@ -36,6 +36,7 @@ class ChartPainter extends CustomPainter {
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
+    _drawHistoryMarkers(canvas, size, chartWidth, chartHeight, stepX);
   }
 
   double _priceToY(double price, double chartHeight) {
@@ -237,6 +238,44 @@ class ChartPainter extends CustomPainter {
         ..strokeWidth = 0.1;
       canvas.drawCircle(Offset(x, y), r, strokePaint);
     }
+  }
+
+  void _drawHistoryMarkers(
+      Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
+    if (data.historyPoints.isEmpty) return;
+
+    for (final hp in data.historyPoints) {
+      final x = _indexToX(hp.candleIndex.clamp(0, data.candles.length - 1), stepX);
+      if (x < 0 || x > chartWidth) continue;
+      final y = _priceToY(hp.price, chartHeight);
+
+      final color = hp.isBuy ? const Color(0xFF4caf50) : const Color(0xFFf44336);
+      _drawTriangle(canvas, Offset(x, y), 7.0, hp.isBuy, color);
+    }
+  }
+
+  void _drawTriangle(Canvas canvas, Offset center, double size, bool pointUp, Color color) {
+    const half = 0.866;
+    final path = Path();
+    if (pointUp) {
+      path.moveTo(center.dx, center.dy - size);
+      path.lineTo(center.dx + size * half, center.dy + size * 0.5);
+      path.lineTo(center.dx - size * half, center.dy + size * 0.5);
+    } else {
+      path.moveTo(center.dx, center.dy + size);
+      path.lineTo(center.dx + size * half, center.dy - size * 0.5);
+      path.lineTo(center.dx - size * half, center.dy - size * 0.5);
+    }
+    path.close();
+
+    canvas.drawPath(path, Paint()..color = color);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
   }
 
   @override

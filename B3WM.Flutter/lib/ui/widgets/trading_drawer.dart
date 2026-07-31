@@ -39,6 +39,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
       if (!_volumeFocusNode.hasFocus) _commitVolume();
     });
     _startAutoRefresh();
+    _refreshHistory();
   }
 
   @override
@@ -102,6 +103,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
           .reversed
           .toList();
       _historyTotal = _history.fold(0.0, (sum, d) => sum + d.profit);
+      if (mounted) context.read<StateService>().updateHistory(_history);
     } catch (_) {
       _history = [];
       _historyTotal = 0;

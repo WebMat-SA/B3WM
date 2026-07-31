@@ -96,6 +96,16 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
     _startHoverTimer();
   }
 
+  void _handleBarPointerDown(PointerDownEvent event) {
+    if (!_showTimeframe) return;
+    final box = _clockKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      final local = box.globalToLocal(event.position);
+      if ((Offset.zero & box.size).contains(local)) return;
+    }
+    _closeTimeframe();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<StateService>(
@@ -103,9 +113,11 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
         final isLoading = state.isLoading;
         final connected = state.isConnected;
 
-        return AppBar(
-          toolbarHeight: 48,
-          leadingWidth: 176,
+        return Listener(
+          onPointerDown: _handleBarPointerDown,
+          child: AppBar(
+            toolbarHeight: 48,
+            leadingWidth: 176,
           leading: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -194,6 +206,7 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
               tooltip: 'Trading Panel',
             ),
           ],
+          ),
         );
       },
     );
