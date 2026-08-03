@@ -124,6 +124,10 @@ class StateService extends ChangeNotifier {
   bool get bubbleSoundEnabled => _currentConfig.bubbleSoundEnabled;
   double get bubbleSoundVolume => _currentConfig.bubbleSoundVolume;
 
+  bool get tradingHistoryVisible => _currentConfig.tradingHistoryVisible;
+  bool get positionVisible => _currentConfig.positionVisible;
+  bool get openOrdersVisible => _currentConfig.openOrdersVisible;
+
   bool _isStructureUpdating = false;
   bool get isStructureUpdating => _isStructureUpdating;
 
@@ -178,6 +182,10 @@ class StateService extends ChangeNotifier {
   void setBubbleAgentsFilter(bool v) { _currentConfig.bubbleAgentsFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleSoundEnabled(bool v) { _currentConfig.bubbleSoundEnabled = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleSoundVolume(double v) { _currentConfig.bubbleSoundVolume = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
+
+  void setTradingHistoryVisible(bool v) { _currentConfig.tradingHistoryVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setPositionVisible(bool v) { _currentConfig.positionVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setOpenOrdersVisible(bool v) { _currentConfig.openOrdersVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
@@ -273,9 +281,11 @@ class StateService extends ChangeNotifier {
       bubbleAgentsFilter: p.getBool('BubbleAgentsFilter') ?? true,
       bubbleSoundEnabled: p.getBool('BubbleSoundEnabled') ?? true,
       bubbleSoundVolume: p.getDouble('BubbleSoundVolume') ?? 0.5,
+      tradingHistoryVisible: true,
+      positionVisible: true,
+      openOrdersVisible: true,
     );
   }
-
   void _saveConfigForSymbol(String symbol) {
     if (symbol.isEmpty || !_configs.containsKey(symbol)) return;
     _preferencesService.setString(
@@ -367,8 +377,9 @@ class StateService extends ChangeNotifier {
       }
 
       if (_volumeLevels.isNotEmpty) {
-        _filteredVolumeLevels = List.from(_volumeLevels);
-        _volumeFilterActive = true;
+        // Range completo no load: perfil cumulativo ao vivo (sem filtro).
+        _filteredVolumeLevels = null;
+        _volumeFilterActive = false;
       }
       notifyListeners();
 
@@ -452,7 +463,8 @@ class StateService extends ChangeNotifier {
     final existingIndex =
         _bars.indexWhere((b) => b.date == bar.date && b.timeFrame == bar.timeFrame);
     if (existingIndex >= 0) {
-      _bars[existingIndex] = bar;
+      final existing = _bars[existingIndex];
+      _bars[existingIndex] = _preserveVolumeLevel(bar, existing);
     } else {
       _bars.add(bar);
     }
@@ -467,15 +479,16 @@ class StateService extends ChangeNotifier {
   }
 
   void _handleCurrentBar(BarStorageItem bar) {
-    _currentBar = bar;
-
     final existingIndex =
         _bars.indexWhere((b) => b.date == bar.date && b.timeFrame == bar.timeFrame);
     if (existingIndex >= 0) {
+      final existing = _bars[existingIndex];
+      bar = _preserveVolumeLevel(bar, existing);
       _bars[existingIndex] = bar;
     } else {
       _bars.add(bar);
     }
+    _currentBar = bar;
 
     final filteredCount = barsTimeFrameFilter.length;
     if (filteredCount > 0 && _dateRangeEnd >= filteredCount - 1) {
@@ -484,6 +497,15 @@ class StateService extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  BarStorageItem _preserveVolumeLevel(
+      BarStorageItem incoming, BarStorageItem existing) {
+    if ((incoming.volumeLevel == null || incoming.volumeLevel!.isEmpty) &&
+        (existing.volumeLevel != null && existing.volumeLevel!.isNotEmpty)) {
+      return incoming.copyWith(volumeLevel: existing.volumeLevel);
+    }
+    return incoming;
   }
 
   void _handleNewBubble(BubbleStorageItem data) {
@@ -517,27 +539,52 @@ class StateService extends ChangeNotifier {
 
     final count = barsTimeFrameFilter.length;
     if (count > 0) {
-      final startIdx = (_dateRangeStart - 1).clamp(0, count - 1);
-      final endIdx = _dateRangeEnd.clamp(0, count - 1);
-      final startBar = barsTimeFrameFilter.elementAtOrNull(startIdx);
-      final endBar = barsTimeFrameFilter.elementAtOrNull(endIdx);
-      if (startBar?.volumeLevel != null &&
-          startBar!.volumeLevel!.isNotEmpty &&
-          endBar?.volumeLevel != null &&
-          endBar!.volumeLevel!.isNotEmpty) {
-        _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-            endBar.volumeLevel!, startBar.volumeLevel!, 'Diff');
-        _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-        _volumeFilterActive = true;
-      } else if (startBar?.volumeLevel != null &&
-          startBar!.volumeLevel!.isNotEmpty) {
-        _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-            _volumeLevels, startBar.volumeLevel!, 'Diff');
-        _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-        _volumeFilterActive = true;
+      final isFullRange = _dateRangeStart <= 0 && _dateRangeEnd >= count;
+      if (isFullRange) {
+        _filteredVolumeLevels = null;
+        _volumeFilterActive = false;
       } else {
-        _filteredVolumeLevels = List.from(_volumeLevels);
-        _volumeFilterActive = true;
+        final startIdx = _dateRangeStart - 1;
+        final endIdx = _dateRangeEnd.clamp(0, count - 1);
+        final startBar = startIdx >= 0
+            ? barsTimeFrameFilter.elementAtOrNull(startIdx)
+            : null;
+        final endBar = barsTimeFrameFilter.elementAtOrNull(endIdx);
+        final startLevels = startBar?.volumeLevel;
+        final endLevels = endBar?.volumeLevel;
+        if (endLevels != null && endLevels.isNotEmpty) {
+          if (startIdx < 0) {
+            // start==0: sem barra anterior → perfil = cumulativo até o fim.
+            _filteredVolumeLevels = List.from(endLevels);
+          } else if (startLevels != null && startLevels.isNotEmpty) {
+            _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+                endLevels, startLevels, 'Diff');
+          } else {
+            // start>0 sem snapshot na referência: busca a referência anterior.
+            BarStorageItem? foundStart;
+            for (int i = startIdx - 1; i >= 0; i--) {
+              final b = barsTimeFrameFilter[i];
+              if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
+                foundStart = b;
+                break;
+              }
+            }
+            _filteredVolumeLevels = foundStart != null
+                ? VolumeLevelStorageItem.operation(
+                    endLevels, foundStart.volumeLevel!, 'Diff')
+                : List.from(_volumeLevels);
+          }
+          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+          _volumeFilterActive = true;
+        } else if (startLevels != null && startLevels.isNotEmpty) {
+          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+              _volumeLevels, startLevels, 'Diff');
+          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+          _volumeFilterActive = true;
+        } else {
+          _filteredVolumeLevels = List.from(_volumeLevels);
+          _volumeFilterActive = true;
+        }
       }
     }
 
@@ -645,9 +692,20 @@ class StateService extends ChangeNotifier {
       return;
     }
     final lastChange = _structureChanges.first;
+    StructureChangeItem? anchor;
+    for (final c in _structureChanges) {
+      if (c.isUp != lastChange.isUp && c.isUpMove != lastChange.isUpMove) {
+        anchor = c;
+        break;
+      }
+    }
+    if (anchor == null) {
+      _applyVolumeFilter(0, end);
+      return;
+    }
     var start = 0;
     for (int i = bars.length - 1; i >= 0; i--) {
-      if (!bars[i].date.isAfter(lastChange.date)) {
+      if (!bars[i].date.isAfter(anchor.date)) {
         start = i;
         break;
       }
@@ -663,21 +721,55 @@ class StateService extends ChangeNotifier {
     final count = barsTimeFrameFilter.length;
     if (count == 0) return;
 
-    final bars = barsTimeFrameFilter;
-    final startIdx = (start - 1).clamp(0, count - 1);
-    final endIdx = end.clamp(0, count - 1);
-    var startBar = bars.elementAtOrNull(startIdx);
-    var endBar = bars.elementAtOrNull(endIdx);
+    // Range completo (dia inteiro): mostra o perfil cumulativo ao vivo,
+    // sem subtrair snapshot algum (paridade com NewMapFlow.razor).
+    if (start <= 0 && end >= count) {
+      _filteredVolumeLevels = null;
+      _volumeFilterActive = false;
+      notifyListeners();
+      return;
+    }
 
-    if (startBar != null && endBar != null) {
-      final startLevels = startBar.volumeLevel;
+    final bars = barsTimeFrameFilter;
+    // start==0 → não há barra anterior: referência vazia (sem subtração),
+    // para o volume do primeiro candle entrar na mostragem.
+    final startIdx = start - 1;
+    final endIdx = end.clamp(0, count - 1);
+    final startBar = startIdx >= 0 ? bars.elementAtOrNull(startIdx) : null;
+    final endBar = bars.elementAtOrNull(endIdx);
+
+    if (endBar != null) {
+      final startLevels = startBar?.volumeLevel;
       final endLevels = endBar.volumeLevel;
 
-      if (endLevels != null && endLevels.isNotEmpty && startLevels != null && startLevels.isNotEmpty) {
-        _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-            endLevels, startLevels, 'Diff');
-        _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-        _volumeFilterActive = true;
+      if (endLevels != null && endLevels.isNotEmpty) {
+        if (startIdx < 0) {
+          // start==0: sem barra anterior → perfil = cumulativo até o fim do
+          // range (primeiro candle incluso).
+          _filteredVolumeLevels = List.from(endLevels);
+        } else if (startLevels != null && startLevels.isNotEmpty) {
+          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+              endLevels, startLevels, 'Diff');
+        } else {
+          // start>0 sem snapshot na referência: busca a referência anterior
+          // mais próxima, para não mostrar o volume inteiro do dia.
+          BarStorageItem? foundStart;
+          for (int i = startIdx - 1; i >= 0; i--) {
+            final b = bars[i];
+            if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
+              foundStart = b;
+              break;
+            }
+          }
+          if (foundStart != null) {
+            _filteredVolumeLevels = VolumeLevelStorageItem.operation(
+                endLevels, foundStart.volumeLevel!, 'Diff');
+          }
+        }
+        if (_filteredVolumeLevels != null) {
+          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
+          _volumeFilterActive = true;
+        }
       } else {
         BarStorageItem? foundStart = (startLevels != null && startLevels.isNotEmpty) ? startBar : null;
         BarStorageItem? foundEnd = (endLevels != null && endLevels.isNotEmpty) ? endBar : null;

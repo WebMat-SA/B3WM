@@ -32,6 +32,10 @@ class SymbolConfig {
   bool bubbleSoundEnabled;
   double bubbleSoundVolume;
 
+  bool tradingHistoryVisible;
+  bool positionVisible;
+  bool openOrdersVisible;
+
   SymbolConfig({
     required this.timeFrame,
     required this.bubbleVisible,
@@ -57,6 +61,9 @@ class SymbolConfig {
     required this.bubbleAgentsFilter,
     required this.bubbleSoundEnabled,
     required this.bubbleSoundVolume,
+    required this.tradingHistoryVisible,
+    required this.positionVisible,
+    required this.openOrdersVisible,
   });
 
   SymbolConfig.withDefaults(String symbol)
@@ -83,7 +90,10 @@ class SymbolConfig {
         bubbleAmountFilter = true,
         bubbleAgentsFilter = true,
         bubbleSoundEnabled = true,
-        bubbleSoundVolume = 0.5;
+        bubbleSoundVolume = 0.5,
+        tradingHistoryVisible = true,
+        positionVisible = true,
+        openOrdersVisible = true;
 
   /// Aplica as configs legadas (globais, anteriores à separação por símbolo)
   /// sobre os defaults per-symbol, respeitando os limites válidos de cada
@@ -122,6 +132,9 @@ class SymbolConfig {
       bubbleAgentsFilter: legacy.bubbleAgentsFilter,
       bubbleSoundEnabled: legacy.bubbleSoundEnabled,
       bubbleSoundVolume: legacy.bubbleSoundVolume,
+      tradingHistoryVisible: legacy.tradingHistoryVisible,
+      positionVisible: legacy.positionVisible,
+      openOrdersVisible: legacy.openOrdersVisible,
     );
   }
 
@@ -159,6 +172,9 @@ class SymbolConfig {
         bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
         bubbleSoundVolume:
             (json['bubbleSoundVolume'] as num?)?.toDouble() ?? 0.5,
+        tradingHistoryVisible: json['tradingHistoryVisible'] as bool? ?? true,
+        positionVisible: json['positionVisible'] as bool? ?? true,
+        openOrdersVisible: json['openOrdersVisible'] as bool? ?? true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -187,5 +203,8 @@ class SymbolConfig {
         'bubbleAgentsFilter': bubbleAgentsFilter,
         'bubbleSoundEnabled': bubbleSoundEnabled,
         'bubbleSoundVolume': bubbleSoundVolume,
+        'tradingHistoryVisible': tradingHistoryVisible,
+        'positionVisible': positionVisible,
+        'openOrdersVisible': openOrdersVisible,
       };
 }

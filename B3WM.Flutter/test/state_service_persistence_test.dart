@@ -84,6 +84,27 @@ void main() {
       expect(restored.selectedAgents, [1, 2]);
       expect(restored.agentThresholds, {1: 500});
     });
+
+    test('trading data flags round-trip e defaults', () {
+      final defaults = SymbolConfig.withDefaults('WINFUT');
+      expect(defaults.tradingHistoryVisible, isTrue);
+      expect(defaults.positionVisible, isTrue);
+      expect(defaults.openOrdersVisible, isTrue);
+
+      final cfg = SymbolConfig.withDefaults('WINFUT')
+        ..tradingHistoryVisible = false
+        ..positionVisible = false
+        ..openOrdersVisible = false;
+      final restored = SymbolConfig.fromJson(cfg.toJson(), symbol: 'WINFUT');
+      expect(restored.tradingHistoryVisible, isFalse);
+      expect(restored.positionVisible, isFalse);
+      expect(restored.openOrdersVisible, isFalse);
+
+      final missing = SymbolConfig.fromJson({'timeFrame': 2}, symbol: 'WINFUT');
+      expect(missing.tradingHistoryVisible, isTrue);
+      expect(missing.positionVisible, isTrue);
+      expect(missing.openOrdersVisible, isTrue);
+    });
   });
 
   group('StateService persistence', () {
@@ -126,6 +147,9 @@ void main() {
       service.setBubbleVisible(false);
       service.setThresholdBubble(750);
       service.setBubbleSoundEnabled(false);
+      service.setTradingHistoryVisible(false);
+      service.setPositionVisible(false);
+      service.setOpenOrdersVisible(false);
       service.reset();
 
       final reloaded = _createService(prefs);
@@ -133,6 +157,9 @@ void main() {
       expect(reloaded.bubbleVisible, isFalse);
       expect(reloaded.thresholdBubble, 750);
       expect(reloaded.bubbleSoundEnabled, isFalse);
+      expect(reloaded.tradingHistoryVisible, isFalse);
+      expect(reloaded.positionVisible, isFalse);
+      expect(reloaded.openOrdersVisible, isFalse);
       reloaded.reset();
     });
 
@@ -144,16 +171,19 @@ void main() {
       final service = _createService(prefs);
       await service.setSymbol('WINFUT');
       service.setBubbleVisible(false);
+      service.setTradingHistoryVisible(false);
       service.reset();
 
       final wdofut = _createService(prefs);
       await wdofut.setSymbol('WDOFUT');
       expect(wdofut.bubbleVisible, isTrue);
+      expect(wdofut.tradingHistoryVisible, isTrue);
       wdofut.reset();
 
       final reloaded = _createService(prefs);
       await reloaded.setSymbol('WINFUT');
       expect(reloaded.bubbleVisible, isFalse);
+      expect(reloaded.tradingHistoryVisible, isFalse);
       reloaded.reset();
     });
 

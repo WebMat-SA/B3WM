@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
+import 'trading_config_drawer.dart';
 
 class AppDrawer extends StatefulWidget {
   final int initialTab;
@@ -18,7 +19,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -58,6 +59,7 @@ class _AppDrawerState extends State<AppDrawer>
                 Tab(text: 'Bubbles', icon: Icon(Icons.bubble_chart, size: 18)),
                 Tab(text: 'Estrutura', icon: Icon(Icons.stacked_line_chart, size: 18)),
                 Tab(text: 'Volume Profile', icon: Icon(Icons.align_horizontal_right, size: 18)),
+                Tab(text: 'Trading Data', icon: Icon(Icons.show_chart, size: 18)),
               ],
             ),
           ),
@@ -68,6 +70,7 @@ class _AppDrawerState extends State<AppDrawer>
                 BubbleDrawer(noDrawer: true),
                 StructureDrawer(noDrawer: true),
                 VolumeProfileDrawer(noDrawer: true),
+                TradingConfigDrawer(noDrawer: true),
               ],
             ),
           ),

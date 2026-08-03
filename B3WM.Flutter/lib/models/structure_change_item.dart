@@ -10,4 +10,6 @@ class StructureChangeItem {
     required this.oldValue,
     required this.newValue,
   });
+
+  bool get isUpMove => newValue > oldValue;
 }

@@ -135,13 +135,11 @@ class _StructureDrawerState extends State<StructureDrawer> {
       ),
       title: Text.rich(
         TextSpan(
-          text: c.newValue > c.oldValue ? '\u2191' : '\u2193',
+          text: c.isUpMove ? '\u2191' : '\u2193',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: c.newValue > c.oldValue
-                ? Colors.green
-                : Colors.red,
+            color: c.isUpMove ? Colors.green : Colors.red,
           ),
           children: [
             TextSpan(

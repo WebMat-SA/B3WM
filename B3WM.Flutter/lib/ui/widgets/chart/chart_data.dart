@@ -120,6 +120,9 @@ class ChartData {
   final List<PositionInfo> positions;
   final List<OrderInfo> orders;
   final List<HistoryDealPoint> historyPoints;
+  final bool tradingHistoryVisible;
+  final bool positionVisible;
+  final bool openOrdersVisible;
 
   ChartData({
     required this.candles,
@@ -150,6 +153,9 @@ class ChartData {
     this.positions = const [],
     this.orders = const [],
     this.historyPoints = const [],
+    this.tradingHistoryVisible = true,
+    this.positionVisible = true,
+    this.openOrdersVisible = true,
   });
 
   double get priceRange => maxPrice - minPrice;
@@ -319,15 +325,19 @@ ChartData buildChartData(StateService state) {
     return candleEnd.difference(now).inSeconds.clamp(0, 9999);
   }
 
-  final positions = state.positions
-      .where((p) => _normalizeTradeSymbol(p.symbol) == state.symbol)
-      .toList();
-  final orders = state.orders
-      .where((o) => _normalizeTradeSymbol(o.symbol) == state.symbol)
-      .toList();
+  final positions = state.positionVisible
+      ? state.positions
+          .where((p) => _normalizeTradeSymbol(p.symbol) == state.symbol)
+          .toList()
+      : <PositionInfo>[];
+  final orders = state.openOrdersVisible
+      ? state.orders
+          .where((o) => _normalizeTradeSymbol(o.symbol) == state.symbol)
+          .toList()
+      : <OrderInfo>[];
 
   final historyPoints = <HistoryDealPoint>[];
-  if (state.timeFrame > 0) {
+  if (state.tradingHistoryVisible && state.timeFrame > 0) {
     for (final deal in state.history) {
       if (_normalizeTradeSymbol(deal.symbol) != state.symbol) continue;
       if (deal.price <= 0) continue;
@@ -378,6 +388,9 @@ ChartData buildChartData(StateService state) {
     positions: positions,
     orders: orders,
     historyPoints: historyPoints,
+    tradingHistoryVisible: state.tradingHistoryVisible,
+    positionVisible: state.positionVisible,
+    openOrdersVisible: state.openOrdersVisible,
   );
 }
 
