@@ -77,20 +77,7 @@ class StateService extends ChangeNotifier {
   final List<StructureChangeItem> _structureChanges = [];
   List<StructureChangeItem> get structureChanges => _structureChanges;
 
-  List<StructureChangeItem> get visibleStructureChanges {
-    final bars = barsTimeFrameFilter;
-    if (bars.isEmpty) return [];
-    final startIdx = _dateRangeStart.clamp(0, bars.length);
-    final endIdx = _dateRangeEnd > 0
-        ? _dateRangeEnd.clamp(0, bars.length)
-        : bars.length;
-    if (startIdx >= endIdx) return [];
-    final startDate = bars[startIdx].date;
-    final endDate = bars[endIdx - 1].date;
-    return _structureChanges
-        .where((c) => !c.date.isBefore(startDate) && !c.date.isAfter(endDate))
-        .toList();
-  }
+  List<StructureChangeItem> get visibleStructureChanges => _structureChanges;
 
   List<PositionInfo> _positions = [];
   List<PositionInfo> get positions => _positions;
@@ -162,7 +149,16 @@ class StateService extends ChangeNotifier {
   void setProfileSizeH(double v) { _currentConfig.profileSizeH = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setProfileSizeV(double v) { _currentConfig.profileSizeV = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setProfileOpacity(double v) { _currentConfig.profileOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setProfileAutoByPriceStructure(bool v) { _currentConfig.profileAutoByPriceStructure = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileAutoByPriceStructure(bool v) {
+    _currentConfig.profileAutoByPriceStructure = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    if (v) {
+      _applyStructureAutoFilter();
+    } else {
+      _applyVolumeFilter(0, barsTimeFrameFilter.length);
+    }
+  }
 
   void setStructureVisible(bool v) { _currentConfig.structureVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setStructureAuxVisible(bool v) { _currentConfig.structureAuxVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
@@ -221,24 +217,27 @@ class StateService extends ChangeNotifier {
   }
 
   // --- Per-symbol persistence ---
-  bool _migrated = false;
+  SymbolConfig? _legacy;
+
+  /// Snapshot único (por sessão) das configs globais antigas, para serem
+  /// aplicadas como seed a todo símbolo sem config própria.
+  SymbolConfig? get _legacyConfig =>
+      _legacy ??= _tryMigrateFromOldKeys();
 
   SymbolConfig _loadConfigForSymbol(String symbol) {
     final json = _preferencesService.getString('Config_$symbol');
     if (json != null) {
       try {
-        return SymbolConfig.fromJson(jsonDecode(json));
+        return SymbolConfig.fromJson(jsonDecode(json), symbol: symbol);
       } catch (_) {}
     }
 
-    if (!_migrated) {
-      _migrated = true;
-      final old = _tryMigrateFromOldKeys();
-      if (old != null) {
-        _configs[symbol] = old;
-        _saveConfigForSymbol(symbol);
-        return old;
-      }
+    final legacy = _legacyConfig;
+    if (legacy != null) {
+      final config = SymbolConfig.seedFromLegacy(symbol, legacy);
+      _configs[symbol] = config;
+      _saveConfigForSymbol(symbol);
+      return config;
     }
 
     return SymbolConfig.withDefaults(symbol);
@@ -379,6 +378,9 @@ class StateService extends ChangeNotifier {
       _structures = structures;
       _recomputeStructureChanges(structures);
       debugPrint('[loadData] Structures count: ${structures.length}');
+      if (_currentConfig.profileAutoByPriceStructure) {
+        _applyStructureAutoFilter();
+      }
       notifyListeners();
 
     } catch (e) {
@@ -487,6 +489,7 @@ class StateService extends ChangeNotifier {
   void _handleNewBubble(BubbleStorageItem data) {
     if (_allBubbleAgents.add(data.agent)) {
       _currentConfig.selectedAgents.add(data.agent);
+      _saveConfigForSymbol(_symbol);
     }
     _bubbles.add(data);
     if (_bubbles.length > maxBubbles) {
@@ -563,7 +566,7 @@ class StateService extends ChangeNotifier {
     _lastUpBorder = structure.upBorder;
     _lastDownBorder = structure.downBorder;
     if (_currentConfig.profileAutoByPriceStructure) {
-      _applyVolumeFilter(0, barsTimeFrameFilter.length);
+      _applyStructureAutoFilter();
     }
     notifyListeners();
   }
@@ -630,6 +633,26 @@ class StateService extends ChangeNotifier {
   int get barsCount => barsTimeFrameFilter.length;
 
   void applyVolumeFilter(int start, int end) {
+    _applyVolumeFilter(start, end);
+  }
+
+  void _applyStructureAutoFilter() {
+    final bars = barsTimeFrameFilter;
+    if (bars.isEmpty) return;
+    final end = bars.length;
+    if (_structureChanges.isEmpty) {
+      _applyVolumeFilter(0, end);
+      return;
+    }
+    final lastChange = _structureChanges.first;
+    var start = 0;
+    for (int i = bars.length - 1; i >= 0; i--) {
+      if (!bars[i].date.isAfter(lastChange.date)) {
+        start = i;
+        break;
+      }
+    }
+    start = start.clamp(0, end - 1);
     _applyVolumeFilter(start, end);
   }
 

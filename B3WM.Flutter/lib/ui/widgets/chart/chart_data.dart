@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'dart:ui' show Color;
 import '../../../services/state_service.dart';
 import '../../../models/ticks2.dart';
@@ -177,7 +176,7 @@ ChartData buildChartData(StateService state) {
   final rangeEnd = state.dateRangeEnd > 0
       ? state.dateRangeEnd.clamp(0, bars.length)
       : bars.length;
-  final visible = bars.sublist(rangeStart, rangeEnd);
+  final visible = bars;
 
   final candles = visible.map((b) => CandlePoint(
     date: b.date,
@@ -255,6 +254,7 @@ ChartData buildChartData(StateService state) {
       final maxVol = vols.fold<int>(0, (p, v) => v.total > p ? v.total : p);
       for (int i = 0; i < vols.length; i++) {
         final v = vols[i];
+        if (v.total <= 0) continue;
         final step = i < vols.length - 1
             ? (vols[i + 1].price - v.price).abs()
             : i > 0

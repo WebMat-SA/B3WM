@@ -19,18 +19,18 @@ class _VolumeProfileDrawerState extends State<VolumeProfileDrawer> {
       final body = ListView(
         padding: EdgeInsets.zero,
         children: [
-          const TimeRangeSlider(),
           ExpandableSection(
             icon: Icons.align_horizontal_right,
             title: 'Configurações',
-            defaultExpanded: false,
+            defaultExpanded: true,
             child: Column(
               children: [
-                ToggleRow('Show on Chart', state.profileVisible,
-                    (v) => state.setProfileVisible(v)),
                 ToggleRow('Auto Mode (por Estrutura)',
                     state.profileAutoByPriceStructure,
                     (v) => state.setProfileAutoByPriceStructure(v)),
+                const TimeRangeSlider(),
+                ToggleRow('Show on Chart', state.profileVisible,
+                    (v) => state.setProfileVisible(v)),
                 SliderRow('Size (Horizontal)', state.profileSizeH, 0, 3,
                     (v) => state.setProfileSizeH(v)),
                 SliderRow('Size (Vertical)', state.profileSizeV, 0, 10,

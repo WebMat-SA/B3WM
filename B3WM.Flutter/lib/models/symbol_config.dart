@@ -85,14 +85,56 @@ class SymbolConfig {
         bubbleSoundEnabled = true,
         bubbleSoundVolume = 0.5;
 
-  factory SymbolConfig.fromJson(Map<String, dynamic> json) => SymbolConfig(
+  /// Aplica as configs legadas (globais, anteriores à separação por símbolo)
+  /// sobre os defaults per-symbol, respeitando os limites válidos de cada
+  /// símbolo para campos dependentes dele (thresholdBubble, structureRangeUpd).
+  factory SymbolConfig.seedFromLegacy(String symbol, SymbolConfig legacy) {
+    final defaults = SymbolConfig.withDefaults(symbol);
+    final thresholdMin = Defaults.thresholdBubbleSize(symbol);
+    final structureMax = Defaults.structureRangeUpdMax(symbol);
+    return SymbolConfig(
+      timeFrame: legacy.timeFrame,
+      bubbleVisible: legacy.bubbleVisible,
+      bubbleSize: legacy.bubbleSize,
+      bubbleOpacity: legacy.bubbleOpacity,
+      bubbleSizeMin: legacy.bubbleSizeMin,
+      bubbleSizeMax: legacy.bubbleSizeMax,
+      thresholdBubble: legacy.thresholdBubble >= thresholdMin
+          ? legacy.thresholdBubble
+          : defaults.thresholdBubble,
+      profileVisible: legacy.profileVisible,
+      profileSizeH: legacy.profileSizeH,
+      profileSizeV: legacy.profileSizeV,
+      profileOpacity: legacy.profileOpacity,
+      profileAutoByPriceStructure: legacy.profileAutoByPriceStructure,
+      structureVisible: legacy.structureVisible,
+      structureAuxVisible: legacy.structureAuxVisible,
+      structureOpacity: legacy.structureOpacity,
+      structureRangeUpd: legacy.structureRangeUpd >= 0 &&
+              legacy.structureRangeUpd <= structureMax
+          ? legacy.structureRangeUpd
+          : defaults.structureRangeUpd,
+      colorBuyer: legacy.colorBuyer,
+      colorSeller: legacy.colorSeller,
+      selectedAgents: List.from(legacy.selectedAgents),
+      agentThresholds: Map.from(legacy.agentThresholds),
+      bubbleAmountFilter: legacy.bubbleAmountFilter,
+      bubbleAgentsFilter: legacy.bubbleAgentsFilter,
+      bubbleSoundEnabled: legacy.bubbleSoundEnabled,
+      bubbleSoundVolume: legacy.bubbleSoundVolume,
+    );
+  }
+
+  factory SymbolConfig.fromJson(Map<String, dynamic> json, {String symbol = ''}) =>
+      SymbolConfig(
         timeFrame: json['timeFrame'] as int? ?? 2,
         bubbleVisible: json['bubbleVisible'] as bool? ?? true,
         bubbleSize: (json['bubbleSize'] as num?)?.toDouble() ?? 1.0,
         bubbleOpacity: (json['bubbleOpacity'] as num?)?.toDouble() ?? 0.7,
         bubbleSizeMin: (json['bubbleSizeMin'] as num?)?.toDouble() ?? 20,
         bubbleSizeMax: (json['bubbleSizeMax'] as num?)?.toDouble() ?? 100,
-        thresholdBubble: json['thresholdBubble'] as int? ?? 250,
+        thresholdBubble: json['thresholdBubble'] as int? ??
+            Defaults.thresholdBubbleSize(symbol),
         profileVisible: json['profileVisible'] as bool? ?? true,
         profileSizeH: (json['profileSizeH'] as num?)?.toDouble() ?? 1.0,
         profileSizeV: (json['profileSizeV'] as num?)?.toDouble() ?? 1.0,
@@ -103,8 +145,8 @@ class SymbolConfig {
         structureAuxVisible: json['structureAuxVisible'] as bool? ?? true,
         structureOpacity:
             (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
-        structureRangeUpd:
-            (json['structureRangeUpd'] as num?)?.toDouble() ?? 250,
+        structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
+            Defaults.minDistanceUpdateBorder(symbol),
         colorBuyer: json['colorBuyer'] as String? ?? '#4488ff',
         colorSeller: json['colorSeller'] as String? ?? '#ff4444',
         selectedAgents:

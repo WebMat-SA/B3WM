@@ -15,6 +15,10 @@ class TimeRangeSlider extends StatelessWidget {
 
       final start = state.dateRangeStart;
       final end = state.dateRangeEnd;
+      final autoMode = state.profileAutoByPriceStructure;
+
+      final safeStart = start.clamp(0, count - 1);
+      final safeEnd = end.clamp(safeStart + 1, count);
 
       String formatDate(int idx) {
         final bar = bars.elementAtOrNull(idx);
@@ -28,6 +32,13 @@ class TimeRangeSlider extends StatelessWidget {
         return fmt.format(bar.date);
       }
 
+      void applyRange(double startVal, double endVal) {
+        final newStart = startVal.round().clamp(0, safeEnd - 1);
+        final newEnd = endVal.round().clamp(newStart + 1, count);
+        if (newStart == safeStart && newEnd == safeEnd) return;
+        state.applyVolumeFilter(newStart, newEnd);
+      }
+
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
@@ -37,167 +48,22 @@ class TimeRangeSlider extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Date labels
-            Row(
-              children: [
-                Text(formatDate(start),
-                    style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                const Spacer(),
-                Text('–',
-                    style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                const Spacer(),
-                Text(formatDate(end),
-                    style: const TextStyle(fontSize: 10, color: Colors.grey)),
-              ],
+            // End date label
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(formatDate(safeEnd),
+                  style: const TextStyle(fontSize: 10, color: Colors.grey)),
             ),
-            const SizedBox(height: 2),
-            // Track
-            LayoutBuilder(builder: (context, constraints) {
-              final totalWidth = constraints.maxWidth;
-              final thumbSize = 14.0;
-              final trackHeight = 40.0;
-              final leftPct = start / (count > 0 ? count : 1);
-              final rightPct = end / (count > 0 ? count : 1);
-              final leftPos = leftPct * totalWidth;
-              final rightPos = rightPct * totalWidth;
-
-              return GestureDetector(
-                onPanUpdate: (details) {
-                  // Simple tap-based range adjustment
-                },
-                child: SizedBox(
-                  height: trackHeight,
-                  child: Stack(
-                    children: [
-                      // Track background
-                      Positioned.fill(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 13),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade800,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      // Tick marks
-                      ...List.generate(count, (i) {
-                        if (i % 10 != 0 && i != 0 && i != count - 1) {
-                          return const SizedBox.shrink();
-                        }
-                        final pct = i / (count > 0 ? count : 1);
-                        final isMajor = i % 10 == 0;
-                        return Positioned(
-                          left: pct * totalWidth - (isMajor ? 1 : 0.5),
-                          top: isMajor ? 4 : 10,
-                          child: Container(
-                            width: isMajor ? 2 : 1,
-                            height: isMajor ? trackHeight - 8 : trackHeight - 20,
-                            color: isMajor
-                                ? Colors.grey.shade500
-                                : Colors.grey.shade700,
-                          ),
-                        );
-                      }),
-                      // Selected range highlight
-                      Positioned(
-                        left: leftPos,
-                        right: totalWidth - rightPos,
-                        top: 13,
-                        bottom: 13,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.blue.shade700,
-                                Colors.blue.shade900
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      // Thumb start
-                      Positioned(
-                        left: leftPos - thumbSize / 2,
-                        top: 0,
-                        child: GestureDetector(
-                          onHorizontalDragUpdate: (details) {
-                            final newStart =
-                                ((details.globalPosition.dx / totalWidth) *
-                                        count)
-                                    .round()
-                                    .clamp(0, end - 1);
-                            state.applyVolumeFilter(newStart, end);
-                          },
-                          child: Container(
-                            width: thumbSize,
-                            height: thumbSize,
-                            margin: const EdgeInsets.only(top: 13),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: Colors.blue, width: 3),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black.withOpacity(0.25),
-                                    blurRadius: 4),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Thumb end
-                      Positioned(
-                        left: rightPos - thumbSize / 2,
-                        top: 0,
-                        child: GestureDetector(
-                          onHorizontalDragUpdate: (details) {
-                            final newEnd =
-                                ((details.globalPosition.dx / totalWidth) *
-                                        count)
-                                    .round()
-                                    .clamp(start + 1, count);
-                            state.applyVolumeFilter(start, newEnd);
-                          },
-                          child: Container(
-                            width: thumbSize,
-                            height: thumbSize,
-                            margin: const EdgeInsets.only(top: 13),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: Colors.blue, width: 3),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black.withOpacity(0.25),
-                                    blurRadius: 4),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-            // Controls row
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.restart_alt, size: 16),
-                  onPressed: () => state.applyVolumeFilter(0, count),
-                  tooltip: 'Reset range',
-                ),
-                const Spacer(),
-                Text(
-                  '$start - $end',
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              ],
+            // Range filter
+            RangeSlider(
+              min: 0,
+              max: count.toDouble(),
+              divisions: count,
+              values: RangeValues(safeStart.toDouble(), safeEnd.toDouble()),
+              labels: RangeLabels(formatDate(safeStart), formatDate(safeEnd)),
+              onChanged: autoMode
+                  ? null
+                  : (v) => applyRange(v.start, v.end),
             ),
           ],
         ),
