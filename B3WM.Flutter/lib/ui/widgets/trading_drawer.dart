@@ -352,8 +352,11 @@ class _TradingDrawerState extends State<TradingDrawer> {
                           style: TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
-                    initiallyExpanded: false,
+                    initiallyExpanded: state.tradingAccountExpanded,
                     onExpansionChanged: (expanded) {
+                      context
+                          .read<StateService>()
+                          .setTradingAccountExpanded(expanded);
                       if (expanded) _refreshAccount();
                     },
                     children: [
@@ -408,8 +411,11 @@ class _TradingDrawerState extends State<TradingDrawer> {
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
-                    initiallyExpanded: false,
+                    initiallyExpanded: state.tradingOrdersExpanded,
                     onExpansionChanged: (expanded) {
+                      context
+                          .read<StateService>()
+                          .setTradingOrdersExpanded(expanded);
                       if (expanded) _refreshOrders();
                     },
                     children: [
@@ -510,8 +516,11 @@ class _TradingDrawerState extends State<TradingDrawer> {
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
-                    initiallyExpanded: false,
+                    initiallyExpanded: state.tradingPositionsExpanded,
                     onExpansionChanged: (expanded) {
+                      context
+                          .read<StateService>()
+                          .setTradingPositionsExpanded(expanded);
                       if (expanded) _refreshPositions();
                     },
                     children: [
@@ -790,6 +799,7 @@ Text(state.symbol,
   }
 
   Widget _buildHistorySection() {
+    final state = context.watch<StateService>();
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxListH =
@@ -836,8 +846,11 @@ Text(state.symbol,
                 const Text('Hoje',
                     style: TextStyle(fontSize: 11, color: Colors.grey)),
               ]),
-              initiallyExpanded: false,
+              initiallyExpanded: state.tradingHistoryExpanded,
               onExpansionChanged: (expanded) {
+                context
+                    .read<StateService>()
+                    .setTradingHistoryExpanded(expanded);
                 if (expanded) _refreshHistory();
               },
               children: [

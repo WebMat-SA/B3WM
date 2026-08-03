@@ -85,7 +85,6 @@ class NewMapFlowPage extends StatefulWidget {
 
 class _NewMapFlowPageState extends State<NewMapFlowPage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  bool _showTrading = true;
   int _drawerTabIndex = 0;
 
   @override
@@ -111,8 +110,9 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
               setState(() => _drawerTabIndex = 3);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onTradingTap: () => setState(() => _showTrading = !_showTrading),
-            tradingActive: _showTrading,
+            onTradingTap: () =>
+                state.setTradingPanelVisible(!state.tradingPanelVisible),
+            tradingActive: state.tradingPanelVisible,
           ),
           drawer: AppDrawer(initialTab: _drawerTabIndex),
           body: SafeArea(
@@ -133,8 +133,11 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                     data: buildChartData(state),
                                   ),
                                 ),
-                                if (_showTrading)
-                                  const TradingDrawer(),
+                                if (state.tradingPanelVisible)
+                                  TradingDrawer(
+                                    key: ValueKey(
+                                        'trading_${state.symbol}'),
+                                  ),
                               ],
                             ),
                           ),

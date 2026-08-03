@@ -105,6 +105,35 @@ void main() {
       expect(missing.positionVisible, isTrue);
       expect(missing.openOrdersVisible, isTrue);
     });
+
+    test('trading drawer flags round-trip e defaults', () {
+      final defaults = SymbolConfig.withDefaults('WINFUT');
+      expect(defaults.tradingPanelVisible, isTrue);
+      expect(defaults.tradingAccountExpanded, isFalse);
+      expect(defaults.tradingOrdersExpanded, isFalse);
+      expect(defaults.tradingPositionsExpanded, isFalse);
+      expect(defaults.tradingHistoryExpanded, isFalse);
+
+      final cfg = SymbolConfig.withDefaults('WINFUT')
+        ..tradingPanelVisible = false
+        ..tradingAccountExpanded = true
+        ..tradingOrdersExpanded = true
+        ..tradingPositionsExpanded = true
+        ..tradingHistoryExpanded = true;
+      final restored = SymbolConfig.fromJson(cfg.toJson(), symbol: 'WINFUT');
+      expect(restored.tradingPanelVisible, isFalse);
+      expect(restored.tradingAccountExpanded, isTrue);
+      expect(restored.tradingOrdersExpanded, isTrue);
+      expect(restored.tradingPositionsExpanded, isTrue);
+      expect(restored.tradingHistoryExpanded, isTrue);
+
+      final missing = SymbolConfig.fromJson({'timeFrame': 2}, symbol: 'WINFUT');
+      expect(missing.tradingPanelVisible, isTrue);
+      expect(missing.tradingAccountExpanded, isFalse);
+      expect(missing.tradingOrdersExpanded, isFalse);
+      expect(missing.tradingPositionsExpanded, isFalse);
+      expect(missing.tradingHistoryExpanded, isFalse);
+    });
   });
 
   group('StateService persistence', () {
@@ -150,6 +179,11 @@ void main() {
       service.setTradingHistoryVisible(false);
       service.setPositionVisible(false);
       service.setOpenOrdersVisible(false);
+      service.setTradingPanelVisible(false);
+      service.setTradingAccountExpanded(true);
+      service.setTradingOrdersExpanded(true);
+      service.setTradingPositionsExpanded(true);
+      service.setTradingHistoryExpanded(true);
       service.reset();
 
       final reloaded = _createService(prefs);
@@ -160,6 +194,11 @@ void main() {
       expect(reloaded.tradingHistoryVisible, isFalse);
       expect(reloaded.positionVisible, isFalse);
       expect(reloaded.openOrdersVisible, isFalse);
+      expect(reloaded.tradingPanelVisible, isFalse);
+      expect(reloaded.tradingAccountExpanded, isTrue);
+      expect(reloaded.tradingOrdersExpanded, isTrue);
+      expect(reloaded.tradingPositionsExpanded, isTrue);
+      expect(reloaded.tradingHistoryExpanded, isTrue);
       reloaded.reset();
     });
 
@@ -172,18 +211,24 @@ void main() {
       await service.setSymbol('WINFUT');
       service.setBubbleVisible(false);
       service.setTradingHistoryVisible(false);
+      service.setTradingPanelVisible(false);
+      service.setTradingOrdersExpanded(true);
       service.reset();
 
       final wdofut = _createService(prefs);
       await wdofut.setSymbol('WDOFUT');
       expect(wdofut.bubbleVisible, isTrue);
       expect(wdofut.tradingHistoryVisible, isTrue);
+      expect(wdofut.tradingPanelVisible, isTrue);
+      expect(wdofut.tradingOrdersExpanded, isFalse);
       wdofut.reset();
 
       final reloaded = _createService(prefs);
       await reloaded.setSymbol('WINFUT');
       expect(reloaded.bubbleVisible, isFalse);
       expect(reloaded.tradingHistoryVisible, isFalse);
+      expect(reloaded.tradingPanelVisible, isFalse);
+      expect(reloaded.tradingOrdersExpanded, isTrue);
       reloaded.reset();
     });
 

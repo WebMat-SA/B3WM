@@ -128,6 +128,12 @@ class StateService extends ChangeNotifier {
   bool get positionVisible => _currentConfig.positionVisible;
   bool get openOrdersVisible => _currentConfig.openOrdersVisible;
 
+  bool get tradingPanelVisible => _currentConfig.tradingPanelVisible;
+  bool get tradingAccountExpanded => _currentConfig.tradingAccountExpanded;
+  bool get tradingOrdersExpanded => _currentConfig.tradingOrdersExpanded;
+  bool get tradingPositionsExpanded => _currentConfig.tradingPositionsExpanded;
+  bool get tradingHistoryExpanded => _currentConfig.tradingHistoryExpanded;
+
   bool _isStructureUpdating = false;
   bool get isStructureUpdating => _isStructureUpdating;
 
@@ -186,6 +192,12 @@ class StateService extends ChangeNotifier {
   void setTradingHistoryVisible(bool v) { _currentConfig.tradingHistoryVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setPositionVisible(bool v) { _currentConfig.positionVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setOpenOrdersVisible(bool v) { _currentConfig.openOrdersVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+
+  void setTradingPanelVisible(bool v) { _currentConfig.tradingPanelVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingAccountExpanded(bool v) { _currentConfig.tradingAccountExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingOrdersExpanded(bool v) { _currentConfig.tradingOrdersExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingPositionsExpanded(bool v) { _currentConfig.tradingPositionsExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingHistoryExpanded(bool v) { _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
@@ -284,6 +296,11 @@ class StateService extends ChangeNotifier {
       tradingHistoryVisible: true,
       positionVisible: true,
       openOrdersVisible: true,
+      tradingPanelVisible: true,
+      tradingAccountExpanded: false,
+      tradingOrdersExpanded: false,
+      tradingPositionsExpanded: false,
+      tradingHistoryExpanded: false,
     );
   }
   void _saveConfigForSymbol(String symbol) {

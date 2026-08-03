@@ -36,6 +36,12 @@ class SymbolConfig {
   bool positionVisible;
   bool openOrdersVisible;
 
+  bool tradingPanelVisible;
+  bool tradingAccountExpanded;
+  bool tradingOrdersExpanded;
+  bool tradingPositionsExpanded;
+  bool tradingHistoryExpanded;
+
   SymbolConfig({
     required this.timeFrame,
     required this.bubbleVisible,
@@ -64,6 +70,11 @@ class SymbolConfig {
     required this.tradingHistoryVisible,
     required this.positionVisible,
     required this.openOrdersVisible,
+    required this.tradingPanelVisible,
+    required this.tradingAccountExpanded,
+    required this.tradingOrdersExpanded,
+    required this.tradingPositionsExpanded,
+    required this.tradingHistoryExpanded,
   });
 
   SymbolConfig.withDefaults(String symbol)
@@ -93,7 +104,12 @@ class SymbolConfig {
         bubbleSoundVolume = 0.5,
         tradingHistoryVisible = true,
         positionVisible = true,
-        openOrdersVisible = true;
+        openOrdersVisible = true,
+        tradingPanelVisible = true,
+        tradingAccountExpanded = false,
+        tradingOrdersExpanded = false,
+        tradingPositionsExpanded = false,
+        tradingHistoryExpanded = false;
 
   /// Aplica as configs legadas (globais, anteriores à separação por símbolo)
   /// sobre os defaults per-symbol, respeitando os limites válidos de cada
@@ -135,6 +151,11 @@ class SymbolConfig {
       tradingHistoryVisible: legacy.tradingHistoryVisible,
       positionVisible: legacy.positionVisible,
       openOrdersVisible: legacy.openOrdersVisible,
+      tradingPanelVisible: legacy.tradingPanelVisible,
+      tradingAccountExpanded: legacy.tradingAccountExpanded,
+      tradingOrdersExpanded: legacy.tradingOrdersExpanded,
+      tradingPositionsExpanded: legacy.tradingPositionsExpanded,
+      tradingHistoryExpanded: legacy.tradingHistoryExpanded,
     );
   }
 
@@ -175,6 +196,14 @@ class SymbolConfig {
         tradingHistoryVisible: json['tradingHistoryVisible'] as bool? ?? true,
         positionVisible: json['positionVisible'] as bool? ?? true,
         openOrdersVisible: json['openOrdersVisible'] as bool? ?? true,
+        tradingPanelVisible: json['tradingPanelVisible'] as bool? ?? true,
+        tradingAccountExpanded:
+            json['tradingAccountExpanded'] as bool? ?? false,
+        tradingOrdersExpanded: json['tradingOrdersExpanded'] as bool? ?? false,
+        tradingPositionsExpanded:
+            json['tradingPositionsExpanded'] as bool? ?? false,
+        tradingHistoryExpanded:
+            json['tradingHistoryExpanded'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -206,5 +235,10 @@ class SymbolConfig {
         'tradingHistoryVisible': tradingHistoryVisible,
         'positionVisible': positionVisible,
         'openOrdersVisible': openOrdersVisible,
+        'tradingPanelVisible': tradingPanelVisible,
+        'tradingAccountExpanded': tradingAccountExpanded,
+        'tradingOrdersExpanded': tradingOrdersExpanded,
+        'tradingPositionsExpanded': tradingPositionsExpanded,
+        'tradingHistoryExpanded': tradingHistoryExpanded,
       };
 }
