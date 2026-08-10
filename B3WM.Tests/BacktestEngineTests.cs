@@ -20,14 +20,13 @@ public class BacktestEngineTests
         StopLossPoints = 200,
         TakeProfitPoints = 400,
         Quantity = 1,
-        SlippagePoints = 0,
         CommissionPerSide = 0,
         StrategyName = StrategyType.Breakout,
         LookbackPeriod = 1
     };
 
     private static BacktestConfig ConfigWith(BacktestConfig cfg, DateTime? endDate = null,
-        double? sl = null, double? tp = null, double? slippage = null,
+        double? sl = null, double? tp = null,
         double? commission = null, int? quantity = null)
     {
         return new BacktestConfig
@@ -39,7 +38,6 @@ public class BacktestEngineTests
             StopLossPoints = sl ?? cfg.StopLossPoints,
             TakeProfitPoints = tp ?? cfg.TakeProfitPoints,
             Quantity = quantity ?? cfg.Quantity,
-            SlippagePoints = slippage ?? cfg.SlippagePoints,
             CommissionPerSide = commission ?? cfg.CommissionPerSide,
             StrategyName = cfg.StrategyName,
             LookbackPeriod = cfg.LookbackPeriod
@@ -133,7 +131,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -163,7 +161,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -192,7 +190,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69900, TakeProfitPrice = 70500 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -220,7 +218,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -250,7 +248,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -278,7 +276,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -306,7 +304,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
             .Returns((Signal?)null);
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), true))
             .Returns(new Signal { Side = OrderSide.Buy, Reason = "Exit signal" })
@@ -337,7 +335,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" });
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
         var result = await engine.Run(config, strategy.Object);
@@ -394,7 +392,7 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" })
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
             .Returns((Signal?)null);
         strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
 
@@ -407,35 +405,6 @@ public class BacktestEngineTests
         Assert.Equal(400, trade.Points);
         Assert.Equal(10.0, trade.Commission);
         Assert.Equal(400 - 10.0, trade.ProfitLoss);
-    }
-
-    [Fact]
-    public async Task Slippage_Applied()
-    {
-        var keeper = new FakeDataKeeper();
-        keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
-        {
-            MakeBar(70000, 70100, 69900, 70000, 0),
-            MakeBar(70100, 70500, 70100, 70450, 5)
-        });
-        var engine = CreateEngine(keeper);
-        var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(5),
-            sl: 200, tp: 300, slippage: 5);
-
-        var strategy = new Mock<IStrategy>();
-        strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry" })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
-
-        var result = await engine.Run(config, strategy.Object);
-
-        Assert.Single(result.Trades);
-        var trade = result.Trades[0];
-        Assert.Equal(70105, trade.EntryPrice);
-        Assert.Equal(70400, trade.ExitPrice);
-        Assert.Equal(295, trade.Points);
     }
 
     [Fact]
@@ -462,8 +431,8 @@ public class BacktestEngineTests
                 call++;
                 return call switch
                 {
-                    1 => new Signal { Side = OrderSide.Buy, Reason = "Entry1" },
-                    3 => new Signal { Side = OrderSide.Buy, Reason = "Entry2" },
+                    1 => new Signal { Side = OrderSide.Buy, Reason = "Entry1", StopLossPrice = 69700, TakeProfitPrice = 70500 },
+                    3 => new Signal { Side = OrderSide.Buy, Reason = "Entry2", StopLossPrice = 70150, TakeProfitPrice = 70950 },
                     _ => null
                 };
             });
@@ -504,8 +473,8 @@ public class BacktestEngineTests
                 call++;
                 return call switch
                 {
-                    1 => new Signal { Side = OrderSide.Buy, Reason = "Entry1" },
-                    3 => new Signal { Side = OrderSide.Buy, Reason = "Entry2" },
+                    1 => new Signal { Side = OrderSide.Buy, Reason = "Entry1", StopLossPrice = 69700, TakeProfitPrice = 70300 },
+                    3 => new Signal { Side = OrderSide.Buy, Reason = "Entry2", StopLossPrice = 69900, TakeProfitPrice = 70500 },
                     _ => null
                 };
             });
@@ -519,5 +488,83 @@ public class BacktestEngineTests
         Assert.Equal(0.5, result.WinRate);
         Assert.Equal(200, result.NetProfit, 1);
         Assert.Equal(200, result.MaxDrawdown, 1);
+    }
+
+    [Fact]
+    public async Task NoEntry_AfterDayTradeCloseTime()
+    {
+        var keeper = new FakeDataKeeper();
+        keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
+        {
+            MakeBar(70000, 70100, 69900, 70000, 595),  // 09:55
+            MakeBar(70100, 70500, 70100, 70450, 605)   // 10:05 (>= 10:00)
+        });
+        var engine = CreateEngine(keeper);
+        var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(605));
+        config.IsDayTrade = true;
+        config.DayTradeCloseTime = "10:00";
+
+        var strategy = new Mock<IStrategy>();
+        strategy.Setup(s => s.Name).Returns("Test");
+        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
+        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+
+        var result = await engine.Run(config, strategy.Object);
+
+        Assert.Equal(0, result.TotalTrades);
+    }
+
+    [Fact]
+    public async Task Entry_BeforeDayTradeCloseTime()
+    {
+        var keeper = new FakeDataKeeper();
+        keeper.AddData(BarPath("WINFUT", 5, BaseDate), new List<BarStorageItem>
+        {
+            MakeBar(70000, 70100, 69900, 70000, 595),  // 09:55
+            MakeBar(70100, 70500, 70100, 70450, 598)   // 09:58 (< 10:00)
+        });
+        var engine = CreateEngine(keeper);
+        var config = ConfigWith(DefaultConfig, endDate: BaseDate.AddMinutes(598));
+        config.IsDayTrade = true;
+        config.DayTradeCloseTime = "10:00";
+
+        var strategy = new Mock<IStrategy>();
+        strategy.Setup(s => s.Name).Returns("Test");
+        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
+        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+
+        var result = await engine.Run(config, strategy.Object);
+
+        Assert.Equal(1, result.TotalTrades);
+        Assert.Equal(ExitReason.TakeProfit, result.Trades[0].ExitReason);
+    }
+
+    [Fact]
+    public void Simulator_Incremental_ProducesEntryAndExitEvents()
+    {
+        var config = DefaultConfig;
+        config.IsDayTrade = false;
+
+        var strategy = new Mock<IStrategy>();
+        strategy.Setup(s => s.Name).Returns("Test");
+        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
+            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
+            .Returns((Signal?)null);
+        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+
+        var sim = new BacktestSimulator(config, strategy.Object);
+
+        var ev1 = sim.ProcessBar(MakeBar(70000, 70100, 69900, 70000, 0));
+        Assert.Empty(ev1); // só sinal pendente
+
+        var ev2 = sim.ProcessBar(MakeBar(70100, 70500, 70100, 70450, 5));
+        Assert.Equal(2, ev2.Count); // entrada + saída (TP)
+        Assert.Equal(SignalType.EntryBuy, ev2[0].Type);
+        Assert.Equal(SignalType.ExitTakeProfit, ev2[1].Type);
+        Assert.Equal(70100, ev2[0].EntryPrice);
+        Assert.Equal(1, sim.Trades.Count);
+        Assert.Equal(ExitReason.TakeProfit, sim.Trades[0].ExitReason);
     }
 }

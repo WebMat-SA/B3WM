@@ -49,6 +49,13 @@
             _ => 1.0
         };
 
+        public static int GetThresholdBubble(string symbol) => symbol switch
+        {
+            Symbols.WINFUT => WINFUT.ThresholdBubbleSize,
+            Symbols.WDOFUT => WDOFUT.ThresholdBubbleSize,
+            _ => 250
+        };
+
         public static double GetMinDistance(string symbol) => symbol switch
         {
             Symbols.WINFUT => WINFUT.MinDistanceUpdateBorder,

@@ -27,6 +27,10 @@ class SymbolConfig {
   List<int> selectedAgents;
   Map<int, int> agentThresholds;
 
+  /// Agentes que já apareceram ao menos uma vez (persistido). Usado para
+  /// auto-selecionar apenas na primeira aparição e manter a lista estável.
+  List<int> knownAgents;
+
   bool bubbleAmountFilter;
   bool bubbleAgentsFilter;
   bool bubbleSoundEnabled;
@@ -63,6 +67,7 @@ class SymbolConfig {
     required this.colorSeller,
     required this.selectedAgents,
     required this.agentThresholds,
+    required this.knownAgents,
     required this.bubbleAmountFilter,
     required this.bubbleAgentsFilter,
     required this.bubbleSoundEnabled,
@@ -98,6 +103,7 @@ class SymbolConfig {
         colorSeller = '#ff4444',
         selectedAgents = [],
         agentThresholds = {},
+        knownAgents = [],
         bubbleAmountFilter = true,
         bubbleAgentsFilter = true,
         bubbleSoundEnabled = true,
@@ -144,6 +150,7 @@ class SymbolConfig {
       colorSeller: legacy.colorSeller,
       selectedAgents: List.from(legacy.selectedAgents),
       agentThresholds: Map.from(legacy.agentThresholds),
+      knownAgents: List.from(legacy.knownAgents),
       bubbleAmountFilter: legacy.bubbleAmountFilter,
       bubbleAgentsFilter: legacy.bubbleAgentsFilter,
       bubbleSoundEnabled: legacy.bubbleSoundEnabled,
@@ -188,6 +195,8 @@ class SymbolConfig {
         agentThresholds: (json['agentThresholds'] as Map<String, dynamic>?)
                 ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
             {},
+        knownAgents:
+            (json['knownAgents'] as List<dynamic>?)?.cast<int>() ?? [],
         bubbleAmountFilter: json['bubbleAmountFilter'] as bool? ?? true,
         bubbleAgentsFilter: json['bubbleAgentsFilter'] as bool? ?? true,
         bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
@@ -228,6 +237,7 @@ class SymbolConfig {
         'selectedAgents': selectedAgents,
         'agentThresholds':
             agentThresholds.map((k, v) => MapEntry(k.toString(), v)),
+        'knownAgents': knownAgents,
         'bubbleAmountFilter': bubbleAmountFilter,
         'bubbleAgentsFilter': bubbleAgentsFilter,
         'bubbleSoundEnabled': bubbleSoundEnabled,

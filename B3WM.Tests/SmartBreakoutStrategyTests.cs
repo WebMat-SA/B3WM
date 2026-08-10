@@ -23,7 +23,6 @@ public class SmartBreakoutStrategyTests
         StopLossPoints = 200,
         TakeProfitPoints = 400,
         Quantity = 1,
-        SlippagePoints = 0,
         CommissionPerSide = 0,
         StrategyName = StrategyType.SmartBreakout,
         LookbackPeriod = 20
@@ -135,8 +134,8 @@ public class SmartBreakoutStrategyTests
 
         Assert.NotNull(signal);
         Assert.Equal(OrderSide.Buy, signal.Side);
-        Assert.NotNull(signal.StopLossPrice);
-        Assert.Null(signal.TakeProfitPrice);
+        Assert.True(signal.StopLossPrice > 0);
+        Assert.True(signal.TakeProfitPrice > 0);
         Assert.Contains("SmartB.Compra", signal.Reason);
     }
 
@@ -162,7 +161,8 @@ public class SmartBreakoutStrategyTests
 
         Assert.NotNull(signal);
         Assert.Equal(OrderSide.Sell, signal.Side);
-        Assert.NotNull(signal.StopLossPrice);
+        Assert.True(signal.StopLossPrice > 0);
+        Assert.True(signal.TakeProfitPrice > 0);
         Assert.Contains("SmartB.Venda", signal.Reason);
     }
 

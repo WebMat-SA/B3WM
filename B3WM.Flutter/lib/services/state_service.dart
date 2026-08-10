@@ -13,6 +13,9 @@ import 'signalr_service.dart';
 import 'preferences_service.dart';
 import 'audio_service.dart';
 import '../models/trade_models.dart';
+import '../models/signal_event.dart';
+import '../models/verifier_config.dart';
+import '../models/verifier_state.dart';
 
 class StateService extends ChangeNotifier {
   final ApiService _apiService;
@@ -137,9 +140,25 @@ class StateService extends ChangeNotifier {
   bool _isStructureUpdating = false;
   bool get isStructureUpdating => _isStructureUpdating;
 
+  // --- Verifier (paper trading) ---
+  VerifierState? _verifierState;
+  VerifierState? get verifierState => _verifierState;
+  bool get verifierRunning => _verifierState?.isRunning ?? false;
+  Timer? _verifierTimer;
+
   // Data-driven (not persisted config)
   final Set<int> _allBubbleAgents = {};
-  Set<int> get allBubbleAgents => _allBubbleAgents;
+
+  /// Agentes visíveis no drawer: os do dia carregado mais os já conhecidos
+  /// e/ou selecionados (persistidos), para a lista não "sumir" ao trocar de dia.
+  Set<int> get allBubbleAgents {
+    if (_symbol.isEmpty) return _allBubbleAgents;
+    return {
+      ..._allBubbleAgents,
+      ..._currentConfig.selectedAgents,
+      ..._currentConfig.knownAgents,
+    };
+  }
 
   double _yZoom = 1.0;
   double get yZoom => _yZoom;
@@ -202,10 +221,11 @@ class StateService extends ChangeNotifier {
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
   void selectAllAgents() {
-    if (_currentConfig.selectedAgents.length == _allBubbleAgents.length) {
+    final all = allBubbleAgents;
+    if (_currentConfig.selectedAgents.length == all.length) {
       _currentConfig.selectedAgents = [];
     } else {
-      _currentConfig.selectedAgents = _allBubbleAgents.toList();
+      _currentConfig.selectedAgents = all.toList();
     }
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -289,6 +309,7 @@ class StateService extends ChangeNotifier {
       colorSeller: p.getString('ColorSeller') ?? '#ff4444',
       selectedAgents: p.getIntList('SelectedAgents') ?? [],
       agentThresholds: p.getIntIntMap('AgentThresholds') ?? {},
+      knownAgents: [],
       bubbleAmountFilter: p.getBool('BubbleAmountFilter') ?? true,
       bubbleAgentsFilter: p.getBool('BubbleAgentsFilter') ?? true,
       bubbleSoundEnabled: p.getBool('BubbleSoundEnabled') ?? true,
@@ -325,6 +346,7 @@ class StateService extends ChangeNotifier {
     _signalRService.onNewStructure = _handleNewStructure;
     _signalRService.onMissedBars = _handleMissedBars;
     _signalRService.onMissedBubbles = _handleMissedBubbles;
+    _signalRService.onSignal = _handleSignal;
   }
 
   Future<void> setSymbol(String value) async {
@@ -341,8 +363,9 @@ class StateService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    var effectiveDate = DateTime.now();
+
     try {
-      var effectiveDate = DateTime.now();
       debugPrint('[loadData] Trying today: ${_formatDate(effectiveDate)}');
 
       var bars = await _apiService.getBars(_symbol, effectiveDate);
@@ -371,9 +394,19 @@ class StateService extends ChangeNotifier {
       final bubbles = await _apiService.getBubbles(_symbol, effectiveDate);
       _bubbles = bubbles;
       _allBubbleAgents.clear();
+      var knownChanged = false;
       for (final b in bubbles) {
         _allBubbleAgents.add(b.agent);
+        if (!_currentConfig.knownAgents.contains(b.agent)) {
+          _currentConfig.knownAgents.add(b.agent);
+          knownChanged = true;
+        }
       }
+      if (knownChanged) _saveConfigForSymbol(_symbol);
+      // Mantém agentes conhecidos/selecionados visíveis mesmo sem bubble na
+      // data carregada, para a seleção não "sumir" ao trocar de dia.
+      _allBubbleAgents.addAll(_currentConfig.selectedAgents);
+      _allBubbleAgents.addAll(_currentConfig.knownAgents);
       debugPrint('[loadData] Bubbles count: ${bubbles.length}');
 
       // Load volume
@@ -401,8 +434,7 @@ class StateService extends ChangeNotifier {
       notifyListeners();
 
       // Load structure
-      final structures = await _apiService.getStructure(
-          _symbol, effectiveDate, _currentConfig.structureRangeUpd);
+      final structures = await _fetchStructures(effectiveDate);
       _structures = structures;
       _recomputeStructureChanges(structures);
       debugPrint('[loadData] Structures count: ${structures.length}');
@@ -418,9 +450,55 @@ class StateService extends ChangeNotifier {
       _isLoading = false;
 
       await _signalRService.startConnection(_symbol, _currentConfig.timeFrame);
+      await _refreshStructuresAfterConnection(effectiveDate);
       _startProcessLoop();
       _startWatchdog();
       notifyListeners();
+    }
+  }
+
+  Future<List<StructureStorageItem>> _fetchStructures(
+    DateTime date, {
+    bool allowRetry = true,
+  }) async {
+    var result = await _apiService.getStructure(
+        _symbol, date, _currentConfig.structureRangeUpd);
+    for (var attempt = 0;
+        allowRetry && result.isEmpty && attempt < 4;
+        attempt++) {
+      debugPrint(
+          '[loadData] Structures empty on attempt ${attempt + 1}, retrying...');
+      await Future.delayed(const Duration(seconds: 2));
+      result = await _apiService.getStructure(
+          _symbol, date, _currentConfig.structureRangeUpd);
+    }
+    return result;
+  }
+
+  Future<void> _refreshStructuresAfterConnection(DateTime date) async {
+    try {
+      final fetched = await _fetchStructures(date, allowRetry: false);
+      if (fetched.isEmpty) return;
+
+      final keys = <String>{
+        for (final s in _structures)
+          '${s.timeFrame}|${s.date.toIso8601String()}',
+      };
+      var merged = false;
+      for (final s in fetched) {
+        final key = '${s.timeFrame}|${s.date.toIso8601String()}';
+        if (!keys.contains(key)) {
+          _structures.add(s);
+          keys.add(key);
+          merged = true;
+        }
+      }
+      if (merged) {
+        _recomputeStructureChanges(_structures);
+        debugPrint('[loadData] Merged ${fetched.length} structures after connection');
+      }
+    } catch (e) {
+      debugPrint('[loadData] Structure refresh after connection error: $e');
     }
   }
 
@@ -526,10 +604,14 @@ class StateService extends ChangeNotifier {
   }
 
   void _handleNewBubble(BubbleStorageItem data) {
-    if (_allBubbleAgents.add(data.agent)) {
+    // Auto-seleciona apenas na primeira aparição do agente. Se o usuário
+    // desmarcar depois, não será reselecionado ao reaparecer em outro dia.
+    if (!_currentConfig.knownAgents.contains(data.agent)) {
+      _currentConfig.knownAgents.add(data.agent);
       _currentConfig.selectedAgents.add(data.agent);
       _saveConfigForSymbol(_symbol);
     }
+    _allBubbleAgents.add(data.agent);
     _bubbles.add(data);
     if (_bubbles.length > maxBubbles) {
       _bubbles.removeRange(0, _bubbles.length - maxBubbles);
@@ -554,55 +636,8 @@ class StateService extends ChangeNotifier {
   void _handleVolumeUpdate(VolumeLevelStorageItem volumes) {
     _volumeLevels = volumes.volumes;
 
-    final count = barsTimeFrameFilter.length;
-    if (count > 0) {
-      final isFullRange = _dateRangeStart <= 0 && _dateRangeEnd >= count;
-      if (isFullRange) {
-        _filteredVolumeLevels = null;
-        _volumeFilterActive = false;
-      } else {
-        final startIdx = _dateRangeStart - 1;
-        final endIdx = _dateRangeEnd.clamp(0, count - 1);
-        final startBar = startIdx >= 0
-            ? barsTimeFrameFilter.elementAtOrNull(startIdx)
-            : null;
-        final endBar = barsTimeFrameFilter.elementAtOrNull(endIdx);
-        final startLevels = startBar?.volumeLevel;
-        final endLevels = endBar?.volumeLevel;
-        if (endLevels != null && endLevels.isNotEmpty) {
-          if (startIdx < 0) {
-            // start==0: sem barra anterior → perfil = cumulativo até o fim.
-            _filteredVolumeLevels = List.from(endLevels);
-          } else if (startLevels != null && startLevels.isNotEmpty) {
-            _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-                endLevels, startLevels, 'Diff');
-          } else {
-            // start>0 sem snapshot na referência: busca a referência anterior.
-            BarStorageItem? foundStart;
-            for (int i = startIdx - 1; i >= 0; i--) {
-              final b = barsTimeFrameFilter[i];
-              if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
-                foundStart = b;
-                break;
-              }
-            }
-            _filteredVolumeLevels = foundStart != null
-                ? VolumeLevelStorageItem.operation(
-                    endLevels, foundStart.volumeLevel!, 'Diff')
-                : List.from(_volumeLevels);
-          }
-          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-          _volumeFilterActive = true;
-        } else if (startLevels != null && startLevels.isNotEmpty) {
-          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-              _volumeLevels, startLevels, 'Diff');
-          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-          _volumeFilterActive = true;
-        } else {
-          _filteredVolumeLevels = List.from(_volumeLevels);
-          _volumeFilterActive = true;
-        }
-      }
+    if (barsTimeFrameFilter.isNotEmpty) {
+      _applyVolumeFilter(_dateRangeStart, _dateRangeEnd);
     }
 
     notifyListeners();
@@ -738,99 +773,76 @@ class StateService extends ChangeNotifier {
     final count = barsTimeFrameFilter.length;
     if (count == 0) return;
 
-    // Range completo (dia inteiro): mostra o perfil cumulativo ao vivo,
-    // sem subtrair snapshot algum (paridade com NewMapFlow.razor).
-    if (start <= 0 && end >= count) {
+    final filtered = _computeWindowVolume(start, end);
+    if (filtered == null) {
+      // Range completo: perfil cumulativo ao vivo, sem subtrair snapshot algum.
       _filteredVolumeLevels = null;
       _volumeFilterActive = false;
-      notifyListeners();
-      return;
-    }
-
-    final bars = barsTimeFrameFilter;
-    // start==0 → não há barra anterior: referência vazia (sem subtração),
-    // para o volume do primeiro candle entrar na mostragem.
-    final startIdx = start - 1;
-    final endIdx = end.clamp(0, count - 1);
-    final startBar = startIdx >= 0 ? bars.elementAtOrNull(startIdx) : null;
-    final endBar = bars.elementAtOrNull(endIdx);
-
-    if (endBar != null) {
-      final startLevels = startBar?.volumeLevel;
-      final endLevels = endBar.volumeLevel;
-
-      if (endLevels != null && endLevels.isNotEmpty) {
-        if (startIdx < 0) {
-          // start==0: sem barra anterior → perfil = cumulativo até o fim do
-          // range (primeiro candle incluso).
-          _filteredVolumeLevels = List.from(endLevels);
-        } else if (startLevels != null && startLevels.isNotEmpty) {
-          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-              endLevels, startLevels, 'Diff');
-        } else {
-          // start>0 sem snapshot na referência: busca a referência anterior
-          // mais próxima, para não mostrar o volume inteiro do dia.
-          BarStorageItem? foundStart;
-          for (int i = startIdx - 1; i >= 0; i--) {
-            final b = bars[i];
-            if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
-              foundStart = b;
-              break;
-            }
-          }
-          if (foundStart != null) {
-            _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-                endLevels, foundStart.volumeLevel!, 'Diff');
-          }
-        }
-        if (_filteredVolumeLevels != null) {
-          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-          _volumeFilterActive = true;
-        }
-      } else {
-        BarStorageItem? foundStart = (startLevels != null && startLevels.isNotEmpty) ? startBar : null;
-        BarStorageItem? foundEnd = (endLevels != null && endLevels.isNotEmpty) ? endBar : null;
-
-        if (foundStart == null) {
-          for (int i = startIdx - 1; i >= 0; i--) {
-            final b = bars[i];
-            if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
-              foundStart = b;
-              break;
-            }
-          }
-        }
-
-        if (foundEnd == null && foundStart != null) {
-          for (int i = endIdx + 1; i < bars.length; i++) {
-            final b = bars[i];
-            if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
-              foundEnd = b;
-              break;
-            }
-          }
-        }
-
-        if (foundStart != null && foundEnd != null) {
-          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-              foundEnd.volumeLevel!, foundStart.volumeLevel!, 'Diff');
-          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-          _volumeFilterActive = true;
-        } else if (foundStart != null) {
-          _filteredVolumeLevels = VolumeLevelStorageItem.operation(
-              _volumeLevels, foundStart.volumeLevel!, 'Diff');
-          _filteredVolumeLevels!.sort((a, b) => a.price.compareTo(b.price));
-          _volumeFilterActive = true;
-        }
-      }
-    }
-
-    if (_filteredVolumeLevels == null && _volumeLevels.isNotEmpty) {
-      _filteredVolumeLevels = List.from(_volumeLevels);
+    } else {
+      _filteredVolumeLevels = filtered;
       _volumeFilterActive = true;
     }
 
     notifyListeners();
+  }
+
+  /// Calcula o perfil de volume da janela [start, end] (end inclusivo).
+  /// Retorna `null` quando a janela cobre o range completo (perfil cumulativo
+  /// ao vivo). Nunca retorna o `_volumeLevels` do período inteiro para uma
+  /// janela parcial quando a referência de início não tem snapshot — barras ao
+  /// vivo chegam sem `VolumeLevel` — evitando mostrar o volume do dia todo.
+  List<VolumeLevel>? _computeWindowVolume(int start, int end) {
+    final bars = barsTimeFrameFilter;
+    final count = bars.length;
+    if (count == 0) return null;
+
+    // Range completo (dia inteiro): mostra o perfil cumulativo ao vivo,
+    // sem subtrair snapshot algum (paridade com NewMapFlow.razor).
+    if (start <= 0 && end >= count) return null;
+
+    final startIdx = start - 1;
+    final endIdx = end.clamp(0, count - 1);
+    final endBar = bars[endIdx];
+
+    // Referência de fim: snapshot do último candle da janela; se ausente
+    // (barra ao vivo sem VolumeLevel), usa o cumulativo ao vivo.
+    final endLevels =
+        (endBar.volumeLevel != null && endBar.volumeLevel!.isNotEmpty)
+            ? endBar.volumeLevel!
+            : _volumeLevels;
+
+    // Referência de início: start==0 → sem barra anterior (primeiro candle
+    // incluso); senão snapshot da barra anterior, com fallback para a barra
+    // anterior mais próxima que tenha snapshot.
+    final List<VolumeLevel> startLevels;
+    if (startIdx < 0) {
+      startLevels = const [];
+    } else {
+      final startBar = bars[startIdx];
+      startLevels =
+          (startBar.volumeLevel != null && startBar.volumeLevel!.isNotEmpty)
+              ? startBar.volumeLevel!
+              : _findPreviousSnapshot(startIdx - 1);
+    }
+
+    if (endLevels.isEmpty) return const <VolumeLevel>[];
+
+    final result = startLevels.isEmpty
+        ? List<VolumeLevel>.of(endLevels)
+        : VolumeLevelStorageItem.operation(endLevels, startLevels, 'Diff');
+    result.sort((a, b) => a.price.compareTo(b.price));
+    return result;
+  }
+
+  List<VolumeLevel> _findPreviousSnapshot(int fromIndex) {
+    final bars = barsTimeFrameFilter;
+    for (int i = fromIndex; i >= 0; i--) {
+      final b = bars[i];
+      if (b.volumeLevel != null && b.volumeLevel!.isNotEmpty) {
+        return b.volumeLevel!;
+      }
+    }
+    return const <VolumeLevel>[];
   }
 
   // --- Structure ---
@@ -841,6 +853,85 @@ class StateService extends ChangeNotifier {
     _structures = structures;
     _recomputeStructureChanges(structures);
     notifyListeners();
+  }
+
+  // --- Verifier (paper trading) ---
+
+  void _handleSignal(SignalEvent signal) {
+    final state = _verifierState;
+    if (state == null ||
+        signal.symbol != state.symbol ||
+        signal.timeFrame != state.timeFrame) {
+      return;
+    }
+    state.signals.insert(0, signal);
+    if (state.signals.length > 200) {
+      state.signals.removeRange(200, state.signals.length);
+    }
+    notifyListeners();
+  }
+
+  Future<int> startVerifier(VerifierConfig config) async {
+    final status = await _apiService.startVerifier(config);
+    if (status == 200) {
+      _verifierState = VerifierState(
+        symbol: config.symbol,
+        timeFrame: config.timeFrame,
+        isRunning: true,
+        config: config,
+      );
+      notifyListeners();
+      _startVerifierPolling();
+      refreshVerifierState();
+    }
+    return status;
+  }
+
+  Future<int> stopVerifier() async {
+    final state = _verifierState;
+    if (state == null) return 0;
+    final status = await _apiService.stopVerifier(state.symbol, state.timeFrame);
+    if (status == 200) {
+      state.isRunning = false;
+      notifyListeners();
+      _stopVerifierPolling();
+      refreshVerifierState();
+    }
+    return status;
+  }
+
+  Future<int> resetVerifier() async {
+    final state = _verifierState;
+    if (state == null) return 0;
+    final status = await _apiService.resetVerifier(state.symbol, state.timeFrame);
+    if (status == 200) {
+      refreshVerifierState();
+    }
+    return status;
+  }
+
+  Future<void> refreshVerifierState() async {
+    final state = _verifierState;
+    final symbol = state?.symbol ?? _symbol;
+    final timeFrame = state?.timeFrame ?? _currentConfig.timeFrame;
+    if (symbol.isEmpty) return;
+    final fresh = await _apiService.getVerifierState(symbol, timeFrame);
+    if (fresh != null) {
+      _verifierState = fresh;
+      notifyListeners();
+    }
+  }
+
+  void _startVerifierPolling() {
+    _verifierTimer?.cancel();
+    _verifierTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      refreshVerifierState();
+    });
+  }
+
+  void _stopVerifierPolling() {
+    _verifierTimer?.cancel();
+    _verifierTimer = null;
   }
 
   // --- Positions & Orders ---
@@ -871,6 +962,7 @@ class StateService extends ChangeNotifier {
   void reset() {
     _processTimer?.cancel();
     _watchdogTimer?.cancel();
+    _stopVerifierPolling();
     _signalRService.dispose();
     _audioService.dispose();
   }
@@ -879,12 +971,5 @@ class StateService extends ChangeNotifier {
   void dispose() {
     reset();
     super.dispose();
-  }
-}
-
-extension _ListExtension<T> on List<T> {
-  T? elementAtOrNull(int index) {
-    if (index < 0 || index >= length) return null;
-    return this[index];
   }
 }

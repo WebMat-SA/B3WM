@@ -95,12 +95,15 @@ namespace B3WM.Services.Core
             // Emitir fora do lock; usamos só a cópia já feita.
             if (barToEmit != null && OnUpdate != null)
             {
+                // Invocar OnUpdate ANTES do broadcast para que o OrchestratorService
+                // anexe VolumeLevel/ForecastPrice à barra; do contrário o cliente
+                // recebe a barra fechada sem o snapshot de volume ao vivo.
+                await OnUpdate.Invoke(barToEmit);
+
                 if (hubContext != null)
                 {
                     await hubContext.Clients.Group(Symbol).ReceiveOnCloseBar(barToEmit);
                 }
-
-                await OnUpdate.Invoke(barToEmit);
 
                 //adiciona na lista geral
                 DataKeep.Add(barToEmit);

@@ -32,10 +32,23 @@ namespace B3WM.Services.Backtest
                 return null;
             }
 
+            var range = high - low;
             if (bar.Close > high)
-                return new Signal { Side = Shared.Models.Backtest.OrderSide.Buy, Reason = "Breakout high" };
+                return new Signal
+                {
+                    Side = Shared.Models.Backtest.OrderSide.Buy,
+                    StopLossPrice = low,
+                    TakeProfitPrice = high + range,
+                    Reason = "Breakout high"
+                };
             if (bar.Close < low)
-                return new Signal { Side = Shared.Models.Backtest.OrderSide.Sell, Reason = "Breakout low" };
+                return new Signal
+                {
+                    Side = Shared.Models.Backtest.OrderSide.Sell,
+                    StopLossPrice = high,
+                    TakeProfitPrice = low - range,
+                    Reason = "Breakout low"
+                };
 
             return null;
         }

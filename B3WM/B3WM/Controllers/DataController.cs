@@ -118,7 +118,26 @@ namespace B3WM.Controllers
             {
                 string path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
 
-                data.AddRange(await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path));
+                var timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+
+                //hardening: se o arquivo ainda estiver vazio (ex: servidor iniciou agora e o
+                //backfill ainda nao rodou), forca o PreLoad do service e relê
+                if (timeframeData == null || timeframeData.Count == 0)
+                {
+                    var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+                    if (service != null)
+                    {
+                        if (service._minDistanceUpdateBorder != minDistance)
+                            await service.SetMinDistance(minDistance);
+                        else
+                            await service.PreLoad();
+
+                        timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                    }
+                }
+
+                if (timeframeData != null)
+                    data.AddRange(timeframeData);
             }
 
             return Ok(data);

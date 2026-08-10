@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -28,6 +30,20 @@ ApiService _stubApi() => ApiService(
       client: MockClient((request) async {
         if (request.url.path.contains('GetVolume')) {
           return http.Response('null', 200);
+        }
+        return http.Response('[]', 200);
+      }),
+    );
+
+ApiService _apiWithBubbles(List<BubbleStorageItem> bubbles) => ApiService(
+      baseUrl: 'http://test.local',
+      client: MockClient((request) async {
+        if (request.url.path.contains('GetVolume')) {
+          return http.Response('null', 200);
+        }
+        if (request.url.path.contains('GetBubble')) {
+          return http.Response(
+              jsonEncode(bubbles.map((b) => b.toJson()).toList()), 200);
         }
         return http.Response('[]', 200);
       }),
@@ -77,12 +93,14 @@ void main() {
         ..bubbleVisible = false
         ..thresholdBubble = 750
         ..selectedAgents = [1, 2]
-        ..agentThresholds = {1: 500};
+        ..agentThresholds = {1: 500}
+        ..knownAgents = [1, 2, 3];
       final restored = SymbolConfig.fromJson(cfg.toJson(), symbol: 'WINFUT');
       expect(restored.bubbleVisible, isFalse);
       expect(restored.thresholdBubble, 750);
       expect(restored.selectedAgents, [1, 2]);
       expect(restored.agentThresholds, {1: 500});
+      expect(restored.knownAgents, [1, 2, 3]);
     });
 
     test('trading data flags round-trip e defaults', () {
@@ -263,6 +281,86 @@ void main() {
       await reloaded.setSymbol('WINFUT');
       expect(reloaded.selectedAgents, contains(42));
       reloaded.reset();
+    });
+
+    test('agentes selecionados persistem visíveis ao recarregar outro dia',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      BubbleStorageItem bubble(int agent) => BubbleStorageItem(
+            price: 1,
+            agent: agent,
+            amount: 100,
+            date: DateTime.now(),
+            actionType: ActionType.buy,
+            symbol: 'WINFUT',
+          );
+
+      final api = _apiWithBubbles([bubble(43)]);
+      final signalR = _NoopSignalRService(
+          hubUrl: 'http://test.local/hub', apiService: api);
+      final service = StateService(
+        apiService: api,
+        signalRService: signalR,
+        preferencesService: prefs,
+        audioService: AudioService(),
+      );
+      await service.setSymbol('WINFUT');
+
+      signalR.onNewBubble!(bubble(42));
+      expect(service.selectedAgents, contains(42));
+
+      await service.loadData();
+      expect(service.allBubbleAgents, contains(42));
+      expect(service.allBubbleAgents, contains(43));
+      expect(service.selectedAgents, contains(42));
+
+      service.selectAllAgents();
+      expect(service.selectedAgents, contains(42));
+      expect(service.selectedAgents, contains(43));
+      service.reset();
+    });
+
+    test('agente desmarcado não é reselecionado ao reaparecer em outro dia',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      BubbleStorageItem bubble(int agent) => BubbleStorageItem(
+            price: 1,
+            agent: agent,
+            amount: 100,
+            date: DateTime.now(),
+            actionType: ActionType.buy,
+            symbol: 'WINFUT',
+          );
+
+      final api = _stubApi();
+      final signalR = _NoopSignalRService(
+          hubUrl: 'http://test.local/hub', apiService: api);
+      final service = StateService(
+        apiService: api,
+        signalRService: signalR,
+        preferencesService: prefs,
+        audioService: AudioService(),
+      );
+      await service.setSymbol('WINFUT');
+
+      signalR.onNewBubble!(bubble(42));
+      expect(service.selectedAgents, contains(42));
+
+      service.toggleAgent(42);
+      expect(service.selectedAgents, isNot(contains(42)));
+
+      await service.loadData();
+      expect(service.allBubbleAgents, contains(42));
+
+      signalR.onNewBubble!(bubble(42));
+      expect(service.selectedAgents, isNot(contains(42)));
+      service.reset();
     });
   });
 }

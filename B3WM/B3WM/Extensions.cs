@@ -15,6 +15,7 @@ namespace B3WM
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
             services.AddScoped<BacktestEngine>();
+            services.AddSingleton<VerifierManager>();
 
             services.AddWinfutServices(config);
 
@@ -24,6 +25,11 @@ namespace B3WM
             services.AddSingleton<IIndicator, BollingerBounce>();
             services.AddSingleton<IndicatorService>();
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<IndicatorService>());
+
+            //pre-carrega a estrutura de todos os symbol/timeframe no startup, fazendo o backfill
+            //do dia antes de o servidor aceitar conexoes
+            services.AddSingleton<StructurePreloadService>();
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StructurePreloadService>());
 
             return services;
         }

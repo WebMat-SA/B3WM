@@ -192,4 +192,32 @@ void main() {
     expect(levels.firstWhere((v) => v.price == 1001).total, 5);
     expect(levels.firstWhere((v) => v.price == 1002).total, 3);
   });
+
+  test(
+      'volume update em janela com barras ao vivo sem snapshot mostra só a janela',
+      () async {
+    // barras 0 e 1 com snapshot cumulativo; 2-4 são barras ao vivo sem
+    // VolumeLevel (CloneBar/broadcast sem o snapshot no servidor).
+    signalR.onCloseBar!(_bar(0, [_lvl(1000, 10)]));
+    signalR.onCloseBar!(_bar(1, [_lvl(1000, 10), _lvl(1001, 5)]));
+    signalR.onCloseBar!(_bar(2, null));
+    signalR.onCloseBar!(_bar(3, null));
+    signalR.onCloseBar!(_bar(4, null));
+
+    service.applyVolumeFilter(3, 5);
+    signalR.onVolumeUpdate!(VolumeLevelStorageItem(
+      id: 1,
+      date: DateTime(2026, 1, 1, 9, 8),
+      symbol: 'WINFUT',
+      timeFrame: 2,
+      volumes: [_lvl(1000, 10), _lvl(1001, 5), _lvl(1002, 3), _lvl(1003, 2)],
+    ));
+
+    final levels = service.filteredVolumeLevels!;
+    expect(levels.firstWhere((v) => v.price == 1000).total, 0);
+    expect(levels.firstWhere((v) => v.price == 1001).total, 0);
+    expect(levels.firstWhere((v) => v.price == 1002).total, 3);
+    expect(levels.firstWhere((v) => v.price == 1003).total, 2);
+    expect(levels.fold<int>(0, (s, v) => s + v.total), 5);
+  });
 }

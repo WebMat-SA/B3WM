@@ -20,6 +20,9 @@ namespace B3WM.Services.Core
         //variaveis de memoria
         StructureStorageItem? _lastStructure { get; set; }
 
+        public StructureStorageItem? GetLastStructure()
+            => _lastStructure?.Clone() as StructureStorageItem;
+
         #region Calculating
         public double _minDistanceUpdateBorder { get; set; }
         bool expectBuyDrop = true;

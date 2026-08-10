@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.SignalR;
+using System.Text.Json.Serialization;
 
 namespace B3WM
 {
@@ -45,6 +46,7 @@ namespace B3WM
                 options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
                 options.JsonSerializerOptions.IgnoreReadOnlyProperties = true;
                 options.JsonSerializerOptions.IgnoreReadOnlyFields = true;
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
             });
 
             builder.Services.AddHttpClient("PythonService", client =>

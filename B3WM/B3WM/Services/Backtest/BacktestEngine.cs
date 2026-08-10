@@ -4,18 +4,6 @@ using B3WM.Services.Core;
 
 namespace B3WM.Services.Backtest
 {
-    internal class BacktestPosition
-    {
-        public OrderSide Side { get; set; }
-        public double EntryPrice { get; set; }
-        public double StopPrice { get; set; }
-        public double TargetPrice { get; set; }
-        public int Quantity { get; set; }
-        public DateTime EntryDate { get; set; }
-        public string? EntryReason { get; set; }
-        public int EntryBarIndex { get; set; }
-    }
-
     public class BacktestEngine
     {
         private readonly DataKeeperBase _dataKeeper;
@@ -40,94 +28,17 @@ namespace B3WM.Services.Backtest
 
             if (bars.Count == 0) return result;
 
-            var pointValue = Defaults.GetPointValue(config.Symbol);
-            var trades = new List<BacktestTrade>();
-            var equityCurve = new List<double> { 0 };
-            BacktestPosition? position = null;
-            double cumulativePL = 0;
-            double peak = 0;
-            double maxDd = 0;
-            Signal? pendingEntry = null;
+            var simulator = new BacktestSimulator(config, strategy);
 
-            for (int i = 0; i < bars.Count; i++)
+            foreach (var bar in bars)
             {
-                var bar = bars[i];
-
-                if (pendingEntry != null && position == null)
-                {
-                    var entryPrice = pendingEntry.Side == OrderSide.Buy
-                        ? bar.Open + config.SlippagePoints
-                        : bar.Open - config.SlippagePoints;
-
-                    var stopPrice = pendingEntry.StopLossPrice ?? (pendingEntry.Side == OrderSide.Buy
-                        ? entryPrice - config.StopLossPoints
-                        : entryPrice + config.StopLossPoints);
-
-                    var targetPrice = pendingEntry.TakeProfitPrice ?? (pendingEntry.Side == OrderSide.Buy
-                        ? entryPrice + config.TakeProfitPoints
-                        : entryPrice - config.TakeProfitPoints);
-
-                    position = new BacktestPosition
-                    {
-                        Side = pendingEntry.Side,
-                        EntryPrice = entryPrice,
-                        StopPrice = stopPrice,
-                        TargetPrice = targetPrice,
-                        Quantity = pendingEntry.Quantity > 0 ? pendingEntry.Quantity : config.Quantity,
-                        EntryDate = bar.Date,
-                        EntryReason = pendingEntry.Reason,
-                        EntryBarIndex = i
-                    };
-                    pendingEntry = null;
-                }
-
-                if (position != null)
-                {
-                    bool closed = false;
-                    TryCloseByPrice(bar, position, config, pointValue, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve, out closed);
-                    if (closed) position = null;
-                }
-
-                if (position != null)
-                {
-                    var signal = strategy.Evaluate(bar, hasPosition: true);
-                    if (signal != null)
-                    {
-                        CloseTrade(position, bar.Close, ExitReason.StrategySignal, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                        position = null;
-                    }
-                }
-
-                if (position != null && config.IsDayTrade)
-                {
-                    if (TimeSpan.TryParse(config.DayTradeCloseTime, out var closeTime))
-                    {
-                        var barTime = bar.Date.TimeOfDay;
-                        if (barTime >= closeTime)
-                        {
-                            CloseTrade(position, bar.Close, ExitReason.DayTradeClose, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                            position = null;
-                        }
-                    }
-                }
-
-                if (position == null && pendingEntry == null)
-                {
-                    var signal = strategy.Evaluate(bar, hasPosition: false);
-                    if (signal != null && i < bars.Count - 1)
-                    {
-                        pendingEntry = signal;
-                    }
-                }
-
-                if (position != null && i == bars.Count - 1)
-                {
-                    CloseTrade(position, bar.Close, ExitReason.EndOfData, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                    position = null;
-                }
+                simulator.ProcessBar(bar);
             }
 
-            CalculateMetrics(result, trades, equityCurve, cumulativePL);
+            var lastBar = bars[^1];
+            simulator.ForceClose(ExitReason.EndOfData, lastBar.Close, lastBar.Date);
+
+            simulator.CalculateMetrics(result);
 
             if (strategy is SmartBreakoutStrategy smart)
                 result.StructureLines = smart.StructureLines;
@@ -159,127 +70,6 @@ namespace B3WM.Services.Backtest
                 .Where(b => b.Date >= config.StartDate && b.Date <= config.EndDate)
                 .OrderBy(b => b.Date)
                 .ToList();
-        }
-
-        private static void TryCloseByPrice(
-            BarStorageItem bar,
-            BacktestPosition position,
-            BacktestConfig config,
-            double pointValue,
-            ref double cumulativePL,
-            ref double peak,
-            ref double maxDd,
-            List<BacktestTrade> trades,
-            List<double> equityCurve,
-            out bool closed)
-        {
-            closed = false;
-
-            if (position.Side == OrderSide.Buy)
-            {
-                if (bar.Low <= position.StopPrice)
-                {
-                    var exitPrice = position.StopPrice - config.SlippagePoints;
-                    CloseTrade(position, exitPrice, ExitReason.StopLoss, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                    closed = true;
-                    return;
-                }
-                if (bar.High >= position.TargetPrice)
-                {
-                    var exitPrice = position.TargetPrice - config.SlippagePoints;
-                    CloseTrade(position, exitPrice, ExitReason.TakeProfit, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                    closed = true;
-                }
-            }
-            else
-            {
-                if (bar.High >= position.StopPrice)
-                {
-                    var exitPrice = position.StopPrice + config.SlippagePoints;
-                    CloseTrade(position, exitPrice, ExitReason.StopLoss, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                    closed = true;
-                    return;
-                }
-                if (bar.Low <= position.TargetPrice)
-                {
-                    var exitPrice = position.TargetPrice + config.SlippagePoints;
-                    CloseTrade(position, exitPrice, ExitReason.TakeProfit, bar.Date, pointValue, config, ref cumulativePL, ref peak, ref maxDd, trades, equityCurve);
-                    closed = true;
-                }
-            }
-        }
-
-        private static void CloseTrade(
-            BacktestPosition position,
-            double exitPrice,
-            ExitReason reason,
-            DateTime exitDate,
-            double pointValue,
-            BacktestConfig config,
-            ref double cumulativePL,
-            ref double peak,
-            ref double maxDd,
-            List<BacktestTrade> trades,
-            List<double> equityCurve)
-        {
-            double points = position.Side == OrderSide.Buy
-                ? exitPrice - position.EntryPrice
-                : position.EntryPrice - exitPrice;
-
-            var commission = config.CommissionPerSide * position.Quantity * 2;
-            var pl = points * pointValue * position.Quantity - commission;
-            cumulativePL += pl;
-
-            if (cumulativePL > peak) peak = cumulativePL;
-            var dd = peak - cumulativePL;
-            if (dd > maxDd) maxDd = dd;
-
-            trades.Add(new BacktestTrade
-            {
-                EntryDate = position.EntryDate,
-                ExitDate = exitDate,
-                Side = position.Side,
-                EntryPrice = position.EntryPrice,
-                ExitPrice = exitPrice,
-                ExitReason = reason,
-                Points = points,
-                ProfitLoss = pl,
-                Commission = commission,
-                CumulativePL = cumulativePL
-            });
-
-            equityCurve.Add(cumulativePL);
-        }
-
-        private static void CalculateMetrics(BacktestResult r, List<BacktestTrade> trades, List<double> equityCurve, double finalPL)
-        {
-            r.TotalTrades = trades.Count;
-            r.WinCount = trades.Count(t => t.ProfitLoss > 0);
-            r.LossCount = trades.Count(t => t.ProfitLoss <= 0);
-            r.WinRate = r.TotalTrades > 0 ? (double)r.WinCount / r.TotalTrades : 0;
-            r.GrossProfit = trades.Where(t => t.ProfitLoss > 0).Sum(t => t.ProfitLoss);
-            r.GrossLoss = Math.Abs(trades.Where(t => t.ProfitLoss <= 0).Sum(t => t.ProfitLoss));
-            r.NetProfit = finalPL;
-            r.ProfitFactor = r.GrossLoss > 0 ? r.GrossProfit / r.GrossLoss : r.GrossProfit > 0 ? double.PositiveInfinity : 0;
-            r.AvgWin = r.WinCount > 0 ? r.GrossProfit / r.WinCount : 0;
-            r.AvgLoss = r.LossCount > 0 ? r.GrossLoss / r.LossCount : 0;
-            r.LargestWin = trades.Count > 0 ? trades.Max(t => t.ProfitLoss) : 0;
-            r.LargestLoss = trades.Count > 0 ? trades.Min(t => t.ProfitLoss) : 0;
-            r.TotalCommission = trades.Sum(t => t.Commission);
-
-            var peakVal = 0.0;
-            var maxDrawdown = 0.0;
-            foreach (var pl in equityCurve)
-            {
-                if (pl > peakVal) peakVal = pl;
-                var drawdown = peakVal - pl;
-                if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-            }
-            r.MaxDrawdown = maxDrawdown;
-            r.MaxDrawdownPct = peakVal > 0 ? maxDrawdown / peakVal * 100 : 0;
-
-            r.Trades = trades;
-            r.EquityCurve = equityCurve;
         }
     }
 }

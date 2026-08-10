@@ -21,24 +21,59 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 
 ---
 
-> 💡 **Quer ver na prática?** As imagens abaixo mostram o B3WM rodando com dados reais da B3.
-> Se você tiver sugestões de outros prints que ajudariam a entender melhor o projeto,
-> fique à vontade para contribuir! (veja sugestões ao final da seção)
+> 💡 **Quer ver na prática?** As imagens abaixo são **geradas automaticamente por testes
+> golden** do próprio frontend Flutter (`B3WM.Flutter/test/screenshots_golden_test.dart`),
+> usando dados de exemplo. Elas refletem o estado atual da interface — sem necessidade de
+> conectar a dados reais da B3.
 
 ---
 
 ## Prévia
 
 <div align="center">
-  <img src="screenshots/B3WM2.png" alt="Visão Geral da Plataforma" width="800" style="max-width:100%;">
-  <p><em>Visão geral com gráfico de candles, bubbles de grandes volumes e perfil de volume (Volume Profile) à direita.</em></p>
+  <img src="screenshots/overview.png" alt="Visão Geral da Plataforma" width="800" style="max-width:100%;">
+  <p><em>Visão geral do gráfico: candles, bubbles de grandes volumes, linhas de estrutura (suporte/resistência) e perfil de volume à direita.</em></p>
 </div>
 
 <br/>
 
 <div align="center">
-  <img src="screenshots/B3WM.png" alt="Análise de Microestrutura" width="800" style="max-width:100%;">
-  <p><em>Análise detalhada de microestrutura: delta acumulado por nível de preço, identificação de agentes agressores e estrutura de suporte/resistência.</em></p>
+  <img src="screenshots/trading_panel.png" alt="Painel de Trading" width="800" style="max-width:100%;">
+  <p><em>Painel de trading (integração MT5): ordem de mercado, conta, ordens em aberto, posições e histórico.</em></p>
+</div>
+
+### Abas do Drawer
+
+O drawer lateral organiza as ferramentas de análise em abas:
+
+#### 📊 Bubbles
+<div align="center">
+  <img src="screenshots/drawer_bubbles.png" alt="Aba Bubbles" width="800" style="max-width:100%;">
+  <p><em>Trades agressivos (grandes volumes do mesmo agente), com configurações e lista filtrada por tamanho mínimo.</em></p>
+</div>
+
+#### 📐 Estrutura
+<div align="center">
+  <img src="screenshots/drawer_estrutura.png" alt="Aba Estrutura" width="800" style="max-width:100%;">
+  <p><em>Alterações de estrutura (upgrades/downgrades de suporte e resistência) em tempo real.</em></p>
+</div>
+
+#### 📈 Volume Profile
+<div align="center">
+  <img src="screenshots/drawer_volume_profile.png" alt="Aba Volume Profile" width="800" style="max-width:100%;">
+  <p><em>Perfil de volume com modo automático (por estrutura), seleção de horário e controles de exibição, tamanho e opacidade.</em></p>
+</div>
+
+#### 🔄 Trading Data
+<div align="center">
+  <img src="screenshots/drawer_trading_data.png" alt="Aba Trading Data" width="800" style="max-width:100%;">
+  <p><em>Histórico de trades, posições e ordens em aberto (dados da integração MT5).</em></p>
+</div>
+
+#### 🧪 Verifier
+<div align="center">
+  <img src="screenshots/drawer_verifier.png" alt="Aba Verifier" width="800" style="max-width:100%;">
+  <p><em>Backtest manual: verificação de sinais da estratégia SmartBreakout com métricas em tempo real.</em></p>
 </div>
 ---
 
@@ -200,7 +235,9 @@ O servidor FastAPI inicia em **http://localhost:8000** e o B3WM Server se conect
 ### 5. Testes
 
 ```bash
-dotnet test B3WM.Tests
+dotnet test B3WM.Tests                       # Testes unitários do servidor (.NET)
+cd B3WM.Flutter && flutter test              # Testes do frontend (widget + golden)
+cd B3WM.Flutter && flutter test --update-goldens test/screenshots_golden_test.dart  # regenera screenshots/
 ```
 
 ---
@@ -224,7 +261,8 @@ B3WM.sln                          # Solução principal (.NET 10)
 ├── B3WM.Flutter/                 # 📱 Frontend Flutter (Map Flow Chart)
 │   ├── lib/main.dart             #    Entry point do app
 │   ├── lib/services/             #    Serviços HTTP/SignalR (cliente)
-│   └── lib/ui/widgets/chart/     #    Gráfico Map Flow (CustomPainter)
+│   ├── lib/ui/widgets/chart/     #    Gráfico Map Flow (CustomPainter)
+│   └── test/                     #    Widget + golden tests (geram screenshots/)
 │
 ├── B3WM.Python/                  # 🐍 Bridge MetaTrader 5 (FastAPI)
 │   └── main.py                   #    Entry point (python main.py)

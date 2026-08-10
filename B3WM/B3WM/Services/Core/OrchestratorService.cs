@@ -15,6 +15,9 @@ namespace B3WM.Services.Core
         private readonly IEnumerable<AdjustmentForecastService> adjustmentForecastService;
         public string Symbol { get; }
 
+        /// <summary>Disparado ao final do fechamento de um candle, com a barra finalizada (volume/forecast) e a estrutura calculada.</summary>
+        public event Func<BarStorageItem, StructureStorageItem, Task>? OnCandleClosed;
+
         public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<AdjustmentForecastService> adjustmentForecastService)
         {
             this.Symbol = Symbol;
@@ -64,12 +67,16 @@ namespace B3WM.Services.Core
                 #region Structure by Candles
                 var structureService = this.structureService.FirstOrDefault(q=>q.TimeFrame == bar.TimeFrame);
 
+                StructureStorageItem? structure = null;
                 if (structureService != null)
                 {
-                    await structureService.Calculate(bar);
+                    structure = await structureService.Calculate(bar);
                 }
 
                 #endregion
+
+                if (OnCandleClosed != null && structure != null)
+                    await OnCandleClosed.Invoke(bar, structure);
 
                 Console.WriteLine(
                     $"Bar atualizado: {bar} ");

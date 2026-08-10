@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/bar_storage_item.dart';
 import '../models/bubble_storage_item.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
 import '../models/indicator_value.dart';
+import '../models/verifier_config.dart';
+import '../models/verifier_state.dart';
+import '../models/verifier_log_day.dart';
 
 class ApiService {
   final http.Client _client;
@@ -156,6 +160,82 @@ class ApiService {
       if (bars.isNotEmpty) return date;
     }
     return DateTime.now();
+  }
+
+  Future<int> startVerifier(VerifierConfig config) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/api/Verifier/Start'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(config.toJson()),
+      );
+      if (response.statusCode != 200) {
+        debugPrint('[verifier] Start HTTP ${response.statusCode}: ${response.body}');
+      }
+      return response.statusCode;
+    } catch (e) {
+      debugPrint('[verifier] Start error: $e');
+      return 0;
+    }
+  }
+
+  Future<int> stopVerifier(String symbol, int timeFrame) async {
+    try {
+      final response = await _client.post(Uri.parse(
+          '$_baseUrl/api/Verifier/Stop?symbol=$symbol&timeFrame=$timeFrame'));
+      if (response.statusCode != 200) {
+        debugPrint('[verifier] Stop HTTP ${response.statusCode}: ${response.body}');
+      }
+      return response.statusCode;
+    } catch (e) {
+      debugPrint('[verifier] Stop error: $e');
+      return 0;
+    }
+  }
+
+  Future<int> resetVerifier(String symbol, int timeFrame) async {
+    try {
+      final response = await _client.post(Uri.parse(
+          '$_baseUrl/api/Verifier/Reset?symbol=$symbol&timeFrame=$timeFrame'));
+      if (response.statusCode != 200) {
+        debugPrint('[verifier] Reset HTTP ${response.statusCode}: ${response.body}');
+      }
+      return response.statusCode;
+    } catch (e) {
+      debugPrint('[verifier] Reset error: $e');
+      return 0;
+    }
+  }
+
+  Future<VerifierState?> getVerifierState(String symbol, int timeFrame) async {
+    try {
+      final response = await _client.get(Uri.parse(
+          '$_baseUrl/api/Verifier/State?symbol=$symbol&timeFrame=$timeFrame'));
+      if (response.statusCode != 200) return null;
+      return VerifierState.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<List<VerifierLogDay>> exportVerifier(
+    String symbol, int timeFrame, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    try {
+      final fromStr = from != null ? '&from=${_formatDate(from)}' : '';
+      final toStr = to != null ? '&to=${_formatDate(to)}' : '';
+      final response = await _client.get(Uri.parse(
+          '$_baseUrl/api/Verifier/Export?symbol=$symbol&timeFrame=$timeFrame$fromStr$toStr'));
+      if (response.statusCode != 200) return [];
+      final list = jsonDecode(response.body) as List? ?? [];
+      return list
+          .map((e) => VerifierLogDay.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   String _formatDate(DateTime date) =>
