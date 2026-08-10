@@ -68,7 +68,8 @@ class VerifierConfig {
         'smartStructureBufferPct': smartStructureBufferPct,
         'smartAgents': smartAgents,
         'bubbleThreshold': bubbleThreshold,
-        'agentThresholds': agentThresholds,
+        'agentThresholds':
+            agentThresholds?.map((k, v) => MapEntry(k.toString(), v)),
       };
 
   VerifierConfig copyWith({
