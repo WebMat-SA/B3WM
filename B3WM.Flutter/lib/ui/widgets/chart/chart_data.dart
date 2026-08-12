@@ -227,10 +227,13 @@ ChartData buildChartData(StateService state) {
   final redBubbles = <BubblePoint>[];
   final blueBubbles = <BubblePoint>[];
   if (state.bubbleVisible) {
-    var bubbleSource = state.bubbles
-        .where((b) => b.amount >= state.getThreshold(b.agent))
-        .toList();
-    if (state.selectedAgents.isNotEmpty) {
+    var bubbleSource = state.bubbles;
+    if (state.bubbleAmountFilter) {
+      bubbleSource = bubbleSource
+          .where((b) => b.amount >= state.getThreshold(b.agent))
+          .toList();
+    }
+    if (state.bubbleAgentsFilter) {
       bubbleSource = bubbleSource
           .where((b) => state.selectedAgents.contains(b.agent))
           .toList();

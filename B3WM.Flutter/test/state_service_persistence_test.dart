@@ -283,6 +283,42 @@ void main() {
       reloaded.reset();
     });
 
+    test('bubbles do dia são auto-selecionados no load', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      BubbleStorageItem bubble(int agent) => BubbleStorageItem(
+            price: 1,
+            agent: agent,
+            amount: 100,
+            date: DateTime.now(),
+            actionType: ActionType.buy,
+            symbol: 'WINFUT',
+          );
+
+      final api = _apiWithBubbles([bubble(42), bubble(43)]);
+      final signalR = _NoopSignalRService(
+          hubUrl: 'http://test.local/hub', apiService: api);
+      final service = StateService(
+        apiService: api,
+        signalRService: signalR,
+        preferencesService: prefs,
+        audioService: AudioService(),
+      );
+      await service.setSymbol('WINFUT');
+
+      expect(service.selectedAgents, contains(42));
+      expect(service.selectedAgents, contains(43));
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('WINFUT');
+      expect(reloaded.selectedAgents, contains(42));
+      expect(reloaded.selectedAgents, contains(43));
+      reloaded.reset();
+    });
+
     test('agentes selecionados persistem visíveis ao recarregar outro dia',
         () async {
       SharedPreferences.setMockInitialValues({});
@@ -315,9 +351,6 @@ void main() {
       await service.loadData();
       expect(service.allBubbleAgents, contains(42));
       expect(service.allBubbleAgents, contains(43));
-      expect(service.selectedAgents, contains(42));
-
-      service.selectAllAgents();
       expect(service.selectedAgents, contains(42));
       expect(service.selectedAgents, contains(43));
       service.reset();

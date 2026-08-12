@@ -15,7 +15,10 @@ class VerifierDrawer extends StatefulWidget {
   State<VerifierDrawer> createState() => _VerifierDrawerState();
 }
 
-class _VerifierDrawerState extends State<VerifierDrawer> {
+class _VerifierDrawerState extends State<VerifierDrawer>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   late VerifierConfig _config;
   late TimeOfDay _closeTime;
   bool _busy = false;
@@ -191,6 +194,7 @@ class _VerifierDrawerState extends State<VerifierDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final running = state.verifierRunning;
       final vState = state.verifierState;
@@ -280,16 +284,9 @@ class _VerifierDrawerState extends State<VerifierDrawer> {
                 ),
                 if (_config.strategyName == 'SmartBreakout') ...[
                   const Divider(height: 16),
-                  const Text(
-                    'Bubbles, thresholds de entrada/saída e estrutura usam '
-                    'as configurações das abas Bubbles e Estrutura. Stop e '
-                    'alvo de cada entrada são definidos pela própria '
-                    'estratégia (bordas da estrutura), nunca por fallback.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
                   const SizedBox(height: 8),
                   SliderRow(
-                      'Volume % (bubble)', _config.smartVolumePct, 0, 1,
+                      'Volume % (bubble) - Bubbles em Volumeprofile com baixo volume são descartados', _config.smartVolumePct, 0, 1,
                       (v) => setState(() => _config.smartVolumePct = v),
                       step: 0.05,
                       decimals: 2),

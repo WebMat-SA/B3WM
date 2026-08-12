@@ -12,9 +12,14 @@ class VolumeProfileDrawer extends StatefulWidget {
   State<VolumeProfileDrawer> createState() => _VolumeProfileDrawerState();
 }
 
-class _VolumeProfileDrawerState extends State<VolumeProfileDrawer> {
+class _VolumeProfileDrawerState extends State<VolumeProfileDrawer>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final body = ListView(
         padding: EdgeInsets.zero,

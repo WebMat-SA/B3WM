@@ -75,6 +75,7 @@ class SliderRow extends StatelessWidget {
   final int decimals;
   final double step;
   final Widget? trailing;
+  final Widget? tooltip;
   const SliderRow(
     this.label,
     this.value,
@@ -85,6 +86,7 @@ class SliderRow extends StatelessWidget {
     this.decimals = 2,
     this.step = 0.01,
     this.trailing,
+    this.tooltip,
   });
 
   @override
@@ -94,7 +96,32 @@ class SliderRow extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+            Expanded(
+              child: tooltip == null
+                  ? Text(label, style: const TextStyle(fontSize: 13))
+                  : Tooltip(
+                      richMessage: TextSpan(
+                        children: [
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: tooltip!,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(label,
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.info_outline,
+                              size: 14, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+            ),
             Text(value.toStringAsFixed(decimals),
                 style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (trailing != null) trailing!,

@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.2.11430.68
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B3WM", "B3WM\B3WM\B3WM.csproj", "{51B9AB37-90B3-45BE-BECC-3AF527E0F931}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B3WM", "B3WM\B3WM.csproj", "{51B9AB37-90B3-45BE-BECC-3AF527E0F931}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B3WM.Shared", "B3WM.Shared\B3WM.Shared.csproj", "{EF162280-8547-45A3-A7EC-511A13C5E79A}"
 EndProject

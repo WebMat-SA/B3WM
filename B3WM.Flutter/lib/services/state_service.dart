@@ -399,6 +399,7 @@ class StateService extends ChangeNotifier {
         _allBubbleAgents.add(b.agent);
         if (!_currentConfig.knownAgents.contains(b.agent)) {
           _currentConfig.knownAgents.add(b.agent);
+          _currentConfig.selectedAgents.add(b.agent);
           knownChanged = true;
         }
       }

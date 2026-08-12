@@ -11,9 +11,14 @@ class TradingConfigDrawer extends StatefulWidget {
   State<TradingConfigDrawer> createState() => _TradingConfigDrawerState();
 }
 
-class _TradingConfigDrawerState extends State<TradingConfigDrawer> {
+class _TradingConfigDrawerState extends State<TradingConfigDrawer>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final body = ListView(
         padding: EdgeInsets.zero,

@@ -13,11 +13,15 @@ class StructureDrawer extends StatefulWidget {
   State<StructureDrawer> createState() => _StructureDrawerState();
 }
 
-class _StructureDrawerState extends State<StructureDrawer> {
+class _StructureDrawerState extends State<StructureDrawer>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   bool _isStructureRangeLoading = false;
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final changes = state.visibleStructureChanges;
       final body = Column(

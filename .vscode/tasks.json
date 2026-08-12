@@ -21,7 +21,7 @@
       "type": "shell",
       "command": "dotnet restore; dotnet clean; dotnet run --launch-profile https",
       "options": {
-        "cwd": "${workspaceFolder}/B3WM/B3WM"
+        "cwd": "${workspaceFolder}/B3WM"
       },
       "presentation": {
         "group": "b3wm",

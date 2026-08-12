@@ -193,7 +193,7 @@ graph TD
 ### 1. Servidor Web (Obrigatório)
 
 ```bash
-dotnet run --project B3WM/B3WM --launch-profile https
+dotnet run --project B3WM --launch-profile https
 ```
 
 O servidor inicia em **https://localhost:5002** expondo apenas a **API REST** e o **SignalR Hub** (`/api/datahub`).

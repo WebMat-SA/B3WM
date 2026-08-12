@@ -15,7 +15,10 @@ class BubbleDrawer extends StatefulWidget {
   State<BubbleDrawer> createState() => _BubbleDrawerState();
 }
 
-class _BubbleDrawerState extends State<BubbleDrawer> {
+class _BubbleDrawerState extends State<BubbleDrawer>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   int? _editingAgent;
   final Map<int, TextEditingController> _thresholdControllers = {};
 
@@ -47,6 +50,7 @@ class _BubbleDrawerState extends State<BubbleDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final bubbles = _filteredBubbles(state);
       final body = ListView(

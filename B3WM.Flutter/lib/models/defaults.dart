@@ -21,7 +21,7 @@ class Defaults {
       case 'WINFUT':
         return 250;
       case 'WDOFUT':
-        return 2.5;
+        return 4.5;
       default:
         return 250;
     }

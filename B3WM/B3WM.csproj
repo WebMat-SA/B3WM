@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\B3WM.Shared\B3WM.Shared.csproj" />
+    <ProjectReference Include="..\B3WM.Shared\B3WM.Shared.csproj" />
     <!-- SignalR is included in Microsoft.AspNetCore.App for net10.0 -->
   </ItemGroup>
 
