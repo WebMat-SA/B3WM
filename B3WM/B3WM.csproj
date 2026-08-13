@@ -11,4 +11,14 @@
     <!-- SignalR is included in Microsoft.AspNetCore.App for net10.0 -->
   </ItemGroup>
 
+  <!--
+    Verifier desabilitado (recurso parado). Para reativar, remova as linhas Compile Remove
+    abaixo e descomente o AddSingleton<VerifierManager>() em Extensions.cs.
+  -->
+  <ItemGroup>
+    <Compile Remove="Controllers\VerifierController.cs" />
+    <Compile Remove="Services\VerifierManager.cs" />
+    <Compile Remove="Services\SignalVerifierService.cs" />
+  </ItemGroup>
+
 </Project>

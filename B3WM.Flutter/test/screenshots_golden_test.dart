@@ -612,12 +612,6 @@ void main() {
     await _openDrawerTab(tester, env, 'Trading Data', 'drawer_trading_data');
   });
 
-  testWidgets('golden - aba Verifier', (tester) async {
-    final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(tester, env, 'Verificador', 'drawer_verifier');
-  });
-
   testWidgets('golden - painel de trading', (tester) async {
     final env = await _createEnv();
     env.state.setTradingPanelVisible(true);

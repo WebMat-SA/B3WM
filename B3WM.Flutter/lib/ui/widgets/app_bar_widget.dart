@@ -10,7 +10,6 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onVolumeProfileTap;
   final VoidCallback onTradingTap;
   final VoidCallback onTradingConfigTap;
-  final VoidCallback onVerifierTap;
   final bool tradingActive;
 
   const MapFlowAppBar({
@@ -20,7 +19,6 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onVolumeProfileTap,
     required this.onTradingTap,
     required this.onTradingConfigTap,
-    required this.onVerifierTap,
     this.tradingActive = false,
   });
 
@@ -163,12 +161,12 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   tooltip: 'Trading Data',
                   visualDensity: VisualDensity.compact,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.verified, size: 20),
-                  onPressed: widget.onVerifierTap,
-                  tooltip: 'Verificador',
-                  visualDensity: VisualDensity.compact,
-                ),
+                // IconButton(
+                //   icon: const Icon(Icons.verified, size: 20),
+                //   onPressed: widget.onVerifierTap,
+                //   tooltip: 'Verificador',
+                //   visualDensity: VisualDensity.compact,
+                // ),
               ],
             ),
           ),

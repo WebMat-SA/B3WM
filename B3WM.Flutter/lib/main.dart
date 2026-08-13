@@ -110,10 +110,10 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
               setState(() => _drawerTabIndex = 3);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onVerifierTap: () {
-              setState(() => _drawerTabIndex = 4);
-              _scaffoldKey.currentState?.openDrawer();
-            },
+            // onVerifierTap: () {
+            //   setState(() => _drawerTabIndex = 4);
+            //   _scaffoldKey.currentState?.openDrawer();
+            // },
             onTradingTap: () =>
                 state.setTradingPanelVisible(!state.tradingPanelVisible),
             tradingActive: state.tradingPanelVisible,

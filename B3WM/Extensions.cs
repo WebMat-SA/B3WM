@@ -15,7 +15,9 @@ namespace B3WM
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
             services.AddScoped<BacktestEngine>();
-            services.AddSingleton<VerifierManager>();
+            // Verifier desabilitado. Para reativar: descomente abaixo e remova os
+            // Compile Remove do B3WM.csproj.
+            //services.AddSingleton<VerifierManager>();
 
             services.AddWinfutServices(config);
 
