@@ -23,7 +23,7 @@ class BubbleStorageItem {
       agent: json['agent'] as int,
       amount: (json['amount'] as num).toDouble(),
       date: DateTime.parse(json['date'] as String),
-      actionType: ActionType.fromValue(json['actionType'] as int),
+      actionType: ActionType.fromValue(json['actionType']),
       symbol: json['symbol'] as String,
     );
   }

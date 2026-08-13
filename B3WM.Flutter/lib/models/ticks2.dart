@@ -11,9 +11,18 @@ enum ActionType {
   final String description;
   const ActionType(this.value, this.description);
 
-  static ActionType fromValue(int value) {
+  /// Aceita tanto o valor numérico do enum (SignalR/arquivos) quanto a forma
+  /// em string usada pela API HTTP (JsonStringEnumConverter), ex: 2 ou 'Sale'.
+  static ActionType fromValue(dynamic value) {
+    if (value is String) {
+      return ActionType.values.firstWhere(
+        (e) => e.name.toLowerCase() == value.toLowerCase(),
+        orElse: () => ActionType.buy,
+      );
+    }
+    final intValue = value is num ? value.toInt() : 0;
     return ActionType.values.firstWhere(
-      (e) => e.value == value,
+      (e) => e.value == intValue,
       orElse: () => ActionType.buy,
     );
   }

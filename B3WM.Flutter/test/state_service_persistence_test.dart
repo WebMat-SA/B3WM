@@ -283,6 +283,58 @@ void main() {
       reloaded.reset();
     });
 
+    test('loadData carrega bubbles com resposta real da API (actionType string)',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final api = ApiService(
+        baseUrl: 'http://test.local',
+        client: MockClient((request) async {
+          if (request.url.path.contains('GetVolume')) {
+            return http.Response('null', 200);
+          }
+          if (request.url.path.contains('GetBubble')) {
+            return http.Response(jsonEncode([
+              {
+                'price': 170400,
+                'agent': 85,
+                'amount': 267,
+                'date': '2026-08-13T09:03:19.473',
+                'actionType': 'Sale',
+                'symbol': 'WINFUT',
+              },
+              {
+                'price': 170305,
+                'agent': 85,
+                'amount': 550,
+                'date': '2026-08-13T09:03:31.973',
+                'actionType': 'Buy',
+                'symbol': 'WINFUT',
+              },
+            ]), 200);
+          }
+          return http.Response('[]', 200);
+        }),
+      );
+      final signalR = _NoopSignalRService(
+          hubUrl: 'http://test.local/hub', apiService: api);
+      final service = StateService(
+        apiService: api,
+        signalRService: signalR,
+        preferencesService: prefs,
+        audioService: AudioService(),
+      );
+      await service.setSymbol('WINFUT');
+
+      expect(service.bubbles.length, 2);
+      expect(service.bubbles.map((b) => b.actionType).toSet(),
+          {ActionType.sale, ActionType.buy});
+      expect(service.allBubbleAgents, contains(85));
+      service.reset();
+    });
+
     test('bubbles do dia são auto-selecionados no load', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();
@@ -394,6 +446,33 @@ void main() {
       signalR.onNewBubble!(bubble(42));
       expect(service.selectedAgents, isNot(contains(42)));
       service.reset();
+    });
+  });
+
+  group('BubbleStorageItem parsing', () {
+    test('fromJson aceita actionType como número (SignalR/arquivos)', () {
+      final b = BubbleStorageItem.fromJson({
+        'price': 170400,
+        'agent': 85,
+        'amount': 267,
+        'date': '2026-08-13T09:03:19.473',
+        'actionType': 2,
+        'symbol': 'WINFUT',
+      });
+      expect(b.actionType, ActionType.sale);
+    });
+
+    test('fromJson aceita actionType como string (API com JsonStringEnumConverter)',
+        () {
+      final b = BubbleStorageItem.fromJson({
+        'price': 170400,
+        'agent': 85,
+        'amount': 267,
+        'date': '2026-08-13T09:03:19.473',
+        'actionType': 'Sale',
+        'symbol': 'WINFUT',
+      });
+      expect(b.actionType, ActionType.sale);
     });
   });
 }

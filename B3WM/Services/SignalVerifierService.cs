@@ -61,7 +61,7 @@ namespace B3WM.Services
 
                 _strategy = _config.StrategyName switch
                 {
-                    StrategyType.Breakout => new SimpleBreakoutStrategy(_config.LookbackPeriod),
+                    StrategyType.Breakout => CreateSimpleBreakout(backtestConfig),
                     StrategyType.SmartBreakout => CreateSmartBreakout(backtestConfig, logger),
                     _ => throw new ArgumentException($"Unknown strategy: {_config.StrategyName}")
                 };
@@ -90,6 +90,14 @@ namespace B3WM.Services
                 config,
                 logger,
                 _ => _structureService?.GetLastStructure());
+        }
+
+        private SimpleBreakoutStrategy CreateSimpleBreakout(BacktestConfig config)
+        {
+            _structureService = _serviceProvider.GetServices<StructureService>()
+                .FirstOrDefault(s => s.Symbol == _symbol && s.TimeFrame == _timeFrame);
+
+            return new SimpleBreakoutStrategy(config, null, _ => _structureService?.GetLastStructure());
         }
 
         public void Stop()
