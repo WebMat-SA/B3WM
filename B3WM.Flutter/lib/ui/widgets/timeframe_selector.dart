@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/defaults.dart';
 import '../../services/state_service.dart';
 
 class TimeframeSelector extends StatelessWidget {
@@ -8,13 +9,14 @@ class TimeframeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeframes = [1, 2, 5, 15, 30, 60];
+    const timeframes = Defaults.timeFrames;
     return Consumer<StateService>(builder: (context, state, _) {
       return Wrap(
         spacing: 4,
         children: timeframes
             .map((tf) => ChoiceChip(
-                  label: Text('$tf', style: const TextStyle(fontSize: 12)),
+                  label: Text(Defaults.timeFrameLabel(tf),
+                      style: const TextStyle(fontSize: 12)),
                   selected: state.timeFrame == tf,
                   onSelected: (_) {
                     state.setTimeFrame(tf);

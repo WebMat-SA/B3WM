@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/defaults.dart';
 import '../../models/signal_event.dart';
 import '../../models/verifier_config.dart';
 import '../../models/verifier_log_day.dart';
@@ -237,7 +238,7 @@ class _VerifierDrawerState extends State<VerifierDrawer>
                     Expanded(
                       child: Consumer<StateService>(
                         builder: (context, state, _) => Text(
-                          '${state.timeFrame} min',
+                          Defaults.timeFrameLabel(state.timeFrame),
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.bold),
                         ),

@@ -3,7 +3,7 @@
     public static class Defaults
     {
         public const string Url = "https://localhost:5002/api/datahub";
-        public static readonly int[] TimeFrames = [1, 2, 5, 15, 30, 60];
+        public static readonly int[] TimeFrames = [1, 2, 5, 15, 30, 60, 1440];
 
         public static class Symbols
         {

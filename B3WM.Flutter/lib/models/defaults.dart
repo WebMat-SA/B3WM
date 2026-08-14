@@ -1,6 +1,8 @@
 class Defaults {
   static const String url = 'https://localhost:5002/api/datahub';
-  static const List<int> timeFrames = [1, 2, 5, 15, 30, 60];
+  static const List<int> timeFrames = [1, 2, 5, 15, 30, 60, 1440];
+
+  static String timeFrameLabel(int tf) => tf == 1440 ? '1D' : '$tf';
 
   static const String symbolWinfut = 'WINFUT';
   static const String symbolWdofut = 'WDOFUT';
