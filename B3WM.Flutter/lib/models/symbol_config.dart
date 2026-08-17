@@ -21,6 +21,11 @@ class SymbolConfig {
   double structureOpacity;
   double structureRangeUpd;
 
+  bool extremeVisible;
+  double extremeOpacity;
+  double extremeNoiseSensitivity;
+  double extremeMinimumProminence;
+
   String colorBuyer;
   String colorSeller;
 
@@ -63,6 +68,10 @@ class SymbolConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.structureRangeUpd,
+    required this.extremeVisible,
+    required this.extremeOpacity,
+    required this.extremeNoiseSensitivity,
+    required this.extremeMinimumProminence,
     required this.colorBuyer,
     required this.colorSeller,
     required this.selectedAgents,
@@ -99,6 +108,10 @@ class SymbolConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
+        extremeVisible = true,
+        extremeOpacity = 0.7,
+        extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
+        extremeMinimumProminence = Defaults.extremeMinimumProminence,
         colorBuyer = '#4488ff',
         colorSeller = '#ff4444',
         selectedAgents = [],
@@ -146,6 +159,10 @@ class SymbolConfig {
               legacy.structureRangeUpd <= structureMax
           ? legacy.structureRangeUpd
           : defaults.structureRangeUpd,
+      extremeVisible: defaults.extremeVisible,
+      extremeOpacity: defaults.extremeOpacity,
+      extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
+      extremeMinimumProminence: defaults.extremeMinimumProminence,
       colorBuyer: legacy.colorBuyer,
       colorSeller: legacy.colorSeller,
       selectedAgents: List.from(legacy.selectedAgents),
@@ -188,6 +205,14 @@ class SymbolConfig {
             (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
         structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
             Defaults.minDistanceUpdateBorder(symbol),
+        extremeVisible: json['extremeVisible'] as bool? ?? true,
+        extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
+        extremeNoiseSensitivity:
+            (json['extremeNoiseSensitivity'] as num?)?.toDouble() ??
+                Defaults.extremeNoiseSensitivity,
+        extremeMinimumProminence:
+            (json['extremeMinimumProminence'] as num?)?.toDouble() ??
+                Defaults.extremeMinimumProminence,
         colorBuyer: json['colorBuyer'] as String? ?? '#4488ff',
         colorSeller: json['colorSeller'] as String? ?? '#ff4444',
         selectedAgents:
@@ -232,6 +257,10 @@ class SymbolConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
+        'extremeVisible': extremeVisible,
+        'extremeOpacity': extremeOpacity,
+        'extremeNoiseSensitivity': extremeNoiseSensitivity,
+        'extremeMinimumProminence': extremeMinimumProminence,
         'colorBuyer': colorBuyer,
         'colorSeller': colorSeller,
         'selectedAgents': selectedAgents,

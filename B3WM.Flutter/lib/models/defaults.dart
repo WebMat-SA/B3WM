@@ -68,4 +68,14 @@ class Defaults {
         return 2000;
     }
   }
+
+  static const double extremeNoiseSensitivity = 3.0;
+  static const double extremeMinimumProminence = 0.15;
+
+  static const double extremeNoiseSensitivityMin = 1.0;
+  static const double extremeNoiseSensitivityMax = 10.0;
+  static const double extremeNoiseSensitivityStep = 0.5;
+  static const double extremeMinimumProminenceMin = 0.05;
+  static const double extremeMinimumProminenceMax = 0.5;
+  static const double extremeMinimumProminenceStep = 0.05;
 }

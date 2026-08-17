@@ -3,6 +3,7 @@ using B3WM.Services.Core;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
+using B3WM.Shared.Models.ExtremeDetection;
 using Microsoft.AspNetCore.Mvc;
 namespace B3WM.Controllers
 {
@@ -14,14 +15,16 @@ namespace B3WM.Controllers
         private readonly IEnumerable<StructureService> structureServices;
         private readonly IEnumerable<CandleService> _candleServices;
         private readonly IEnumerable<BubbleService> _bubbleServices;
+        private readonly IEnumerable<ExtremeService> _extremeServices;
         private readonly ILogger<DataController> _logger;
 
-        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, ILogger<DataController> logger)
+        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, ILogger<DataController> logger)
         {
             this.dataKeeper = dataKeeper;
             this.structureServices = structureServices;
             _candleServices = candleServices;
             _bubbleServices = bubbleServices;
+            _extremeServices = extremeServices;
             _logger = logger;
         }
 
@@ -190,6 +193,66 @@ namespace B3WM.Controllers
             }
 
             return await GetStructureAsync(symbol, DateTime.Today, minDistance);
+        }
+
+        [HttpGet("{symbol}/{date}")]
+        public async Task<IActionResult> GetExtremeAsync(string symbol, DateTime date)
+        {
+            var service = _extremeServices.FirstOrDefault(s => s.Symbol == symbol);
+            if (service == null) return NotFound();
+
+            // Datas históricas: computa sob demanda a partir dos arquivos persistidos.
+            if (date.Date != DateTime.Today)
+                return Ok(await service.ComputeForDate(dataKeeper, date, null, null));
+
+            string path = $"{symbol}_{nameof(ExtremeService)}_{date:yyyy-MM-dd}.json";
+            var data = await dataKeeper.ReadDataAsync<ExtremeStorageItem>(path);
+            return Ok(data);
+        }
+
+        [HttpGet("{symbol}")]
+        public async Task<IActionResult> SetExtremePeriodAsync(string symbol,
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] DateTime? date = null)
+        {
+            var service = _extremeServices.FirstOrDefault(s => s.Symbol == symbol);
+            if (service == null) return NotFound();
+
+            var target = (date ?? DateTime.Today).Date;
+            if (target != DateTime.Today)
+                return Ok(await service.ComputeForDate(dataKeeper, target, from, to));
+
+            await service.SetPeriod(from, to);
+            return Ok(service.GetSnapshot());
+        }
+
+        [HttpGet("{symbol}")]
+        public async Task<IActionResult> SetExtremeConfigAsync(string symbol,
+            [FromQuery] double noiseSensitivity = B3WM.Shared.Models.Defaults.Extreme.NoiseSensitivity,
+            [FromQuery] double minimumProminence = B3WM.Shared.Models.Defaults.Extreme.MinimumProminence,
+            [FromQuery] DateTime? date = null,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null)
+        {
+            var service = _extremeServices.FirstOrDefault(s => s.Symbol == symbol);
+            if (service == null) return NotFound();
+
+            var target = (date ?? DateTime.Today).Date;
+            if (target == DateTime.Today)
+            {
+                await service.SetConfig(new ExtremeDetectorOptions
+                {
+                    NoiseSensitivity = noiseSensitivity,
+                    MinimumProminence = minimumProminence
+                });
+                return Ok(service.GetSnapshot());
+            }
+
+            await service.SetConfig(new ExtremeDetectorOptions
+            {
+                NoiseSensitivity = noiseSensitivity,
+                MinimumProminence = minimumProminence
+            }, recomputeLive: false);
+            return Ok(await service.ComputeForDate(dataKeeper, target, from, to));
         }
     }
 }

@@ -18,5 +18,6 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveThrottlingData(ThrottlingData data);
         Task ReceiveOnIndicatorValue(IndicatorValue data);
         Task ReceiveOnSignal(SignalEvent data);
+        Task ReceiveOnExtreme(ExtremeStorageItem data);
     }
 }

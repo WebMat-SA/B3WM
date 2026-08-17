@@ -45,6 +45,7 @@ namespace B3WM
             }
             services.AddSingleton(sp => new BubbleService(Defaults.Symbols.WINFUT, Defaults.WINFUT.ThresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
+            services.AddSingleton(sp => new ExtremeService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<ExtremeService>>()));
             services.AddSingleton(sp => new AdjustmentForecastService(Defaults.Symbols.WINFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<AdjustmentForecastService>>()));
 
             services.AddSingleton<OrchestratorService>(sp =>
@@ -77,6 +78,7 @@ namespace B3WM
             }
             services.AddSingleton(sp => new BubbleService(Defaults.Symbols.WDOFUT, Defaults.WDOFUT.ThresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
+            services.AddSingleton(sp => new ExtremeService(Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<ExtremeService>>()));
             services.AddSingleton(sp => new AdjustmentForecastService(Defaults.Symbols.WDOFUT, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<AdjustmentForecastService>>()));
 
             services.AddSingleton<OrchestratorService>(sp =>

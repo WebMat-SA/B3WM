@@ -3,8 +3,9 @@ import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
 import 'trading_config_drawer.dart';
+import 'extreme_drawer.dart';
 // Verifier desabilitado. Para reativar, re-importe 'verifier_drawer.dart',
-// volte o TabController para 5 e re-adicione a Tab/VerifierDrawer abaixo.
+// volte o TabController para 6 e re-adicione a Tab/VerifierDrawer abaixo.
 
 class AppDrawer extends StatefulWidget {
   final int initialTab;
@@ -21,7 +22,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 5, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -62,6 +63,7 @@ class _AppDrawerState extends State<AppDrawer>
                 Tab(text: 'Estrutura', icon: Icon(Icons.stacked_line_chart, size: 18)),
                 Tab(text: 'Volume Profile', icon: Icon(Icons.align_horizontal_right, size: 18)),
                 Tab(text: 'Trading Data', icon: Icon(Icons.show_chart, size: 18)),
+                Tab(text: 'Topos/Vales', icon: Icon(Icons.linear_scale, size: 18)),
                 // Tab(text: 'Verifier', icon: Icon(Icons.verified, size: 18)),
               ],
             ),
@@ -74,6 +76,7 @@ class _AppDrawerState extends State<AppDrawer>
                 StructureDrawer(noDrawer: true),
                 VolumeProfileDrawer(noDrawer: true),
                 TradingConfigDrawer(noDrawer: true),
+                ExtremeDrawer(noDrawer: true),
                 // VerifierDrawer(noDrawer: true),
               ],
             ),

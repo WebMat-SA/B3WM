@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\B3WM\B3WM\B3WM.csproj" />
+    <ProjectReference Include="..\B3WM\B3WM.csproj" />
   </ItemGroup>
 
 </Project>

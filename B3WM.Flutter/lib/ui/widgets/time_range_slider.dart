@@ -39,6 +39,15 @@ class TimeRangeSlider extends StatelessWidget {
         state.applyVolumeFilter(newStart, newEnd);
       }
 
+      // No release do arrasto garante um sincronismo final da análise de
+      // extremos com a janela exata selecionada.
+      void applyRangeEnd(double startVal, double endVal) {
+        final newStart = startVal.round().clamp(0, safeEnd - 1);
+        final newEnd = endVal.round().clamp(newStart + 1, count);
+        if (newStart == safeStart && newEnd == safeEnd) return;
+        state.applyVolumeFilter(newStart, newEnd);
+      }
+
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
@@ -64,6 +73,9 @@ class TimeRangeSlider extends StatelessWidget {
               onChanged: autoMode
                   ? null
                   : (v) => applyRange(v.start, v.end),
+              onChangeEnd: autoMode
+                  ? null
+                  : (v) => applyRangeEnd(v.start, v.end),
             ),
           ],
         ),

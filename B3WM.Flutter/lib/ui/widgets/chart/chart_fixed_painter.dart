@@ -102,6 +102,7 @@ class ChartFixedPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
+    _drawExtremeLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
     _drawOrderLines(canvas);
@@ -236,6 +237,26 @@ class ChartFixedPainter extends CustomPainter {
     final str = tick.toStringAsFixed(10);
     final dot = str.indexOf('.');
     return str.substring(dot + 1).replaceAll(RegExp(r'0+$'), '').length;
+  }
+
+  void _drawExtremeLines(Canvas canvas) {
+    final ex = data.extremes;
+    if (ex == null || !ex.visible) return;
+
+    void drawLines(List<double> prices, Color color) {
+      final paint = Paint()
+        ..color = color.withOpacity(ex.opacity)
+        ..strokeWidth = 1;
+      for (final price in prices) {
+        final y = _priceToY(price);
+        if (y < marginTop || y > marginTop + chartHeight) continue;
+        _drawDashedLine(canvas, Offset(marginLeft, y),
+            Offset(chartRight - rightLabelMargin, y), paint);
+      }
+    }
+
+    drawLines(ex.topPrices, const Color(0xFF69F0AE));
+    drawLines(ex.valleyPrices, const Color(0xFFFF5252));
   }
 
   void _drawMarkLine(Canvas canvas) {

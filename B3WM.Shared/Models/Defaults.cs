@@ -35,6 +35,21 @@
             public const double SmartStructureBufferPct = 0.1;
         }
 
+        public static class Extreme
+        {
+            public const double NoiseSensitivity = 3.0;
+            public const double MinimumProminence = 0.15;
+            public const double SmoothingLevel = 1.5;
+
+            // Limites para os sliders do app
+            public const double NoiseSensitivityMin = 1.0;
+            public const double NoiseSensitivityMax = 10.0;
+            public const double NoiseSensitivityStep = 0.5;
+            public const double MinimumProminenceMin = 0.05;
+            public const double MinimumProminenceMax = 0.5;
+            public const double MinimumProminenceStep = 0.05;
+        }
+
         public static double GetPointValue(string symbol) => symbol switch
         {
             Symbols.WINFUT => WINFUT.PointValue,

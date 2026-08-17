@@ -8,6 +8,7 @@ import '../models/structure_storage_item.dart';
 import '../models/indicator_value.dart';
 import '../models/signal_event.dart';
 import '../models/throttling_data.dart';
+import '../models/extreme_storage_item.dart';
 import 'api_service.dart';
 
 class SignalRService {
@@ -32,6 +33,7 @@ class SignalRService {
   void Function(StructureStorageItem)? onNewStructure;
   void Function(IndicatorValue)? onIndicatorValue;
   void Function(SignalEvent)? onSignal;
+  void Function(ExtremeStorageItem)? onExtreme;
   void Function(List<BarStorageItem>)? onMissedBars;
   void Function(List<BubbleStorageItem>)? onMissedBubbles;
 
@@ -84,6 +86,7 @@ class SignalRService {
       _hubConnection!.on('ReceiveThrottlingData', (List<dynamic>? args) => _handleThrottlingData(args));
       _hubConnection!.on('ReceiveOnIndicatorValue', (List<dynamic>? args) => _handleIndicatorValue(args));
       _hubConnection!.on('ReceiveOnSignal', (List<dynamic>? args) => _handleSignal(args));
+      _hubConnection!.on('ReceiveOnExtreme', (List<dynamic>? args) => _handleExtreme(args));
 
       await _hubConnection!.start();
 
@@ -162,6 +165,13 @@ class SignalRService {
     final json = args[0] as Map<String, dynamic>;
     final signal = SignalEvent.fromJson(json);
     onSignal?.call(signal);
+  }
+
+  void _handleExtreme(List<dynamic>? args) {
+    if (args == null || args.isEmpty) return;
+    final json = args[0] as Map<String, dynamic>;
+    final extreme = ExtremeStorageItem.fromJson(json);
+    onExtreme?.call(extreme);
   }
 
   Future<void> _tryFetchMissedBars() async {

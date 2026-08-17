@@ -34,6 +34,7 @@ class ChartPainter extends CustomPainter {
     _drawDaySeparators(canvas, size, chartWidth, chartHeight, stepX);
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
+    _drawExtremeLines(canvas, chartWidth, chartHeight);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
     _drawHistoryMarkers(canvas, size, chartWidth, chartHeight, stepX);
@@ -138,6 +139,27 @@ class ChartPainter extends CustomPainter {
       drawLine(s.upAuxBorder, const Color(0xFF5555aa), true);
       drawLine(s.downAuxBorder, const Color(0xFFaa5555), true);
     }
+  }
+
+  void _drawExtremeLines(
+      Canvas canvas, double chartWidth, double chartHeight) {
+    final ex = data.extremes;
+    if (ex == null || !ex.visible) return;
+
+    void drawLines(List<double> prices, Color color) {
+      final paint = Paint()
+        ..color = color.withOpacity(ex.opacity)
+        ..strokeWidth = 1;
+      for (final price in prices) {
+        final y = _priceToY(price, chartHeight);
+        if (y < 0 || y > chartHeight) continue;
+        _drawDashedLine(
+            canvas, Offset(0, y), Offset(chartWidth, y), paint);
+      }
+    }
+
+    drawLines(ex.topPrices, const Color(0xFF69F0AE));
+    drawLines(ex.valleyPrices, const Color(0xFFFF5252));
   }
 
   void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint) {

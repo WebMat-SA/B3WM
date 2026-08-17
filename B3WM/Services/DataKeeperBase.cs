@@ -4,14 +4,17 @@ namespace B3WM.Services
 {
     public class DataKeeperBase
     {
+        /// <summary>Diretório raiz dos arquivos de dados (relativo ao cwd).</summary>
+        protected virtual string RootDirectory => "Data";
+
         public virtual async Task<T> ReadDataAsync<T>(string path) where T : new()
         {
             try
             {
-                if (!Directory.Exists("Data"))
-                    Directory.CreateDirectory("Data");
+                if (!Directory.Exists(RootDirectory))
+                    Directory.CreateDirectory(RootDirectory);
 
-                string fullPath = Path.Combine("Data", path);
+                string fullPath = Path.Combine(RootDirectory, path);
 
                 if (!File.Exists(fullPath))
                 {
@@ -56,10 +59,10 @@ namespace B3WM.Services
                         WriteIndented = true
                     });
 
-                if (!Directory.Exists("Data"))
-                    Directory.CreateDirectory("Data");
+                if (!Directory.Exists(RootDirectory))
+                    Directory.CreateDirectory(RootDirectory);
 
-                string fullPath = Path.Combine("Data", path);
+                string fullPath = Path.Combine(RootDirectory, path);
                 string tmpPath = fullPath + ".tmp";
 
                 //gravacao atomica: escreve em arquivo temporario e move por cima,

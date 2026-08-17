@@ -9,6 +9,7 @@ import '../models/indicator_value.dart';
 import '../models/verifier_config.dart';
 import '../models/verifier_state.dart';
 import '../models/verifier_log_day.dart';
+import '../models/extreme_storage_item.dart';
 
 class ApiService {
   final http.Client _client;
@@ -236,6 +237,78 @@ class ApiService {
     } catch (e) {
       return [];
     }
+  }
+
+  Future<ExtremeStorageItem?> getExtreme(
+      String symbol, DateTime date) async {
+    final dateStr = _formatDate(date);
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetExtreme/$symbol/$dateStr'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return ExtremeStorageItem.fromJson(json);
+  }
+
+  /// Monta a URL de SetExtremePeriod sem disparar a requisição (diagnóstico).
+  String setExtremePeriodDebugUrl(
+    String symbol, {
+    DateTime? date,
+    DateTime? from,
+    DateTime? to,
+  }) {
+    final dateStr =
+        date != null ? 'date=${Uri.encodeQueryComponent(_formatDate(date))}&' : '';
+    final fromStr = from != null ? 'from=${Uri.encodeQueryComponent(from.toIso8601String())}&' : '';
+    final toStr = to != null ? 'to=${Uri.encodeQueryComponent(to.toIso8601String())}' : '';
+    return '$_baseUrl/api/Data/SetExtremePeriod/$symbol?$dateStr$fromStr$toStr';
+  }
+
+  Future<ExtremeStorageItem?> setExtremePeriod(
+    String symbol, {
+    DateTime? date,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final dateStr =
+        date != null ? 'date=${Uri.encodeQueryComponent(_formatDate(date))}&' : '';
+    final fromStr = from != null ? 'from=${Uri.encodeQueryComponent(from.toIso8601String())}&' : '';
+    final toStr = to != null ? 'to=${Uri.encodeQueryComponent(to.toIso8601String())}' : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/SetExtremePeriod/$symbol?$dateStr$fromStr$toStr'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return ExtremeStorageItem.fromJson(json);
+  }
+
+  Future<ExtremeStorageItem?> setExtremeConfig(
+    String symbol, {
+    DateTime? date,
+    DateTime? from,
+    DateTime? to,
+    double? noiseSensitivity,
+    double? minimumProminence,
+  }) async {
+    final dateStr =
+        date != null ? 'date=${Uri.encodeQueryComponent(_formatDate(date))}&' : '';
+    final fromStr = from != null ? 'from=${Uri.encodeQueryComponent(from.toIso8601String())}&' : '';
+    final toStr = to != null ? 'to=${Uri.encodeQueryComponent(to.toIso8601String())}&' : '';
+    final ns = noiseSensitivity != null
+        ? 'noiseSensitivity=${noiseSensitivity.toStringAsFixed(3)}&'
+        : '';
+    final mp = minimumProminence != null
+        ? 'minimumProminence=${minimumProminence.toStringAsFixed(3)}'
+        : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/SetExtremeConfig/$symbol?$dateStr$fromStr$toStr$ns$mp'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return ExtremeStorageItem.fromJson(json);
   }
 
   String _formatDate(DateTime date) =>

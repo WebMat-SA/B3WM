@@ -2,6 +2,7 @@ import 'dart:ui' show Color;
 import '../../../services/state_service.dart';
 import '../../../models/ticks2.dart';
 import '../../../models/trade_models.dart';
+import '../../../models/extreme_storage_item.dart';
 
 class CandlePoint {
   final DateTime date;
@@ -91,12 +92,27 @@ class HistoryDealPoint {
   });
 }
 
+class ExtremeLineData {
+  final List<double> topPrices;
+  final List<double> valleyPrices;
+  final bool visible;
+  final double opacity;
+
+  ExtremeLineData({
+    required this.topPrices,
+    required this.valleyPrices,
+    required this.visible,
+    required this.opacity,
+  });
+}
+
 class ChartData {
   final List<CandlePoint> candles;
   final List<BubblePoint> redBubbles;
   final List<BubblePoint> blueBubbles;
   final List<VolumeBarData> volumeProfile;
   final StructureLineData? structures;
+  final ExtremeLineData? extremes;
   final double minPrice;
   final double maxPrice;
   final double lastPrice;
@@ -130,6 +146,7 @@ class ChartData {
     required this.blueBubbles,
     required this.volumeProfile,
     this.structures,
+    this.extremes,
     required this.minPrice,
     required this.maxPrice,
     required this.lastPrice,
@@ -312,6 +329,25 @@ ChartData buildChartData(StateService state) {
     }
   }
 
+  ExtremeLineData? extremes;
+  if (state.extremeVisible) {
+    final ex = state.extremes;
+    if (ex != null && ex.extremes.isNotEmpty) {
+      extremes = ExtremeLineData(
+        topPrices: ex.extremes
+            .where((e) => e.type == ExtremeType.top)
+            .map((e) => e.position)
+            .toList(),
+        valleyPrices: ex.extremes
+            .where((e) => e.type == ExtremeType.valley)
+            .map((e) => e.position)
+            .toList(),
+        visible: true,
+        opacity: state.extremeOpacity,
+      );
+    }
+  }
+
   int calcRemainingSeconds() {
     if (state.currentBar == null || state.timeFrame <= 0) return 0;
     final totalMinutes = state.currentBar!.date.hour * 60 + state.currentBar!.date.minute;
@@ -369,6 +405,7 @@ ChartData buildChartData(StateService state) {
     blueBubbles: blueBubbles,
     volumeProfile: volumeProfile,
     structures: structures,
+    extremes: extremes,
     minPrice: minPrice,
     maxPrice: maxPrice,
     lastPrice: visible.isNotEmpty ? visible.last.close : 0,

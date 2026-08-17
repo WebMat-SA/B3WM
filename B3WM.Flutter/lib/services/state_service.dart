@@ -16,6 +16,7 @@ import '../models/trade_models.dart';
 import '../models/signal_event.dart';
 import '../models/verifier_config.dart';
 import '../models/verifier_state.dart';
+import '../models/extreme_storage_item.dart';
 
 class StateService extends ChangeNotifier {
   final ApiService _apiService;
@@ -194,6 +195,21 @@ class StateService extends ChangeNotifier {
   void setStructureOpacity(double v) { _currentConfig.structureOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setStructureRangeUpd(double v) { _currentConfig.structureRangeUpd = v; _isStructureUpdating = true; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
+  void setExtremeVisible(bool v) { _currentConfig.extremeVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setExtremeOpacity(double v) { _currentConfig.extremeOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setExtremeNoiseSensitivity(double v) {
+    _currentConfig.extremeNoiseSensitivity = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    _scheduleExtremeConfigSync();
+  }
+  void setExtremeMinimumProminence(double v) {
+    _currentConfig.extremeMinimumProminence = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    _scheduleExtremeConfigSync();
+  }
+
   void setColorBuyer(String v) { _currentConfig.colorBuyer = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setColorSeller(String v) { _currentConfig.colorSeller = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
@@ -219,6 +235,108 @@ class StateService extends ChangeNotifier {
   void setTradingHistoryExpanded(bool v) { _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
+
+  // --- Extreme detection ---
+  bool get extremeVisible => _currentConfig.extremeVisible;
+  double get extremeOpacity => _currentConfig.extremeOpacity;
+  double get extremeNoiseSensitivity => _currentConfig.extremeNoiseSensitivity;
+  double get extremeMinimumProminence => _currentConfig.extremeMinimumProminence;
+
+  /// Data efetiva em exibição (dia carregado no gráfico).
+  DateTime? _displayDate;
+  DateTime? get displayDate => _displayDate;
+
+  ExtremeStorageItem? _extremes;
+  ExtremeStorageItem? get extremes => _extremes;
+
+  Timer? _extremeConfigTimer;
+  Timer? _extremePeriodTimer;
+  DateTime? _lastExtremeFrom;
+  DateTime? _lastExtremeTo;
+
+  /// Filtra snapshots que não correspondem ao dia exibido: o broadcast ao vivo
+  /// (dia atual do servidor) não pode sobrescrever os extremos de uma data
+  /// histórica, e vice-versa.
+  void _handleExtreme(ExtremeStorageItem data) {
+    if (data.symbol.isNotEmpty && data.symbol != _symbol) {
+      debugPrint('[extremes] reject symbol=${data.symbol} != $_symbol');
+      return;
+    }
+    final d = data.date;
+    final disp = _displayDate;
+    if (d != null && disp != null &&
+        (d.year != disp.year || d.month != disp.month || d.day != disp.day)) {
+      debugPrint(
+          '[extremes] reject date=${d.toIso8601String()} != display=${disp.toIso8601String()}');
+      return;
+    }
+    debugPrint(
+        '[extremes] apply date=${d?.toIso8601String()} count=${data.extremes.length}');
+    _extremes = data;
+    notifyListeners();
+  }
+
+  (DateTime?, DateTime?) _extremeRangeFromBars() {
+    final bars = barsTimeFrameFilter;
+    final count = bars.length;
+    if (count == 0) return (null, null);
+    final start = _dateRangeStart;
+    final end = _dateRangeEnd;
+    final from = start <= 0 ? null : bars[start - 1].date;
+    final endIdx = end.clamp(0, count - 1);
+    final to = end >= count ? null : bars[endIdx].date;
+    return (from, to);
+  }
+
+  void _scheduleExtremeConfigSync() {
+    _extremeConfigTimer?.cancel();
+    _extremeConfigTimer = Timer(const Duration(milliseconds: 800), () async {
+      try {
+        final range = _extremeRangeFromBars();
+        final data = await _apiService.setExtremeConfig(
+          _symbol,
+          date: _displayDate,
+          from: range.$1,
+          to: range.$2,
+          noiseSensitivity: _currentConfig.extremeNoiseSensitivity,
+          minimumProminence: _currentConfig.extremeMinimumProminence,
+        );
+        if (data != null) _handleExtreme(data);
+      } catch (e) {
+        debugPrint('[extremes] config sync error: $e');
+      }
+    });
+  }
+
+  /// Debounce: durante o arrasto acumula o último from/to e envia uma única
+  /// requisição ~350ms após a última mudança, garantindo que a posição final
+  /// do slider sempre dispare (sem o lag do throttle de 2s anterior).
+  void _syncExtremesPeriod() {
+    if (_displayDate == null || _symbol.isEmpty) return;
+
+    _extremePeriodTimer?.cancel();
+    _extremePeriodTimer = Timer(const Duration(milliseconds: 350), () async {
+      final (from, to) = _extremeRangeFromBars();
+
+      if (_lastExtremeFrom == from && _lastExtremeTo == to) return;
+      _lastExtremeFrom = from;
+      _lastExtremeTo = to;
+
+      final url = _apiService.setExtremePeriodDebugUrl(
+          _symbol, date: _displayDate, from: from, to: to);
+      debugPrint(
+          '[extremes] syncPeriod from=$from to=$to url=$url display=${_displayDate?.toIso8601String()}');
+      try {
+        final data = await _apiService
+            .setExtremePeriod(_symbol, date: _displayDate, from: from, to: to);
+        debugPrint(
+            '[extremes] syncPeriod response ${data == null ? 'NULL' : 'count=${data.extremes.length}'}');
+        if (data != null) _handleExtreme(data);
+      } catch (e) {
+        debugPrint('[extremes] period sync error: $e');
+      }
+    });
+  }
 
   void selectAllAgents() {
     final all = allBubbleAgents;
@@ -294,6 +412,10 @@ class StateService extends ChangeNotifier {
       structureVisible: p.getBool('StructureVisible') ?? true,
       structureAuxVisible: p.getBool('StructureAuxVisible') ?? true,
       structureOpacity: p.getDouble('StructureOpacity') ?? 0.8,
+      extremeVisible: true,
+      extremeOpacity: 0.7,
+      extremeNoiseSensitivity: 3.0,
+      extremeMinimumProminence: 0.15,
       bubbleSize: p.getDouble('BubbleSize') ?? 1.0,
       bubbleOpacity: p.getDouble('BubbleOpacity') ?? 0.7,
       bubbleVisible: p.getBool('BubbleVisible') ?? true,
@@ -347,12 +469,17 @@ class StateService extends ChangeNotifier {
     _signalRService.onMissedBars = _handleMissedBars;
     _signalRService.onMissedBubbles = _handleMissedBubbles;
     _signalRService.onSignal = _handleSignal;
+    _signalRService.onExtreme = _handleExtreme;
   }
 
   Future<void> setSymbol(String value) async {
     _saveConfigForSymbol(_symbol);
     _symbol = value.toUpperCase();
     _allBubbleAgents.clear();
+    _extremes = null;
+    _displayDate = null;
+    _lastExtremeFrom = null;
+    _lastExtremeTo = null;
     notifyListeners();
     await loadData();
   }
@@ -380,6 +507,7 @@ class StateService extends ChangeNotifier {
       }
 
       _bars = bars;
+      _displayDate = effectiveDate;
       notifyListeners();
 
       final filteredCount = barsTimeFrameFilter.length;
@@ -441,6 +569,19 @@ class StateService extends ChangeNotifier {
       debugPrint('[loadData] Structures count: ${structures.length}');
       if (_currentConfig.profileAutoByPriceStructure) {
         _applyStructureAutoFilter();
+      }
+      notifyListeners();
+
+      // Load extreme detection snapshot
+      try {
+        final extreme = await _apiService.getExtreme(_symbol, effectiveDate);
+        if (extreme != null) {
+          _extremes = extreme;
+          debugPrint(
+              '[loadData] Extremes loaded: ${extreme.extremes.length}');
+        }
+      } catch (e) {
+        debugPrint('[loadData] Extreme load error: $e');
       }
       notifyListeners();
 
@@ -785,6 +926,7 @@ class StateService extends ChangeNotifier {
     }
 
     notifyListeners();
+    _syncExtremesPeriod();
   }
 
   /// Calcula o perfil de volume da janela [start, end] (end inclusivo).
