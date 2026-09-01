@@ -4,6 +4,7 @@ import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
 import 'trading_config_drawer.dart';
 import 'extreme_drawer.dart';
+import 'date_range_tab.dart';
 // Verifier desabilitado. Para reativar, re-importe 'verifier_drawer.dart',
 // volte o TabController para 6 e re-adicione a Tab/VerifierDrawer abaixo.
 
@@ -22,7 +23,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -58,26 +59,56 @@ class _AppDrawerState extends State<AppDrawer>
               indicatorColor: Colors.blue,
               labelColor: Colors.blue,
               unselectedLabelColor: Colors.grey,
-              tabs: const [
-                Tab(text: 'Bubbles', icon: Icon(Icons.bubble_chart, size: 18)),
-                Tab(text: 'Estrutura', icon: Icon(Icons.stacked_line_chart, size: 18)),
-                Tab(text: 'Volume Profile', icon: Icon(Icons.align_horizontal_right, size: 18)),
-                Tab(text: 'Trading Data', icon: Icon(Icons.show_chart, size: 18)),
-                Tab(text: 'Topos/Vales', icon: Icon(Icons.linear_scale, size: 18)),
-                // Tab(text: 'Verifier', icon: Icon(Icons.verified, size: 18)),
+tabs: const [
+                Tab(
+                  icon: Tooltip(
+                    message: 'Bubbles',
+                    child: Icon(Icons.bubble_chart, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Estrutura',
+                    child: Icon(Icons.stacked_line_chart, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Volume Profile',
+                    child: Icon(Icons.align_horizontal_right, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Trading Data',
+                    child: Icon(Icons.show_chart, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Topos/Vales',
+                    child: Icon(Icons.linear_scale, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Período',
+                    child: Icon(Icons.date_range, size: 18),
+                  ),
+                ),
               ],
             ),
           ),
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: const [
+children: const [
                 BubbleDrawer(noDrawer: true),
                 StructureDrawer(noDrawer: true),
                 VolumeProfileDrawer(noDrawer: true),
                 TradingConfigDrawer(noDrawer: true),
                 ExtremeDrawer(noDrawer: true),
-                // VerifierDrawer(noDrawer: true),
+                DateRangeTab(noDrawer: true),
               ],
             ),
           ),

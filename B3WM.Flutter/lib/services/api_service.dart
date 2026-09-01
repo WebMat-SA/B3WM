@@ -100,6 +100,21 @@ class ApiService {
         .toList();
   }
 
+  Future<List<StructureStorageItem>> getStructureRange(
+      String symbol, DateTime startDate, DateTime endDate, double minDistance) async {
+    final startStr = _formatDate(startDate);
+    final endStr = _formatDate(endDate);
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/GetStructureRange/$symbol/$startStr/$endStr/${minDistance.toStringAsFixed(1)}'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<StructureStorageItem>> setStructureDistance(
       String symbol, double minDistance) async {
     final response = await _client.get(
@@ -240,10 +255,13 @@ class ApiService {
   }
 
   Future<ExtremeStorageItem?> getExtreme(
-      String symbol, DateTime date) async {
+      String symbol, DateTime date, {DateTime? from, DateTime? to}) async {
     final dateStr = _formatDate(date);
+    final dateParam = 'date=${Uri.encodeQueryComponent(dateStr)}';
+    final fromStr = from != null ? '&from=${Uri.encodeQueryComponent(from.toIso8601String())}' : '';
+    final toStr = to != null ? '&to=${Uri.encodeQueryComponent(to.toIso8601String())}' : '';
     final response = await _client.get(
-      Uri.parse('$_baseUrl/api/Data/GetExtreme/$symbol/$dateStr'),
+      Uri.parse('$_baseUrl/api/Data/GetExtreme/$symbol?$dateParam$fromStr$toStr'),
     );
     if (response.statusCode != 200) return null;
     final json = jsonDecode(response.body) as Map<String, dynamic>?;

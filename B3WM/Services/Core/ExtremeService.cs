@@ -139,6 +139,38 @@ namespace B3WM.Services.Core
         }
 
         /// <summary>
+        /// Persiste apenas a configuração atual no snapshot, sem recomputar nem transmitir.
+        /// Garante que alterações feitas em data histórica sobrevivam a um restart do servidor.
+        /// </summary>
+        public async Task PersistConfig()
+        {
+            ExtremeStorageItem snapshot;
+            lock (_lock)
+            {
+                if (_current == null)
+                {
+                    _current = new ExtremeStorageItem
+                    {
+                        Date = DateTime.Now,
+                        Symbol = Symbol,
+                        PeriodFrom = PeriodFrom,
+                        PeriodTo = PeriodTo,
+                        Config = _config,
+                        Extremes = [],
+                        Structures = [],
+                        Statistics = null
+                    };
+                }
+                else
+                {
+                    _current.Config = _config;
+                }
+                snapshot = _current;
+            }
+            await SetDataAsync(snapshot);
+        }
+
+        /// <summary>
         /// Define o período do perfil de volume (null = dia inteiro / fim ao vivo).
         /// </summary>
         public async Task SetPeriod(DateTime? from, DateTime? to)

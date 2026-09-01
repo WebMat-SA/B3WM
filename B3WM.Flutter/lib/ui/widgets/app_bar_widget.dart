@@ -11,6 +11,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onTradingTap;
   final VoidCallback onTradingConfigTap;
   final VoidCallback onExtremeTap;
+  final VoidCallback onDateRangeTap;
   final bool tradingActive;
 
   const MapFlowAppBar({
@@ -21,6 +22,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onTradingTap,
     required this.onTradingConfigTap,
     required this.onExtremeTap,
+    required this.onDateRangeTap,
     this.tradingActive = false,
   });
 
@@ -167,6 +169,12 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   icon: const Icon(Icons.linear_scale, size: 20),
                   onPressed: widget.onExtremeTap,
                   tooltip: 'Topos/Vales',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.date_range, size: 20),
+                  onPressed: widget.onDateRangeTap,
+                  tooltip: 'Período / Dados Históricos',
                   visualDensity: VisualDensity.compact,
                 ),
                 // IconButton(

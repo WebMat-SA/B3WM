@@ -195,17 +195,27 @@ namespace B3WM.Controllers
             return await GetStructureAsync(symbol, DateTime.Today, minDistance);
         }
 
-        [HttpGet("{symbol}/{date}")]
-        public async Task<IActionResult> GetExtremeAsync(string symbol, DateTime date)
+        [HttpGet("{symbol}")]
+        public async Task<IActionResult> GetExtreme(string symbol,
+            [FromQuery] DateTime? date = null, [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null)
         {
             var service = _extremeServices.FirstOrDefault(s => s.Symbol == symbol);
             if (service == null) return NotFound();
 
-            // Datas históricas: computa sob demanda a partir dos arquivos persistidos.
-            if (date.Date != DateTime.Today)
-                return Ok(await service.ComputeForDate(dataKeeper, date, null, null));
+            var target = (date ?? DateTime.Today).Date;
 
-            string path = $"{symbol}_{nameof(ExtremeService)}_{date:yyyy-MM-dd}.json";
+            // Datas históricas: computa sob demanda a partir dos arquivos persistidos.
+            if (target != DateTime.Today)
+                return Ok(await service.ComputeForDate(dataKeeper, target, from, to));
+
+            // Live day: if period filter provided, apply temporarily and return snapshot.
+            if (from != null || to != null)
+            {
+                await service.SetPeriod(from, to);
+                return Ok(service.GetSnapshot());
+            }
+
+            string path = $"{symbol}_{nameof(ExtremeService)}_{target:yyyy-MM-dd}.json";
             var data = await dataKeeper.ReadDataAsync<ExtremeStorageItem>(path);
             return Ok(data);
         }
@@ -252,6 +262,7 @@ namespace B3WM.Controllers
                 NoiseSensitivity = noiseSensitivity,
                 MinimumProminence = minimumProminence
             }, recomputeLive: false);
+            await service.PersistConfig();
             return Ok(await service.ComputeForDate(dataKeeper, target, from, to));
         }
     }

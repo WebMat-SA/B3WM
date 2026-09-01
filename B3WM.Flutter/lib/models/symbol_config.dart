@@ -1,7 +1,12 @@
 import 'defaults.dart';
 
+enum DateRangeMode { intraday, multiDay }
+
 class SymbolConfig {
   int timeFrame;
+
+  DateRangeMode dateRangeMode;
+  int lookbackDays;
 
   bool bubbleVisible;
   double bubbleSize;
@@ -53,6 +58,8 @@ class SymbolConfig {
 
   SymbolConfig({
     required this.timeFrame,
+    required this.dateRangeMode,
+    required this.lookbackDays,
     required this.bubbleVisible,
     required this.bubbleSize,
     required this.bubbleOpacity,
@@ -93,6 +100,8 @@ class SymbolConfig {
 
   SymbolConfig.withDefaults(String symbol)
       : timeFrame = 2,
+        dateRangeMode = DateRangeMode.intraday,
+        lookbackDays = 5,
         bubbleVisible = true,
         bubbleSize = 1.0,
         bubbleOpacity = 0.7,
@@ -139,6 +148,8 @@ class SymbolConfig {
     final structureMax = Defaults.structureRangeUpdMax(symbol);
     return SymbolConfig(
       timeFrame: legacy.timeFrame,
+      dateRangeMode: legacy.dateRangeMode,
+      lookbackDays: legacy.lookbackDays,
       bubbleVisible: legacy.bubbleVisible,
       bubbleSize: legacy.bubbleSize,
       bubbleOpacity: legacy.bubbleOpacity,
@@ -186,6 +197,8 @@ class SymbolConfig {
   factory SymbolConfig.fromJson(Map<String, dynamic> json, {String symbol = ''}) =>
       SymbolConfig(
         timeFrame: json['timeFrame'] as int? ?? 2,
+        dateRangeMode: DateRangeMode.values.byName(json['dateRangeMode'] as String? ?? 'intraday'),
+        lookbackDays: json['lookbackDays'] as int? ?? 5,
         bubbleVisible: json['bubbleVisible'] as bool? ?? true,
         bubbleSize: (json['bubbleSize'] as num?)?.toDouble() ?? 1.0,
         bubbleOpacity: (json['bubbleOpacity'] as num?)?.toDouble() ?? 0.7,
@@ -242,6 +255,8 @@ class SymbolConfig {
 
   Map<String, dynamic> toJson() => {
         'timeFrame': timeFrame,
+        'dateRangeMode': dateRangeMode.name,
+        'lookbackDays': lookbackDays,
         'bubbleVisible': bubbleVisible,
         'bubbleSize': bubbleSize,
         'bubbleOpacity': bubbleOpacity,

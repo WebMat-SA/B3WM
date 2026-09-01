@@ -7,7 +7,8 @@ import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
 import '../models/structure_change_item.dart';
-import '../models/symbol_config.dart';
+import '../models/symbol_config.dart'
+    show DateRangeMode, SymbolConfig;
 import 'api_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
@@ -99,6 +100,8 @@ class StateService extends ChangeNotifier {
       _configs.putIfAbsent(_symbol, () => _loadConfigForSymbol(_symbol));
 
   int get timeFrame => _currentConfig.timeFrame;
+  DateRangeMode get dateRangeMode => _currentConfig.dateRangeMode;
+  int get lookbackDays => _currentConfig.lookbackDays;
   bool get bubbleVisible => _currentConfig.bubbleVisible;
   double get bubbleSize => _currentConfig.bubbleSize;
   double get bubbleOpacity => _currentConfig.bubbleOpacity;
@@ -236,6 +239,25 @@ class StateService extends ChangeNotifier {
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
+  Future<void> setDateRangeMode(DateRangeMode mode) async {
+    if (_currentConfig.dateRangeMode == mode) return;
+    _currentConfig.dateRangeMode = mode;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    await loadData();
+  }
+
+  Future<void> setLookbackDays(int days) async {
+    final clamped = days.clamp(1, 30);
+    if (_currentConfig.lookbackDays == clamped) return;
+    _currentConfig.lookbackDays = clamped;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    if (_currentConfig.dateRangeMode == DateRangeMode.multiDay) {
+      await loadData();
+    }
+  }
+
   // --- Extreme detection ---
   bool get extremeVisible => _currentConfig.extremeVisible;
   double get extremeOpacity => _currentConfig.extremeOpacity;
@@ -245,6 +267,12 @@ class StateService extends ChangeNotifier {
   /// Data efetiva em exibição (dia carregado no gráfico).
   DateTime? _displayDate;
   DateTime? get displayDate => _displayDate;
+
+  /// Range de datas carregado (para modo multi-day)
+  DateTime? _rangeStartDate;
+  DateTime? get rangeStartDate => _rangeStartDate;
+  DateTime? _rangeEndDate;
+  DateTime? get rangeEndDate => _rangeEndDate;
 
   ExtremeStorageItem? _extremes;
   ExtremeStorageItem? get extremes => _extremes;
@@ -263,12 +291,26 @@ class StateService extends ChangeNotifier {
       return;
     }
     final d = data.date;
-    final disp = _displayDate;
-    if (d != null && disp != null &&
-        (d.year != disp.year || d.month != disp.month || d.day != disp.day)) {
-      debugPrint(
-          '[extremes] reject date=${d.toIso8601String()} != display=${disp.toIso8601String()}');
-      return;
+    if (d != null) {
+      if (_currentConfig.dateRangeMode == DateRangeMode.multiDay) {
+        if (_rangeStartDate != null && _rangeEndDate != null) {
+          final dateOnly = DateTime(d.year, d.month, d.day);
+          final startOnly = DateTime(_rangeStartDate!.year, _rangeStartDate!.month, _rangeStartDate!.day);
+          final endOnly = DateTime(_rangeEndDate!.year, _rangeEndDate!.month, _rangeEndDate!.day);
+          if (dateOnly.isBefore(startOnly) || dateOnly.isAfter(endOnly)) {
+            debugPrint('[extremes] reject date=$dateOnly outside range $_rangeStartDate to $_rangeEndDate');
+            return;
+          }
+        }
+      } else {
+        final disp = _displayDate;
+        if (disp != null &&
+            (d.year != disp.year || d.month != disp.month || d.day != disp.day)) {
+          debugPrint(
+              '[extremes] reject date=${d.toIso8601String()} != display=${disp.toIso8601String()}');
+          return;
+        }
+      }
     }
     debugPrint(
         '[extremes] apply date=${d?.toIso8601String()} count=${data.extremes.length}');
@@ -311,31 +353,46 @@ class StateService extends ChangeNotifier {
   /// Debounce: durante o arrasto acumula o último from/to e envia uma única
   /// requisição ~350ms após a última mudança, garantindo que a posição final
   /// do slider sempre dispare (sem o lag do throttle de 2s anterior).
-  void _syncExtremesPeriod() {
+  void _syncExtremesPeriod({bool immediate = false}) {
     if (_displayDate == null || _symbol.isEmpty) return;
 
+    if (immediate) {
+      _extremePeriodTimer?.cancel();
+      _doSyncExtremesPeriod(true);
+      return;
+    }
+
     _extremePeriodTimer?.cancel();
-    _extremePeriodTimer = Timer(const Duration(milliseconds: 350), () async {
-      final (from, to) = _extremeRangeFromBars();
+    _extremePeriodTimer = Timer(const Duration(milliseconds: 350), () => _doSyncExtremesPeriod(false));
+  }
 
-      if (_lastExtremeFrom == from && _lastExtremeTo == to) return;
-      _lastExtremeFrom = from;
-      _lastExtremeTo = to;
+  void _doSyncExtremesPeriod(bool immediate) async {
+    final (from, to) = _extremeRangeFromBars();
 
-      final url = _apiService.setExtremePeriodDebugUrl(
-          _symbol, date: _displayDate, from: from, to: to);
+    if (_lastExtremeFrom == from && _lastExtremeTo == to) return;
+    _lastExtremeFrom = from;
+    _lastExtremeTo = to;
+
+    final url = _apiService.setExtremePeriodDebugUrl(
+        _symbol, date: _displayDate, from: from, to: to);
+    debugPrint(
+        '[extremes] syncPeriod from=$from to=$to url=$url display=${_displayDate?.toIso8601String()} immediate=$immediate');
+    try {
+      final data = await _apiService
+          .setExtremePeriod(_symbol, date: _displayDate, from: from, to: to);
       debugPrint(
-          '[extremes] syncPeriod from=$from to=$to url=$url display=${_displayDate?.toIso8601String()}');
-      try {
-        final data = await _apiService
-            .setExtremePeriod(_symbol, date: _displayDate, from: from, to: to);
-        debugPrint(
-            '[extremes] syncPeriod response ${data == null ? 'NULL' : 'count=${data.extremes.length}'}');
-        if (data != null) _handleExtreme(data);
-      } catch (e) {
-        debugPrint('[extremes] period sync error: $e');
-      }
-    });
+          '[extremes] syncPeriod response ${data == null ? 'NULL' : 'count=${data.extremes.length}'}');
+      if (data != null) _handleExtreme(data);
+    } catch (e) {
+      debugPrint('[extremes] period sync error: $e');
+    }
+  }
+
+  /// Aplica o filtro de volume E sincroniza os extremos imediatamente (sem debounce).
+  /// Chamado pelo TimeRangeSlider no onChangeEnd (release do arrasto).
+  void applyVolumeFilterAndSyncExtremes(int start, int end) {
+    _applyVolumeFilter(start, end);
+    _syncExtremesPeriod(immediate: true);
   }
 
   void selectAllAgents() {
@@ -386,7 +443,11 @@ class StateService extends ChangeNotifier {
     final json = _preferencesService.getString('Config_$symbol');
     if (json != null) {
       try {
-        return SymbolConfig.fromJson(jsonDecode(json), symbol: symbol);
+        final config = SymbolConfig.fromJson(jsonDecode(json), symbol: symbol);
+        debugPrint('[config] load $symbol -> noise=${config.extremeNoiseSensitivity} '
+            'prominence=${config.extremeMinimumProminence} '
+            'visible=${config.extremeVisible} opacity=${config.extremeOpacity}');
+        return config;
       } catch (_) {}
     }
 
@@ -407,6 +468,8 @@ class StateService extends ChangeNotifier {
 
     return SymbolConfig(
       timeFrame: p.getInt('TimeFrame') ?? 2,
+      dateRangeMode: DateRangeMode.intraday,
+      lookbackDays: 5,
       thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
       structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
       structureVisible: p.getBool('StructureVisible') ?? true,
@@ -448,8 +511,11 @@ class StateService extends ChangeNotifier {
   }
   void _saveConfigForSymbol(String symbol) {
     if (symbol.isEmpty || !_configs.containsKey(symbol)) return;
-    _preferencesService.setString(
-        'Config_$symbol', jsonEncode(_configs[symbol]!.toJson()));
+    final config = _configs[symbol]!;
+    debugPrint('[config] save $symbol -> noise=${config.extremeNoiseSensitivity} '
+        'prominence=${config.extremeMinimumProminence} '
+        'visible=${config.extremeVisible} opacity=${config.extremeOpacity}');
+    _preferencesService.setString('Config_$symbol', jsonEncode(config.toJson()));
   }
 
   // --- Process Loop ---
@@ -490,6 +556,29 @@ class StateService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    try {
+      if (_currentConfig.dateRangeMode == DateRangeMode.intraday) {
+        await _loadIntraday();
+      } else {
+        await _loadMultiDay();
+      }
+    } finally {
+      _isLoading = false;
+
+      await _signalRService.startConnection(_symbol, _currentConfig.timeFrame);
+      // For multi-day, refresh structures for the end date (today)
+      final refreshDate = _currentConfig.dateRangeMode == DateRangeMode.intraday
+          ? _displayDate!
+          : _rangeEndDate!;
+      await _refreshStructuresAfterConnection(refreshDate);
+      _startProcessLoop();
+      _startWatchdog();
+      _scheduleExtremeConfigSync();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadIntraday() async {
     var effectiveDate = DateTime.now();
 
     try {
@@ -508,6 +597,7 @@ class StateService extends ChangeNotifier {
 
       _bars = bars;
       _displayDate = effectiveDate;
+      _rangeStartDate = _rangeEndDate = effectiveDate;
       notifyListeners();
 
       final filteredCount = barsTimeFrameFilter.length;
@@ -574,11 +664,17 @@ class StateService extends ChangeNotifier {
 
       // Load extreme detection snapshot
       try {
-        final extreme = await _apiService.getExtreme(_symbol, effectiveDate);
+        final range = _extremeRangeFromBars();
+        final extreme = await _apiService.getExtreme(
+          _symbol,
+          effectiveDate,
+          from: range.$1,
+          to: range.$2,
+        );
         if (extreme != null) {
           _extremes = extreme;
           debugPrint(
-              '[loadData] Extremes loaded: ${extreme.extremes.length}');
+              '[loadData] Extremes loaded: ${extreme.extremes.length} (from=${range.$1} to=${range.$2})');
         }
       } catch (e) {
         debugPrint('[loadData] Extreme load error: $e');
@@ -588,14 +684,99 @@ class StateService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[loadData] Error: $e');
       debugPrint('[loadData] Stack: ${StackTrace.current}');
-    } finally {
-      _isLoading = false;
+    }
+  }
 
-      await _signalRService.startConnection(_symbol, _currentConfig.timeFrame);
-      await _refreshStructuresAfterConnection(effectiveDate);
-      _startProcessLoop();
-      _startWatchdog();
+  Future<void> _loadMultiDay() async {
+    final endDate = DateTime.now();
+    final startDate = endDate.subtract(Duration(days: _currentConfig.lookbackDays - 1));
+    _rangeStartDate = startDate;
+    _rangeEndDate = endDate;
+    _displayDate = endDate;  // for compatibility
+
+    try {
+      debugPrint('[loadData] Multi-day: ${_formatDate(startDate)} to ${_formatDate(endDate)}');
+
+      // Parallel loads
+      final bars = await _apiService.getBarRange(_symbol, startDate, endDate, _currentConfig.timeFrame);
+      final bubbles = await _apiService.getBubbleRange(_symbol, startDate, endDate);
+      final structures = await _apiService.getStructureRange(_symbol, startDate, endDate, _currentConfig.structureRangeUpd);
+
+      _bars = bars..sort((a, b) => a.date.compareTo(b.date));
+      _bubbles = bubbles..sort((a, b) => a.date.compareTo(b.date));
+      _structures = structures;
+      _recomputeStructureChanges(_structures);
+
+      // Collect all bubble agents
+      _allBubbleAgents.clear();
+      var knownChanged = false;
+      for (final b in _bubbles) {
+        _allBubbleAgents.add(b.agent);
+        if (!_currentConfig.knownAgents.contains(b.agent)) {
+          _currentConfig.knownAgents.add(b.agent);
+          _currentConfig.selectedAgents.add(b.agent);
+          knownChanged = true;
+        }
+      }
+      if (knownChanged) _saveConfigForSymbol(_symbol);
+      _allBubbleAgents.addAll(_currentConfig.selectedAgents);
+      _allBubbleAgents.addAll(_currentConfig.knownAgents);
+
+      debugPrint('[loadData] Multi-day bars: ${_bars.length}, bubbles: ${_bubbles.length}, structures: ${_structures.length}');
+
+      // Volume: cumulative from last day or computed from bars
+      await _loadCumulativeVolume(startDate, endDate);
+
+      // Extremes: range API
+      await _loadExtremesForRange(startDate, endDate);
+
+      // Full range for volume filter
+      _dateRangeStart = 0;
+      _dateRangeEnd = _bars.length;
+      _volumeFilterActive = false;
+      _filteredVolumeLevels = null;
       notifyListeners();
+
+    } catch (e) {
+      debugPrint('[loadData] Multi-day error: $e');
+      debugPrint('[loadData] Stack: ${StackTrace.current}');
+    }
+  }
+
+  Future<void> _loadCumulativeVolume(DateTime start, DateTime end) async {
+    // Try last day's snapshot first
+    final lastDayVolume = await _apiService.getVolume(_symbol, end);
+    if (lastDayVolume != null && lastDayVolume.volumes.isNotEmpty) {
+      _volumeLevels = lastDayVolume.volumes;
+      debugPrint('[loadData] Volume from last day: ${_volumeLevels.length}');
+    } else if (_bars.isNotEmpty) {
+      // Fallback: compute from bars' volumeLevel snapshots
+      final barsWithVol = _bars
+          .where((b) => b.volumeLevel != null && b.volumeLevel!.isNotEmpty)
+          .toList();
+      if (barsWithVol.isNotEmpty) {
+        _volumeLevels = barsWithVol.reduce(
+          (a, b) => a.date.compareTo(b.date) > 0 ? a : b).volumeLevel ?? [];
+        debugPrint('[loadData] Volume from last bar with vol: ${_volumeLevels.length}');
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> _loadExtremesForRange(DateTime start, DateTime end) async {
+    try {
+      final extreme = await _apiService.getExtreme(
+        _symbol,
+        end,  // use end date as reference
+        from: start,
+        to: end,
+      );
+      if (extreme != null) {
+        _extremes = extreme;
+        debugPrint('[loadData] Extremes loaded: ${extreme.extremes.length} (from=$start to=$end)');
+      }
+    } catch (e) {
+      debugPrint('[loadData] Extreme range load error: $e');
     }
   }
 
@@ -647,6 +828,20 @@ class StateService extends ChangeNotifier {
   String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  /// Checks if a date is within the loaded range (for multi-day mode)
+  /// In intraday mode, always returns true
+  bool _isInLoadedRange(DateTime date) {
+    if (_currentConfig.dateRangeMode == DateRangeMode.intraday) return true;
+    if (_rangeStartDate == null || _rangeEndDate == null) return false;
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    final startOnly = DateTime(_rangeStartDate!.year, _rangeStartDate!.month, _rangeStartDate!.day);
+    final endOnly = DateTime(_rangeEndDate!.year, _rangeEndDate!.month, _rangeEndDate!.day);
+    // Allow today's live data even if outside range
+    final now = DateTime.now();
+    final todayOnly = DateTime(now.year, now.month, now.day);
+    if (dateOnly == todayOnly) return true;
+    return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+  }
 
   void _startProcessLoop() {
     _processTimer?.cancel();
@@ -696,6 +891,7 @@ class StateService extends ChangeNotifier {
 
   void _handleCloseBar(BarStorageItem bar) {
     if (bar.date == DateTime(0)) return;
+    if (!_isInLoadedRange(bar.date)) return;
 
     final existingIndex =
         _bars.indexWhere((b) => b.date == bar.date && b.timeFrame == bar.timeFrame);
@@ -716,6 +912,7 @@ class StateService extends ChangeNotifier {
   }
 
   void _handleCurrentBar(BarStorageItem bar) {
+    if (!_isInLoadedRange(bar.date)) return;
     final existingIndex =
         _bars.indexWhere((b) => b.date == bar.date && b.timeFrame == bar.timeFrame);
     if (existingIndex >= 0) {
@@ -746,6 +943,7 @@ class StateService extends ChangeNotifier {
   }
 
   void _handleNewBubble(BubbleStorageItem data) {
+    if (!_isInLoadedRange(data.date)) return;
     // Auto-seleciona apenas na primeira aparição do agente. Se o usuário
     // desmarcar depois, não será reselecionado ao reaparecer em outro dia.
     if (!_currentConfig.knownAgents.contains(data.agent)) {
@@ -776,6 +974,10 @@ class StateService extends ChangeNotifier {
   }
 
   void _handleVolumeUpdate(VolumeLevelStorageItem volumes) {
+    // Volume updates are for current day - check if today is in range
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    if (!_isInLoadedRange(todayOnly)) return;
     _volumeLevels = volumes.volumes;
 
     if (barsTimeFrameFilter.isNotEmpty) {
@@ -787,6 +989,7 @@ class StateService extends ChangeNotifier {
 
   void _handleNewStructure(StructureStorageItem structure) {
     if (structure.symbol != _symbol || structure.timeFrame != _currentConfig.timeFrame) return;
+    if (!_isInLoadedRange(structure.date)) return;
     _structures.add(structure);
     if (_lastUpBorder != null && structure.upBorder != _lastUpBorder) {
       _structureChanges.insert(0, StructureChangeItem(
