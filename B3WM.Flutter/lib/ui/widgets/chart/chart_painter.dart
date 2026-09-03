@@ -89,15 +89,7 @@ class ChartPainter extends CustomPainter {
 
   void _drawMarkArea(
       Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
-    if (data.rangeStart <= 0 && data.rangeEnd >= data.candles.length) return;
-
-    final x1 = _indexToX(data.rangeStart.clamp(0, data.candles.length - 1), stepX) - stepX / 2;
-    final x2 = _indexToX(data.rangeEnd.clamp(0, data.candles.length - 1), stepX) + stepX / 2;
-
-    final paint = Paint()..color = const Color(0x08c8c8c8);
-    canvas.drawRect(
-        Rect.fromLTRB(max(x1, 0), 0, min(x2, chartWidth), chartHeight),
-        paint);
+    // Moved to ChartFixedPainter to fill full visible height without clipping
   }
 
   void _drawStructureLines(

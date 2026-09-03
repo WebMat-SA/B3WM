@@ -99,6 +99,7 @@ class ChartFixedPainter extends CustomPainter {
     _drawBackground(canvas, size);
     _drawGridLines(canvas);
     _drawXAxis(canvas);
+    _drawMarkArea(canvas);
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
@@ -229,6 +230,23 @@ class ChartFixedPainter extends CustomPainter {
               profileRight - barWidth, y - barHeight / 2, barWidth, max(barHeight, 1.0)),
           borderPaint);
     }
+  }
+
+  void _drawMarkArea(Canvas canvas) {
+    if (data.rangeStart <= 0 && data.rangeEnd >= data.candles.length) return;
+
+    final m = controller.value;
+    final scaleX = m[0];
+    final tx = m.getTranslation().x;
+
+    final stepX = ChartFixedPainter.candleStep;
+    final x1 = marginLeft + (data.rangeStart.clamp(0, data.candles.length - 1) * stepX + stepX / 2) * scaleX + tx - stepX / 2 * scaleX;
+    final x2 = marginLeft + (data.rangeEnd.clamp(0, data.candles.length - 1) * stepX + stepX / 2) * scaleX + tx + stepX / 2 * scaleX;
+
+    final paint = Paint()..color = const Color(0x08c8c8c8);
+    canvas.drawRect(
+        Rect.fromLTRB(x1.clamp(marginLeft, chartRight), marginTop, x2.clamp(marginLeft, chartRight), marginTop + chartHeight),
+        paint);
   }
 
   int _decimalPlaces(String symbol) {
