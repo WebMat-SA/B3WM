@@ -58,6 +58,20 @@ class VolumeBarData {
   });
 }
 
+class VwapPoint {
+  final double price;
+  final DateTime date;
+  final int startCandleIndex;
+  final int endCandleIndex;
+
+  VwapPoint({
+    required this.price,
+    required this.date,
+    required this.startCandleIndex,
+    required this.endCandleIndex,
+  });
+}
+
 class StructureLineData {
   final List<double?> upBorder;
   final List<double?> downBorder;
@@ -113,6 +127,7 @@ class ChartData {
   final List<VolumeBarData> volumeProfile;
   final StructureLineData? structures;
   final ExtremeLineData? extremes;
+  final List<VwapPoint> vwapPoints;
   final double minPrice;
   final double maxPrice;
   final double lastPrice;
@@ -133,6 +148,8 @@ class ChartData {
   final double yZoom;
   final double bubbleSizeMin;
   final double bubbleSizeMax;
+  final double vwapOpacity;
+  final Color vwapColor;
   final List<PositionInfo> positions;
   final List<OrderInfo> orders;
   final List<HistoryDealPoint> historyPoints;
@@ -147,6 +164,7 @@ class ChartData {
     required this.volumeProfile,
     this.structures,
     this.extremes,
+    required this.vwapPoints,
     required this.minPrice,
     required this.maxPrice,
     required this.lastPrice,
@@ -167,6 +185,8 @@ class ChartData {
     this.yZoom = 1.0,
     this.bubbleSizeMin = 20,
     this.bubbleSizeMax = 100,
+    this.vwapOpacity = 0.5,
+    this.vwapColor = const Color(0xFFFF8800),
     this.positions = const [],
     this.orders = const [],
     this.historyPoints = const [],
@@ -399,6 +419,38 @@ ChartData buildChartData(StateService state) {
     }
   }
 
+  // Compute intraday cumulative VWAP (updates per candle)
+  final vwapPoints = <VwapPoint>[];
+  if (state.vwapVisible && visible.isNotEmpty) {
+    final Map<DateTime, List<int>> dayCandleIndices = {};
+    for (int i = 0; i < visible.length; i++) {
+      final bar = visible[i];
+      final dayKey = DateTime(bar.date.year, bar.date.month, bar.date.day);
+      dayCandleIndices.putIfAbsent(dayKey, () => []).add(i);
+    }
+    for (final entry in dayCandleIndices.entries) {
+      final indices = entry.value;
+      double totalVolume = 0;
+      double totalTypicalPriceVolume = 0;
+      for (int i = 0; i < indices.length; i++) {
+        final globalIdx = indices[i];
+        final bar = visible[globalIdx];
+        final typicalPrice = (bar.high + bar.low + bar.close) / 3;
+        totalVolume += bar.volume.toDouble();
+        totalTypicalPriceVolume += typicalPrice * bar.volume.toDouble();
+        if (totalVolume > 0) {
+          final vwapPrice = totalTypicalPriceVolume / totalVolume;
+          vwapPoints.add(VwapPoint(
+            price: vwapPrice,
+            date: bar.date,
+            startCandleIndex: globalIdx,
+            endCandleIndex: globalIdx,
+          ));
+        }
+      }
+    }
+  }
+
   return ChartData(
     candles: candles,
     redBubbles: redBubbles,
@@ -406,6 +458,7 @@ ChartData buildChartData(StateService state) {
     volumeProfile: volumeProfile,
     structures: structures,
     extremes: extremes,
+    vwapPoints: vwapPoints,
     minPrice: minPrice,
     maxPrice: maxPrice,
     lastPrice: visible.isNotEmpty ? visible.last.close : 0,
@@ -425,6 +478,8 @@ ChartData buildChartData(StateService state) {
     yZoom: state.yZoom,
     bubbleSizeMin: state.bubbleSizeMin,
     bubbleSizeMax: state.bubbleSizeMax,
+    vwapOpacity: state.vwapOpacity,
+    vwapColor: _parseHexColor(state.vwapColor),
     positions: positions,
     orders: orders,
     historyPoints: historyPoints,

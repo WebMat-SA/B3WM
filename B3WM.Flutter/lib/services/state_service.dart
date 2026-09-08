@@ -213,6 +213,10 @@ class StateService extends ChangeNotifier {
     _scheduleExtremeConfigSync();
   }
 
+  void setVwapVisible(bool v) { _currentConfig.vwapVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setVwapOpacity(double v) { _currentConfig.vwapOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setVwapColor(String v) { _currentConfig.vwapColor = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+
   void setColorBuyer(String v) { _currentConfig.colorBuyer = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setColorSeller(String v) { _currentConfig.colorSeller = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
@@ -263,6 +267,11 @@ class StateService extends ChangeNotifier {
   double get extremeOpacity => _currentConfig.extremeOpacity;
   double get extremeNoiseSensitivity => _currentConfig.extremeNoiseSensitivity;
   double get extremeMinimumProminence => _currentConfig.extremeMinimumProminence;
+
+  // --- VWAP ---
+  bool get vwapVisible => _currentConfig.vwapVisible;
+  double get vwapOpacity => _currentConfig.vwapOpacity;
+  String get vwapColor => _currentConfig.vwapColor;
 
   /// Data efetiva em exibição (dia carregado no gráfico).
   DateTime? _displayDate;
@@ -479,6 +488,9 @@ class StateService extends ChangeNotifier {
       extremeOpacity: 0.7,
       extremeNoiseSensitivity: 3.0,
       extremeMinimumProminence: 0.15,
+      vwapVisible: true,
+      vwapOpacity: 0.5,
+      vwapColor: '#FF8800',
       bubbleSize: p.getDouble('BubbleSize') ?? 1.0,
       bubbleOpacity: p.getDouble('BubbleOpacity') ?? 0.7,
       bubbleVisible: p.getBool('BubbleVisible') ?? true,

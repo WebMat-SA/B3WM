@@ -114,8 +114,12 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
               setState(() => _drawerTabIndex = 4);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onDateRangeTap: () {
+            onVwapTap: () {
               setState(() => _drawerTabIndex = 5);
+              _scaffoldKey.currentState?.openDrawer();
+            },
+            onDateRangeTap: () {
+              setState(() => _drawerTabIndex = 6);
               _scaffoldKey.currentState?.openDrawer();
             },
             // onVerifierTap: () {

@@ -11,6 +11,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onTradingTap;
   final VoidCallback onTradingConfigTap;
   final VoidCallback onExtremeTap;
+  final VoidCallback onVwapTap;
   final VoidCallback onDateRangeTap;
   final bool tradingActive;
 
@@ -22,6 +23,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onTradingTap,
     required this.onTradingConfigTap,
     required this.onExtremeTap,
+    required this.onVwapTap,
     required this.onDateRangeTap,
     this.tradingActive = false,
   });
@@ -123,7 +125,7 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
           onPointerDown: _handleBarPointerDown,
           child: AppBar(
             toolbarHeight: 48,
-            leadingWidth: 260,
+            leadingWidth: 420,
           leading: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -169,6 +171,12 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   icon: const Icon(Icons.linear_scale, size: 20),
                   onPressed: widget.onExtremeTap,
                   tooltip: 'Topos/Vales',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.trending_up, size: 20),
+                  onPressed: widget.onVwapTap,
+                  tooltip: 'VWAP Diário',
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(

@@ -104,6 +104,7 @@ class ChartFixedPainter extends CustomPainter {
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
     _drawExtremeLines(canvas);
+    _drawVwapLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
     _drawOrderLines(canvas);
@@ -275,6 +276,44 @@ class ChartFixedPainter extends CustomPainter {
 
     drawLines(ex.topPrices, const Color(0xFF69F0AE));
     drawLines(ex.valleyPrices, const Color(0xFFFF5252));
+  }
+
+  void _drawVwapLines(Canvas canvas) {
+    final vwapPoints = data.vwapPoints;
+    if (vwapPoints.isEmpty) return;
+
+    final m = controller.value;
+    final scaleX = m[0];
+    final tx = m.getTranslation().x;
+
+    final paint = Paint()
+      ..color = data.vwapColor.withOpacity(data.vwapOpacity)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    Offset? prev;
+    DateTime? prevDay;
+    for (final vwap in vwapPoints) {
+      final y = _priceToY(vwap.price);
+      if (y < marginTop || y > marginTop + chartHeight) {
+        prev = null;
+        continue;
+      }
+
+      final currentDay = DateTime(vwap.date.year, vwap.date.month, vwap.date.day);
+      if (prevDay != null && currentDay != prevDay) {
+        prev = null;
+      }
+      prevDay = currentDay;
+
+      final x = marginLeft + vwap.startCandleIndex * candleStep * scaleX + tx;
+      final pt = Offset(x, y);
+
+      if (prev != null) {
+        canvas.drawLine(prev, pt, paint);
+      }
+      prev = pt;
+    }
   }
 
   void _drawMarkLine(Canvas canvas) {

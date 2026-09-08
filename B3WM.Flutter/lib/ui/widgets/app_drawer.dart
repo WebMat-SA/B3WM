@@ -4,6 +4,7 @@ import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
 import 'trading_config_drawer.dart';
 import 'extreme_drawer.dart';
+import 'vwap_drawer.dart';
 import 'date_range_tab.dart';
 // Verifier desabilitado. Para reativar, re-importe 'verifier_drawer.dart',
 // volte o TabController para 6 e re-adicione a Tab/VerifierDrawer abaixo.
@@ -23,7 +24,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 7, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -92,6 +93,12 @@ tabs: const [
                 ),
                 Tab(
                   icon: Tooltip(
+                    message: 'VWAP Diário',
+                    child: Icon(Icons.trending_up, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
                     message: 'Período',
                     child: Icon(Icons.date_range, size: 18),
                   ),
@@ -108,6 +115,7 @@ children: const [
                 VolumeProfileDrawer(noDrawer: true),
                 TradingConfigDrawer(noDrawer: true),
                 ExtremeDrawer(noDrawer: true),
+                VwapDrawer(noDrawer: true),
                 DateRangeTab(noDrawer: true),
               ],
             ),

@@ -35,6 +35,7 @@ class ChartPainter extends CustomPainter {
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
     _drawExtremeLines(canvas, chartWidth, chartHeight);
+    _drawVwapLines(canvas, chartWidth, chartHeight, stepX);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
     _drawHistoryMarkers(canvas, size, chartWidth, chartHeight, stepX);
@@ -152,6 +153,41 @@ class ChartPainter extends CustomPainter {
 
     drawLines(ex.topPrices, const Color(0xFF69F0AE));
     drawLines(ex.valleyPrices, const Color(0xFFFF5252));
+  }
+
+  void _drawVwapLines(
+      Canvas canvas, double chartWidth, double chartHeight, double stepX) {
+    final vwapPoints = data.vwapPoints;
+    if (vwapPoints.isEmpty) return;
+
+    final paint = Paint()
+      ..color = data.vwapColor.withOpacity(data.vwapOpacity)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    Offset? prev;
+    DateTime? prevDay;
+    for (final vwap in vwapPoints) {
+      final y = _priceToY(vwap.price, chartHeight);
+      if (y < 0 || y > chartHeight) {
+        prev = null;
+        continue;
+      }
+
+      final currentDay = DateTime(vwap.date.year, vwap.date.month, vwap.date.day);
+      if (prevDay != null && currentDay != prevDay) {
+        prev = null;
+      }
+      prevDay = currentDay;
+
+      final x = _indexToX(vwap.startCandleIndex, stepX);
+      final pt = Offset(x, y);
+
+      if (prev != null) {
+        canvas.drawLine(prev, pt, paint);
+      }
+      prev = pt;
+    }
   }
 
   void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint) {

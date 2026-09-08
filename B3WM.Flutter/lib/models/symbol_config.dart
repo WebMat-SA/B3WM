@@ -31,6 +31,10 @@ class SymbolConfig {
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
 
+  bool vwapVisible;
+  double vwapOpacity;
+  String vwapColor;
+
   String colorBuyer;
   String colorSeller;
 
@@ -79,6 +83,9 @@ class SymbolConfig {
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.vwapVisible,
+    required this.vwapOpacity,
+    required this.vwapColor,
     required this.colorBuyer,
     required this.colorSeller,
     required this.selectedAgents,
@@ -121,6 +128,9 @@ class SymbolConfig {
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        vwapVisible = true,
+        vwapOpacity = 0.5,
+        vwapColor = '#FF8800',
         colorBuyer = '#4488ff',
         colorSeller = '#ff4444',
         selectedAgents = [],
@@ -174,6 +184,9 @@ class SymbolConfig {
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
       extremeMinimumProminence: defaults.extremeMinimumProminence,
+      vwapVisible: defaults.vwapVisible,
+      vwapOpacity: defaults.vwapOpacity,
+      vwapColor: defaults.vwapColor,
       colorBuyer: legacy.colorBuyer,
       colorSeller: legacy.colorSeller,
       selectedAgents: List.from(legacy.selectedAgents),
@@ -226,6 +239,9 @@ class SymbolConfig {
         extremeMinimumProminence:
             (json['extremeMinimumProminence'] as num?)?.toDouble() ??
                 Defaults.extremeMinimumProminence,
+        vwapVisible: json['vwapVisible'] as bool? ?? true,
+        vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
+        vwapColor: json['vwapColor'] as String? ?? '#FF8800',
         colorBuyer: json['colorBuyer'] as String? ?? '#4488ff',
         colorSeller: json['colorSeller'] as String? ?? '#ff4444',
         selectedAgents:
@@ -276,6 +292,9 @@ class SymbolConfig {
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'vwapVisible': vwapVisible,
+        'vwapOpacity': vwapOpacity,
+        'vwapColor': vwapColor,
         'colorBuyer': colorBuyer,
         'colorSeller': colorSeller,
         'selectedAgents': selectedAgents,
