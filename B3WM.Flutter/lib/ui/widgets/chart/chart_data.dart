@@ -3,6 +3,7 @@ import '../../../services/state_service.dart';
 import '../../../models/ticks2.dart';
 import '../../../models/trade_models.dart';
 import '../../../models/extreme_storage_item.dart';
+import '../../../models/symbol_config.dart' show DateRangeMode;
 
 class CandlePoint {
   final DateTime date;
@@ -221,6 +222,13 @@ ChartData buildChartData(StateService state) {
       : bars.length;
   final visible = bars;
 
+  // For intraday mode, use the display date as the single VWAP reference day
+  final DateTime? vwapReferenceDay = state.dateRangeMode == DateRangeMode.intraday
+      ? (state.displayDate != null
+          ? DateTime(state.displayDate!.year, state.displayDate!.month, state.displayDate!.day)
+          : null)
+      : null;
+
   final candles = visible.map((b) => CandlePoint(
     date: b.date,
     open: b.open,
@@ -426,6 +434,8 @@ ChartData buildChartData(StateService state) {
     for (int i = 0; i < visible.length; i++) {
       final bar = visible[i];
       final dayKey = DateTime(bar.date.year, bar.date.month, bar.date.day);
+      // In intraday mode, only use the reference day for VWAP
+      if (vwapReferenceDay != null && dayKey != vwapReferenceDay) continue;
       dayCandleIndices.putIfAbsent(dayKey, () => []).add(i);
     }
     for (final entry in dayCandleIndices.entries) {
