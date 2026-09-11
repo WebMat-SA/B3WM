@@ -23,7 +23,13 @@ namespace B3WM.Services.Core
 
         private BarStorageItem? _currentBar;
 
-        public override string Path => $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{DateTime.Now:yyyy-MM-dd}.json";
+        private readonly object _barLock = new();
+        private DateTime _loadedDate;
+        private readonly PeriodicTimer _flushTimer = new(TimeSpan.FromMinutes(1));
+
+        public override string Path => GetPathForDate(DateTime.Now);
+
+        public string GetPathForDate(DateTime date) => $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{date:yyyy-MM-dd}.json";
 
         public CandleService(string symbol, int timeFrame, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
             : base(serviceProvider)
@@ -31,7 +37,12 @@ namespace B3WM.Services.Core
             Symbol = symbol;
             TimeFrame = timeFrame;
             this.hubContext = hubContext;
+            _loadedDate = DateTime.Now.Date;
             _ = Task.Run(ProcessLoop);
+            // Flush periódico só para o diário: o candle aberto vive o pregão inteiro
+            // só em memória e seria perdido sem escrita até o fechamento (virada do dia).
+            if (timeFrame == 1440)
+                _ = Task.Run(FlushLoop);
         }
 
         public void Enqueue(Ticks2[] ticks)
@@ -40,12 +51,46 @@ namespace B3WM.Services.Core
             //await Task.CompletedTask;
         }
 
-        public BarStorageItem GetSnapshot() =>  CloneBar(_currentBar?? new BarStorageItem());
+        public BarStorageItem GetSnapshot()
+        {
+            lock (_barLock)
+            {
+                return CloneBar(_currentBar ?? new BarStorageItem());
+            }
+        }
 
         private async Task ProcessLoop()
         {
             // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.
             await LoadAsync();
+            _loadedDate = DateTime.Now.Date;
+            if (DataKeep == null)
+                DataKeep = new List<BarStorageItem>();
+
+            // Diário: restaura a barra aberta de hoje a partir do flush anterior,
+            // senão um restart no meio do pregão descartaria o progresso do dia.
+            if (TimeFrame == 1440 && DataKeep.Count > 0)
+            {
+                try
+                {
+                    var today = DateTime.Now.Date;
+                    var todaysBar = DataKeep
+                        .Where(b => b.Date.Date == today)
+                        .OrderByDescending(b => b.Date)
+                        .FirstOrDefault();
+                    if (todaysBar != null)
+                    {
+                        lock (_barLock)
+                        {
+                            _currentBar = CloneBar(todaysBar);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"CandleService restore 1440 error: {ex.Message}");
+                }
+            }
 
             await foreach (var ticks in _channel.Reader.ReadAllAsync())
             {
@@ -72,44 +117,172 @@ namespace B3WM.Services.Core
             var candleStart = t.Time.GetCandleStart(TimeFrame);
 
             BarStorageItem? barToEmit = null;
+            bool isNewBar = false;
 
-
-            if (_currentBar == null)
+            lock (_barLock)
             {
-                _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
+                if (_currentBar == null)
+                {
+                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
+                    isNewBar = true;
+                }
+                else if (candleStart > _currentBar.Date)
+                {
+                    // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
+                    barToEmit = CloneBar(_currentBar);
+                    _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
+                }
+                else if (candleStart == _currentBar.Date)
+                {
+                    UpdateBar(_currentBar, t.Value, t.Volume);
+                }
+            }
+
+            // Diário: persiste a barra recém-criada de imediato para o arquivo do dia
+            // não ficar vazio até o flush de 1min.
+            if (isNewBar)
+            {
+                if (TimeFrame == 1440)
+                {
+                    try { await FlushCurrentBarAsync(); }
+                    catch (Exception ex) { Console.WriteLine($"CandleService initial flush error: {ex.Message}"); }
+                }
                 return;
             }
 
-            if (candleStart > _currentBar.Date)
-            {
-                // Só fechar quando o tick é de um período posterior (evita fechar por duplicata ou ordem inversa).
-                barToEmit = CloneBar(_currentBar);
-                _currentBar = CreateNewBar(candleStart, t.Value, t.Volume, t.Symbol);
-            }
-            else if (candleStart == _currentBar.Date)
-            {
-                UpdateBar(_currentBar, t.Value, t.Volume);
-            }
-
-
-            // Emitir fora do lock; usamos só a cópia já feita.
-            if (barToEmit != null && OnUpdate != null)
+            if (barToEmit != null)
             {
                 // Invocar OnUpdate ANTES do broadcast para que o OrchestratorService
                 // anexe VolumeLevel/ForecastPrice à barra; do contrário o cliente
                 // recebe a barra fechada sem o snapshot de volume ao vivo.
-                await OnUpdate.Invoke(barToEmit);
+                if (OnUpdate != null)
+                    await OnUpdate.Invoke(barToEmit);
 
                 if (hubContext != null)
                 {
                     await hubContext.Clients.Group(Symbol).ReceiveOnCloseBar(barToEmit);
                 }
 
-                //adiciona na lista geral
-                DataKeep.Add(barToEmit);
+                await PersistClosedBarAsync(barToEmit);
+            }
+        }
 
-                //marca para salvar no arquivo
-                await SetDataAsync(DataKeep);
+        /// <summary>Salva a barra fechada no arquivo da data da barra (não de DateTime.Now).</summary>
+        private async Task PersistClosedBarAsync(BarStorageItem barToEmit)
+        {
+            try
+            {
+                await EnsureDayRolloverAsync();
+
+                var targetPath = GetPathForDate(barToEmit.Date);
+
+                // Fechamento dentro do mesmo dia: mantém comportamento intraday atual
+                // (DataKeep = barras fechadas de hoje).
+                if (targetPath == Path)
+                {
+                    if (DataKeep == null)
+                        DataKeep = new List<BarStorageItem>();
+                    lock (_barLock)
+                    {
+                        UpsertBar(DataKeep, barToEmit);
+                    }
+                    // Copia sob lock para não segurar o lock durante IO.
+                    List<BarStorageItem> snapshot;
+                    lock (_barLock)
+                    {
+                        snapshot = DataKeep.Select(CloneBar).ToList();
+                    }
+                    // SetDataAsync atualiza DataKeep; reatribui a cópia para manter referência consistente.
+                    await SetDataAsync(snapshot);
+                }
+                else
+                {
+                    // Fechamento cruzando o dia (caso do 1440MIN, fechado no 1º tick do dia seguinte):
+                    // grava no arquivo do dia a que a barra pertence, sem contaminar o DataKeep de hoje.
+                    var existing = await GetDataAsync(targetPath) ?? new List<BarStorageItem>();
+                    UpsertBar(existing, barToEmit);
+                    await WriteFileAsync(existing, targetPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"CandleService.PersistClosedBar error: {ex.Message}");
+            }
+        }
+
+        private async Task FlushLoop()
+        {
+            try
+            {
+                // Alinha o primeiro flush para não competir com o startup.
+                await Task.Delay(TimeSpan.FromSeconds(10));
+                while (await _flushTimer.WaitForNextTickAsync())
+                {
+                    try
+                    {
+                        await FlushCurrentBarAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"CandleService.FlushLoop error: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"CandleService.FlushLoop fatal: {ex.Message}");
+            }
+        }
+
+        /// <summary>Persiste a barra diária aberta (upsert) para que o arquivo de hoje
+        /// reflita o pregão em andamento. Não dispara OnUpdate/estrutura.</summary>
+        public async Task FlushCurrentBarAsync()
+        {
+            if (TimeFrame != 1440)
+                return;
+
+            BarStorageItem? snapshot;
+            lock (_barLock)
+            {
+                if (_currentBar == null)
+                    return;
+                snapshot = CloneBar(_currentBar);
+            }
+
+            var targetPath = GetPathForDate(snapshot.Date);
+            var existing = await GetDataAsync(targetPath) ?? new List<BarStorageItem>();
+            UpsertBar(existing, snapshot);
+            await WriteFileAsync(existing, targetPath);
+        }
+
+        private async Task EnsureDayRolloverAsync()
+        {
+            var today = DateTime.Now.Date;
+            if (today == _loadedDate)
+                return;
+
+            try
+            {
+                await LoadAsync();
+                if (DataKeep == null)
+                    DataKeep = new List<BarStorageItem>();
+                _loadedDate = today;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"CandleService.EnsureDayRollover error: {ex.Message}");
+            }
+        }
+
+        private static void UpsertBar(List<BarStorageItem> list, BarStorageItem bar)
+        {
+            var idx = list.FindIndex(b => b.Date == bar.Date);
+            if (idx >= 0)
+                list[idx] = bar;
+            else
+            {
+                list.Add(bar);
+                list.Sort((a, b) => a.Date.CompareTo(b.Date));
             }
         }
 
@@ -126,6 +299,13 @@ namespace B3WM.Services.Core
                 Symbol = bar.Symbol,
                 TimeFrame = bar.TimeFrame,
                 ForecastPrice = bar.ForecastPrice,
+                VolumeLevel = bar.VolumeLevel?.Select(v => new VolumeLevel
+                {
+                    Price = v.Price,
+                    Total = v.Total,
+                    BuyVolume = v.BuyVolume,
+                    SellVolume = v.SellVolume
+                }).ToList(),
             };
         }
 

@@ -49,6 +49,29 @@
             }
         }
 
+        /// <summary>Escreve em um arquivo explícito sem tocar no DataKeep em memória.
+        /// Usado para salvar barra fechada no arquivo da data da barra e para flush da barra aberta.</summary>
+        public async Task WriteFileAsync(T data, string path)
+        {
+            using var scope = _serviceProvider.CreateScope();
+
+            var dataKeeper = scope.ServiceProvider.GetService<DataKeeperBase>();
+
+            if (dataKeeper == null)
+                throw new InvalidOperationException("Data keeper not found.");
+
+            await _fileSemaphore.WaitAsync();
+
+            try
+            {
+                await dataKeeper.WriteDataAsync(path, data);
+            }
+            finally
+            {
+                _fileSemaphore.Release();
+            }
+        }
+
         public async Task LoadAsync()
         {
             try 
