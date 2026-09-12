@@ -31,6 +31,11 @@ class SymbolConfig {
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
 
+  bool dailyExtremeVisible;
+  double dailyExtremeOpacity;
+  double dailyExtremeNoiseSensitivity;
+  double dailyExtremeMinimumProminence;
+
   bool vwapVisible;
   double vwapOpacity;
   String vwapColor;
@@ -83,6 +88,10 @@ class SymbolConfig {
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.dailyExtremeVisible,
+    required this.dailyExtremeOpacity,
+    required this.dailyExtremeNoiseSensitivity,
+    required this.dailyExtremeMinimumProminence,
     required this.vwapVisible,
     required this.vwapOpacity,
     required this.vwapColor,
@@ -128,6 +137,10 @@ class SymbolConfig {
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        dailyExtremeVisible = true,
+        dailyExtremeOpacity = 0.9,
+        dailyExtremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
+        dailyExtremeMinimumProminence = Defaults.extremeMinimumProminence,
         vwapVisible = true,
         vwapOpacity = 0.5,
         vwapColor = '#FF8800',
@@ -184,6 +197,10 @@ class SymbolConfig {
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
       extremeMinimumProminence: defaults.extremeMinimumProminence,
+      dailyExtremeVisible: defaults.dailyExtremeVisible,
+      dailyExtremeOpacity: defaults.dailyExtremeOpacity,
+      dailyExtremeNoiseSensitivity: defaults.dailyExtremeNoiseSensitivity,
+      dailyExtremeMinimumProminence: defaults.dailyExtremeMinimumProminence,
       vwapVisible: defaults.vwapVisible,
       vwapOpacity: defaults.vwapOpacity,
       vwapColor: defaults.vwapColor,
@@ -239,6 +256,15 @@ class SymbolConfig {
         extremeMinimumProminence:
             (json['extremeMinimumProminence'] as num?)?.toDouble() ??
                 Defaults.extremeMinimumProminence,
+        dailyExtremeVisible: json['dailyExtremeVisible'] as bool? ?? true,
+        dailyExtremeOpacity:
+            (json['dailyExtremeOpacity'] as num?)?.toDouble() ?? 0.9,
+        dailyExtremeNoiseSensitivity:
+            (json['dailyExtremeNoiseSensitivity'] as num?)?.toDouble() ??
+                Defaults.extremeNoiseSensitivity,
+        dailyExtremeMinimumProminence:
+            (json['dailyExtremeMinimumProminence'] as num?)?.toDouble() ??
+                Defaults.extremeMinimumProminence,
         vwapVisible: json['vwapVisible'] as bool? ?? true,
         vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
         vwapColor: json['vwapColor'] as String? ?? '#FF8800',
@@ -292,6 +318,10 @@ class SymbolConfig {
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'dailyExtremeVisible': dailyExtremeVisible,
+        'dailyExtremeOpacity': dailyExtremeOpacity,
+        'dailyExtremeNoiseSensitivity': dailyExtremeNoiseSensitivity,
+        'dailyExtremeMinimumProminence': dailyExtremeMinimumProminence,
         'vwapVisible': vwapVisible,
         'vwapOpacity': vwapOpacity,
         'vwapColor': vwapColor,

@@ -100,10 +100,12 @@ class ChartFixedPainter extends CustomPainter {
     _drawGridLines(canvas);
     _drawXAxis(canvas);
     _drawMarkArea(canvas);
+    _drawDaySeparators(canvas);
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
     _drawExtremeLines(canvas);
+    _drawDailyExtremeLines(canvas);
     _drawVwapLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
@@ -250,6 +252,39 @@ class ChartFixedPainter extends CustomPainter {
         paint);
   }
 
+  void _drawDaySeparators(Canvas canvas) {
+    final m = controller.value;
+    final scaleX = m[0];
+    final tx = m.getTranslation().x;
+
+    final stepX = ChartFixedPainter.candleStep;
+
+    final paint = Paint()
+      ..color = const Color(0x26c8c8c8)
+      ..strokeWidth = 1;
+
+    for (final idx in data.daySeparatorIndices) {
+      final childX = idx * stepX + stepX / 2;
+      final screenX = marginLeft + childX * scaleX + tx;
+      if (screenX < marginLeft || screenX > chartRight) continue;
+
+      canvas.drawLine(Offset(screenX, marginTop), Offset(screenX, marginTop + chartHeight), paint);
+
+      if (idx < data.dates.length) {
+        final d = data.dates[idx];
+        final label = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+        final tp = TextPainter(
+          text: TextSpan(
+            text: label,
+            style: const TextStyle(color: Color(0x66c8c8c8), fontSize: 8),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(screenX - tp.width / 2, marginTop + 2));
+      }
+    }
+  }
+
   int _decimalPlaces(String symbol) {
     final tick = Defaults.tickSize(symbol);
     if (tick == tick.roundToDouble()) return 0;
@@ -276,6 +311,39 @@ class ChartFixedPainter extends CustomPainter {
 
     drawLines(ex.topPrices, const Color(0xFF69F0AE));
     drawLines(ex.valleyPrices, const Color(0xFFFF5252));
+  }
+
+  void _drawDailyExtremeLines(Canvas canvas) {
+    final dex = data.dailyExtremes;
+    if (dex == null || !dex.visible) return;
+
+    void drawSolid(List<double> prices, Color color) {
+      final paint = Paint()
+        ..color = color.withOpacity(dex.opacity)
+        ..strokeWidth = 1.5;
+      for (final price in prices) {
+        final y = _priceToY(price);
+        if (y < marginTop || y > marginTop + chartHeight) continue;
+        canvas.drawLine(Offset(marginLeft, y),
+            Offset(chartRight - rightLabelMargin, y), paint);
+        final tp = TextPainter(
+          text: const TextSpan(
+            text: 'D',
+            style: TextStyle(color: Color(0xFF1e1e1e), fontSize: 8, fontWeight: FontWeight.bold),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final bg = Paint()..color = color.withOpacity(dex.opacity);
+        final right = chartRight - rightLabelMargin;
+        final r = Rect.fromLTWH(right - 14, y - 7, 14, 14);
+        canvas.drawRRect(
+            RRect.fromRectAndRadius(r, const Radius.circular(3)), bg);
+        tp.paint(canvas, Offset(right - 14 + (14 - tp.width) / 2, y - tp.height / 2));
+      }
+    }
+
+    drawSolid(dex.topPrices, const Color(0xFFFFD54F));
+    drawSolid(dex.valleyPrices, const Color(0xFF4FC3F7));
   }
 
   void _drawVwapLines(Canvas canvas) {

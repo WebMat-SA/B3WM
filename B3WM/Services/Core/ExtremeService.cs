@@ -378,6 +378,122 @@ namespace B3WM.Services.Core
             return result.OrderBy(v => v.Price).ToList();
         }
 
+        /// <summary>
+        /// Computa a detecção sobre o perfil de volume agregado multi-dia
+        /// (referência diária estática para overlay no intraday). Função pura:
+        /// soma os arquivos diários do VolumeService na janela [from, to]
+        /// (dia-granularidade) e roda o mesmo ExtremeDetector. Não altera o
+        /// estado ao vivo (período, snapshot, timers, broadcasts).
+        /// </summary>
+        public async Task<ExtremeStorageItem> ComputeDailyRange(
+            DataKeeperBase keeper, DateTime from, DateTime to, ExtremeDetectorOptions? options = null)
+        {
+            var fromDate = from.Date;
+            var toDate = to.Date;
+            if (toDate < fromDate)
+                (fromDate, toDate) = (toDate, fromDate);
+
+            // Trava de segurança: evita loop gigante por erro de parâmetro.
+            if ((toDate - fromDate).TotalDays > 365)
+                fromDate = toDate.AddDays(-365);
+
+            var profile = await BuildDailyProfileFromFiles(keeper, Symbol, fromDate, toDate);
+
+            var prices = profile.Select(v => v.Price).ToArray();
+            var totals = profile.Select(v => (double)v.Total).ToArray();
+
+            ExtremeDetectorOptions config;
+            if (options != null)
+            {
+                config = options.Clone();
+            }
+            else
+            {
+                lock (_lock)
+                {
+                    config = _config.Clone();
+                }
+            }
+
+            var result = ExtremeDetector.Detect(prices, totals, config);
+
+            _logger.LogInformation(
+                "ExtremeService.ComputeDailyRange {Symbol} from={From:yyyy-MM-dd} to={To:yyyy-MM-dd} profile={Profile} extremes={Extremes}",
+                Symbol, fromDate, toDate, profile.Count, result.Extremes.Count);
+
+            return new ExtremeStorageItem
+            {
+                Date = toDate,
+                Symbol = Symbol,
+                PeriodFrom = fromDate,
+                PeriodTo = toDate,
+                Config = config,
+                Extremes = result.Extremes,
+                Structures = result.Structures,
+                Statistics = result.Statistics
+            };
+        }
+
+        /// <summary>
+        /// Monta o perfil de volume agregado multi-dia somando os arquivos
+        /// diários do VolumeService (cumulativo tick-a-tick real de cada dia).
+        /// Dias ausentes (fds/feriado) são ignorados. É o equivalente diário
+        /// do Volume Profile: preço x total de contratos na janela.
+        /// </summary>
+        public static async Task<List<VolumeLevel>> BuildDailyProfileFromFiles(
+            DataKeeperBase keeper, string symbol, DateTime fromDate, DateTime toDate)
+        {
+            var from = fromDate.Date;
+            var to = toDate.Date;
+            if (to < from)
+                (from, to) = (to, from);
+            if ((to - from).TotalDays > 365)
+                from = to.AddDays(-365);
+
+            var byPrice = new Dictionary<double, (long Total, long Buy, long Sell)>();
+            for (var day = from; day <= to; day = day.AddDays(1))
+            {
+                var dayPath = $"{symbol}_{nameof(VolumeService)}_{day:yyyy-MM-dd}.json";
+                VolumeLevelStorageItem dayItem;
+                try
+                {
+                    dayItem = await keeper.ReadDataAsync<VolumeLevelStorageItem>(dayPath);
+                }
+                catch
+                {
+                    continue;
+                }
+                if (dayItem?.Volumes == null || dayItem.Volumes.Count == 0)
+                    continue;
+                foreach (var lvl in dayItem.Volumes)
+                {
+                    if (byPrice.TryGetValue(lvl.Price, out var acc))
+                    {
+                        byPrice[lvl.Price] = (
+                            acc.Total + lvl.Total,
+                            acc.Buy + lvl.BuyVolume,
+                            acc.Sell + lvl.SellVolume);
+                    }
+                    else
+                    {
+                        byPrice[lvl.Price] = (lvl.Total, lvl.BuyVolume, lvl.SellVolume);
+                    }
+                }
+            }
+
+            return byPrice
+                .Where(kv => kv.Value.Total > 0)
+                .Select(kv => new VolumeLevel
+                {
+                    Price = kv.Key,
+                    Total = kv.Value.Total,
+                    BuyVolume = kv.Value.Buy,
+                    SellVolume = kv.Value.Sell
+                })
+                .OrderBy(v => v.Price)
+                .ToList();
+        }
+
         public void Dispose()
         {
             _liveTimer.Dispose();

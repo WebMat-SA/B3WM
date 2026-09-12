@@ -329,6 +329,32 @@ class ApiService {
     return ExtremeStorageItem.fromJson(json);
   }
 
+  /// Overlay diário estático (issue #10): perfil agregado multi-dia.
+  /// Rota nova e isolada — não toca no fluxo intraday (GetExtreme/SetExtreme*).
+  Future<ExtremeStorageItem?> getExtremeDaily(
+    String symbol, {
+    DateTime? from,
+    DateTime? to,
+    double? noiseSensitivity,
+    double? minimumProminence,
+  }) async {
+    final fromStr = from != null ? 'from=${Uri.encodeQueryComponent(_formatDate(from))}&' : '';
+    final toStr = to != null ? 'to=${Uri.encodeQueryComponent(_formatDate(to))}&' : '';
+    final ns = noiseSensitivity != null
+        ? 'noiseSensitivity=${noiseSensitivity.toStringAsFixed(3)}&'
+        : '';
+    final mp = minimumProminence != null
+        ? 'minimumProminence=${minimumProminence.toStringAsFixed(3)}'
+        : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetExtremeDaily/$symbol?$fromStr$toStr$ns$mp'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return ExtremeStorageItem.fromJson(json);
+  }
+
   String _formatDate(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 

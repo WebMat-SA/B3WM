@@ -213,6 +213,35 @@ class StateService extends ChangeNotifier {
     _scheduleExtremeConfigSync();
   }
 
+  // --- Daily overlay estático (issue #10): camada isolada, sem live updates ---
+  bool get dailyExtremeVisible => _currentConfig.dailyExtremeVisible;
+  double get dailyExtremeOpacity => _currentConfig.dailyExtremeOpacity;
+  double get dailyExtremeNoiseSensitivity =>
+      _currentConfig.dailyExtremeNoiseSensitivity;
+  double get dailyExtremeMinimumProminence =>
+      _currentConfig.dailyExtremeMinimumProminence;
+
+  void setDailyExtremeVisible(bool v) {
+    _currentConfig.dailyExtremeVisible = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyExtremeOpacity(double v) {
+    _currentConfig.dailyExtremeOpacity = v.clamp(0.0, 1.0);
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyExtremeNoiseSensitivity(double v) {
+    _currentConfig.dailyExtremeNoiseSensitivity = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyExtremeMinimumProminence(double v) {
+    _currentConfig.dailyExtremeMinimumProminence = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
   void setVwapVisible(bool v) { _currentConfig.vwapVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setVwapOpacity(double v) { _currentConfig.vwapOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setVwapColor(String v) { _currentConfig.vwapColor = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
@@ -285,6 +314,17 @@ class StateService extends ChangeNotifier {
 
   ExtremeStorageItem? _extremes;
   ExtremeStorageItem? get extremes => _extremes;
+
+  // Overlay diário estático (issue #10). Isolado do fluxo ao vivo:
+  // nunca é escrito por _handleExtreme/SignalR, só por loadDailyExtremes().
+  ExtremeStorageItem? _dailyExtremes;
+  ExtremeStorageItem? get dailyExtremes => _dailyExtremes;
+  bool _isDailyExtremeLoading = false;
+  bool get isDailyExtremeLoading => _isDailyExtremeLoading;
+  DateTime? _dailyExtremeFrom;
+  DateTime? get dailyExtremeFrom => _dailyExtremeFrom;
+  DateTime? _dailyExtremeTo;
+  DateTime? get dailyExtremeTo => _dailyExtremeTo;
 
   Timer? _extremeConfigTimer;
   Timer? _extremePeriodTimer;
@@ -404,6 +444,110 @@ class StateService extends ChangeNotifier {
     _syncExtremesPeriod(immediate: true);
   }
 
+  // --- Daily overlay: âncora + carga on-demand (issue #10) ---
+  // A âncora replica o conceito do auto-mode intraday, mas sobre as
+  // estruturas 1440 já carregadas (sem nova chamada): última inversão de
+  // direção define o início da "última perna" do diário.
+  (DateTime, DateTime) resolveDailyAnchor() {
+    final now = DateTime.now();
+    final to = DateTime(now.year, now.month, now.day);
+    DateTime from = to.subtract(const Duration(days: 60));
+    try {
+      final daily = _structures
+          .where((s) => s.symbol == _symbol && s.timeFrame == 1440)
+          .toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
+      if (daily.length >= 2) {
+        final changes = <StructureChangeItem>[];
+        for (var i = 1; i < daily.length; i++) {
+          final prev = daily[i - 1];
+          final curr = daily[i];
+          if (curr.upBorder != prev.upBorder) {
+            changes.add(StructureChangeItem(
+              date: curr.date,
+              isUp: true,
+              oldValue: prev.upBorder,
+              newValue: curr.upBorder,
+            ));
+          }
+          if (curr.downBorder != prev.downBorder) {
+            changes.add(StructureChangeItem(
+              date: curr.date,
+              isUp: false,
+              oldValue: prev.downBorder,
+              newValue: curr.downBorder,
+            ));
+          }
+        }
+        if (changes.isNotEmpty) {
+          changes.sort((a, b) => b.date.compareTo(a.date));
+          final last = changes.first;
+          StructureChangeItem? anchor;
+          for (final c in changes) {
+            if (c.isUp != last.isUp && c.isUpMove != last.isUpMove) {
+              anchor = c;
+              break;
+            }
+          }
+          if (anchor != null) {
+            from = DateTime(anchor.date.year, anchor.date.month, anchor.date.day);
+          } else {
+            final firstChange = changes.last;
+            from = DateTime(
+                firstChange.date.year, firstChange.date.month, firstChange.date.day);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[dailyExtremes] anchor fallback: $e');
+    }
+    if (from.isAfter(to)) from = to.subtract(const Duration(days: 60));
+    return (from, to);
+  }
+
+  /// Carga on-demand do overlay diário. Nunca é chamada pelo loop ao vivo,
+  /// sliders intraday ou SignalR — só pelo botão "Atualizar" do drawer.
+  Future<void> loadDailyExtremes({bool force = true}) async {
+    if (_symbol.isEmpty || _isDailyExtremeLoading) return;
+    _isDailyExtremeLoading = true;
+    notifyListeners();
+    try {
+      final (from, to) = resolveDailyAnchor();
+      debugPrint('[dailyExtremes] load $_symbol from=$from to=$to '
+          'noise=${_currentConfig.dailyExtremeNoiseSensitivity} '
+          'prom=${_currentConfig.dailyExtremeMinimumProminence}');
+      final data = await _apiService.getExtremeDaily(
+        _symbol,
+        from: from,
+        to: to,
+        noiseSensitivity: _currentConfig.dailyExtremeNoiseSensitivity,
+        minimumProminence: _currentConfig.dailyExtremeMinimumProminence,
+      );
+      if (data != null) {
+        // Isolamento: valida símbolo; ignora filtro de data intraday de propósito
+        // (janela multi-dia nunca coincidiria com _displayDate de 1 dia).
+        if (data.symbol.isEmpty || data.symbol == _symbol) {
+          _dailyExtremes = data;
+          _dailyExtremeFrom = from;
+          _dailyExtremeTo = to;
+          debugPrint('[dailyExtremes] applied count=${data.extremes.length}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[dailyExtremes] load error: $e');
+    } finally {
+      _isDailyExtremeLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearDailyExtremes() {
+    _dailyExtremes = null;
+    _dailyExtremeFrom = null;
+    _dailyExtremeTo = null;
+    notifyListeners();
+  }
+
   void selectAllAgents() {
     final all = allBubbleAgents;
     if (_currentConfig.selectedAgents.length == all.length) {
@@ -488,6 +632,10 @@ class StateService extends ChangeNotifier {
       extremeOpacity: 0.7,
       extremeNoiseSensitivity: 3.0,
       extremeMinimumProminence: 0.15,
+      dailyExtremeVisible: true,
+      dailyExtremeOpacity: 0.9,
+      dailyExtremeNoiseSensitivity: 3.0,
+      dailyExtremeMinimumProminence: 0.15,
       vwapVisible: true,
       vwapOpacity: 0.5,
       vwapColor: '#FF8800',
@@ -555,6 +703,9 @@ class StateService extends ChangeNotifier {
     _symbol = value.toUpperCase();
     _allBubbleAgents.clear();
     _extremes = null;
+    _dailyExtremes = null;
+    _dailyExtremeFrom = null;
+    _dailyExtremeTo = null;
     _displayDate = null;
     _lastExtremeFrom = null;
     _lastExtremeTo = null;

@@ -23,6 +23,7 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
     super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final ex = state.extremes;
+      final dex = state.dailyExtremes;
       final body = ListView(
         padding: EdgeInsets.zero,
         children: [
@@ -57,6 +58,97 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
               ],
             ),
           ),
+          ExpandableSection(
+            icon: Icons.calendar_month,
+            title: 'Referências Diárias (1D — estático)',
+            defaultExpanded: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ToggleRow('Show daily on Chart', state.dailyExtremeVisible,
+                    (v) => state.setDailyExtremeVisible(v)),
+                SliderRow('Opacity (D)', state.dailyExtremeOpacity, 0, 1,
+                    (v) => state.setDailyExtremeOpacity(v)),
+                SliderRow(
+                  'Noise (D)',
+                  state.dailyExtremeNoiseSensitivity,
+                  Defaults.extremeNoiseSensitivityMin,
+                  Defaults.extremeNoiseSensitivityMax,
+                  (v) => state.setDailyExtremeNoiseSensitivity(v),
+                  decimals: 1,
+                  step: Defaults.extremeNoiseSensitivityStep,
+                ),
+                SliderRow(
+                  'Prominence (D)',
+                  state.dailyExtremeMinimumProminence,
+                  Defaults.extremeMinimumProminenceMin,
+                  Defaults.extremeMinimumProminenceMax,
+                  (v) => state.setDailyExtremeMinimumProminence(v),
+                  decimals: 2,
+                  step: Defaults.extremeMinimumProminenceStep,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Text(
+                    state.dailyExtremeFrom != null && state.dailyExtremeTo != null
+                        ? 'Janela 1D: ${_fmtDate(state.dailyExtremeFrom!)} → ${_fmtDate(state.dailyExtremeTo!)} (auto estrutura 1440)'
+                        : 'Janela 1D: auto pela última perna do 1440 (toque em Atualizar)',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: state.isDailyExtremeLoading
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.refresh, size: 16),
+                          label: Text(state.isDailyExtremeLoading
+                              ? 'Atualizando...'
+                              : 'Atualizar diário'),
+                          onPressed: state.isDailyExtremeLoading
+                              ? null
+                              : () => state.loadDailyExtremes(),
+                        ),
+                      ),
+                      if (dex != null) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Limpar',
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => state.clearDailyExtremes(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (dex != null && dex.extremes.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: Text(
+                      'Diário: ${dex.topCount} topo(s) / ${dex.valleyCount} vale(s)',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                if (dex != null)
+                  for (final e in dex.extremes) _ExtremeRow(point: e, isDaily: true),
+                if (dex == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: Text(
+                      'Nenhum nível diário carregado. Toque em Atualizar antes do pregão; fica estático no intraday.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           if (ex != null && ex.extremes.isNotEmpty)
             ExpandableSection(
               icon: Icons.list_alt,
@@ -86,16 +178,19 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
 
 class _ExtremeRow extends StatelessWidget {
   final ExtremePoint point;
-  const _ExtremeRow({required this.point});
+  final bool isDaily;
+  const _ExtremeRow({required this.point, this.isDaily = false});
 
   @override
   Widget build(BuildContext context) {
     final isTop = point.type == ExtremeType.top;
-    final color = isTop
-        ? const Color(0xFF69F0AE)
-        : point.type == ExtremeType.valley
-            ? const Color(0xFFFF5252)
-            : Colors.grey;
+    final color = isDaily
+        ? (isTop ? const Color(0xFFFFD54F) : const Color(0xFF4FC3F7))
+        : isTop
+            ? const Color(0xFF69F0AE)
+            : point.type == ExtremeType.valley
+                ? const Color(0xFFFF5252)
+                : Colors.grey;
     final label = isTop
         ? 'Topo'
         : point.type == ExtremeType.valley
@@ -128,3 +223,6 @@ class _ExtremeRow extends StatelessWidget {
     );
   }
 }
+
+String _fmtDate(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';

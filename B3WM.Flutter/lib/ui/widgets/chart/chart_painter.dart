@@ -35,7 +35,7 @@ class ChartPainter extends CustomPainter {
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
     _drawExtremeLines(canvas, chartWidth, chartHeight);
-    _drawVwapLines(canvas, chartWidth, chartHeight, stepX);
+    _drawDailyExtremeLines(canvas, chartWidth, chartHeight);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
     _drawHistoryMarkers(canvas, size, chartWidth, chartHeight, stepX);
@@ -63,29 +63,7 @@ class ChartPainter extends CustomPainter {
 
   void _drawDaySeparators(
       Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
-    final paint = Paint()
-      ..color = daySepColor
-      ..strokeWidth = 1;
-
-    for (final idx in data.daySeparatorIndices) {
-      final x = _indexToX(idx, stepX);
-      if (x >= 0 && x <= chartWidth) {
-        canvas.drawLine(Offset(x, 0), Offset(x, chartHeight), paint);
-
-        if (idx < data.dates.length) {
-          final d = data.dates[idx];
-          final label = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
-          final tp = TextPainter(
-            text: TextSpan(
-              text: label,
-              style: const TextStyle(color: Color(0x66c8c8c8), fontSize: 8),
-            ),
-            textDirection: TextDirection.ltr,
-          )..layout();
-          tp.paint(canvas, Offset(x - tp.width / 2, 2));
-        }
-      }
-    }
+    // Moved to ChartFixedPainter to fill full visible height without clipping
   }
 
   void _drawMarkArea(
@@ -153,6 +131,39 @@ class ChartPainter extends CustomPainter {
 
     drawLines(ex.topPrices, const Color(0xFF69F0AE));
     drawLines(ex.valleyPrices, const Color(0xFFFF5252));
+  }
+
+  void _drawDailyExtremeLines(
+      Canvas canvas, double chartWidth, double chartHeight) {
+    final dex = data.dailyExtremes;
+    if (dex == null || !dex.visible) return;
+
+    void drawSolid(List<double> prices, Color color) {
+      final paint = Paint()
+        ..color = color.withOpacity(dex.opacity)
+        ..strokeWidth = 1.5;
+      for (final price in prices) {
+        final y = _priceToY(price, chartHeight);
+        if (y < 0 || y > chartHeight) continue;
+        canvas.drawLine(Offset(0, y), Offset(chartWidth, y), paint);
+        // Tag "D" discreta na borda direita para distinguir do intraday.
+        final tp = TextPainter(
+          text: const TextSpan(
+            text: 'D',
+            style: TextStyle(color: Color(0xFF1e1e1e), fontSize: 8, fontWeight: FontWeight.bold),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final bg = Paint()..color = color.withOpacity(dex.opacity);
+        final r = Rect.fromLTWH(chartWidth - 14, y - 7, 14, 14);
+        canvas.drawRRect(
+            RRect.fromRectAndRadius(r, const Radius.circular(3)), bg);
+        tp.paint(canvas, Offset(chartWidth - 14 + (14 - tp.width) / 2, y - tp.height / 2));
+      }
+    }
+
+    drawSolid(dex.topPrices, const Color(0xFFFFD54F));
+    drawSolid(dex.valleyPrices, const Color(0xFF4FC3F7));
   }
 
   void _drawVwapLines(

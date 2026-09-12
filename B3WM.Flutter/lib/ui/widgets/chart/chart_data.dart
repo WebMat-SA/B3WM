@@ -121,6 +121,23 @@ class ExtremeLineData {
   });
 }
 
+/// Overlay diário estático (issue #10): mesmos preços do detector, mas
+/// desenhado com estilo próprio (sólido + cores D) para não confundir
+/// com o tracejado intraday. Não participa de min/max/autoscale.
+class DailyExtremeLineData {
+  final List<double> topPrices;
+  final List<double> valleyPrices;
+  final bool visible;
+  final double opacity;
+
+  DailyExtremeLineData({
+    required this.topPrices,
+    required this.valleyPrices,
+    required this.visible,
+    required this.opacity,
+  });
+}
+
 class ChartData {
   final List<CandlePoint> candles;
   final List<BubblePoint> redBubbles;
@@ -128,6 +145,7 @@ class ChartData {
   final List<VolumeBarData> volumeProfile;
   final StructureLineData? structures;
   final ExtremeLineData? extremes;
+  final DailyExtremeLineData? dailyExtremes;
   final List<VwapPoint> vwapPoints;
   final double minPrice;
   final double maxPrice;
@@ -165,6 +183,7 @@ class ChartData {
     required this.volumeProfile,
     this.structures,
     this.extremes,
+    this.dailyExtremes,
     required this.vwapPoints,
     required this.minPrice,
     required this.maxPrice,
@@ -376,6 +395,26 @@ ChartData buildChartData(StateService state) {
     }
   }
 
+  // Overlay diário (issue #10): bloco isolado; não altera min/max.
+  DailyExtremeLineData? dailyExtremes;
+  if (state.dailyExtremeVisible) {
+    final dex = state.dailyExtremes;
+    if (dex != null && dex.extremes.isNotEmpty) {
+      dailyExtremes = DailyExtremeLineData(
+        topPrices: dex.extremes
+            .where((e) => e.type == ExtremeType.top)
+            .map((e) => e.position)
+            .toList(),
+        valleyPrices: dex.extremes
+            .where((e) => e.type == ExtremeType.valley)
+            .map((e) => e.position)
+            .toList(),
+        visible: true,
+        opacity: state.dailyExtremeOpacity,
+      );
+    }
+  }
+
   int calcRemainingSeconds() {
     if (state.currentBar == null || state.timeFrame <= 0) return 0;
     final totalMinutes = state.currentBar!.date.hour * 60 + state.currentBar!.date.minute;
@@ -468,6 +507,7 @@ ChartData buildChartData(StateService state) {
     volumeProfile: volumeProfile,
     structures: structures,
     extremes: extremes,
+    dailyExtremes: dailyExtremes,
     vwapPoints: vwapPoints,
     minPrice: minPrice,
     maxPrice: maxPrice,

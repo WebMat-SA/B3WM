@@ -221,6 +221,28 @@ namespace B3WM.Controllers
         }
 
         [HttpGet("{symbol}")]
+        public async Task<IActionResult> GetExtremeDaily(string symbol,
+            [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
+            [FromQuery] double noiseSensitivity = B3WM.Shared.Models.Defaults.Extreme.NoiseSensitivity,
+            [FromQuery] double minimumProminence = B3WM.Shared.Models.Defaults.Extreme.MinimumProminence)
+        {
+            var service = _extremeServices.FirstOrDefault(s => s.Symbol == symbol);
+            if (service == null) return NotFound();
+
+            // Overlay diário estático: função pura, sem tocar no estado ao vivo
+            // (período/snapshot/timers/broadcast do intraday ficam intactos).
+            var toDate = (to ?? DateTime.Today).Date;
+            var fromDate = (from ?? toDate.AddDays(-60)).Date;
+
+            var options = new ExtremeDetectorOptions
+            {
+                NoiseSensitivity = noiseSensitivity,
+                MinimumProminence = minimumProminence
+            };
+            return Ok(await service.ComputeDailyRange(dataKeeper, fromDate, toDate, options));
+        }
+
+        [HttpGet("{symbol}")]
         public async Task<IActionResult> SetExtremePeriodAsync(string symbol,
             [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] DateTime? date = null)
         {
