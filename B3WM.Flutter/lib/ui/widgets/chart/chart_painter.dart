@@ -138,6 +138,8 @@ class ChartPainter extends CustomPainter {
     final dex = data.dailyExtremes;
     if (dex == null || !dex.visible) return;
 
+    // Só as linhas: o rótulo "D + preço" fica no painter fixo (pinado na
+    // faixa das labels). Tag aqui duplicaria sobre o último candle.
     void drawSolid(List<double> prices, Color color) {
       final paint = Paint()
         ..color = color.withOpacity(dex.opacity)
@@ -146,19 +148,6 @@ class ChartPainter extends CustomPainter {
         final y = _priceToY(price, chartHeight);
         if (y < 0 || y > chartHeight) continue;
         canvas.drawLine(Offset(0, y), Offset(chartWidth, y), paint);
-        // Tag "D" discreta na borda direita para distinguir do intraday.
-        final tp = TextPainter(
-          text: const TextSpan(
-            text: 'D',
-            style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        final bg = Paint()..color = color.withOpacity(dex.opacity);
-        final r = Rect.fromLTWH(chartWidth - 14, y - 7, 14, 14);
-        canvas.drawRRect(
-            RRect.fromRectAndRadius(r, const Radius.circular(3)), bg);
-        tp.paint(canvas, Offset(chartWidth - 14 + (14 - tp.width) / 2, y - tp.height / 2));
       }
     }
 
