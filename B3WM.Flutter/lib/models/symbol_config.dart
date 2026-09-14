@@ -138,7 +138,7 @@ class SymbolConfig {
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
         dailyExtremeVisible = true,
-        dailyExtremeOpacity = 0.9,
+        dailyExtremeOpacity = 0.5,
         dailyExtremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         dailyExtremeMinimumProminence = Defaults.extremeMinimumProminence,
         vwapVisible = true,
@@ -258,7 +258,7 @@ class SymbolConfig {
                 Defaults.extremeMinimumProminence,
         dailyExtremeVisible: json['dailyExtremeVisible'] as bool? ?? true,
         dailyExtremeOpacity:
-            (json['dailyExtremeOpacity'] as num?)?.toDouble() ?? 0.9,
+            (json['dailyExtremeOpacity'] as num?)?.toDouble() ?? 0.5,
         dailyExtremeNoiseSensitivity:
             (json['dailyExtremeNoiseSensitivity'] as num?)?.toDouble() ??
                 Defaults.extremeNoiseSensitivity,

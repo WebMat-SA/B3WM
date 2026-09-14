@@ -633,7 +633,7 @@ class StateService extends ChangeNotifier {
       extremeNoiseSensitivity: 3.0,
       extremeMinimumProminence: 0.15,
       dailyExtremeVisible: true,
-      dailyExtremeOpacity: 0.9,
+      dailyExtremeOpacity: 0.5,
       dailyExtremeNoiseSensitivity: 3.0,
       dailyExtremeMinimumProminence: 0.15,
       vwapVisible: true,
