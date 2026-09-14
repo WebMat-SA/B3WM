@@ -317,33 +317,49 @@ class ChartFixedPainter extends CustomPainter {
     final dex = data.dailyExtremes;
     if (dex == null || !dex.visible) return;
 
-    void drawSolid(List<double> prices, Color color) {
-      final paint = Paint()
-        ..color = color.withOpacity(dex.opacity)
-        ..strokeWidth = 1.5;
-      for (final price in prices) {
-        final y = _priceToY(price);
-        if (y < marginTop || y > marginTop + chartHeight) continue;
-        canvas.drawLine(Offset(marginLeft, y),
-            Offset(chartRight - rightLabelMargin, y), paint);
-        final tp = TextPainter(
-          text: const TextSpan(
-            text: 'D',
-            style: TextStyle(color: Color(0xFF1e1e1e), fontSize: 8, fontWeight: FontWeight.bold),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        final bg = Paint()..color = color.withOpacity(dex.opacity);
-        final right = chartRight - rightLabelMargin;
-        final r = Rect.fromLTWH(right - 14, y - 7, 14, 14);
-        canvas.drawRRect(
-            RRect.fromRectAndRadius(r, const Radius.circular(3)), bg);
-        tp.paint(canvas, Offset(right - 14 + (14 - tp.width) / 2, y - tp.height / 2));
-      }
-    }
+    const topColor = Color(0xFFFFD54F);
+    const valleyColor = Color(0xFF4FC3F7);
+    final decimals = _decimalPlaces(data.symbol);
+    final entries = <({double price, Color color})>[
+      for (final p in dex.topPrices) (price: p, color: topColor),
+      for (final p in dex.valleyPrices) (price: p, color: valleyColor),
+    ]..sort((a, b) => a.price.compareTo(b.price));
 
-    drawSolid(dex.topPrices, const Color(0xFFFFD54F));
-    drawSolid(dex.valleyPrices, const Color(0xFF4FC3F7));
+    double? lastLabelY;
+    for (final e in entries) {
+      final y = _priceToY(e.price);
+      if (y < marginTop || y > marginTop + chartHeight) continue;
+      canvas.drawLine(Offset(marginLeft, y),
+          Offset(chartRight - rightLabelMargin, y),
+          Paint()
+            ..color = e.color.withOpacity(dex.opacity)
+            ..strokeWidth = 1.5);
+      // Anti-colisão: pula a pílula (mantém a linha) se colada na anterior.
+      if (lastLabelY != null && (y - lastLabelY).abs() < 14) continue;
+      lastLabelY = y;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: 'D ${e.price.toStringAsFixed(decimals)}',
+          style: const TextStyle(
+              color: Color(0xFF1e1e1e),
+              fontSize: 9,
+              fontWeight: FontWeight.bold),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      const padH = 5.0;
+      const padV = 2.0;
+      final right = chartRight - rightLabelMargin;
+      final r = Rect.fromLTWH(
+          right - tp.width - padH * 2,
+          y - tp.height / 2 - padV,
+          tp.width + padH * 2,
+          tp.height + padV * 2);
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(r, const Radius.circular(3)),
+          Paint()..color = e.color.withOpacity(dex.opacity));
+      tp.paint(canvas, Offset(right - tp.width - padH, y - tp.height / 2));
+    }
   }
 
   void _drawVwapLines(Canvas canvas) {
