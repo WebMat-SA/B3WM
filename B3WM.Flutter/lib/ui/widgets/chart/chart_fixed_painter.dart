@@ -317,31 +317,26 @@ class ChartFixedPainter extends CustomPainter {
     final dex = data.dailyExtremes;
     if (dex == null || !dex.visible) return;
 
-    const topColor = Color(0xFFFFD54F);
-    const valleyColor = Color(0xFF4FC3F7);
+    const topColor = Color(0xFF43A047);
+    const valleyColor = Color(0xFFE53935);
     final decimals = _decimalPlaces(data.symbol);
     final entries = <({double price, Color color})>[
       for (final p in dex.topPrices) (price: p, color: topColor),
       for (final p in dex.valleyPrices) (price: p, color: valleyColor),
     ]..sort((a, b) => a.price.compareTo(b.price));
 
+    // Faixa das labels de preço (à direita do volume profile), mesmo padrão
+    // da pílula do last price em _drawMarkLine.
+    final labelRight = chartRight - 4;
     double? lastLabelY;
     for (final e in entries) {
       final y = _priceToY(e.price);
       if (y < marginTop || y > marginTop + chartHeight) continue;
-      canvas.drawLine(Offset(marginLeft, y),
-          Offset(chartRight - rightLabelMargin, y),
-          Paint()
-            ..color = e.color.withOpacity(dex.opacity)
-            ..strokeWidth = 1.5);
-      // Anti-colisão: pula a pílula (mantém a linha) se colada na anterior.
-      if (lastLabelY != null && (y - lastLabelY).abs() < 14) continue;
-      lastLabelY = y;
       final tp = TextPainter(
         text: TextSpan(
           text: 'D ${e.price.toStringAsFixed(decimals)}',
           style: const TextStyle(
-              color: Color(0xFF1e1e1e),
+              color: Colors.white,
               fontSize: 9,
               fontWeight: FontWeight.bold),
         ),
@@ -349,16 +344,22 @@ class ChartFixedPainter extends CustomPainter {
       )..layout();
       const padH = 5.0;
       const padV = 2.0;
-      final right = chartRight - rightLabelMargin;
       final r = Rect.fromLTWH(
-          right - tp.width - padH * 2,
+          labelRight - tp.width - padH * 2,
           y - tp.height / 2 - padV,
           tp.width + padH * 2,
           tp.height + padV * 2);
+      canvas.drawLine(Offset(marginLeft, y), Offset(r.left - 3, y),
+          Paint()
+            ..color = e.color.withOpacity(dex.opacity)
+            ..strokeWidth = 1.5);
+      // Anti-colisão: pula a pílula (mantém a linha) se colada na anterior.
+      if (lastLabelY != null && (y - lastLabelY).abs() < 14) continue;
+      lastLabelY = y;
       canvas.drawRRect(
           RRect.fromRectAndRadius(r, const Radius.circular(3)),
           Paint()..color = e.color.withOpacity(dex.opacity));
-      tp.paint(canvas, Offset(right - tp.width - padH, y - tp.height / 2));
+      tp.paint(canvas, Offset(labelRight - tp.width - padH, y - tp.height / 2));
     }
   }
 

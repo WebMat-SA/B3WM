@@ -150,7 +150,7 @@ class ChartPainter extends CustomPainter {
         final tp = TextPainter(
           text: const TextSpan(
             text: 'D',
-            style: TextStyle(color: Color(0xFF1e1e1e), fontSize: 8, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
@@ -162,8 +162,8 @@ class ChartPainter extends CustomPainter {
       }
     }
 
-    drawSolid(dex.topPrices, const Color(0xFFFFD54F));
-    drawSolid(dex.valleyPrices, const Color(0xFF4FC3F7));
+    drawSolid(dex.topPrices, const Color(0xFF43A047));
+    drawSolid(dex.valleyPrices, const Color(0xFFE53935));
   }
 
   void _drawVwapLines(
