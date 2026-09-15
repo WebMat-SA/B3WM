@@ -119,7 +119,14 @@ namespace B3WM.Controllers
 
             foreach (var timeFrame in Defaults.TimeFrames)
             {
-                string path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
+                // O 1440 (1D) tem distância própria (seção diária, issue #10):
+                // usa a distância atual do serviço e nunca é resetado pelo
+                // parâmetro intraday.
+                var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+                var dist = timeFrame == 1440
+                    ? service?._minDistanceUpdateBorder ?? minDistance
+                    : minDistance;
+                string path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{dist}_{date:yyyy-MM-dd}.json";
 
                 var timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
 
@@ -127,10 +134,9 @@ namespace B3WM.Controllers
                 //backfill ainda nao rodou), forca o PreLoad do service e relê
                 if (timeframeData == null || timeframeData.Count == 0)
                 {
-                    var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
                     if (service != null)
                     {
-                        if (service._minDistanceUpdateBorder != minDistance)
+                        if (timeFrame != 1440 && service._minDistanceUpdateBorder != minDistance)
                             await service.SetMinDistance(minDistance);
                         else
                             await service.PreLoad();
@@ -187,12 +193,50 @@ namespace B3WM.Controllers
         [HttpGet("{symbol}/{minDistance:double}")]
         public async Task<IActionResult> SetStructureDistanceAsync(string symbol, double minDistance)
         {
-            foreach (var structure in structureServices.Where(s => s.Symbol == symbol))
+            // Só timeframes intraday: o 1440 (1D) tem distância própria
+            // (SetStructureDistanceForTimeFrameAsync, issue #10).
+            foreach (var structure in structureServices.Where(s => s.Symbol == symbol && s.TimeFrame != 1440))
             {
                 await structure.SetMinDistance(minDistance);
             }
 
             return await GetStructureAsync(symbol, DateTime.Today, minDistance);
+        }
+
+        [HttpGet("{symbol}/{timeFrame:int}/{minDistance:double}")]
+        public async Task<IActionResult> SetStructureDistanceForTimeFrameAsync(string symbol, int timeFrame, double minDistance)
+        {
+            var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+            if (service == null) return NotFound();
+
+            await service.SetMinDistance(minDistance);
+
+            string path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{DateTime.Today:yyyy-MM-dd}.json";
+            var data = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+            return Ok(data);
+        }
+
+        [HttpGet("{symbol}/{timeFrame:int}/{minDistance:double}")]
+        public async Task<IActionResult> GetStructureHistory(string symbol, int timeFrame, double minDistance, [FromQuery] int days = 90)
+        {
+            days = Math.Clamp(days, 2, 365);
+            var all = new List<StructureStorageItem>();
+            for (var d = 0; d < days; d++)
+            {
+                var date = DateTime.Today.AddDays(-d);
+                var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
+                try
+                {
+                    var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                    if (day != null)
+                        all.AddRange(day);
+                }
+                catch
+                {
+                    // dias sem arquivo (fds/feriado/servidor novo): ignora
+                }
+            }
+            return Ok(all.OrderBy(s => s.Date).ToList());
         }
 
         [HttpGet("{symbol}")]

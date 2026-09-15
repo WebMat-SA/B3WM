@@ -26,6 +26,10 @@ class SymbolConfig {
   double structureOpacity;
   double structureRangeUpd;
 
+  /// Distanciamento de quebra de estrutura do 1440, governado pela seção
+  /// diária (issue #10). Independente do structureRangeUpd intraday.
+  double structureRangeUpdDaily;
+
   bool extremeVisible;
   double extremeOpacity;
   double extremeNoiseSensitivity;
@@ -84,6 +88,7 @@ class SymbolConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.structureRangeUpd,
+    required this.structureRangeUpdDaily,
     required this.extremeVisible,
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
@@ -133,6 +138,8 @@ class SymbolConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
+        structureRangeUpdDaily =
+            Defaults.minDistanceUpdateBorderDaily(symbol),
         extremeVisible = true,
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
@@ -169,6 +176,7 @@ class SymbolConfig {
     final defaults = SymbolConfig.withDefaults(symbol);
     final thresholdMin = Defaults.thresholdBubbleSize(symbol);
     final structureMax = Defaults.structureRangeUpdMax(symbol);
+    final structureDailyMax = Defaults.structureRangeUpdDailyMax(symbol);
     return SymbolConfig(
       timeFrame: legacy.timeFrame,
       dateRangeMode: legacy.dateRangeMode,
@@ -193,6 +201,10 @@ class SymbolConfig {
               legacy.structureRangeUpd <= structureMax
           ? legacy.structureRangeUpd
           : defaults.structureRangeUpd,
+      structureRangeUpdDaily: legacy.structureRangeUpdDaily >= 0 &&
+              legacy.structureRangeUpdDaily <= structureDailyMax
+          ? legacy.structureRangeUpdDaily
+          : defaults.structureRangeUpdDaily,
       extremeVisible: defaults.extremeVisible,
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
@@ -248,6 +260,9 @@ class SymbolConfig {
             (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
         structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
             Defaults.minDistanceUpdateBorder(symbol),
+        structureRangeUpdDaily:
+            (json['structureRangeUpdDaily'] as num?)?.toDouble() ??
+                Defaults.minDistanceUpdateBorderDaily(symbol),
         extremeVisible: json['extremeVisible'] as bool? ?? true,
         extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
         extremeNoiseSensitivity:
@@ -314,6 +329,7 @@ class SymbolConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
+        'structureRangeUpdDaily': structureRangeUpdDaily,
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,

@@ -69,6 +69,10 @@ class ExtremeStorageItem {
   final int topCount;
   final int valleyCount;
 
+  /// Tamanho do perfil de volume agregado que gerou a detecção
+  /// (statistics.pointCount do servidor). 0 = desconhecido.
+  final int profilePointCount;
+
   ExtremeStorageItem({
     this.symbol = '',
     this.date,
@@ -79,6 +83,7 @@ class ExtremeStorageItem {
     this.minimumProminence = 0.15,
     this.topCount = 0,
     this.valleyCount = 0,
+    this.profilePointCount = 0,
   });
 
   factory ExtremeStorageItem.fromJson(Map<String, dynamic> json) {
@@ -102,6 +107,7 @@ class ExtremeStorageItem {
           (config?['minimumProminence'] as num?)?.toDouble() ?? 0.15,
       topCount: stats?['topCount'] as int? ?? 0,
       valleyCount: stats?['valleyCount'] as int? ?? 0,
+      profilePointCount: stats?['pointCount'] as int? ?? 0,
     );
   }
 }
