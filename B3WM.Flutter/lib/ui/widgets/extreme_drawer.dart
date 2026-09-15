@@ -31,7 +31,7 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
         padding: EdgeInsets.zero,
         children: [
           ExpandableSection(
-            icon: Icons.linear_scale,
+            icon: Icons.terrain,
             title: 'Topos/Vales',
             defaultExpanded: true,
             child: Column(
