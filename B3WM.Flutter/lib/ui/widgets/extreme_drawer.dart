@@ -139,11 +139,13 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
                 if (dex != null)
                   for (final e in dex.extremes) _ExtremeRow(point: e, isDaily: true),
                 if (dex == null)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     child: Text(
-                      'Nenhum nível diário carregado. Toque em Atualizar antes do pregão; fica estático no intraday.',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                      state.isDailyExtremeLoading
+                          ? 'Carregando níveis diários...'
+                          : 'Carrega sozinho ao abrir o símbolo. Toque em Atualizar após mudar Noise/Prominence (D).',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ),
               ],

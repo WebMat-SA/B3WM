@@ -505,10 +505,10 @@ class StateService extends ChangeNotifier {
     return (from, to);
   }
 
-  /// Carga on-demand do overlay diário. Nunca é chamada pelo loop ao vivo,
-  /// sliders intraday ou SignalR — só pelo botão "Atualizar" do drawer.
-  Future<void> loadDailyExtremes({bool force = true}) async {
-    if (_symbol.isEmpty || _isDailyExtremeLoading) return;
+    /// Carga do overlay diário. Roda fora do loop ao vivo (sem debounce de
+  /// sliders intraday e sem SignalR): via auto-carga após loadData ou pelo
+  /// botão "Atualizar" do drawer (após mudar Noise/Prominence do diário).
+  Future<void> loadDailyExtremes({bool force = true}) async {    if (_symbol.isEmpty || _isDailyExtremeLoading) return;
     _isDailyExtremeLoading = true;
     notifyListeners();
     try {
@@ -546,6 +546,16 @@ class StateService extends ChangeNotifier {
     _dailyExtremeFrom = null;
     _dailyExtremeTo = null;
     notifyListeners();
+  }
+
+  /// Auto-carga após loadData: busca uma vez por símbolo e reutiliza o cache
+  /// nas trocas de timeframe/modo (a janela diária não depende disso).
+  /// Fire-and-forget: não bloqueia a exibição do gráfico.
+  void loadDailyExtremesIfNeeded() {
+    if (_symbol.isEmpty || _dailyExtremes != null || _isDailyExtremeLoading) {
+      return;
+    }
+    loadDailyExtremes();
   }
 
   void selectAllAgents() {
@@ -737,6 +747,9 @@ class StateService extends ChangeNotifier {
       _startProcessLoop();
       _startWatchdog();
       _scheduleExtremeConfigSync();
+      // Overlay diário (issue #10): auto-carga em background após as
+      // estruturas 1440 (usadas na âncora); não bloqueia o gráfico.
+      loadDailyExtremesIfNeeded();
       notifyListeners();
     }
   }
