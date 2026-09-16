@@ -45,6 +45,7 @@ namespace B3WM
                 var minDistance = timeframe == 1440
                     ? Defaults.WINFUT.MinDistanceUpdateBorderDaily
                     : Defaults.WINFUT.MinDistanceUpdateBorder;
+                services.AddSingleton(sp => new CandleService(Defaults.Symbols.WINFUT, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
                 services.AddSingleton(sp => new StructureService(Defaults.Symbols.WINFUT, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
             }
             services.AddSingleton(sp => new BubbleService(Defaults.Symbols.WINFUT, Defaults.WINFUT.ThresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
@@ -80,6 +81,7 @@ namespace B3WM
                 var minDistance = timeframe == 1440
                     ? Defaults.WDOFUT.MinDistanceUpdateBorderDaily
                     : Defaults.WDOFUT.MinDistanceUpdateBorder;
+                services.AddSingleton(sp => new CandleService(Defaults.Symbols.WDOFUT, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
                 services.AddSingleton(sp => new StructureService(Defaults.Symbols.WDOFUT, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp));
             }
             services.AddSingleton(sp => new BubbleService(Defaults.Symbols.WDOFUT, Defaults.WDOFUT.ThresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
