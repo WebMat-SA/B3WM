@@ -70,6 +70,8 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
               children: [
                 ToggleRow('Show daily on Chart', state.dailyExtremeVisible,
                     (v) => state.setDailyExtremeVisible(v)),
+                ToggleRow('Show daily structure (1D)', state.dailyStructureVisible,
+                    (v) => state.setDailyStructureVisible(v)),
                 SliderRow('Opacity (D)', state.dailyExtremeOpacity, 0, 1,
                     (v) => state.setDailyExtremeOpacity(v)),
                 SliderRow(

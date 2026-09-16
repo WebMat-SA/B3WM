@@ -146,6 +146,7 @@ class ChartData {
   final StructureLineData? structures;
   final ExtremeLineData? extremes;
   final DailyExtremeLineData? dailyExtremes;
+  final StructureLineData? dailyStructures;
   final List<VwapPoint> vwapPoints;
   final double minPrice;
   final double maxPrice;
@@ -184,6 +185,7 @@ class ChartData {
     this.structures,
     this.extremes,
     this.dailyExtremes,
+    this.dailyStructures,
     required this.vwapPoints,
     required this.minPrice,
     required this.maxPrice,
@@ -395,8 +397,43 @@ ChartData buildChartData(StateService state) {
     }
   }
 
-  // Overlay diário (issue #10): bloco isolado; não altera min/max.
+  // Overlay diário (issue #10): blocos isolados; não alteram min/max.
   DailyExtremeLineData? dailyExtremes;
+  // Estrutura 1440 (origem da janela diária): step-fill sobre os candles
+  // visíveis — cada candle usa as bordas da última estrutura 1440 <= sua data.
+  StructureLineData? dailyStructures;
+  if (state.dailyStructureVisible) {
+    final hist = state.structures1440History;
+    if (hist.isNotEmpty && visible.isNotEmpty) {
+      final sorted = List.of(hist)
+        ..sort((a, b) => a.date.compareTo(b.date));
+      final dup = List<double?>.filled(visible.length, null);
+      final ddown = List<double?>.filled(visible.length, null);
+      final dupAux = List<double?>.filled(visible.length, null);
+      final ddownAux = List<double?>.filled(visible.length, null);
+      var h = 0;
+      for (var i = 0; i < visible.length; i++) {
+        while (h + 1 < sorted.length &&
+            !sorted[h + 1].date.isAfter(visible[i].date)) {
+          h++;
+        }
+        if (sorted[h].date.isAfter(visible[i].date)) continue;
+        dup[i] = sorted[h].upBorder;
+        ddown[i] = sorted[h].downBorder;
+        dupAux[i] = sorted[h].upAuxBorder;
+        ddownAux[i] = sorted[h].downAuxBorder;
+      }
+      dailyStructures = StructureLineData(
+        upBorder: dup,
+        downBorder: ddown,
+        upAuxBorder: dupAux,
+        downAuxBorder: ddownAux,
+        visible: true,
+        auxVisible: state.structureAuxVisible,
+        opacity: state.structureOpacity,
+      );
+    }
+  }
   if (state.dailyExtremeVisible) {
     final dex = state.dailyExtremes;
     if (dex != null && dex.extremes.isNotEmpty) {
@@ -508,6 +545,7 @@ ChartData buildChartData(StateService state) {
     structures: structures,
     extremes: extremes,
     dailyExtremes: dailyExtremes,
+    dailyStructures: dailyStructures,
     vwapPoints: vwapPoints,
     minPrice: minPrice,
     maxPrice: maxPrice,

@@ -36,6 +36,7 @@ class ChartPainter extends CustomPainter {
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
     _drawExtremeLines(canvas, chartWidth, chartHeight);
     _drawDailyExtremeLines(canvas, chartWidth, chartHeight);
+    _drawDailyStructureLines(canvas, size, chartWidth, chartHeight, stepX);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
     _drawHistoryMarkers(canvas, size, chartWidth, chartHeight, stepX);
@@ -153,6 +154,47 @@ class ChartPainter extends CustomPainter {
 
     drawSolid(dex.topPrices, const Color(0xFF43A047));
     drawSolid(dex.valleyPrices, const Color(0xFFE53935));
+  }
+
+  void _drawDailyStructureLines(Canvas canvas, Size size, double chartWidth,
+      double chartHeight, double stepX) {
+    final s = data.dailyStructures;
+    if (s == null || !s.visible) return;
+
+    void drawLine(List<double?> vals, Color color, double width, bool dashed) {
+      final paint = Paint()
+        ..color = color.withOpacity(s.opacity)
+        ..strokeWidth = width;
+
+      Offset? prev;
+      for (int i = 0; i < vals.length; i++) {
+        final v = vals[i];
+        if (v == null) {
+          prev = null;
+          continue;
+        }
+        final x = _indexToX(i, stepX);
+        if (x < 0 || x > chartWidth) { prev = null; continue; }
+        final y = _priceToY(v, chartHeight);
+        final pt = Offset(x, y);
+        if (prev != null) {
+          if (dashed) {
+            _drawDashedLine(canvas, prev, pt, paint);
+          } else {
+            canvas.drawLine(prev, pt, paint);
+          }
+        }
+        prev = pt;
+      }
+    }
+
+    drawLine(s.upBorder, const Color(0xFF00B0FF), 2.0, false);
+    drawLine(s.downBorder, const Color(0xFFFF3D00), 2.0, false);
+
+    if (s.auxVisible) {
+      drawLine(s.upAuxBorder, const Color(0xFF00B0FF), 1.0, true);
+      drawLine(s.downAuxBorder, const Color(0xFFFF3D00), 1.0, true);
+    }
   }
 
   void _drawVwapLines(

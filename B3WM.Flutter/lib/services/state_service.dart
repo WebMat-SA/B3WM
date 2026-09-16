@@ -200,7 +200,12 @@ class StateService extends ChangeNotifier {
 
   // --- Daily structure distance (issue #10): só o 1440, seção diária ---
   double get structureRangeUpdDaily => _currentConfig.structureRangeUpdDaily;
-  bool _isDailyStructureUpdating = false;
+  bool get dailyStructureVisible => _currentConfig.dailyStructureVisible;
+  void setDailyStructureVisible(bool v) {
+    _currentConfig.dailyStructureVisible = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }  bool _isDailyStructureUpdating = false;
   bool get isDailyStructureUpdating => _isDailyStructureUpdating;
   void setStructureRangeUpdDaily(double v) {
     _currentConfig.structureRangeUpdDaily = v;
@@ -700,6 +705,7 @@ class StateService extends ChangeNotifier {
       thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
       structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
       structureRangeUpdDaily: 1000,
+      dailyStructureVisible: true,
       structureVisible: p.getBool('StructureVisible') ?? true,
       structureAuxVisible: p.getBool('StructureAuxVisible') ?? true,
       structureOpacity: p.getDouble('StructureOpacity') ?? 0.8,

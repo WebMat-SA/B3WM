@@ -106,6 +106,7 @@ class ChartFixedPainter extends CustomPainter {
     _drawVolumeProfile(canvas, size);
     _drawExtremeLines(canvas);
     _drawDailyExtremeLines(canvas);
+    _drawDailyStructureLines(canvas);
     _drawVwapLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
@@ -360,6 +361,57 @@ class ChartFixedPainter extends CustomPainter {
           RRect.fromRectAndRadius(r, const Radius.circular(3)),
           Paint()..color = e.color.withOpacity(dex.opacity));
       tp.paint(canvas, Offset(labelRight - tp.width - padH, y - tp.height / 2));
+    }
+  }
+
+  void _drawDailyStructureLines(Canvas canvas) {
+    final s = data.dailyStructures;
+    if (s == null || !s.visible) return;
+
+    final m = controller.value;
+    final scaleX = m[0];
+    final tx = m.getTranslation().x;
+
+    void drawLine(List<double?> vals, Color color, double width, bool dashed) {
+      final paint = Paint()
+        ..color = color.withOpacity(s.opacity)
+        ..strokeWidth = width;
+      Offset? prev;
+      for (int i = 0; i < vals.length; i++) {
+        final v = vals[i];
+        if (v == null) {
+          prev = null;
+          continue;
+        }
+        final childX = i * candleStep + candleStep / 2;
+        final screenX = marginLeft + childX * scaleX + tx;
+        if (screenX < marginLeft || screenX > chartRight) {
+          prev = null;
+          continue;
+        }
+        final y = _priceToY(v);
+        if (y < marginTop || y > marginTop + chartHeight) {
+          prev = null;
+          continue;
+        }
+        final pt = Offset(screenX, y);
+        if (prev != null) {
+          if (dashed) {
+            _drawDashedLine(canvas, prev, pt, paint);
+          } else {
+            canvas.drawLine(prev, pt, paint);
+          }
+        }
+        prev = pt;
+      }
+    }
+
+    drawLine(s.upBorder, const Color(0xFF00B0FF), 2.0, false);
+    drawLine(s.downBorder, const Color(0xFFFF3D00), 2.0, false);
+
+    if (s.auxVisible) {
+      drawLine(s.upAuxBorder, const Color(0xFF00B0FF), 1.0, true);
+      drawLine(s.downAuxBorder, const Color(0xFFFF3D00), 1.0, true);
     }
   }
 

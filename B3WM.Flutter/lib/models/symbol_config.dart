@@ -30,6 +30,9 @@ class SymbolConfig {
   /// diária (issue #10). Independente do structureRangeUpd intraday.
   double structureRangeUpdDaily;
 
+  /// Exibe as bordas da estrutura 1440 sobre o gráfico (origem da janela).
+  bool dailyStructureVisible;
+
   bool extremeVisible;
   double extremeOpacity;
   double extremeNoiseSensitivity;
@@ -89,6 +92,7 @@ class SymbolConfig {
     required this.structureOpacity,
     required this.structureRangeUpd,
     required this.structureRangeUpdDaily,
+    required this.dailyStructureVisible,
     required this.extremeVisible,
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
@@ -140,6 +144,7 @@ class SymbolConfig {
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
         structureRangeUpdDaily =
             Defaults.minDistanceUpdateBorderDaily(symbol),
+        dailyStructureVisible = true,
         extremeVisible = true,
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
@@ -205,6 +210,7 @@ class SymbolConfig {
               legacy.structureRangeUpdDaily <= structureDailyMax
           ? legacy.structureRangeUpdDaily
           : defaults.structureRangeUpdDaily,
+      dailyStructureVisible: legacy.dailyStructureVisible,
       extremeVisible: defaults.extremeVisible,
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
@@ -263,6 +269,8 @@ class SymbolConfig {
         structureRangeUpdDaily:
             (json['structureRangeUpdDaily'] as num?)?.toDouble() ??
                 Defaults.minDistanceUpdateBorderDaily(symbol),
+        dailyStructureVisible:
+            json['dailyStructureVisible'] as bool? ?? true,
         extremeVisible: json['extremeVisible'] as bool? ?? true,
         extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
         extremeNoiseSensitivity:
@@ -330,6 +338,7 @@ class SymbolConfig {
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
         'structureRangeUpdDaily': structureRangeUpdDaily,
+        'dailyStructureVisible': dailyStructureVisible,
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
