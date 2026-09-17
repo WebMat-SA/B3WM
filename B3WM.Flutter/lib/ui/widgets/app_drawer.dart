@@ -88,7 +88,7 @@ tabs: const [
                 Tab(
                   icon: Tooltip(
                     message: 'Topos/Vales',
-                    child: Icon(Icons.linear_scale, size: 18),
+                    child: Icon(Icons.terrain, size: 18),
                   ),
                 ),
                 Tab(

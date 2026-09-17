@@ -26,10 +26,22 @@ class SymbolConfig {
   double structureOpacity;
   double structureRangeUpd;
 
+  /// Distanciamento de quebra de estrutura do 1440, governado pela seção
+  /// diária (issue #10). Independente do structureRangeUpd intraday.
+  double structureRangeUpdDaily;
+
+  /// Exibe as bordas da estrutura 1440 sobre o gráfico (origem da janela).
+  bool dailyStructureVisible;
+
   bool extremeVisible;
   double extremeOpacity;
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
+
+  bool dailyExtremeVisible;
+  double dailyExtremeOpacity;
+  double dailyExtremeNoiseSensitivity;
+  double dailyExtremeMinimumProminence;
 
   bool vwapVisible;
   double vwapOpacity;
@@ -79,10 +91,16 @@ class SymbolConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.structureRangeUpd,
+    required this.structureRangeUpdDaily,
+    required this.dailyStructureVisible,
     required this.extremeVisible,
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.dailyExtremeVisible,
+    required this.dailyExtremeOpacity,
+    required this.dailyExtremeNoiseSensitivity,
+    required this.dailyExtremeMinimumProminence,
     required this.vwapVisible,
     required this.vwapOpacity,
     required this.vwapColor,
@@ -124,10 +142,17 @@ class SymbolConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
+        structureRangeUpdDaily =
+            Defaults.minDistanceUpdateBorderDaily(symbol),
+        dailyStructureVisible = true,
         extremeVisible = true,
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        dailyExtremeVisible = true,
+        dailyExtremeOpacity = 0.5,
+        dailyExtremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
+        dailyExtremeMinimumProminence = Defaults.extremeMinimumProminence,
         vwapVisible = true,
         vwapOpacity = 0.5,
         vwapColor = '#FF8800',
@@ -156,6 +181,7 @@ class SymbolConfig {
     final defaults = SymbolConfig.withDefaults(symbol);
     final thresholdMin = Defaults.thresholdBubbleSize(symbol);
     final structureMax = Defaults.structureRangeUpdMax(symbol);
+    final structureDailyMax = Defaults.structureRangeUpdDailyMax(symbol);
     return SymbolConfig(
       timeFrame: legacy.timeFrame,
       dateRangeMode: legacy.dateRangeMode,
@@ -180,10 +206,19 @@ class SymbolConfig {
               legacy.structureRangeUpd <= structureMax
           ? legacy.structureRangeUpd
           : defaults.structureRangeUpd,
+      structureRangeUpdDaily: legacy.structureRangeUpdDaily >= 0 &&
+              legacy.structureRangeUpdDaily <= structureDailyMax
+          ? legacy.structureRangeUpdDaily
+          : defaults.structureRangeUpdDaily,
+      dailyStructureVisible: legacy.dailyStructureVisible,
       extremeVisible: defaults.extremeVisible,
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
       extremeMinimumProminence: defaults.extremeMinimumProminence,
+      dailyExtremeVisible: defaults.dailyExtremeVisible,
+      dailyExtremeOpacity: defaults.dailyExtremeOpacity,
+      dailyExtremeNoiseSensitivity: defaults.dailyExtremeNoiseSensitivity,
+      dailyExtremeMinimumProminence: defaults.dailyExtremeMinimumProminence,
       vwapVisible: defaults.vwapVisible,
       vwapOpacity: defaults.vwapOpacity,
       vwapColor: defaults.vwapColor,
@@ -231,6 +266,11 @@ class SymbolConfig {
             (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
         structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
             Defaults.minDistanceUpdateBorder(symbol),
+        structureRangeUpdDaily:
+            (json['structureRangeUpdDaily'] as num?)?.toDouble() ??
+                Defaults.minDistanceUpdateBorderDaily(symbol),
+        dailyStructureVisible:
+            json['dailyStructureVisible'] as bool? ?? true,
         extremeVisible: json['extremeVisible'] as bool? ?? true,
         extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
         extremeNoiseSensitivity:
@@ -238,6 +278,15 @@ class SymbolConfig {
                 Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence:
             (json['extremeMinimumProminence'] as num?)?.toDouble() ??
+                Defaults.extremeMinimumProminence,
+        dailyExtremeVisible: json['dailyExtremeVisible'] as bool? ?? true,
+        dailyExtremeOpacity:
+            (json['dailyExtremeOpacity'] as num?)?.toDouble() ?? 0.5,
+        dailyExtremeNoiseSensitivity:
+            (json['dailyExtremeNoiseSensitivity'] as num?)?.toDouble() ??
+                Defaults.extremeNoiseSensitivity,
+        dailyExtremeMinimumProminence:
+            (json['dailyExtremeMinimumProminence'] as num?)?.toDouble() ??
                 Defaults.extremeMinimumProminence,
         vwapVisible: json['vwapVisible'] as bool? ?? true,
         vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
@@ -288,10 +337,16 @@ class SymbolConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
+        'structureRangeUpdDaily': structureRangeUpdDaily,
+        'dailyStructureVisible': dailyStructureVisible,
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'dailyExtremeVisible': dailyExtremeVisible,
+        'dailyExtremeOpacity': dailyExtremeOpacity,
+        'dailyExtremeNoiseSensitivity': dailyExtremeNoiseSensitivity,
+        'dailyExtremeMinimumProminence': dailyExtremeMinimumProminence,
         'vwapVisible': vwapVisible,
         'vwapOpacity': vwapOpacity,
         'vwapColor': vwapColor,

@@ -168,7 +168,7 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.linear_scale, size: 20),
+                  icon: const Icon(Icons.terrain, size: 20),
                   onPressed: widget.onExtremeTap,
                   tooltip: 'Topos/Vales',
                   visualDensity: VisualDensity.compact,

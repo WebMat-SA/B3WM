@@ -29,6 +29,18 @@ class Defaults {
     }
   }
 
+  /// Distanciamento de quebra de estrutura do 1440 (seção diária, issue #10).
+  static double minDistanceUpdateBorderDaily(String symbol) {
+    switch (symbol) {
+      case 'WINFUT':
+        return 1000;
+      case 'WDOFUT':
+        return 100;
+      default:
+        return 1000;
+    }
+  }
+
   static double tickSize(String symbol) {
     switch (symbol) {
       case 'WINFUT':
@@ -66,6 +78,25 @@ class Defaults {
         return 100;
       default:
         return 2000;
+    }
+  }
+
+  /// Teto do slider diário (issue #10): WINFUT até 10000, WDO até 1000.
+  static double structureRangeUpdDailyMax(String symbol) {
+    switch (symbol) {
+      case 'WDOFUT':
+        return 1000;
+      default:
+        return 10000;
+    }
+  }
+
+  static double structureRangeUpdDailyStep(String symbol) {
+    switch (symbol) {
+      case 'WDOFUT':
+        return 1.0;
+      default:
+        return 50.0;
     }
   }
 

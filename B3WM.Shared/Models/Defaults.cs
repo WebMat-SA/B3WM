@@ -15,6 +15,7 @@
         {
             public const int ThresholdBubbleSize = 250;
             public const double MinDistanceUpdateBorder = 250;
+            public const double MinDistanceUpdateBorderDaily = 1000;
             public const double TickSize = 5.0;
             public const double PointValue = 1.0;
         }
@@ -23,6 +24,7 @@
         {
             public const int ThresholdBubbleSize = 500;
             public const double MinDistanceUpdateBorder = 2.5;
+            public const double MinDistanceUpdateBorderDaily = 100;
             public const double TickSize = 0.5;
             public const double PointValue = 10.0;
         }
@@ -76,6 +78,13 @@
             Symbols.WINFUT => WINFUT.MinDistanceUpdateBorder,
             Symbols.WDOFUT => WDOFUT.MinDistanceUpdateBorder,
             _ => 250
+        };
+
+        public static double GetMinDistanceDaily(string symbol) => symbol switch
+        {
+            Symbols.WINFUT => WINFUT.MinDistanceUpdateBorderDaily,
+            Symbols.WDOFUT => WDOFUT.MinDistanceUpdateBorderDaily,
+            _ => 1000
         };
     }
 }

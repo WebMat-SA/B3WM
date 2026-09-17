@@ -198,6 +198,41 @@ class StateService extends ChangeNotifier {
   void setStructureOpacity(double v) { _currentConfig.structureOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setStructureRangeUpd(double v) { _currentConfig.structureRangeUpd = v; _isStructureUpdating = true; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
+  // --- Daily structure distance (issue #10): só o 1440, seção diária ---
+  double get structureRangeUpdDaily => _currentConfig.structureRangeUpdDaily;
+  bool get dailyStructureVisible => _currentConfig.dailyStructureVisible;
+  void setDailyStructureVisible(bool v) {
+    _currentConfig.dailyStructureVisible = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }  bool _isDailyStructureUpdating = false;
+  bool get isDailyStructureUpdating => _isDailyStructureUpdating;
+  void setStructureRangeUpdDaily(double v) {
+    _currentConfig.structureRangeUpdDaily = v;
+    _isDailyStructureUpdating = true;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  /// Confirma a distância diária: regenera só o 1440 no servidor, recarrega
+  /// o histórico 1440 e refaz o overlay diário (nova âncora + novo perfil).
+  Future<void> confirmStructureRangeUpdDaily() async {
+    _isDailyStructureUpdating = true;
+    notifyListeners();
+    try {
+      await _apiService.setStructureDistanceForTimeFrame(
+          _symbol, 1440, _currentConfig.structureRangeUpdDaily);
+      await refreshDailyStructureHistory();
+      _dailyExtremes = null;
+      await loadDailyExtremes();
+    } catch (e) {
+      debugPrint('[dailyStructure] confirm error: $e');
+    } finally {
+      _isDailyStructureUpdating = false;
+      notifyListeners();
+    }
+  }
+
   void setExtremeVisible(bool v) { _currentConfig.extremeVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setExtremeOpacity(double v) { _currentConfig.extremeOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setExtremeNoiseSensitivity(double v) {
@@ -211,6 +246,35 @@ class StateService extends ChangeNotifier {
     notifyListeners();
     _saveConfigForSymbol(_symbol);
     _scheduleExtremeConfigSync();
+  }
+
+  // --- Daily overlay estático (issue #10): camada isolada, sem live updates ---
+  bool get dailyExtremeVisible => _currentConfig.dailyExtremeVisible;
+  double get dailyExtremeOpacity => _currentConfig.dailyExtremeOpacity;
+  double get dailyExtremeNoiseSensitivity =>
+      _currentConfig.dailyExtremeNoiseSensitivity;
+  double get dailyExtremeMinimumProminence =>
+      _currentConfig.dailyExtremeMinimumProminence;
+
+  void setDailyExtremeVisible(bool v) {
+    _currentConfig.dailyExtremeVisible = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyExtremeOpacity(double v) {
+    _currentConfig.dailyExtremeOpacity = v.clamp(0.0, 1.0);
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyExtremeNoiseSensitivity(double v) {
+    _currentConfig.dailyExtremeNoiseSensitivity = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyExtremeMinimumProminence(double v) {
+    _currentConfig.dailyExtremeMinimumProminence = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
   }
 
   void setVwapVisible(bool v) { _currentConfig.vwapVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
@@ -285,6 +349,43 @@ class StateService extends ChangeNotifier {
 
   ExtremeStorageItem? _extremes;
   ExtremeStorageItem? get extremes => _extremes;
+
+  // Overlay diário estático (issue #10). Isolado do fluxo ao vivo:
+  // nunca é escrito por _handleExtreme/SignalR, só por loadDailyExtremes().
+  ExtremeStorageItem? _dailyExtremes;
+  ExtremeStorageItem? get dailyExtremes => _dailyExtremes;
+  bool _isDailyExtremeLoading = false;
+  bool get isDailyExtremeLoading => _isDailyExtremeLoading;
+  DateTime? _dailyExtremeFrom;
+  DateTime? get dailyExtremeFrom => _dailyExtremeFrom;
+  DateTime? _dailyExtremeTo;
+  DateTime? get dailyExtremeTo => _dailyExtremeTo;
+
+  /// Quebra de estrutura 1440 que ancorou a janela (null = fallback 60 dias).
+  StructureChangeItem? _dailyAnchor;
+  StructureChangeItem? get dailyAnchor => _dailyAnchor;
+
+  /// Histórico de estruturas 1440 (90 dias) — só para a âncora diária.
+  /// Lista separada para não poluir a aba Estruturas.
+  List<StructureStorageItem> _structures1440History = [];
+  List<StructureStorageItem> get structures1440History =>
+      List.unmodifiable(_structures1440History);
+
+  /// Recarrega o histórico 1440 com a distância diária atual.
+  Future<void> refreshDailyStructureHistory() async {
+    if (_symbol.isEmpty) return;
+    try {
+      final hist = await _apiService.getStructureHistory(
+          _symbol, 1440, _currentConfig.structureRangeUpdDaily,
+          days: 90);
+      hist.sort((a, b) => a.date.compareTo(b.date));
+      _structures1440History = hist;
+      debugPrint(
+          '[dailyStructure] history 1440 count=${hist.length} dist=${_currentConfig.structureRangeUpdDaily}');
+    } catch (e) {
+      debugPrint('[dailyStructure] history error: $e');
+    }
+  }
 
   Timer? _extremeConfigTimer;
   Timer? _extremePeriodTimer;
@@ -404,6 +505,128 @@ class StateService extends ChangeNotifier {
     _syncExtremesPeriod(immediate: true);
   }
 
+  // --- Daily overlay: âncora + carga on-demand (issue #10) ---
+  // A âncora replica o conceito do auto-mode intraday, mas sobre o histórico
+  // de estruturas 1440 com a distância diária: a última inversão de direção
+  // define o início da "última perna" do diário. Retorna também a quebra que
+  // ancorou (null = fallback de 60 dias) para exibir no drawer.
+  (DateTime, DateTime, StructureChangeItem?) resolveDailyAnchor() {
+    final now = DateTime.now();
+    final to = DateTime(now.year, now.month, now.day);
+    DateTime from = to.subtract(const Duration(days: 60));
+    StructureChangeItem? anchor;
+    try {
+      final daily = _structures1440History
+          .where((s) => s.symbol == _symbol && s.timeFrame == 1440)
+          .toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
+      if (daily.length >= 2) {
+        final changes = <StructureChangeItem>[];
+        for (var i = 1; i < daily.length; i++) {
+          final prev = daily[i - 1];
+          final curr = daily[i];
+          if (curr.upBorder != prev.upBorder) {
+            changes.add(StructureChangeItem(
+              date: curr.date,
+              isUp: true,
+              oldValue: prev.upBorder,
+              newValue: curr.upBorder,
+            ));
+          }
+          if (curr.downBorder != prev.downBorder) {
+            changes.add(StructureChangeItem(
+              date: curr.date,
+              isUp: false,
+              oldValue: prev.downBorder,
+              newValue: curr.downBorder,
+            ));
+          }
+        }
+        if (changes.isNotEmpty) {
+          changes.sort((a, b) => b.date.compareTo(a.date));
+          final last = changes.first;
+          for (final c in changes) {
+            if (c.isUp != last.isUp && c.isUpMove != last.isUpMove) {
+              anchor = c;
+              break;
+            }
+          }
+          if (anchor != null) {
+            from = DateTime(anchor.date.year, anchor.date.month, anchor.date.day);
+          } else {
+            final firstChange = changes.last;
+            anchor = firstChange;
+            from = DateTime(
+                firstChange.date.year, firstChange.date.month, firstChange.date.day);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[dailyExtremes] anchor fallback: $e');
+    }
+    if (from.isAfter(to)) {
+      from = to.subtract(const Duration(days: 60));
+      anchor = null;
+    }
+    return (from, to, anchor);
+  }
+
+    /// Carga do overlay diário. Roda fora do loop ao vivo (sem debounce de
+  /// sliders intraday e sem SignalR): via auto-carga após loadData ou pelo
+  /// botão "Atualizar" do drawer (após mudar Noise/Prominence do diário).
+  Future<void> loadDailyExtremes({bool force = true}) async {    if (_symbol.isEmpty || _isDailyExtremeLoading) return;
+    _isDailyExtremeLoading = true;
+    notifyListeners();
+    try {
+      final (from, to, anchor) = resolveDailyAnchor();
+      debugPrint('[dailyExtremes] load $_symbol from=$from to=$to '
+          'anchor=${anchor?.date} '
+          'noise=${_currentConfig.dailyExtremeNoiseSensitivity} '
+          'prom=${_currentConfig.dailyExtremeMinimumProminence}');
+      final data = await _apiService.getExtremeDaily(
+        _symbol,
+        from: from,
+        to: to,
+        noiseSensitivity: _currentConfig.dailyExtremeNoiseSensitivity,
+        minimumProminence: _currentConfig.dailyExtremeMinimumProminence,
+      );
+      if (data != null) {
+        // Isolamento: valida símbolo; ignora filtro de data intraday de propósito
+        // (janela multi-dia nunca coincidiria com _displayDate de 1 dia).
+        if (data.symbol.isEmpty || data.symbol == _symbol) {
+          _dailyExtremes = data;
+          _dailyExtremeFrom = from;
+          _dailyExtremeTo = to;
+          _dailyAnchor = anchor;
+          debugPrint('[dailyExtremes] applied count=${data.extremes.length}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[dailyExtremes] load error: $e');
+    } finally {
+      _isDailyExtremeLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearDailyExtremes() {
+    _dailyExtremes = null;
+    _dailyExtremeFrom = null;
+    _dailyExtremeTo = null;
+    _dailyAnchor = null;
+    notifyListeners();
+  }
+
+  /// Auto-carga após loadData: busca uma vez por símbolo e reutiliza o cache
+  /// nas trocas de timeframe/modo (a janela diária não depende disso).
+  /// Fire-and-forget: não bloqueia a exibição do gráfico.
+  void loadDailyExtremesIfNeeded() {
+    if (_symbol.isEmpty || _dailyExtremes != null || _isDailyExtremeLoading) {
+      return;
+    }
+    loadDailyExtremes();
+  }
+
   void selectAllAgents() {
     final all = allBubbleAgents;
     if (_currentConfig.selectedAgents.length == all.length) {
@@ -481,6 +704,8 @@ class StateService extends ChangeNotifier {
       lookbackDays: 5,
       thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
       structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
+      structureRangeUpdDaily: 1000,
+      dailyStructureVisible: true,
       structureVisible: p.getBool('StructureVisible') ?? true,
       structureAuxVisible: p.getBool('StructureAuxVisible') ?? true,
       structureOpacity: p.getDouble('StructureOpacity') ?? 0.8,
@@ -488,6 +713,10 @@ class StateService extends ChangeNotifier {
       extremeOpacity: 0.7,
       extremeNoiseSensitivity: 3.0,
       extremeMinimumProminence: 0.15,
+      dailyExtremeVisible: true,
+      dailyExtremeOpacity: 0.5,
+      dailyExtremeNoiseSensitivity: 3.0,
+      dailyExtremeMinimumProminence: 0.15,
       vwapVisible: true,
       vwapOpacity: 0.5,
       vwapColor: '#FF8800',
@@ -555,6 +784,11 @@ class StateService extends ChangeNotifier {
     _symbol = value.toUpperCase();
     _allBubbleAgents.clear();
     _extremes = null;
+    _dailyExtremes = null;
+    _dailyExtremeFrom = null;
+    _dailyExtremeTo = null;
+    _dailyAnchor = null;
+    _structures1440History = [];
     _displayDate = null;
     _lastExtremeFrom = null;
     _lastExtremeTo = null;
@@ -586,6 +820,10 @@ class StateService extends ChangeNotifier {
       _startProcessLoop();
       _startWatchdog();
       _scheduleExtremeConfigSync();
+      // Overlay diário (issue #10): histórico 1440 (âncora) e auto-carga em
+      // background após as estruturas; não bloqueia o gráfico.
+      await refreshDailyStructureHistory();
+      loadDailyExtremesIfNeeded();
       notifyListeners();
     }
   }

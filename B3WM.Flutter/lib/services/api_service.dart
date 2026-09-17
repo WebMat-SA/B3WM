@@ -128,6 +128,36 @@ class ApiService {
         .toList();
   }
 
+  /// Distância de estrutura de um timeframe específico (seção diária usa 1440,
+  /// issue #10). Não toca nos demais timeframes.
+  Future<List<StructureStorageItem>> setStructureDistanceForTimeFrame(
+      String symbol, int timeFrame, double minDistance) async {
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/SetStructureDistanceForTimeFrame/$symbol/$timeFrame/${minDistance.toStringAsFixed(1)}'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Histórico de estruturas de um timeframe (âncora diária usa 1440, issue #10).
+  Future<List<StructureStorageItem>> getStructureHistory(
+      String symbol, int timeFrame, double minDistance,
+      {int days = 90}) async {
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/GetStructureHistory/$symbol/$timeFrame/${minDistance.toStringAsFixed(1)}?days=$days'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<BarStorageItem>> getLiveBarsSince(
       String symbol, int timeFrame, DateTime since) async {
     final sinceStr = since.toIso8601String();
@@ -322,6 +352,32 @@ class ApiService {
         : '';
     final response = await _client.get(
       Uri.parse('$_baseUrl/api/Data/SetExtremeConfig/$symbol?$dateStr$fromStr$toStr$ns$mp'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return ExtremeStorageItem.fromJson(json);
+  }
+
+  /// Overlay diário estático (issue #10): perfil agregado multi-dia.
+  /// Rota nova e isolada — não toca no fluxo intraday (GetExtreme/SetExtreme*).
+  Future<ExtremeStorageItem?> getExtremeDaily(
+    String symbol, {
+    DateTime? from,
+    DateTime? to,
+    double? noiseSensitivity,
+    double? minimumProminence,
+  }) async {
+    final fromStr = from != null ? 'from=${Uri.encodeQueryComponent(_formatDate(from))}&' : '';
+    final toStr = to != null ? 'to=${Uri.encodeQueryComponent(_formatDate(to))}&' : '';
+    final ns = noiseSensitivity != null
+        ? 'noiseSensitivity=${noiseSensitivity.toStringAsFixed(3)}&'
+        : '';
+    final mp = minimumProminence != null
+        ? 'minimumProminence=${minimumProminence.toStringAsFixed(3)}'
+        : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetExtremeDaily/$symbol?$fromStr$toStr$ns$mp'),
     );
     if (response.statusCode != 200) return null;
     final json = jsonDecode(response.body) as Map<String, dynamic>?;
