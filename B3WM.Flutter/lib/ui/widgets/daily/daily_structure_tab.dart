@@ -81,22 +81,6 @@ class _DailyStructureTabState extends State<DailyStructureTab>
                             )
                           : null,
                 ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Text(
-                    dailyWindowText(state),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Text(
-                    dailyStructureStatusText(state),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ),
               ],
             ),
           ),

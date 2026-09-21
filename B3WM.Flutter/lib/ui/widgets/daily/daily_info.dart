@@ -35,23 +35,3 @@ String dailyWindowText(StateService state) {
   }
   return buf.toString();
 }
-
-/// Rastreabilidade do recálculo 1440: distância vigente, tamanho do
-/// histórico e última virada. Com threshold alto (ex. WINFUT 3000) a linha
-/// pode ser 1 reta — este texto prova que recalculou (dist + count mudam)
-/// em vez de parecer "não funcionou".
-String dailyStructureStatusText(StateService state) {
-  final buf = StringBuffer(
-      '1440 dist=${state.dailyStructureRangeUpd.toStringAsFixed(0)}'
-      ' • hist=${state.structures1440History.length}');
-  final changes = state.dailyStructureChanges;
-  if (changes.isEmpty) {
-    buf.write(' • sem viradas no histórico');
-  } else {
-    final last = changes.first;
-    final dir = last.isUp ? 'UP' : 'BT';
-    buf.write(' • última $dir ${last.oldValue.toStringAsFixed(2)} → '
-        '${last.newValue.toStringAsFixed(2)} em ${fmtDailyDate(last.date)}');
-  }
-  return buf.toString();
-}
