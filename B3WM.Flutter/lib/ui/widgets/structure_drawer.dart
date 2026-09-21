@@ -87,7 +87,7 @@ class _StructureDrawerState extends State<StructureDrawer>
               (v) => state.setStructureAuxVisible(v)),
           SliderRow('Opacity', state.structureOpacity, 0, 1,
               (v) => state.setStructureOpacity(v)),
-          SliderRow('Range to Update', state.structureRangeUpd, 0,
+          SliderRow('Range intraday (estruturas)', state.structureRangeUpd, 0,
               Defaults.structureRangeUpdMax(state.symbol),
               (v) => state.setStructureRangeUpd(v),
               decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol),

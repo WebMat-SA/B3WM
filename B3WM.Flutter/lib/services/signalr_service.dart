@@ -30,6 +30,9 @@ class SignalRService {
   void Function(BubbleStorageItem)? onNewBubble;
   void Function(VolumeLevelStorageItem)? onVolumeUpdate;
   void Function(BarStorageItem)? onCurrentBar;
+  /// Snapshot ao vivo da barra diária (TF 1440), que chega no mesmo payload
+  /// do throttling — espelha o caminho da barra corrente intraday.
+  void Function(BarStorageItem)? onDailyBar;
   void Function(StructureStorageItem)? onNewStructure;
   void Function(IndicatorValue)? onIndicatorValue;
   void Function(SignalEvent)? onSignal;
@@ -142,11 +145,18 @@ class SignalRService {
           .where((c) => c.timeFrame == _timeFrame)
           .firstOrNull;
     }
+    // A barra 1440 vinha no payload mas era descartada pelo filtro acima —
+    // por isso o candle diário nunca atualizava como o 2min.
+    final dailyBar =
+        data.candle.where((c) => c.timeFrame == 1440).firstOrNull;
     currentVolume = data.volume;
 
     if (currentBar != null) {
       _lastBarTime = currentBar.date;
       onCurrentBar?.call(currentBar);
+    }
+    if (dailyBar != null) {
+      onDailyBar?.call(dailyBar);
     }
     if (currentVolume != null) {
       onVolumeUpdate?.call(currentVolume);

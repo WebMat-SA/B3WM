@@ -335,6 +335,56 @@ class _TradingDrawerState extends State<TradingDrawer> {
               //   ),
               // ),
 
+              // Configurações (visibilidade dos overlays de trading no gráfico)
+              _section(
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.transparent,
+                    unselectedWidgetColor: Colors.grey,
+                  ),
+                  child: ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                    childrenPadding: const EdgeInsets.only(top: 4),
+                    title: const Row(children: [
+                      Icon(Icons.settings, size: 16),
+                      SizedBox(width: 4),
+                      Text('Configurações',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ]),
+                    initiallyExpanded: state.tradingConfigExpanded,
+                    onExpansionChanged: (expanded) {
+                      context
+                          .read<StateService>()
+                          .setTradingConfigExpanded(expanded);
+                    },
+                    children: [
+                      _configToggle(
+                        'Mostrar Histórico de Trades',
+                        state.tradingHistoryVisible,
+                        (v) => context
+                            .read<StateService>()
+                            .setTradingHistoryVisible(v),
+                      ),
+                      _configToggle(
+                        'Mostrar Posições',
+                        state.positionVisible,
+                        (v) => context
+                            .read<StateService>()
+                            .setPositionVisible(v),
+                      ),
+                      _configToggle(
+                        'Mostrar Ordens em Aberto',
+                        state.openOrdersVisible,
+                        (v) => context
+                            .read<StateService>()
+                            .setOpenOrdersVisible(v),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               // Account Info
               _section(
                 child: Theme(
@@ -929,6 +979,22 @@ Text(state.symbol,
             bottom: BorderSide(color: Colors.grey.shade800.withOpacity(0.3))),
       ),
       child: child,
+    );
+  }
+
+  Widget _configToggle(
+      String label, bool value, ValueChanged<bool> onChanged) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(label, style: const TextStyle(fontSize: 12)),
+        ),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ],
     );
   }
 

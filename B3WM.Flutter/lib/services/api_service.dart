@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/bar_storage_item.dart';
 import '../models/bubble_storage_item.dart';
+import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
 import '../models/indicator_value.dart';
@@ -383,6 +384,25 @@ class ApiService {
     final json = jsonDecode(response.body) as Map<String, dynamic>?;
     if (json == null) return null;
     return ExtremeStorageItem.fromJson(json);
+  }
+
+  /// Volume Profile diário (issue #12): perfil agregado multi-dia somado no
+  /// backend a partir dos arquivos diários (fonte 100% diária).
+  Future<List<VolumeLevel>> getDailyProfile(
+    String symbol, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final fromStr = from != null ? 'from=${Uri.encodeQueryComponent(_formatDate(from))}&' : '';
+    final toStr = to != null ? 'to=${Uri.encodeQueryComponent(_formatDate(to))}' : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetDailyProfile/$symbol?$fromStr$toStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VolumeLevel.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   String _formatDate(DateTime date) =>

@@ -1,3 +1,4 @@
+import 'daily_analysis_config.dart';
 import 'defaults.dart';
 
 enum DateRangeMode { intraday, multiDay }
@@ -24,24 +25,19 @@ class SymbolConfig {
   bool structureVisible;
   bool structureAuxVisible;
   double structureOpacity;
+  /// Range INTRADAY da estrutura (todos os timeframes < 1440 compartilham
+  /// este único valor). O range DIÁRIO (1440) vive em `daily.structureRangeUpd`
+  /// e nunca é lido/escrito por este campo.
   double structureRangeUpd;
 
-  /// Distanciamento de quebra de estrutura do 1440, governado pela seção
-  /// diária (issue #10). Independente do structureRangeUpd intraday.
-  double structureRangeUpdDaily;
-
-  /// Exibe as bordas da estrutura 1440 sobre o gráfico (origem da janela).
-  bool dailyStructureVisible;
+  /// Configurações exclusivas do widget de análise diária (issue #12),
+  /// persistidas como bloco `daily:{}` no mesmo `Config_$symbol`.
+  DailyAnalysisConfig daily;
 
   bool extremeVisible;
   double extremeOpacity;
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
-
-  bool dailyExtremeVisible;
-  double dailyExtremeOpacity;
-  double dailyExtremeNoiseSensitivity;
-  double dailyExtremeMinimumProminence;
 
   bool vwapVisible;
   double vwapOpacity;
@@ -67,6 +63,10 @@ class SymbolConfig {
   bool openOrdersVisible;
 
   bool tradingPanelVisible;
+  // Com inicializador (= false) de propósito: instâncias antigas em memória
+  // (hot reload) recebem o default em vez de null -> evita crash
+  // "type 'Null' is not a subtype of type 'bool'".
+  bool tradingConfigExpanded = false;
   bool tradingAccountExpanded;
   bool tradingOrdersExpanded;
   bool tradingPositionsExpanded;
@@ -91,16 +91,11 @@ class SymbolConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.structureRangeUpd,
-    required this.structureRangeUpdDaily,
-    required this.dailyStructureVisible,
+    required this.daily,
     required this.extremeVisible,
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
-    required this.dailyExtremeVisible,
-    required this.dailyExtremeOpacity,
-    required this.dailyExtremeNoiseSensitivity,
-    required this.dailyExtremeMinimumProminence,
     required this.vwapVisible,
     required this.vwapOpacity,
     required this.vwapColor,
@@ -117,6 +112,7 @@ class SymbolConfig {
     required this.positionVisible,
     required this.openOrdersVisible,
     required this.tradingPanelVisible,
+    this.tradingConfigExpanded = false,
     required this.tradingAccountExpanded,
     required this.tradingOrdersExpanded,
     required this.tradingPositionsExpanded,
@@ -142,17 +138,11 @@ class SymbolConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
-        structureRangeUpdDaily =
-            Defaults.minDistanceUpdateBorderDaily(symbol),
-        dailyStructureVisible = true,
+        daily = DailyAnalysisConfig.withDefaults(symbol),
         extremeVisible = true,
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
-        dailyExtremeVisible = true,
-        dailyExtremeOpacity = 0.5,
-        dailyExtremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
-        dailyExtremeMinimumProminence = Defaults.extremeMinimumProminence,
         vwapVisible = true,
         vwapOpacity = 0.5,
         vwapColor = '#FF8800',
@@ -169,6 +159,7 @@ class SymbolConfig {
         positionVisible = true,
         openOrdersVisible = true,
         tradingPanelVisible = true,
+        tradingConfigExpanded = false,
         tradingAccountExpanded = false,
         tradingOrdersExpanded = false,
         tradingPositionsExpanded = false,
@@ -182,8 +173,13 @@ class SymbolConfig {
     final thresholdMin = Defaults.thresholdBubbleSize(symbol);
     final structureMax = Defaults.structureRangeUpdMax(symbol);
     final structureDailyMax = Defaults.structureRangeUpdDailyMax(symbol);
+    final dailyRange = legacy.daily.structureRangeUpd >= 0 &&
+            legacy.daily.structureRangeUpd <= structureDailyMax
+        ? legacy.daily.structureRangeUpd
+        : defaults.daily.structureRangeUpd;
     return SymbolConfig(
-      timeFrame: legacy.timeFrame,
+      // Migração #12: 1D saiu do seletor principal (só intraday).
+      timeFrame: legacy.timeFrame == 1440 ? 2 : legacy.timeFrame,
       dateRangeMode: legacy.dateRangeMode,
       lookbackDays: legacy.lookbackDays,
       bubbleVisible: legacy.bubbleVisible,
@@ -206,19 +202,27 @@ class SymbolConfig {
               legacy.structureRangeUpd <= structureMax
           ? legacy.structureRangeUpd
           : defaults.structureRangeUpd,
-      structureRangeUpdDaily: legacy.structureRangeUpdDaily >= 0 &&
-              legacy.structureRangeUpdDaily <= structureDailyMax
-          ? legacy.structureRangeUpdDaily
-          : defaults.structureRangeUpdDaily,
-      dailyStructureVisible: legacy.dailyStructureVisible,
+      daily: DailyAnalysisConfig(
+        structureRangeUpd: dailyRange,
+        structureVisible: legacy.daily.structureVisible,
+        structureAuxVisible: legacy.daily.structureAuxVisible,
+        structureOpacity: legacy.daily.structureOpacity,
+        profileVisible: legacy.daily.profileVisible,
+        profileSizeH: legacy.daily.profileSizeH,
+        profileSizeV: legacy.daily.profileSizeV,
+        profileOpacity: legacy.daily.profileOpacity,
+        extremeVisible: defaults.daily.extremeVisible,
+        extremeOpacity: defaults.daily.extremeOpacity,
+        extremeNoiseSensitivity: defaults.daily.extremeNoiseSensitivity,
+        extremeMinimumProminence: defaults.daily.extremeMinimumProminence,
+        windowDays: legacy.daily.windowDays,
+        panelVisible: legacy.daily.panelVisible,
+        panelFraction: legacy.daily.panelFraction,
+      ),
       extremeVisible: defaults.extremeVisible,
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
       extremeMinimumProminence: defaults.extremeMinimumProminence,
-      dailyExtremeVisible: defaults.dailyExtremeVisible,
-      dailyExtremeOpacity: defaults.dailyExtremeOpacity,
-      dailyExtremeNoiseSensitivity: defaults.dailyExtremeNoiseSensitivity,
-      dailyExtremeMinimumProminence: defaults.dailyExtremeMinimumProminence,
       vwapVisible: defaults.vwapVisible,
       vwapOpacity: defaults.vwapOpacity,
       vwapColor: defaults.vwapColor,
@@ -235,6 +239,7 @@ class SymbolConfig {
       positionVisible: legacy.positionVisible,
       openOrdersVisible: legacy.openOrdersVisible,
       tradingPanelVisible: legacy.tradingPanelVisible,
+      tradingConfigExpanded: legacy.tradingConfigExpanded,
       tradingAccountExpanded: legacy.tradingAccountExpanded,
       tradingOrdersExpanded: legacy.tradingOrdersExpanded,
       tradingPositionsExpanded: legacy.tradingPositionsExpanded,
@@ -242,9 +247,12 @@ class SymbolConfig {
     );
   }
 
-  factory SymbolConfig.fromJson(Map<String, dynamic> json, {String symbol = ''}) =>
-      SymbolConfig(
-        timeFrame: json['timeFrame'] as int? ?? 2,
+  factory SymbolConfig.fromJson(Map<String, dynamic> json, {String symbol = ''}) {
+    var timeFrame = json['timeFrame'] as int? ?? 2;
+    // Migração #12: o timeframe 1D saiu do seletor principal (só intraday).
+    if (timeFrame == 1440) timeFrame = 2;
+    return SymbolConfig(
+        timeFrame: timeFrame,
         dateRangeMode: DateRangeMode.values.byName(json['dateRangeMode'] as String? ?? 'intraday'),
         lookbackDays: json['lookbackDays'] as int? ?? 5,
         bubbleVisible: json['bubbleVisible'] as bool? ?? true,
@@ -266,11 +274,7 @@ class SymbolConfig {
             (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
         structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
             Defaults.minDistanceUpdateBorder(symbol),
-        structureRangeUpdDaily:
-            (json['structureRangeUpdDaily'] as num?)?.toDouble() ??
-                Defaults.minDistanceUpdateBorderDaily(symbol),
-        dailyStructureVisible:
-            json['dailyStructureVisible'] as bool? ?? true,
+        daily: DailyAnalysisConfig.fromJson(json, symbol: symbol),
         extremeVisible: json['extremeVisible'] as bool? ?? true,
         extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
         extremeNoiseSensitivity:
@@ -278,15 +282,6 @@ class SymbolConfig {
                 Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence:
             (json['extremeMinimumProminence'] as num?)?.toDouble() ??
-                Defaults.extremeMinimumProminence,
-        dailyExtremeVisible: json['dailyExtremeVisible'] as bool? ?? true,
-        dailyExtremeOpacity:
-            (json['dailyExtremeOpacity'] as num?)?.toDouble() ?? 0.5,
-        dailyExtremeNoiseSensitivity:
-            (json['dailyExtremeNoiseSensitivity'] as num?)?.toDouble() ??
-                Defaults.extremeNoiseSensitivity,
-        dailyExtremeMinimumProminence:
-            (json['dailyExtremeMinimumProminence'] as num?)?.toDouble() ??
                 Defaults.extremeMinimumProminence,
         vwapVisible: json['vwapVisible'] as bool? ?? true,
         vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
@@ -309,6 +304,8 @@ class SymbolConfig {
         positionVisible: json['positionVisible'] as bool? ?? true,
         openOrdersVisible: json['openOrdersVisible'] as bool? ?? true,
         tradingPanelVisible: json['tradingPanelVisible'] as bool? ?? true,
+        tradingConfigExpanded:
+            json['tradingConfigExpanded'] as bool? ?? false,
         tradingAccountExpanded:
             json['tradingAccountExpanded'] as bool? ?? false,
         tradingOrdersExpanded: json['tradingOrdersExpanded'] as bool? ?? false,
@@ -317,6 +314,7 @@ class SymbolConfig {
         tradingHistoryExpanded:
             json['tradingHistoryExpanded'] as bool? ?? false,
       );
+  }
 
   Map<String, dynamic> toJson() => {
         'timeFrame': timeFrame,
@@ -337,16 +335,11 @@ class SymbolConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
-        'structureRangeUpdDaily': structureRangeUpdDaily,
-        'dailyStructureVisible': dailyStructureVisible,
+        'daily': daily.toJson(),
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
-        'dailyExtremeVisible': dailyExtremeVisible,
-        'dailyExtremeOpacity': dailyExtremeOpacity,
-        'dailyExtremeNoiseSensitivity': dailyExtremeNoiseSensitivity,
-        'dailyExtremeMinimumProminence': dailyExtremeMinimumProminence,
         'vwapVisible': vwapVisible,
         'vwapOpacity': vwapOpacity,
         'vwapColor': vwapColor,
@@ -364,6 +357,7 @@ class SymbolConfig {
         'positionVisible': positionVisible,
         'openOrdersVisible': openOrdersVisible,
         'tradingPanelVisible': tradingPanelVisible,
+        'tradingConfigExpanded': tradingConfigExpanded,
         'tradingAccountExpanded': tradingAccountExpanded,
         'tradingOrdersExpanded': tradingOrdersExpanded,
         'tradingPositionsExpanded': tradingPositionsExpanded,

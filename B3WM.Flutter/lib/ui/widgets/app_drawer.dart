@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
-import 'trading_config_drawer.dart';
 import 'extreme_drawer.dart';
 import 'vwap_drawer.dart';
 import 'date_range_tab.dart';
@@ -24,7 +23,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -81,12 +80,6 @@ tabs: const [
                 ),
                 Tab(
                   icon: Tooltip(
-                    message: 'Trading Data',
-                    child: Icon(Icons.show_chart, size: 18),
-                  ),
-                ),
-                Tab(
-                  icon: Tooltip(
                     message: 'Topos/Vales',
                     child: Icon(Icons.terrain, size: 18),
                   ),
@@ -113,7 +106,6 @@ children: const [
                 BubbleDrawer(noDrawer: true),
                 StructureDrawer(noDrawer: true),
                 VolumeProfileDrawer(noDrawer: true),
-                TradingConfigDrawer(noDrawer: true),
                 ExtremeDrawer(noDrawer: true),
                 VwapDrawer(noDrawer: true),
                 DateRangeTab(noDrawer: true),
