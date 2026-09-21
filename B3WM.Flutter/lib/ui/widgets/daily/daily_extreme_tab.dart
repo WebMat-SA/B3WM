@@ -5,7 +5,6 @@ import '../../../models/defaults.dart';
 import '../../../models/extreme_storage_item.dart';
 import '../../../services/state_service.dart';
 import '../drawer_controls.dart';
-import 'daily_info.dart';
 
 /// Aba Topos/Vales do widget diário (issue #12): detecção sobre o perfil
 /// agregado diário (`getExtremeDaily` na mesma janela do volume profile).
@@ -57,14 +56,6 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
                   (v) => state.setDailyExtremeMinimumProminence(v),
                   decimals: 2,
                   step: Defaults.extremeMinimumProminenceStep,
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Text(
-                    dailyWindowText(state),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
                 ),
                 Padding(
                   padding:

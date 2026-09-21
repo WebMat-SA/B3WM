@@ -12,7 +12,11 @@ class DailyAnalysisConfig {
   double structureOpacity;
 
   /// Volume Profile diário (fonte: perfil agregado do backend).
+  /// `profileAutoByPriceStructure=true` (default): janela = última perna do
+  /// 1440, recalculada a cada push de estrutura (paridade com o intraday).
+  /// `false`: janela manual via slider de período.
   bool profileVisible;
+  bool profileAutoByPriceStructure;
   double profileSizeH;
   double profileSizeV;
   double profileOpacity;
@@ -22,10 +26,6 @@ class DailyAnalysisConfig {
   double extremeOpacity;
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
-
-  /// Janela do perfil/extremos diários: 0 = âncora automática (última perna
-  /// do 1440), senão número de dias (30/60/90).
-  int windowDays;
 
   /// Painel split embutido (divide a tela com o gráfico principal).
   /// Fração da altura total ocupada pelo painel (divisória arrastável).
@@ -38,6 +38,7 @@ class DailyAnalysisConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.profileVisible,
+    required this.profileAutoByPriceStructure,
     required this.profileSizeH,
     required this.profileSizeV,
     required this.profileOpacity,
@@ -45,7 +46,6 @@ class DailyAnalysisConfig {
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
-    required this.windowDays,
     required this.panelVisible,
     required this.panelFraction,
   });
@@ -56,6 +56,7 @@ class DailyAnalysisConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         profileVisible = true,
+        profileAutoByPriceStructure = true,
         profileSizeH = 1.0,
         profileSizeV = 1.0,
         profileOpacity = 0.5,
@@ -63,7 +64,6 @@ class DailyAnalysisConfig {
         extremeOpacity = 0.5,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
-        windowDays = 0,
         panelVisible = false,
         panelFraction = 0.5;
 
@@ -85,6 +85,8 @@ class DailyAnalysisConfig {
       structureAuxVisible: src['structureAuxVisible'] as bool? ?? true,
       structureOpacity: numOr('structureOpacity', 0.8),
       profileVisible: src['profileVisible'] as bool? ?? true,
+      profileAutoByPriceStructure:
+          src['profileAutoByPriceStructure'] as bool? ?? true,
       profileSizeH: numOr('profileSizeH', 1.0),
       profileSizeV: numOr('profileSizeV', 1.0),
       profileOpacity: numOr('profileOpacity', 0.5),
@@ -102,7 +104,6 @@ class DailyAnalysisConfig {
           (src['extremeMinimumProminence'] as num?)?.toDouble() ??
               (json['dailyExtremeMinimumProminence'] as num?)?.toDouble() ??
               Defaults.extremeMinimumProminence,
-      windowDays: (src['windowDays'] as num?)?.toInt() ?? 0,
       panelVisible: src['panelVisible'] as bool? ?? false,
       panelFraction:
           ((src['panelFraction'] as num?)?.toDouble() ?? 0.5).clamp(0.3, 0.7),
@@ -115,6 +116,7 @@ class DailyAnalysisConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'profileVisible': profileVisible,
+        'profileAutoByPriceStructure': profileAutoByPriceStructure,
         'profileSizeH': profileSizeH,
         'profileSizeV': profileSizeV,
         'profileOpacity': profileOpacity,
@@ -122,7 +124,6 @@ class DailyAnalysisConfig {
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
-        'windowDays': windowDays,
         'panelVisible': panelVisible,
         'panelFraction': panelFraction,
       };

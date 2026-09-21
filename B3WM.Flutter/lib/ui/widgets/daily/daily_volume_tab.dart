@@ -3,13 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../../services/state_service.dart';
 import '../drawer_controls.dart';
-import 'daily_info.dart';
+import 'daily_time_range_slider.dart';
 
 /// Aba Volume Profile do widget diário (issue #12).
 ///
 /// Fonte 100% diária: `GetDailyProfile` (perfil agregado multi-dia somado
-/// no backend). O filtro é por janela — âncora automática (última perna do
-/// 1440) ou N dias — aplicada ao mesmo from/to dos topos/vales.
+/// no backend). Paridade com o intraday: Auto Mode (por Estrutura, default)
+/// ou slider manual de período; a sombra da janela aparece no chart diário.
+/// Perfil + topos sempre recarregam juntos no mesmo from/to.
 class DailyVolumeTab extends StatefulWidget {
   const DailyVolumeTab({super.key});
 
@@ -21,8 +22,6 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
-
-  static const _windowOptions = [0, 30, 60, 90];
 
   @override
   Widget build(BuildContext context) {
@@ -42,29 +41,10 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Text('Janela do perfil',
-                      style: TextStyle(fontSize: 13)),
-                ),
-                SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('Âncora')),
-                    ButtonSegment(value: 30, label: Text('30d')),
-                    ButtonSegment(value: 60, label: Text('60d')),
-                    ButtonSegment(value: 90, label: Text('90d')),
-                  ],
-                  selected: {_windowOptions.contains(state.dailyWindowDays)
-                      ? state.dailyWindowDays
-                      : 0},
-                  onSelectionChanged: (sel) =>
-                      state.setDailyWindowDays(sel.first),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                ToggleRow('Auto Mode (por Estrutura)',
+                    state.dailyProfileAutoByPriceStructure,
+                    (v) => state.setDailyProfileAutoByPriceStructure(v)),
+                const DailyTimeRangeSlider(),
                 ToggleRow('Show on Chart', state.dailyProfileVisible,
                     (v) => state.setDailyProfileVisible(v)),
                 SliderRow('Size (Horizontal)', state.dailyProfileSizeH, 0, 3,
@@ -73,14 +53,6 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
                     (v) => state.setDailyProfileSizeV(v)),
                 SliderRow('Opacity', state.dailyProfileOpacity, 0, 1,
                     (v) => state.setDailyProfileOpacity(v)),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Text(
-                    dailyWindowText(state),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ),
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

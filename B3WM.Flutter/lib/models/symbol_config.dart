@@ -215,7 +215,7 @@ class SymbolConfig {
         extremeOpacity: defaults.daily.extremeOpacity,
         extremeNoiseSensitivity: defaults.daily.extremeNoiseSensitivity,
         extremeMinimumProminence: defaults.daily.extremeMinimumProminence,
-        windowDays: legacy.daily.windowDays,
+        profileAutoByPriceStructure: true,
         panelVisible: legacy.daily.panelVisible,
         panelFraction: legacy.daily.panelFraction,
       ),

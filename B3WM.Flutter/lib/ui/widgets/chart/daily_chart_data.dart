@@ -146,6 +146,40 @@ ChartData buildDailyChartData(StateService state) {
     }
   }
 
+  // Sombra da janela do Volume 1D (paridade com o intraday).
+  // Fonte única da verdade: a janela EFETIVAMENTE CARREGADA no perfil
+  // (`dailyProfileFrom/To`), mapeada sobre as barras — nunca índices
+  // guardados de um cálculo anterior (eles podem descolar durante o
+  // Confirm, quando push + refresh + reload se intercalam). Sem janela
+  // carregada, cai nos índices vigentes (slider/manual).
+  int rangeStart;
+  int rangeEnd;
+  final pf = state.dailyProfileFrom;
+  final pt = state.dailyProfileTo;
+  if (pf != null && pt != null && bars.isNotEmpty) {
+    final f = dayOnly(pf);
+    final t = dayOnly(pt);
+    var s = bars.length;
+    for (var i = 0; i < bars.length; i++) {
+      if (!dayOnly(bars[i].date).isBefore(f)) {
+        s = i;
+        break;
+      }
+    }
+    var e = 0;
+    for (var i = 0; i < bars.length; i++) {
+      if (!dayOnly(bars[i].date).isAfter(t)) e = i + 1;
+    }
+    rangeStart = s.clamp(0, bars.length);
+    rangeEnd = e.clamp(rangeStart, bars.length);
+  } else {
+    rangeStart =
+        bars.isEmpty ? 0 : state.dailyRangeStart.clamp(0, bars.length);
+    rangeEnd = bars.isEmpty
+        ? 0
+        : state.dailyRangeEnd.clamp(rangeStart, bars.length);
+  }
+
   return ChartData(
     candles: candles,
     redBubbles: const [],
@@ -159,8 +193,8 @@ ChartData buildDailyChartData(StateService state) {
     lastPrice: bars.isNotEmpty ? bars.last.close : 0,
     dates: dates,
     daySeparatorIndices: monthSepIndices,
-    rangeStart: 0,
-    rangeEnd: bars.length,
+    rangeStart: rangeStart,
+    rangeEnd: rangeEnd == 0 ? bars.length : rangeEnd,
     symbol: state.symbol,
     timeFrame: 1440,
     bubbleOpacity: 0.7,
