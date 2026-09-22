@@ -72,6 +72,9 @@ class SliderRow extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
+  /// Chamado uma vez ao soltar o slider (fim do gesto). Permite recálculo
+  /// automático só ao terminar a mudança, sem recalcular por pixel arrastado.
+  final ValueChanged<double>? onChangeEnd;
   final int decimals;
   final double step;
   final Widget? trailing;
@@ -87,6 +90,7 @@ class SliderRow extends StatelessWidget {
     this.step = 0.01,
     this.trailing,
     this.tooltip,
+    this.onChangeEnd,
   });
 
   @override
@@ -133,6 +137,7 @@ class SliderRow extends StatelessWidget {
           max: max,
           divisions: ((max - min) / step).round().clamp(1, 1000),
           onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
         ),
       ],
     );

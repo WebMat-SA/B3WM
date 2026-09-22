@@ -105,8 +105,6 @@ class ChartFixedPainter extends CustomPainter {
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
     _drawExtremeLines(canvas);
-    _drawDailyExtremeLines(canvas);
-    _drawDailyStructureLines(canvas);
     _drawVwapLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
@@ -187,8 +185,10 @@ class ChartFixedPainter extends CustomPainter {
       if (screenX < marginLeft || screenX > chartRight) continue;
 
       final fmt = data.dates[i];
-      final label =
-          '${fmt.hour.toString().padLeft(2, '0')}:${fmt.minute.toString().padLeft(2, '0')}';
+      // Diário (1440): candles sempre à 00:00 — mostra a data em vez da hora.
+      final label = data.timeFrame == 1440
+          ? '${fmt.day.toString().padLeft(2, '0')}/${fmt.month.toString().padLeft(2, '0')}'
+          : '${fmt.hour.toString().padLeft(2, '0')}:${fmt.minute.toString().padLeft(2, '0')}';
       final tp = TextPainter(
         text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
         textDirection: TextDirection.ltr,
@@ -314,107 +314,6 @@ class ChartFixedPainter extends CustomPainter {
     drawLines(ex.valleyPrices, const Color(0xFFFF5252));
   }
 
-  void _drawDailyExtremeLines(Canvas canvas) {
-    final dex = data.dailyExtremes;
-    if (dex == null || !dex.visible) return;
-
-    const topColor = Color(0xFF43A047);
-    const valleyColor = Color(0xFFE53935);
-    final decimals = _decimalPlaces(data.symbol);
-    final entries = <({double price, Color color})>[
-      for (final p in dex.topPrices) (price: p, color: topColor),
-      for (final p in dex.valleyPrices) (price: p, color: valleyColor),
-    ]..sort((a, b) => a.price.compareTo(b.price));
-
-    // Faixa das labels de preço (à direita do volume profile), mesmo padrão
-    // da pílula do last price em _drawMarkLine.
-    final labelRight = chartRight - 4;
-    double? lastLabelY;
-    for (final e in entries) {
-      final y = _priceToY(e.price);
-      if (y < marginTop || y > marginTop + chartHeight) continue;
-      final tp = TextPainter(
-        text: TextSpan(
-          text: 'D ${e.price.toStringAsFixed(decimals)}',
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.bold),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      const padH = 5.0;
-      const padV = 2.0;
-      final r = Rect.fromLTWH(
-          labelRight - tp.width - padH * 2,
-          y - tp.height / 2 - padV,
-          tp.width + padH * 2,
-          tp.height + padV * 2);
-      canvas.drawLine(Offset(marginLeft, y), Offset(r.left - 3, y),
-          Paint()
-            ..color = e.color.withOpacity(dex.opacity)
-            ..strokeWidth = 1.5);
-      // Anti-colisão: pula a pílula (mantém a linha) se colada na anterior.
-      if (lastLabelY != null && (y - lastLabelY).abs() < 14) continue;
-      lastLabelY = y;
-      canvas.drawRRect(
-          RRect.fromRectAndRadius(r, const Radius.circular(3)),
-          Paint()..color = e.color.withOpacity(dex.opacity));
-      tp.paint(canvas, Offset(labelRight - tp.width - padH, y - tp.height / 2));
-    }
-  }
-
-  void _drawDailyStructureLines(Canvas canvas) {
-    final s = data.dailyStructures;
-    if (s == null || !s.visible) return;
-
-    final m = controller.value;
-    final scaleX = m[0];
-    final tx = m.getTranslation().x;
-
-    void drawLine(List<double?> vals, Color color, double width, bool dashed) {
-      final paint = Paint()
-        ..color = color.withOpacity(s.opacity)
-        ..strokeWidth = width;
-      Offset? prev;
-      for (int i = 0; i < vals.length; i++) {
-        final v = vals[i];
-        if (v == null) {
-          prev = null;
-          continue;
-        }
-        final childX = i * candleStep + candleStep / 2;
-        final screenX = marginLeft + childX * scaleX + tx;
-        if (screenX < marginLeft || screenX > chartRight) {
-          prev = null;
-          continue;
-        }
-        final y = _priceToY(v);
-        if (y < marginTop || y > marginTop + chartHeight) {
-          prev = null;
-          continue;
-        }
-        final pt = Offset(screenX, y);
-        if (prev != null) {
-          if (dashed) {
-            _drawDashedLine(canvas, prev, pt, paint);
-          } else {
-            canvas.drawLine(prev, pt, paint);
-          }
-        }
-        prev = pt;
-      }
-    }
-
-    drawLine(s.upBorder, const Color(0xFF00B0FF), 2.0, false);
-    drawLine(s.downBorder, const Color(0xFFFF3D00), 2.0, false);
-
-    if (s.auxVisible) {
-      drawLine(s.upAuxBorder, const Color(0xFF00B0FF), 1.0, true);
-      drawLine(s.downAuxBorder, const Color(0xFFFF3D00), 1.0, true);
-    }
-  }
-
   void _drawVwapLines(Canvas canvas) {
     final vwapPoints = data.vwapPoints;
     if (vwapPoints.isEmpty) return;
@@ -493,7 +392,9 @@ class ChartFixedPainter extends CustomPainter {
     if (screenX < marginLeft || screenX > chartRight) return;
 
     final d = data.dates[index];
-    final label = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final label = data.timeFrame == 1440
+        ? '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}'
+        : '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
     final y = marginTop + chartHeight + bottomLabelHeight / 2;
 
     final tp = TextPainter(
@@ -551,7 +452,8 @@ class ChartFixedPainter extends CustomPainter {
   }
 
   void _drawWatermark(Canvas canvas, Size size) {
-    final centerText = '${data.symbol}\n${data.timeFrame}min';
+    final tfLabel = data.timeFrame == 1440 ? '1D' : '${data.timeFrame}min';
+    final centerText = '${data.symbol}\n$tfLabel';
     final centerTp = TextPainter(
       text: TextSpan(
         text: centerText,

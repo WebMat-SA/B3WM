@@ -1,6 +1,7 @@
 class Defaults {
   static const String url = 'https://localhost:5002/api/datahub';
-  static const List<int> timeFrames = [1, 2, 5, 15, 30, 60, 1440];
+  /// Seletor principal é só intraday (issue #12): o 1D vive no widget diário.
+  static const List<int> timeFrames = [1, 2, 5, 15, 30, 60];
 
   static String timeFrameLabel(int tf) => tf == 1440 ? '1D' : '$tf';
 

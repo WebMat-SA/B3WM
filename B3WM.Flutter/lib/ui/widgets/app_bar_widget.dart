@@ -9,10 +9,10 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onStructureTap;
   final VoidCallback onVolumeProfileTap;
   final VoidCallback onTradingTap;
-  final VoidCallback onTradingConfigTap;
   final VoidCallback onExtremeTap;
   final VoidCallback onVwapTap;
   final VoidCallback onDateRangeTap;
+  final VoidCallback? onBackupTap;
   final bool tradingActive;
 
   const MapFlowAppBar({
@@ -21,10 +21,10 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onStructureTap,
     required this.onVolumeProfileTap,
     required this.onTradingTap,
-    required this.onTradingConfigTap,
     required this.onExtremeTap,
     required this.onVwapTap,
     required this.onDateRangeTap,
+    this.onBackupTap,
     this.tradingActive = false,
   });
 
@@ -162,12 +162,6 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.show_chart, size: 20),
-                  onPressed: widget.onTradingConfigTap,
-                  tooltip: 'Trading Data',
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
                   icon: const Icon(Icons.terrain, size: 20),
                   onPressed: widget.onExtremeTap,
                   tooltip: 'Topos/Vales',
@@ -185,6 +179,13 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   tooltip: 'Período / Dados Históricos',
                   visualDensity: VisualDensity.compact,
                 ),
+                if (widget.onBackupTap != null)
+                  IconButton(
+                    icon: const Icon(Icons.settings_backup_restore, size: 20),
+                    onPressed: widget.onBackupTap,
+                    tooltip: 'Backup (exportar/importar)',
+                    visualDensity: VisualDensity.compact,
+                  ),
                 // IconButton(
                 //   icon: const Icon(Icons.verified, size: 20),
                 //   onPressed: widget.onVerifierTap,

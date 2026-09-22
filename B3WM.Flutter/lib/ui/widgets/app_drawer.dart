@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'backup_tab.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
-import 'trading_config_drawer.dart';
 import 'extreme_drawer.dart';
 import 'vwap_drawer.dart';
 import 'date_range_tab.dart';
@@ -81,12 +81,6 @@ tabs: const [
                 ),
                 Tab(
                   icon: Tooltip(
-                    message: 'Trading Data',
-                    child: Icon(Icons.show_chart, size: 18),
-                  ),
-                ),
-                Tab(
-                  icon: Tooltip(
                     message: 'Topos/Vales',
                     child: Icon(Icons.terrain, size: 18),
                   ),
@@ -103,6 +97,12 @@ tabs: const [
                     child: Icon(Icons.date_range, size: 18),
                   ),
                 ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Backup (exportar/importar)',
+                    child: Icon(Icons.settings_backup_restore, size: 18),
+                  ),
+                ),
               ],
             ),
           ),
@@ -113,10 +113,10 @@ children: const [
                 BubbleDrawer(noDrawer: true),
                 StructureDrawer(noDrawer: true),
                 VolumeProfileDrawer(noDrawer: true),
-                TradingConfigDrawer(noDrawer: true),
                 ExtremeDrawer(noDrawer: true),
                 VwapDrawer(noDrawer: true),
                 DateRangeTab(noDrawer: true),
+                BackupTab(noDrawer: true),
               ],
             ),
           ),

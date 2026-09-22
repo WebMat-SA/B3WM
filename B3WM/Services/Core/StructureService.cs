@@ -79,7 +79,7 @@ namespace B3WM.Services.Core
             }
         }
 
-        public async Task Regenerate()
+        public async Task Regenerate(bool broadcastEach = false)
         {
             var candleService = _serviceProvider.GetServices<CandleService>().FirstOrDefault(q=>q.Symbol == Symbol && q.TimeFrame == TimeFrame);
 
@@ -88,8 +88,12 @@ namespace B3WM.Services.Core
                 throw new Exception($"CandleService for symbol {Symbol} and timeframe {TimeFrame} not found.");
             }
 
-            //buscar todos os candles dos ultimos 7 dias, gerar a estrutura e salvar
-            for (int i = 6; i >= 0; i--)
+            // Diário (1440) é histórico estático: cobre janela longa para que
+            // thresholds custom (ex. WINFUT 3000) gerem histórico real em vez
+            // de ~7 pontos. Intraday mantém 7 dias (comportamento atual).
+            var days = TimeFrame == 1440 ? 365 : 7;
+            //buscar todos os candles dos ultimos N dias, gerar a estrutura e salvar
+            for (int i = days - 1; i >= 0; i--)
             {
                 var date = DateTime.Now.AddDays(-i);
                 var candlePath = $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{date:yyyy-MM-dd}.json";
@@ -98,24 +102,29 @@ namespace B3WM.Services.Core
                 {
                     foreach (var candle in candles)
                     {
-                        if (candle != null) await Calculate(candle, true);
+                        if (candle != null) await Calculate(candle, true, broadcastEach);
                     }
                 }
             }
         }
 
-        public async Task<StructureStorageItem> Calculate(BarStorageItem newBar, bool skipPreLoad = false)
+        public async Task<StructureStorageItem> Calculate(BarStorageItem newBar, bool skipPreLoad = false, bool broadcast = true)
         {
             try
             {
                 var result = await Generate(newBar, skipPreLoad);
 
-                if (hubContext != null)
+                // Backfill silencioso (Regenerate do Confirm/startup) não
+                // emite N pushes: o chamador decide o push final único.
+                if (broadcast)
                 {
-                    await hubContext.Clients.Group(Symbol).ReceiveOnStructure(result);
-                }
+                    if (hubContext != null)
+                    {
+                        await hubContext.Clients.Group(Symbol).ReceiveOnStructure(result);
+                    }
 
-                if (OnUpdate != null) await OnUpdate.Invoke(result);
+                    if (OnUpdate != null) await OnUpdate.Invoke(result);
+                }
 
                 DataKeep.Add(result.Clone() as StructureStorageItem);
 
@@ -210,7 +219,7 @@ namespace B3WM.Services.Core
 
         } 
 
-        public async Task SetMinDistance(double minDistance)
+        public async Task SetMinDistance(double minDistance, bool broadcastFinal = true)
         {
             DataKeep = new();
             _lastStructure = null;
@@ -219,7 +228,19 @@ namespace B3WM.Services.Core
             isSizeChanger = false;
             _minDistanceUpdateBorder = minDistance;
 
-            await Regenerate();
+            // Regen silencioso + 1 push final com a última estrutura (evita
+            // rajada de N ReceiveOnStructure no Confirm; o day-close intraday
+            // continua emitindo via Calculate com broadcast=true).
+            await Regenerate(broadcastEach: false);
+
+            if (broadcastFinal && _lastStructure?.Clone() is StructureStorageItem finalItem)
+            {
+                if (hubContext != null)
+                {
+                    await hubContext.Clients.Group(Symbol).ReceiveOnStructure(finalItem);
+                }
+                if (OnUpdate != null) await OnUpdate.Invoke(finalItem);
+            }
         }
     }
 }

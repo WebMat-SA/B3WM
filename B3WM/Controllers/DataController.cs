@@ -200,7 +200,44 @@ namespace B3WM.Controllers
                 await structure.SetMinDistance(minDistance);
             }
 
-            return await GetStructureAsync(symbol, DateTime.Today, minDistance);
+            // Resposta só intraday (sem 1440): o diário tem lista, range e
+            // rotas próprios e nunca deve vazar para `_structures` do app.
+            var data = await GetStructureAsync(symbol, DateTime.Today, minDistance) as OkObjectResult;
+            if (data?.Value is List<StructureStorageItem> all)
+                return Ok(all.Where(s => s.TimeFrame != 1440).ToList());
+            return Ok(new List<StructureStorageItem>());
+        }
+
+        [HttpGet("{symbol}/{startDate}/{endDate}/{minDistance:double}")]
+        public async Task<IActionResult> GetStructureRange(string symbol, DateTime startDate, DateTime endDate, double minDistance)
+        {
+            // Range INTRADAY (modo multi-day do app): lê os arquivos diários
+            // dos timeframes < 1440 com a distância intraday. O 1440 nunca
+            // entra aqui — o diário usa GetStructureHistory com o range
+            // diário próprio.
+            if (endDate < startDate)
+                (startDate, endDate) = (endDate, startDate);
+            var days = (int)Math.Min((endDate.Date - startDate.Date).TotalDays, 365);
+            var all = new List<StructureStorageItem>();
+            foreach (var timeFrame in Defaults.TimeFrames.Where(t => t != 1440))
+            {
+                for (var d = 0; d <= days; d++)
+                {
+                    var date = startDate.Date.AddDays(d);
+                    var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
+                    try
+                    {
+                        var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                        if (day != null)
+                            all.AddRange(day.Where(s => s.TimeFrame != 1440));
+                    }
+                    catch
+                    {
+                        // dias sem arquivo (fds/feriado/servidor novo): ignora
+                    }
+                }
+            }
+            return Ok(all.OrderBy(s => s.Date).ToList());
         }
 
         [HttpGet("{symbol}/{timeFrame:int}/{minDistance:double}")]
@@ -234,6 +271,33 @@ namespace B3WM.Controllers
                 catch
                 {
                     // dias sem arquivo (fds/feriado/servidor novo): ignora
+                }
+            }
+            // Fallback 1440: o arquivo leva a distância no nome; se o app
+            // pediu uma distância sem nenhum arquivo (ex. slider arrastado
+            // antes do Confirm), retorna o histórico da distância vigente no
+            // serviço em vez de [] silencioso (precedente: GetStructureAsync).
+            if (all.Count == 0)
+            {
+                var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+                if (service != null && service._minDistanceUpdateBorder != minDistance)
+                {
+                    var current = service._minDistanceUpdateBorder;
+                    for (var d = 0; d < days; d++)
+                    {
+                        var date = DateTime.Today.AddDays(-d);
+                        var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{current}_{date:yyyy-MM-dd}.json";
+                        try
+                        {
+                            var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                            if (day != null)
+                                all.AddRange(day);
+                        }
+                        catch
+                        {
+                            // dias sem arquivo (fds/feriado/servidor novo): ignora
+                        }
+                    }
                 }
             }
             return Ok(all.OrderBy(s => s.Date).ToList());
@@ -284,6 +348,24 @@ namespace B3WM.Controllers
                 MinimumProminence = minimumProminence
             };
             return Ok(await service.ComputeDailyRange(dataKeeper, fromDate, toDate, options));
+        }
+
+        [HttpGet("{symbol}")]
+        public async Task<IActionResult> GetDailyProfile(string symbol,
+            [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null)
+        {
+            // Volume Profile diário (issue #12): perfil agregado multi-dia a
+            // partir dos arquivos diários do VolumeService (soma tick-a-tick
+            // real de cada dia). Função pura, sem tocar no estado ao vivo.
+            var toDate = (to ?? DateTime.Today).Date;
+            var fromDate = (from ?? toDate.AddDays(-60)).Date;
+            if (toDate < fromDate)
+                (fromDate, toDate) = (toDate, fromDate);
+            if ((toDate - fromDate).TotalDays > 365)
+                fromDate = toDate.AddDays(-365);
+
+            return Ok(await ExtremeService.BuildDailyProfileFromFiles(
+                dataKeeper, symbol, fromDate, toDate));
         }
 
         [HttpGet("{symbol}")]
