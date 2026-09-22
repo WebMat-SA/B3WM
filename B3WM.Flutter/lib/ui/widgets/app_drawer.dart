@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'backup_tab.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
@@ -23,7 +24,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 7, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -96,6 +97,12 @@ tabs: const [
                     child: Icon(Icons.date_range, size: 18),
                   ),
                 ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Backup (exportar/importar)',
+                    child: Icon(Icons.settings_backup_restore, size: 18),
+                  ),
+                ),
               ],
             ),
           ),
@@ -109,6 +116,7 @@ children: const [
                 ExtremeDrawer(noDrawer: true),
                 VwapDrawer(noDrawer: true),
                 DateRangeTab(noDrawer: true),
+                BackupTab(noDrawer: true),
               ],
             ),
           ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/bar_storage_item.dart';
+import '../models/config_backup.dart';
 import '../models/bubble_storage_item.dart';
 import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
@@ -20,6 +21,7 @@ import '../models/signal_event.dart';
 import '../models/verifier_config.dart';
 import '../models/verifier_state.dart';
 import '../models/extreme_storage_item.dart';
+import '../models/defaults.dart';
 
 class StateService extends ChangeNotifier {
   final ApiService _apiService;
@@ -852,18 +854,39 @@ class StateService extends ChangeNotifier {
           changes.sort((a, b) => b.date.compareTo(a.date));
           final last = changes.first;
           StructureChangeItem? anchor;
-          for (final c in changes) {
+          var anchorPos = -1;
+          for (var k = 0; k < changes.length; k++) {
+            final c = changes[k];
             if (c.isUp != last.isUp && c.isUpMove != last.isUpMove) {
               anchor = c;
+              anchorPos = k;
               break;
             }
           }
+          // Início da perna = dia que fez o extremo (aux), não o dia que
+          // confirmou por distanciamento. Trigger continua na confirmação.
+          final bars = List.of(_dailyBars)
+            ..sort((a, b) => a.date.compareTo(b.date));
           if (anchor != null) {
-            from = DateTime(anchor.date.year, anchor.date.month, anchor.date.day);
+            final lowerDay = anchorPos + 1 < changes.length
+                ? DateTime(
+                    changes[anchorPos + 1].date.year,
+                    changes[anchorPos + 1].date.month,
+                    changes[anchorPos + 1].date.day)
+                : null;
+            from = resolveDailyAnchorDay(
+              dailyBars: bars,
+              symbol: _symbol,
+              anchor: anchor,
+              lowerDay: lowerDay,
+            );
           } else {
             final firstChange = changes.last;
-            from = DateTime(
-                firstChange.date.year, firstChange.date.month, firstChange.date.day);
+            from = resolveDailyAnchorDay(
+              dailyBars: bars,
+              symbol: _symbol,
+              anchor: firstChange,
+            );
           }
         }
       }
@@ -1156,6 +1179,75 @@ class StateService extends ChangeNotifier {
         'visible=${config.extremeVisible} opacity=${config.extremeOpacity}');
     await _preferencesService.setString(
         'Config_$symbol', jsonEncode(config.toJson()));
+  }
+
+  // --- Backup: export/import de todas as configs (issue backup) ---
+  // O arquivo contém um [ConfigBackup]: mapa símbolo -> SymbolConfig
+  // (payload idêntico ao `Config_$symbol`) + `activeSymbol`.
+  // Import usa semântica "substituir tudo": símbolos locais fora do
+  // arquivo são removidos do disco.
+
+  /// Símbolos conhecidos: persistidos no disco + em memória.
+  List<String> knownConfigSymbols() {
+    final set = <String>{
+      ..._preferencesService.getConfigSymbols(),
+      ..._configs.keys.where((s) => s.isNotEmpty),
+    };
+    final out = set.toList()..sort();
+    return out;
+  }
+
+  /// Monta o backup com todas as configs (descarrega a atual primeiro).
+  Future<ConfigBackup> exportAllConfigs() async {
+    await _saveConfigForSymbol(_symbol);
+    for (final s in _preferencesService.getConfigSymbols()) {
+      if (!_configs.containsKey(s)) {
+        _configs[s] = _loadConfigForSymbol(s);
+      }
+    }
+    final snapshot = <String, SymbolConfig>{
+      for (final e in _configs.entries)
+        if (e.key.isNotEmpty)
+          e.key: SymbolConfig.fromJson(e.value.toJson(), symbol: e.key),
+    };
+    debugPrint('[backup] export symbols=${snapshot.keys.toList()} '
+        'active=$_symbol');
+    return ConfigBackup(
+      activeSymbol: _symbol,
+      symbols: snapshot,
+    );
+  }
+
+  /// Valida e aplica o backup, persistindo tudo e recarregando o símbolo
+  /// ativo (pré-seleciona agentes, thresholds e demais configs nos drawers).
+  /// Lança [FormatException] sem alterar nada se o JSON for inválido.
+  /// A recarga de dados (`setSymbol`) pode falhar offline — nesse caso as
+  /// configs já estão aplicadas/persistidas e o erro é propagado.
+  Future<void> importAllConfigs(Map<String, dynamic> json) async {
+    final backup = ConfigBackup.fromJson(json);
+    final stale = knownConfigSymbols()
+        .where((s) => !backup.symbols.containsKey(s))
+        .toList();
+    for (final s in stale) {
+      _configs.remove(s);
+      await _preferencesService.remove('Config_$s');
+    }
+    _configs
+      ..clear()
+      ..addAll({
+        for (final e in backup.symbols.entries)
+          e.key: SymbolConfig.fromJson(e.value.toJson(), symbol: e.key),
+      });
+    for (final s in _configs.keys) {
+      await _saveConfigForSymbol(s);
+    }
+    final target =
+        backup.activeSymbol.isNotEmpty && _configs.containsKey(backup.activeSymbol)
+            ? backup.activeSymbol
+            : _configs.keys.first;
+    debugPrint('[backup] import symbols=${_configs.keys.toList()} '
+        'active=$target removed=$stale');
+    await setSymbol(target);
   }
 
   // --- Process Loop ---
@@ -1827,6 +1919,83 @@ class StateService extends ChangeNotifier {
     _applyVolumeFilter(start, end);
   }
 
+  /// Índice do candle de confirmação: última barra com `date <= changeDate`.
+  static int confirmationBarIndex(
+      List<BarStorageItem> bars, DateTime changeDate) {
+    var idx = 0;
+    for (int i = bars.length - 1; i >= 0; i--) {
+      if (!bars[i].date.isAfter(changeDate)) {
+        idx = i;
+        break;
+      }
+    }
+    return idx;
+  }
+
+  /// Retrocede do candle de confirmação ao candle que de fato fez o extremo
+  /// (linha aux tracejada): última barra em `[lowerBound, confirmationIndex]`
+  /// com `high == newValue` (topo, `isUp`) ou `low == newValue` (fundo).
+  /// O trigger continua na confirmação — só o início do filtro volta ao
+  /// extremo. Fallback = confirmação (comportamento antigo) quando o preço
+  /// não é encontrado (gap, estrutura herdada, barra ausente).
+  static int resolveExtremeBarIndex({
+    required List<BarStorageItem> bars,
+    required StructureChangeItem anchor,
+    required int confirmationIndex,
+    int lowerBound = 0,
+    required double tolerance,
+  }) {
+    if (bars.isEmpty) return 0;
+    final conf = confirmationIndex.clamp(0, bars.length - 1);
+    final lo = lowerBound.clamp(0, conf);
+    for (int i = conf; i >= lo; i--) {
+      final price = anchor.isUp ? bars[i].high : bars[i].low;
+      if ((price - anchor.newValue).abs() <= tolerance) return i;
+    }
+    return conf;
+  }
+
+  /// Versão diária (barras 1440, comparação por dia): retrocede do dia de
+  /// confirmação ao dia que fez o extremo. `lowerDay` limita a busca à perna
+  /// vigente (dia de confirmação da mudança antecessora, se houver).
+  static DateTime resolveDailyAnchorDay({
+    required List<BarStorageItem> dailyBars,
+    required String symbol,
+    required StructureChangeItem anchor,
+    DateTime? lowerDay,
+  }) {
+    DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final confirmationDay = dayOnly(anchor.date);
+    if (dailyBars.isEmpty) return confirmationDay;
+    final tolerance = Defaults.tickSize(symbol) / 2;
+    final sorted = List.of(dailyBars)
+      ..sort((a, b) => a.date.compareTo(b.date));
+    var confIdx = 0;
+    for (int i = sorted.length - 1; i >= 0; i--) {
+      if (!dayOnly(sorted[i].date).isAfter(confirmationDay)) {
+        confIdx = i;
+        break;
+      }
+    }
+    var loIdx = 0;
+    if (lowerDay != null) {
+      final loDay = dayOnly(lowerDay);
+      for (int i = confIdx; i >= 0; i--) {
+        if (dayOnly(sorted[i].date).isBefore(loDay)) {
+          loIdx = (i + 1).clamp(0, confIdx);
+          break;
+        }
+      }
+    }
+    for (int i = confIdx; i >= loIdx; i--) {
+      final price = anchor.isUp ? sorted[i].high : sorted[i].low;
+      if ((price - anchor.newValue).abs() <= tolerance) {
+        return dayOnly(sorted[i].date);
+      }
+    }
+    return confirmationDay;
+  }
+
   void _applyStructureAutoFilter() {
     final bars = barsTimeFrameFilter;
     if (bars.isEmpty) return;
@@ -1837,9 +2006,12 @@ class StateService extends ChangeNotifier {
     }
     final lastChange = _structureChanges.first;
     StructureChangeItem? anchor;
-    for (final c in _structureChanges) {
+    var anchorPos = -1;
+    for (var k = 0; k < _structureChanges.length; k++) {
+      final c = _structureChanges[k];
       if (c.isUp != lastChange.isUp && c.isUpMove != lastChange.isUpMove) {
         anchor = c;
+        anchorPos = k;
         break;
       }
     }
@@ -1847,14 +2019,23 @@ class StateService extends ChangeNotifier {
       _applyVolumeFilter(0, end);
       return;
     }
-    var start = 0;
-    for (int i = bars.length - 1; i >= 0; i--) {
-      if (!bars[i].date.isAfter(anchor.date)) {
-        start = i;
-        break;
-      }
+    // Candle de confirmação (comportamento antigo = trigger do update).
+    final confirmation = confirmationBarIndex(bars, anchor.date);
+    // Limite inferior = confirmação da mudança antecessora (não atravessa
+    // duas pernas quando o mesmo preço se repete longe no passado).
+    var lowerBound = 0;
+    if (anchorPos + 1 < _structureChanges.length) {
+      lowerBound =
+          confirmationBarIndex(bars, _structureChanges[anchorPos + 1].date);
     }
-    start = start.clamp(0, end - 1);
+    // Início do filtro = candle que fez o extremo (aux), não o que confirmou.
+    final start = resolveExtremeBarIndex(
+      bars: bars,
+      anchor: anchor,
+      confirmationIndex: confirmation,
+      lowerBound: lowerBound,
+      tolerance: Defaults.tickSize(_symbol) / 2,
+    ).clamp(0, end - 1);
     _applyVolumeFilter(start, end);
   }
 

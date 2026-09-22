@@ -119,6 +119,10 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
               setState(() => _drawerTabIndex = 5);
               _scaffoldKey.currentState?.openDrawer();
             },
+            onBackupTap: () {
+              setState(() => _drawerTabIndex = 6);
+              _scaffoldKey.currentState?.openDrawer();
+            },
             // onVerifierTap: () {
             //   setState(() => _drawerTabIndex = 4);
             //   _scaffoldKey.currentState?.openDrawer();

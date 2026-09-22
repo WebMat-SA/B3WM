@@ -47,6 +47,24 @@ class PreferencesService {
   Future<bool> remove(String key) =>
       _prefs?.remove('$_prefix$key') ?? Future.value(false);
 
+  /// Todas as chaves brutas do SharedPreferences (com prefixo `b3wm_`).
+  Set<String> getKeys() => _prefs?.getKeys() ?? {};
+
+  /// Símbolos com config persistida (`Config_$symbol`).
+  /// Ex.: armazena `b3wm_Config_WINFUT` -> retorna `WINFUT`.
+  List<String> getConfigSymbols() {
+    const fullPrefix = '${_prefix}Config_';
+    final out = <String>[];
+    for (final k in getKeys()) {
+      if (k.startsWith(fullPrefix)) {
+        final symbol = k.substring(fullPrefix.length).trim().toUpperCase();
+        if (symbol.isNotEmpty && !out.contains(symbol)) out.add(symbol);
+      }
+    }
+    out.sort();
+    return out;
+  }
+
   List<int>? getIntList(String key) {
     final str = getString(key);
     if (str == null) return null;
