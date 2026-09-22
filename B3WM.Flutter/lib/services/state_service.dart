@@ -868,14 +868,16 @@ class StateService extends ChangeNotifier {
           final bars = List.of(_dailyBars)
             ..sort((a, b) => a.date.compareTo(b.date));
           if (anchor != null) {
-            final lowerDay = anchorPos + 1 < changes.length
-                ? DateTime(
-                    changes[anchorPos + 1].date.year,
-                    changes[anchorPos + 1].date.month,
-                    changes[anchorPos + 1].date.day)
+            // lowerDay = confirmação do lado oposto mais recente antes da
+            // âncora (ponto de reset do aux; ver intraday). A mudança
+            // imediatamente anterior pode ser same-side e cortar o E real.
+            final resetDate = oppositeResetDate(changes, anchorPos);
+            final lowerDay = resetDate != null
+                ? DateTime(resetDate.year, resetDate.month, resetDate.day)
                 : null;
             from = resolveDailyAnchorDay(
               dailyBars: bars,
+              history: _structures1440History,
               symbol: _symbol,
               anchor: anchor,
               lowerDay: lowerDay,
@@ -884,6 +886,7 @@ class StateService extends ChangeNotifier {
             final firstChange = changes.last;
             from = resolveDailyAnchorDay(
               dailyBars: bars,
+              history: _structures1440History,
               symbol: _symbol,
               anchor: firstChange,
             );
@@ -1932,14 +1935,41 @@ class StateService extends ChangeNotifier {
     return idx;
   }
 
-  /// Retrocede do candle de confirmação ao candle que de fato fez o extremo
-  /// (linha aux tracejada): última barra em `[lowerBound, confirmationIndex]`
-  /// com `high == newValue` (topo, `isUp`) ou `low == newValue` (fundo).
-  /// O trigger continua na confirmação — só o início do filtro volta ao
-  /// extremo. Fallback = confirmação (comportamento antigo) quando o preço
-  /// não é encontrado (gap, estrutura herdada, barra ausente).
+  /// Data da mudança de lado oposto mais recente antes de `anchorPos`
+  /// (`changesDesc` em ordem mais-recente-primeiro). É o ponto de reset do
+  /// aux da âncora no backend — o extremo E é sempre posterior a ela.
+  /// Null quando não há: busca sem limite inferior. Pular a mudança
+  /// imediatamente anterior (que pode ser same-side) é o que evita cortar
+  /// o próprio E e deslocar o início do filtro 1 candle para frente.
+  static DateTime? oppositeResetDate(
+      List<StructureChangeItem> changesDesc, int anchorPos) {
+    if (anchorPos < 0 || anchorPos >= changesDesc.length) return null;
+    final anchorIsUp = changesDesc[anchorPos].isUp;
+    for (var k = anchorPos + 1; k < changesDesc.length; k++) {
+      if (changesDesc[k].isUp != anchorIsUp) return changesDesc[k].date;
+    }
+    return null;
+  }
+
+  /// Retrocede do candle de confirmação ao candle do PRIMEIRO toque no
+  /// extremo (E): o candle que marcou a alteração do aux e que de fato fez o
+  /// topo/fundo. O candle E é INCLUSO no filtro: `_computeWindowVolume`
+  /// subtrai o snapshot de `start - 1`, logo a janela cobre `[E..end]`.
+  /// Por quê E e não o último toque (R)? O Diff é
+  /// `cumulativo(fim) − cumulativo(start−1)`; com start=R, todo o volume dos
+  /// candles `E..R−1` é cancelado na subtração — os primeiros candles da
+  /// perna somem do perfil por construção. Com start=E a perna inteira entra.
+  /// Fonte primária = série aux das impressões de estrutura (a mesma que
+  /// desenha a tracejada: primeiro print da perna cujo aux alcançou o valor
+  /// confirmado); fallback = varredura de `high`/`low` nas barras de frente
+  /// para trás (topo `isUp` casa `high == newValue`, fundo casa
+  /// `low == newValue`); último fallback = confirmação (comportamento antigo).
+  /// O trigger continua na confirmação — só o início do filtro volta a E.
   static int resolveExtremeBarIndex({
     required List<BarStorageItem> bars,
+    required List<StructureStorageItem> structures,
+    required String symbol,
+    required int timeFrame,
     required StructureChangeItem anchor,
     required int confirmationIndex,
     int lowerBound = 0,
@@ -1948,7 +1978,21 @@ class StateService extends ChangeNotifier {
     if (bars.isEmpty) return 0;
     final conf = confirmationIndex.clamp(0, bars.length - 1);
     final lo = lowerBound.clamp(0, conf);
-    for (int i = conf; i >= lo; i--) {
+    final prints = structures
+        .where((s) => s.symbol == symbol && s.timeFrame == timeFrame)
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    if (prints.isNotEmpty) {
+      final loDate = bars[lo].date;
+      for (final p in prints) {
+        if (p.date.isBefore(loDate) || p.date.isAfter(anchor.date)) continue;
+        final aux = anchor.isUp ? p.upAuxBorder : p.downAuxBorder;
+        if ((aux - anchor.newValue).abs() <= tolerance) {
+          return confirmationBarIndex(bars, p.date);
+        }
+      }
+    }
+    for (int i = lo; i <= conf; i++) {
       final price = anchor.isUp ? bars[i].high : bars[i].low;
       if ((price - anchor.newValue).abs() <= tolerance) return i;
     }
@@ -1956,18 +2000,36 @@ class StateService extends ChangeNotifier {
   }
 
   /// Versão diária (barras 1440, comparação por dia): retrocede do dia de
-  /// confirmação ao dia que fez o extremo. `lowerDay` limita a busca à perna
-  /// vigente (dia de confirmação da mudança antecessora, se houver).
+  /// confirmação ao dia do PRIMEIRO toque no extremo (incluso na janela,
+  /// pelo mesmo motivo do intraday: com o último toque os primeiros dias da
+  /// perna seriam cancelados no agregado).
+  /// `lowerDay` limita a busca à perna vigente (dia de confirmação da
+  /// mudança antecessora, se houver).
   static DateTime resolveDailyAnchorDay({
     required List<BarStorageItem> dailyBars,
+    required List<StructureStorageItem> history,
     required String symbol,
     required StructureChangeItem anchor,
     DateTime? lowerDay,
   }) {
     DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
     final confirmationDay = dayOnly(anchor.date);
-    if (dailyBars.isEmpty) return confirmationDay;
     final tolerance = Defaults.tickSize(symbol) / 2;
+    final prints = history
+        .where((s) => s.symbol == symbol && s.timeFrame == 1440)
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    if (prints.isNotEmpty) {
+      final loDay = lowerDay != null ? dayOnly(lowerDay) : null;
+      for (final p in prints) {
+        final d = dayOnly(p.date);
+        if (d.isAfter(confirmationDay)) break;
+        if (loDay != null && d.isBefore(loDay)) continue;
+        final aux = anchor.isUp ? p.upAuxBorder : p.downAuxBorder;
+        if ((aux - anchor.newValue).abs() <= tolerance) return d;
+      }
+    }
+    if (dailyBars.isEmpty) return confirmationDay;
     final sorted = List.of(dailyBars)
       ..sort((a, b) => a.date.compareTo(b.date));
     var confIdx = 0;
@@ -1987,7 +2049,7 @@ class StateService extends ChangeNotifier {
         }
       }
     }
-    for (int i = confIdx; i >= loIdx; i--) {
+    for (int i = loIdx; i <= confIdx; i++) {
       final price = anchor.isUp ? sorted[i].high : sorted[i].low;
       if ((price - anchor.newValue).abs() <= tolerance) {
         return dayOnly(sorted[i].date);
@@ -2021,16 +2083,24 @@ class StateService extends ChangeNotifier {
     }
     // Candle de confirmação (comportamento antigo = trigger do update).
     final confirmation = confirmationBarIndex(bars, anchor.date);
-    // Limite inferior = confirmação da mudança antecessora (não atravessa
-    // duas pernas quando o mesmo preço se repete longe no passado).
+    // Limite inferior = confirmação da mudança de lado OPOSTO mais recente
+    // antes da âncora (ponto de reset do aux no backend: o aux da âncora
+    // acumula desde lá). Usar a mudança imediatamente anterior cortaria o
+    // próprio E quando há uma mudança same-side no meio (ex.: dois topos
+    // seguidos) — a sombra começava 1 candle depois do extremo real.
+    // Também impede atravessar duas pernas quando o preço se repete longe.
+    final resetDate = oppositeResetDate(_structureChanges, anchorPos);
     var lowerBound = 0;
-    if (anchorPos + 1 < _structureChanges.length) {
-      lowerBound =
-          confirmationBarIndex(bars, _structureChanges[anchorPos + 1].date);
+    if (resetDate != null) {
+      lowerBound = confirmationBarIndex(bars, resetDate);
     }
-    // Início do filtro = candle que fez o extremo (aux), não o que confirmou.
+    // Início do filtro = candle do PRIMEIRO toque no extremo (E, incluso no
+    // perfil), não o que confirmou.
     final start = resolveExtremeBarIndex(
       bars: bars,
+      structures: _structures,
+      symbol: _symbol,
+      timeFrame: _currentConfig.timeFrame,
       anchor: anchor,
       confirmationIndex: confirmation,
       lowerBound: lowerBound,
