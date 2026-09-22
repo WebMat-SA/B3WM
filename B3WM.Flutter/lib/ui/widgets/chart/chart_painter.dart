@@ -34,7 +34,6 @@ class ChartPainter extends CustomPainter {
     _drawDaySeparators(canvas, size, chartWidth, chartHeight, stepX);
     _drawMarkArea(canvas, size, chartWidth, chartHeight, stepX);
     _drawStructureLines(canvas, size, chartWidth, chartHeight, stepX);
-    _drawExtremeLines(canvas, chartWidth, chartHeight);
     _drawCandles(canvas, size, chartWidth, chartHeight, stepX);
     _drawBubbles(canvas, size, chartWidth, chartHeight, stepX);
     _drawHistoryMarkers(canvas, size, chartWidth, chartHeight, stepX);
@@ -111,61 +110,8 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  void _drawExtremeLines(
-      Canvas canvas, double chartWidth, double chartHeight) {
-    final ex = data.extremes;
-    if (ex == null || !ex.visible) return;
-
-    void drawLines(List<double> prices, Color color) {
-      final paint = Paint()
-        ..color = color.withOpacity(ex.opacity)
-        ..strokeWidth = 1;
-      for (final price in prices) {
-        final y = _priceToY(price, chartHeight);
-        if (y < 0 || y > chartHeight) continue;
-        _drawDashedLine(
-            canvas, Offset(0, y), Offset(chartWidth, y), paint);
-      }
-    }
-
-    drawLines(ex.topPrices, const Color(0xFF69F0AE));
-    drawLines(ex.valleyPrices, const Color(0xFFFF5252));
-  }
-
-  void _drawVwapLines(
-      Canvas canvas, double chartWidth, double chartHeight, double stepX) {
-    final vwapPoints = data.vwapPoints;
-    if (vwapPoints.isEmpty) return;
-
-    final paint = Paint()
-      ..color = data.vwapColor.withOpacity(data.vwapOpacity)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    Offset? prev;
-    DateTime? prevDay;
-    for (final vwap in vwapPoints) {
-      final y = _priceToY(vwap.price, chartHeight);
-      if (y < 0 || y > chartHeight) {
-        prev = null;
-        continue;
-      }
-
-      final currentDay = DateTime(vwap.date.year, vwap.date.month, vwap.date.day);
-      if (prevDay != null && currentDay != prevDay) {
-        prev = null;
-      }
-      prevDay = currentDay;
-
-      final x = _indexToX(vwap.startCandleIndex, stepX);
-      final pt = Offset(x, y);
-
-      if (prev != null) {
-        canvas.drawLine(prev, pt, paint);
-      }
-      prev = pt;
-    }
-  }
+  // Note: extreme lines and VWAP are drawn only by ChartFixedPainter
+  // (full-width, screen-space with pan/zoom applied) to avoid double-draw.
 
   void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint) {
     final dx = p2.dx - p1.dx;
