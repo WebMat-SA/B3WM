@@ -42,9 +42,9 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
   <p><em>Painel de trading (integração MT5): ordem de mercado, conta, ordens em aberto, posições e histórico.</em></p>
 </div>
 
-### Abas do Drawer
+### Abas do Drawer (intraday)
 
-O drawer lateral organiza as ferramentas de análise em abas:
+O drawer lateral organiza as ferramentas de análise em abas (ícones na AppBar abrem direto na aba correspondente):
 
 #### 📊 Bubbles
 <div align="center">
@@ -64,17 +64,25 @@ O drawer lateral organiza as ferramentas de análise em abas:
   <p><em>Perfil de volume com modo automático (por estrutura), seleção de horário e controles de exibição, tamanho e opacidade.</em></p>
 </div>
 
-#### 🔄 Trading Data
+#### ⛰️ Topos/Vales
 <div align="center">
-  <img src="screenshots/drawer_trading_data.png" alt="Aba Trading Data" width="800" style="max-width:100%;">
-  <p><em>Histórico de trades, posições e ordens em aberto (dados da integração MT5).</em></p>
+  <img src="screenshots/drawer_extreme.png" alt="Aba Topos e Vales" width="800" style="max-width:100%;">
+  <p><em>Detecção de topos/vales (ExtremeService) com sensibilidade a ruído e proeminência mínima ajustáveis.</em></p>
 </div>
 
-#### 🧪 Verifier
+#### ➖ Pivot Tradicional (novo)
 <div align="center">
-  <img src="screenshots/drawer_verifier.png" alt="Aba Verifier" width="800" style="max-width:100%;">
-  <p><em>Backtest manual: verificação de sinais da estratégia SmartBreakout com métricas em tempo real.</em></p>
+  <img src="screenshots/drawer_pivot.png" alt="Aba Pivot Tradicional" width="800" style="max-width:100%;">
+  <p><em>Pivot Tradicional estilo Profit no intraday (fonte HLC de D-1, 2–5 pares de níveis). Sem dados de D-1, a aba mostra os controles e a mensagem de sessão sem pivot.</em></p>
 </div>
+
+Outras abas sem screenshot dedicado: **VWAP Diário**, **Período / Dados Históricos** e **Backup (exportar/importar)**.
+
+> ℹ️ O **Verifier** (backtest manual) está **desabilitado** no momento — o código segue em `lib/ui/widgets/verifier_drawer.dart`, mas sem aba ativa.
+
+### Análise diária (painel inferior 1D)
+
+O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário e 4 abas próprias: **Estrutura 1D**, **Volume Profile 1D**, **Topos/Vales 1D** e **Pivot Tradicional 1D** (fonte HLC da semana anterior, fiel ao Profit).
 ---
 
 ## Funcionalidades
@@ -85,6 +93,9 @@ O drawer lateral organiza as ferramentas de análise em abas:
 - **Volume Profile:** Perfil de volume por nível de preço com POC (Point of Control)
 - **Delta Profile:** Diferença compra-venda por nível (buying/selling pressure)
 - **Estruturas de Suporte/Resistência:** Borders calculadas automaticamente com base na ação do preço
+- **Topos/Vales:** Detecção de extremos com `NoiseSensitivity` e `MinimumProminence` ajustáveis
+- **Pivot Tradicional:** Níveis estilo Profit — intraday com HLC de D-1, diário (1D) com HLC da semana anterior
+- **VWAP Diário** e painel de **análise diária (1D)** com estrutura, volume, topos/vales e pivot próprios
 
 ### Análise de Microestrutura
 - Identificação de agentes compradores/vendedores por corretora
@@ -171,14 +182,23 @@ graph TD
 
 ---
 
-## Como Rodar
+## Como Rodar (fork do zero)
 
 ### Pré-requisitos
-- .NET 10 SDK
-- Flutter SDK (para o frontend)
-- Python 3.12+ (opcional, para trading)
-- MetaTrader 5 (opcional, para trading)
-- Profit (Carteira Profissional) ou fonte de dados B3 (opcional, para dados reais)
+- **Git**, **.NET 10 SDK**
+- **Flutter SDK** (testado com Flutter 3.44 / Dart 3.12) — veja detalhes em [B3WM.Flutter/README.md](B3WM.Flutter/README.md)
+- **Python 3.12+ no Windows** (opcional, só para o bridge MT5) — veja [B3WM.Python/README.md](B3WM.Python/README.md)
+- **MetaTrader 5** (opcional, para trading) e **Profit Carteira Profissional** (opcional, para dados reais)
+
+### 0. Clonar e confiar no certificado local
+
+```bash
+git clone https://github.com/WebMat-SA/B3WM.git
+cd B3WM
+dotnet dev-certs https --trust   # o Flutter fala com https://localhost:5002 (cert self-signed)
+```
+
+> 📁 A pasta **`/Data/` (JSONs diários gerados pelo servidor) é ignorada pelo git** (`.gitignore`) — ela é criada/usada em runtime e **não** vai para o PR. O legado `/B3WM/Data/` segue ignorado também.
 
 ### Ordem de Inicialização
 
@@ -189,6 +209,12 @@ graph TD
 4️⃣ Trading Bridge (opcional) — conecta ao servidor
 5️⃣ Testes — podem rodar a qualquer momento
 ```
+
+| Serviço | Porta padrão | Config |
+|---|---|---|
+| B3WM Server (HTTPS) | `https://localhost:5002` (+ `http://localhost:5000`) | `B3WM/Properties/launchSettings.json`, `B3WM/appsettings.json` |
+| SignalR Hub | `https://localhost:5002/api/datahub` | `B3WM/Program.cs` |
+| Python MT5 Bridge | `http://localhost:8000` | `PythonService:BaseUrl` no `appsettings.json`; URL do Flutter em `B3WM.Flutter/lib/main.dart` (`baseUrl`) |
 
 ### 1. Servidor Web (Obrigatório)
 
@@ -208,7 +234,11 @@ flutter pub get
 flutter run -d windows   # ou -d chrome / -d android
 ```
 
-> O app conecta-se a **https://localhost:5002** por padrão (veja `lib/main.dart`).
+> O app conecta-se a **https://localhost:5002** por padrão (`baseUrl` em `lib/main.dart`).
+> Troque o `baseUrl` se o backend estiver em outra máquina.
+> - **Windows/Chrome:** com o `dotnet dev-certs https --trust` feito acima, o HTTPS local funciona.
+> - **Android emulador:** use `https://10.0.2.2:5002` em vez de `localhost`.
+> - **Android físico / outro dispositivo:** use `https://<IP-da-sua-máquina>:5002` e aceite o certificado.
 
 ### 3. Fonte de Dados
 
@@ -235,10 +265,19 @@ O servidor FastAPI inicia em **http://localhost:8000** e o B3WM Server se conect
 ### 5. Testes
 
 ```bash
-dotnet test B3WM.Tests                       # Testes unitários do servidor (.NET)
+dotnet test B3WM.Tests                       # Testes unitários do servidor (.NET, inclui PivotServiceTests)
 cd B3WM.Flutter && flutter test              # Testes do frontend (widget + golden)
-cd B3WM.Flutter && flutter test --update-goldens test/screenshots_golden_test.dart  # regenera screenshots/
 ```
+
+Para **regenerar as screenshots** do README (goldens com dados de exemplo, sem precisar de dados reais):
+
+```bash
+cd B3WM.Flutter
+flutter test test/screenshots_golden_test.dart --update-goldens
+cp test/goldens/overview.png test/goldens/drawer_bubbles.png test/goldens/drawer_estrutura.png test/goldens/drawer_volume_profile.png test/goldens/drawer_extreme.png test/goldens/drawer_pivot.png test/goldens/trading_panel.png ../screenshots/
+```
+
+> Os goldens cobrem: visão geral, Bubbles, Estrutura, Volume Profile, **Topos/Vales**, **Pivot Tradicional** e painel de trading. VWAP/Período/Backup e o painel 1D ainda não têm goldens dedicados.
 
 ---
 
@@ -248,24 +287,30 @@ cd B3WM.Flutter && flutter test --update-goldens test/screenshots_golden_test.da
 B3WM.sln                          # Solução principal (.NET 10)
 │
 ├── B3WM/                         # 🖥️ Servidor ASP.NET Core + SignalR
-│   ├── Program.cs                #    Entry point do servidor
-│   ├── Services/Core/            #    Candle, Bubble, Volume, Structure
+│   ├── Program.cs                #    Entry point (https://localhost:5002, hub /api/datahub)
+│   ├── Services/Core/            #    Candle, Bubble, Volume, Structure, Extreme, PivotService
 │   ├── Services/Backtest/        #    BacktestEngine, SmartBreakoutStrategy
-│   ├── Controllers/              #    REST API endpoints
-│   └── Data/                     #    Persistência (JSON)
+│   ├── Controllers/              #    REST API endpoints (incl. DataController: pivot/extreme/daily)
+│   └── appsettings.json          #    PythonService:BaseUrl (http://localhost:8000)
 │
-├── B3WM.Shared/                  # 📦 Modelos, DTOs, Interfaces
+├── Data/                         # 📁 JSONs diários gerados em runtime (IGNORADO pelo git)
 │
-├── B3WM.Tests/                   # ✅ Testes unitários (xUnit)
+├── B3WM.Shared/                  # 📦 Modelos, DTOs, Interfaces (incl. PivotStorageItem)
+│
+├── B3WM.Tests/                   # ✅ Testes unitários (xUnit, inclui PivotServiceTests)
 │
 ├── B3WM.Flutter/                 # 📱 Frontend Flutter (Map Flow Chart)
-│   ├── lib/main.dart             #    Entry point do app
+│   ├── lib/main.dart             #    Entry point do app (baseUrl https://localhost:5002)
 │   ├── lib/services/             #    Serviços HTTP/SignalR (cliente)
 │   ├── lib/ui/widgets/chart/     #    Gráfico Map Flow (CustomPainter)
-│   └── test/                     #    Widget + golden tests (geram screenshots/)
+│   ├── lib/ui/widgets/           #    Drawers: bubble/structure/volume/extreme/pivot/vwap/backup/trading
+│   ├── lib/ui/widgets/daily/     #    Painel inferior 1D (structure/volume/extreme/pivot)
+│   └── test/                     #    Widget + golden tests (test/goldens/ → screenshots/)
 │
-├── B3WM.Python/                  # 🐍 Bridge MetaTrader 5 (FastAPI)
-│   └── main.py                   #    Entry point (python main.py)
+├── B3WM.Python/                  # 🐍 Bridge MetaTrader 5 (FastAPI, Windows-only)
+│   ├── main.py                   #    Entry point (uvicorn :8000)
+│   ├── models/                   #    order.py, ticks.py
+│   └── services/                 #    order_executor.py, mt5.py, contract_utils.py (rolagem WIN/WDO)
 │
 └── ExtractorRTD/                 # 📡 Coletor WPF (Profit RTD via COM)
     └── B3WM.ExtractorRTD.sln     #    Solução separada (.NET Framework)

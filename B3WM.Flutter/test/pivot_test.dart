@@ -72,6 +72,12 @@ ApiService _pivotApi() => ApiService(
         if (path.contains('GetStructureHistory')) {
           return http.Response(jsonEncode([]), 200);
         }
+        if (path.contains('GetVolume')) {
+          // Sem snapshot de volume: 404 → ApiService.getVolume retorna null
+          // pelo caminho normal (um '[]' aqui lançaria TypeError no cast
+          // para Map e abortaria o _loadIntraday antes do pivot).
+          return http.Response('', 404);
+        }
         if (path.contains('GetDailyProfile')) {
           return http.Response(jsonEncode([]), 200);
         }
