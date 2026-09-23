@@ -124,6 +124,18 @@ ChartData buildDailyChartData(StateService state) {
     }
   }
 
+  PivotLineData? pivots;
+  if (state.dailyPivotVisible) {
+    final pv = state.dailyPivot;
+    if (pv != null && pv.levels.isNotEmpty) {
+      pivots = PivotLineData.fromLevels(
+        [for (final l in pv.levels) (key: l.key, value: l.value)],
+        visible: true,
+        opacity: state.dailyPivotOpacity,
+      );
+    }
+  }
+
   final volumeProfile = <VolumeBarData>[];
   if (state.dailyProfileVisible && state.dailyProfileLevels.isNotEmpty) {
     final vols = state.dailyProfileLevels;
@@ -187,6 +199,7 @@ ChartData buildDailyChartData(StateService state) {
     volumeProfile: volumeProfile,
     structures: structures,
     extremes: extremes,
+    pivots: pivots,
     vwapPoints: const [],
     minPrice: minPrice,
     maxPrice: maxPrice,
@@ -195,6 +208,7 @@ ChartData buildDailyChartData(StateService state) {
     daySeparatorIndices: monthSepIndices,
     rangeStart: rangeStart,
     rangeEnd: rangeEnd == 0 ? bars.length : rangeEnd,
+    profileVisible: state.dailyProfileVisible,
     symbol: state.symbol,
     timeFrame: 1440,
     bubbleOpacity: 0.7,

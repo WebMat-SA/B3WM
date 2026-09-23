@@ -27,6 +27,13 @@ class DailyAnalysisConfig {
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
 
+  /// Pivot Tradicional do Profit no widget diário (issue #14): fonte HLC da
+  /// semana anterior (fiel ao Profit), exibido só no dia atual/último pregão.
+  /// Opções da aba: só visible/opacity/lineCount (2–5, default 2).
+  bool pivotVisible;
+  double pivotOpacity;
+  int pivotLineCount;
+
   /// Painel split embutido (divide a tela com o gráfico principal).
   /// Fração da altura total ocupada pelo painel (divisória arrastável).
   bool panelVisible;
@@ -46,6 +53,9 @@ class DailyAnalysisConfig {
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.pivotVisible,
+    required this.pivotOpacity,
+    required this.pivotLineCount,
     required this.panelVisible,
     required this.panelFraction,
   });
@@ -64,6 +74,9 @@ class DailyAnalysisConfig {
         extremeOpacity = 0.5,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        pivotVisible = true,
+        pivotOpacity = 0.7,
+        pivotLineCount = 2,
         panelVisible = false,
         panelFraction = 0.5;
 
@@ -104,6 +117,11 @@ class DailyAnalysisConfig {
           (src['extremeMinimumProminence'] as num?)?.toDouble() ??
               (json['dailyExtremeMinimumProminence'] as num?)?.toDouble() ??
               Defaults.extremeMinimumProminence,
+      pivotVisible: src['pivotVisible'] as bool? ?? true,
+      pivotOpacity:
+          (src['pivotOpacity'] as num?)?.toDouble() ?? 0.7,
+      pivotLineCount:
+          ((src['pivotLineCount'] as num?)?.toInt() ?? 2).clamp(2, 5),
       panelVisible: src['panelVisible'] as bool? ?? false,
       panelFraction:
           ((src['panelFraction'] as num?)?.toDouble() ?? 0.5).clamp(0.3, 0.7),
@@ -124,6 +142,9 @@ class DailyAnalysisConfig {
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'pivotVisible': pivotVisible,
+        'pivotOpacity': pivotOpacity,
+        'pivotLineCount': pivotLineCount,
         'panelVisible': panelVisible,
         'panelFraction': panelFraction,
       };

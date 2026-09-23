@@ -4,6 +4,7 @@ import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
 import 'extreme_drawer.dart';
+import 'pivot_drawer.dart';
 import 'vwap_drawer.dart';
 import 'date_range_tab.dart';
 // Verifier desabilitado. Para reativar, re-importe 'verifier_drawer.dart',
@@ -24,7 +25,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 8, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -87,6 +88,12 @@ tabs: const [
                 ),
                 Tab(
                   icon: Tooltip(
+                    message: 'Pivot Tradicional',
+                    child: Icon(Icons.drag_handle, size: 18),
+                  ),
+                ),
+                Tab(
+                  icon: Tooltip(
                     message: 'VWAP Diário',
                     child: Icon(Icons.trending_up, size: 18),
                   ),
@@ -114,6 +121,7 @@ children: const [
                 StructureDrawer(noDrawer: true),
                 VolumeProfileDrawer(noDrawer: true),
                 ExtremeDrawer(noDrawer: true),
+                PivotDrawer(noDrawer: true),
                 VwapDrawer(noDrawer: true),
                 DateRangeTab(noDrawer: true),
                 BackupTab(noDrawer: true),

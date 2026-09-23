@@ -369,6 +369,93 @@ namespace B3WM.Controllers
         }
 
         [HttpGet("{symbol}")]
+        public async Task<IActionResult> GetPivotIntraday(string symbol,
+            [FromQuery] DateTime? date = null, [FromQuery] int lineCount = 2)
+        {
+            // Pivot Tradicional do Profit no splitter superior (issue #14):
+            // fonte HLC de D-1, linhas só sobre a sessão exibida (dia atual
+            // ou último pregão). Função pura, sem tocar no estado ao vivo.
+            var target = (date ?? DateTime.Today).Date;
+            var n = PivotService.ClampLineCount(lineCount);
+            var bars = await PivotService.ReadDailyBarsAsync(
+                dataKeeper, symbol, target.AddDays(-60), target);
+            var session = PivotService.ResolveSessionDate(bars, target);
+            if (session == null)
+                return Ok(new PivotStorageItem
+                {
+                    Symbol = symbol, Date = target, Source = "D-1", LineCount = n
+                });
+            var src = PivotService.ResolveIntradaySource(bars, session.Value);
+            if (src == null)
+                return Ok(new PivotStorageItem
+                {
+                    Symbol = symbol, Date = session.Value, Source = "D-1", LineCount = n
+                });
+            return Ok(new PivotStorageItem
+            {
+                Symbol = symbol,
+                Date = session.Value,
+                Source = "D-1",
+                High = src.High,
+                Low = src.Low,
+                Close = src.Close,
+                LineCount = n,
+                Levels = PivotService.ComputeTraditional(src.High, src.Low, src.Close, n),
+            });
+        }
+
+        [HttpGet("{symbol}")]
+        public async Task<IActionResult> GetPivotDaily(string symbol,
+            [FromQuery] DateTime? date = null, [FromQuery] int lineCount = 2)
+        {
+            // Pivot Tradicional do Profit no widget diário (issue #14):
+            // desloca 1 período superior — fonte HLC da semana anterior
+            // (fiel ao Profit). Sem semana anterior, fallback para D-1.
+            var target = (date ?? DateTime.Today).Date;
+            var n = PivotService.ClampLineCount(lineCount);
+            var bars = await PivotService.ReadDailyBarsAsync(
+                dataKeeper, symbol, target.AddDays(-60), target);
+            var session = PivotService.ResolveSessionDate(bars, target);
+            if (session == null)
+                return Ok(new PivotStorageItem
+                {
+                    Symbol = symbol, Date = target, Source = "W-1", LineCount = n
+                });
+            var weekly = PivotService.ResolveDailySource(bars, session.Value);
+            double h, l, c;
+            string source;
+            if (weekly != null)
+            {
+                (h, l, c) = weekly.Value;
+                source = "W-1";
+            }
+            else
+            {
+                var src = PivotService.ResolveIntradaySource(bars, session.Value);
+                if (src == null)
+                    return Ok(new PivotStorageItem
+                    {
+                        Symbol = symbol, Date = session.Value, Source = "W-1", LineCount = n
+                    });
+                h = src.High;
+                l = src.Low;
+                c = src.Close;
+                source = "D-1";
+            }
+            return Ok(new PivotStorageItem
+            {
+                Symbol = symbol,
+                Date = session.Value,
+                Source = source,
+                High = h,
+                Low = l,
+                Close = c,
+                LineCount = n,
+                Levels = PivotService.ComputeTraditional(h, l, c, n),
+            });
+        }
+
+        [HttpGet("{symbol}")]
         public async Task<IActionResult> SetExtremePeriodAsync(string symbol,
             [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] DateTime? date = null)
         {

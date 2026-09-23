@@ -105,6 +105,7 @@ class ChartFixedPainter extends CustomPainter {
     canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
     _drawExtremeLines(canvas);
+    _drawPivotLines(canvas);
     _drawVwapLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
@@ -237,6 +238,7 @@ class ChartFixedPainter extends CustomPainter {
   }
 
   void _drawMarkArea(Canvas canvas) {
+    if (!data.profileVisible) return;
     if (data.rangeStart <= 0 && data.rangeEnd >= data.candles.length) return;
 
     final m = controller.value;
@@ -312,6 +314,47 @@ class ChartFixedPainter extends CustomPainter {
 
     drawLines(ex.topPrices, const Color(0xFF69F0AE));
     drawLines(ex.valleyPrices, const Color(0xFFFF5252));
+  }
+
+  /// Níveis do Pivot Tradicional (issue #14): linhas horizontais sólidas
+  /// (diferente do tracejado de topos/vales) com cores próprias — P amarelo
+  /// (como no Profit), R vermelho, S verde — e tag com a chave do nível.
+  void _drawPivotLines(Canvas canvas) {
+    final pv = data.pivots;
+    if (pv == null || !pv.visible) return;
+
+    void drawLevel(String key, double price, Color color) {
+      final y = _priceToY(price);
+      if (y < marginTop || y > marginTop + chartHeight) return;
+      final paint = Paint()
+        ..color = color.withOpacity(pv.opacity)
+        ..strokeWidth = 1.2;
+      canvas.drawLine(Offset(marginLeft, y),
+          Offset(chartRight - rightLabelMargin, y), paint);
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: key,
+          style: TextStyle(
+            color: color.withOpacity(pv.opacity),
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(marginLeft + 4, y - tp.height - 1));
+    }
+
+    if (pv.pivot.isFinite) {
+      drawLevel('P', pv.pivot, const Color(0xFFBDBDBD));
+    }
+    for (int i = 0; i < pv.resistances.length; i++) {
+      drawLevel('R${i + 1}', pv.resistances[i], const Color(0xFFCE93D8));
+    }
+    for (int i = 0; i < pv.supports.length; i++) {
+      drawLevel('S${i + 1}', pv.supports[i], const Color(0xFF4DD0E1));
+    }
   }
 
   void _drawVwapLines(Canvas canvas) {

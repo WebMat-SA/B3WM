@@ -544,6 +544,12 @@ Future<void> _capture(WidgetTester tester, String name) async {
   );
 }
 
+Future<void> _cancelTimers(WidgetTester tester, _Env env) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump(const Duration(seconds: 6));
+  env.state.reset();
+}
+
 Future<void> _openDrawerTab(
     WidgetTester tester, _Env env, String tooltip, String name) async {
   await tester.pumpWidget(_buildApp(env));
@@ -551,13 +557,7 @@ Future<void> _openDrawerTab(
   await tester.tap(find.byTooltip(tooltip));
   await _settle(tester);
   await _capture(tester, name);
-  env.state.reset();
-}
-
-Future<void> _cancelTimers(WidgetTester tester, _Env env) async {
-  await tester.pumpWidget(const SizedBox.shrink());
-  await tester.pump(const Duration(seconds: 6));
-  env.state.reset();
+  await _cancelTimers(tester, env);
 }
 
 void main() {
@@ -585,7 +585,7 @@ void main() {
     await tester.pumpWidget(_buildApp(env));
     await _settle(tester);
     await _capture(tester, 'overview');
-    env.state.reset();
+    await _cancelTimers(tester, env);
   });
 
   testWidgets('golden - aba Bubbles', (tester) async {
@@ -606,10 +606,17 @@ void main() {
     await _openDrawerTab(tester, env, 'Volume Profile', 'drawer_volume_profile');
   });
 
-  testWidgets('golden - aba Trading Data', (tester) async {
+  testWidgets('golden - aba Topos/Vales', (tester) async {
     final env = await _createEnv();
     env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(tester, env, 'Trading Data', 'drawer_trading_data');
+    await _openDrawerTab(tester, env, 'Topos/Vales', 'drawer_extreme');
+  });
+
+  testWidgets('golden - aba Pivot Tradicional', (tester) async {
+    final env = await _createEnv();
+    env.state.setTradingPanelVisible(false);
+    await _openDrawerTab(
+        tester, env, 'Pivot Tradicional', 'drawer_pivot');
   });
 
   testWidgets('golden - painel de trading', (tester) async {
