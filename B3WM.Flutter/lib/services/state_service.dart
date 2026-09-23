@@ -21,6 +21,7 @@ import '../models/signal_event.dart';
 import '../models/verifier_config.dart';
 import '../models/verifier_state.dart';
 import '../models/extreme_storage_item.dart';
+import '../models/pivot_storage_item.dart';
 import '../models/defaults.dart';
 
 class StateService extends ChangeNotifier {
@@ -418,6 +419,7 @@ class StateService extends ChangeNotifier {
       await refreshDailyStructureHistory();
       _dailyExtremes = null;
       _dailyProfileLevels = [];
+      _dailyPivot = null;
       // Nova distância pode mover a última perna: re-deriva a janela
       // (auto) ou mantém os índices manuais (clamp na carga).
       if (_currentConfig.daily.profileAutoByPriceStructure) {
@@ -427,6 +429,7 @@ class StateService extends ChangeNotifier {
         _dailyRangeEnd = _dailyBars.length;
         await loadDailyProfileAndExtremes();
       }
+      await loadDailyPivot();
     } catch (e) {
       debugPrint('[dailyStructure] confirm error: $e');
     } finally {
@@ -488,6 +491,43 @@ class StateService extends ChangeNotifier {
     notifyListeners();
     _saveConfigForSymbol(_symbol);
     _scheduleDailyExtremeConfigSync();
+  }
+
+  // --- Pivot Tradicional diário (issue #14): só visible/opacity/lineCount ---
+  bool get dailyPivotVisible => _currentConfig.daily.pivotVisible;
+  double get dailyPivotOpacity => _currentConfig.daily.pivotOpacity;
+  int get dailyPivotLineCount => _currentConfig.daily.pivotLineCount;
+
+  void setDailyPivotVisible(bool v) {
+    _currentConfig.daily.pivotVisible = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyPivotOpacity(double v) {
+    _currentConfig.daily.pivotOpacity = v.clamp(0.0, 1.0);
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setDailyPivotLineCount(int v) {
+    v = v.clamp(2, 5);
+    if (_currentConfig.daily.pivotLineCount == v) return;
+    _currentConfig.daily.pivotLineCount = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    _scheduleDailyPivotSync();
+  }
+
+  Timer? _dailyPivotSyncTimer;
+
+  /// Debounce do lineCount 1D (paridade com `_scheduleDailyExtremeConfigSync`):
+  /// recarrega o pivot ~800ms após parar de arrastar — sem botão Atualizar,
+  /// mudou a config já aparece no gráfico.
+  void _scheduleDailyPivotSync() {
+    _dailyPivotSyncTimer?.cancel();
+    _dailyPivotSyncTimer = Timer(const Duration(milliseconds: 800), () {
+      // ignore: discarded_futures
+      loadDailyPivot();
+    });
   }
 
   Timer? _dailyExtremeConfigTimer;
@@ -562,6 +602,35 @@ class StateService extends ChangeNotifier {
   double get extremeNoiseSensitivity => _currentConfig.extremeNoiseSensitivity;
   double get extremeMinimumProminence => _currentConfig.extremeMinimumProminence;
 
+  // --- Pivot Tradicional intraday (issue #14): só visible/opacity/lineCount ---
+  bool get pivotVisible => _currentConfig.pivotVisible;
+  double get pivotOpacity => _currentConfig.pivotOpacity;
+  int get pivotLineCount => _currentConfig.pivotLineCount;
+
+  void setPivotVisible(bool v) { _currentConfig.pivotVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setPivotOpacity(double v) { _currentConfig.pivotOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setPivotLineCount(int v) {
+    v = v.clamp(2, 5);
+    if (_currentConfig.pivotLineCount == v) return;
+    _currentConfig.pivotLineCount = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    _schedulePivotIntradaySync();
+  }
+
+  Timer? _pivotIntradaySyncTimer;
+
+  /// Debounce do lineCount intraday (paridade com `_scheduleDailyExtremeConfigSync`):
+  /// recarrega o pivot ~800ms após parar de arrastar — sem botão Atualizar,
+  /// mudou a config já aparece no gráfico.
+  void _schedulePivotIntradaySync() {
+    _pivotIntradaySyncTimer?.cancel();
+    _pivotIntradaySyncTimer = Timer(const Duration(milliseconds: 800), () {
+      // ignore: discarded_futures
+      loadPivotIntraday();
+    });
+  }
+
   // --- VWAP ---
   bool get vwapVisible => _currentConfig.vwapVisible;
   double get vwapOpacity => _currentConfig.vwapOpacity;
@@ -591,6 +660,19 @@ class StateService extends ChangeNotifier {
   DateTime? get dailyExtremeFrom => _dailyExtremeFrom;
   DateTime? _dailyExtremeTo;
   DateTime? get dailyExtremeTo => _dailyExtremeTo;
+
+  // Pivot Tradicional (issue #14): snapshots estáticos do dia atual/último
+  // pregão. Intraday usa fonte D-1, daily usa semana anterior (fiel ao
+  // Profit). Isolados do fluxo ao vivo/SignalR, como os extremos diários.
+  PivotStorageItem? _pivotIntraday;
+  PivotStorageItem? get pivotIntraday => _pivotIntraday;
+  bool _isPivotIntradayLoading = false;
+  bool get isPivotIntradayLoading => _isPivotIntradayLoading;
+
+  PivotStorageItem? _dailyPivot;
+  PivotStorageItem? get dailyPivot => _dailyPivot;
+  bool _isDailyPivotLoading = false;
+  bool get isDailyPivotLoading => _isDailyPivotLoading;
 
   /// Histórico de estruturas 1440 (90 dias) — linhas do chart diário.
   /// Lista separada para não poluir a aba Estruturas.
@@ -952,6 +1034,9 @@ class StateService extends ChangeNotifier {
         _dailyRangeEnd = _dailyBars.length;
         await loadDailyProfileAndExtremes();
       }
+      // Pivot Tradicional diário (fonte semana anterior, issue #14):
+      // independe da janela do perfil — carga própria, mesmo padrão lazy.
+      await loadDailyPivot();
     } finally {
       _isDailyLoading = false;
       notifyListeners();
@@ -1042,6 +1127,70 @@ class StateService extends ChangeNotifier {
     _dailyExtremes = null;
     _dailyExtremeFrom = null;
     _dailyExtremeTo = null;
+    notifyListeners();
+  }
+
+  /// Carga do Pivot Tradicional intraday (fonte D-1). Reativa: carrega no
+  /// loadData e recarrega sozinha no debounce do lineCount — sem botão
+  /// Atualizar, mudou a config já aparece no gráfico.
+  Future<void> loadPivotIntraday() async {
+    if (_symbol.isEmpty || _isPivotIntradayLoading) return;
+    _isPivotIntradayLoading = true;
+    notifyListeners();
+    try {
+      debugPrint('[pivot] intraday load $_symbol lines=${_currentConfig.pivotLineCount}');
+      final data = await _apiService.getPivotIntraday(
+        _symbol,
+        lineCount: _currentConfig.pivotLineCount,
+      );
+      if (data != null) {
+        if (data.symbol.isEmpty || data.symbol == _symbol) {
+          _pivotIntraday = data;
+          debugPrint('[pivot] intraday applied levels=${data.levels.length} source=${data.source}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[pivot] intraday load error: $e');
+    } finally {
+      _isPivotIntradayLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearPivotIntraday() {
+    _pivotIntraday = null;
+    notifyListeners();
+  }
+
+  /// Carga do Pivot Tradicional diário (fonte semana anterior). Reativa:
+  /// carrega no loadDailyAll e recarrega sozinha no debounce do lineCount —
+  /// sem botão Atualizar, mudou a config já aparece no gráfico.
+  Future<void> loadDailyPivot() async {
+    if (_symbol.isEmpty || _isDailyPivotLoading) return;
+    _isDailyPivotLoading = true;
+    notifyListeners();
+    try {
+      debugPrint('[pivot] daily load $_symbol lines=${_currentConfig.daily.pivotLineCount}');
+      final data = await _apiService.getPivotDaily(
+        _symbol,
+        lineCount: _currentConfig.daily.pivotLineCount,
+      );
+      if (data != null) {
+        if (data.symbol.isEmpty || data.symbol == _symbol) {
+          _dailyPivot = data;
+          debugPrint('[pivot] daily applied levels=${data.levels.length} source=${data.source}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[pivot] daily load error: $e');
+    } finally {
+      _isDailyPivotLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearDailyPivot() {
+    _dailyPivot = null;
     notifyListeners();
   }
 
@@ -1140,6 +1289,9 @@ class StateService extends ChangeNotifier {
       extremeOpacity: 0.7,
       extremeNoiseSensitivity: 3.0,
       extremeMinimumProminence: 0.15,
+      pivotVisible: true,
+      pivotOpacity: 0.7,
+      pivotLineCount: 2,
       vwapVisible: true,
       vwapOpacity: 0.5,
       vwapColor: '#FF8800',
@@ -1279,6 +1431,7 @@ class StateService extends ChangeNotifier {
     _symbol = value.toUpperCase();
     _allBubbleAgents.clear();
     _extremes = null;
+    _pivotIntraday = null;
     _dailyExtremes = null;
     _dailyExtremeFrom = null;
     _dailyExtremeTo = null;
@@ -1288,6 +1441,7 @@ class StateService extends ChangeNotifier {
     _dailyProfileLevels = [];
     _dailyProfileFrom = null;
     _dailyProfileTo = null;
+    _dailyPivot = null;
     _structures1440History = [];
     _displayDate = null;
     _lastExtremeFrom = null;
@@ -1430,6 +1584,13 @@ class StateService extends ChangeNotifier {
       } catch (e) {
         debugPrint('[loadData] Extreme load error: $e');
       }
+      // Pivot Tradicional intraday (fonte D-1, issue #14): snapshot estático
+      // da sessão, independente dos extremos.
+      try {
+        await loadPivotIntraday();
+      } catch (e) {
+        debugPrint('[loadData] Pivot load error: $e');
+      }
       notifyListeners();
 
     } catch (e) {
@@ -1482,6 +1643,14 @@ class StateService extends ChangeNotifier {
 
       // Extremes: range API
       await _loadExtremesForRange(startDate, endDate);
+
+      // Pivot Tradicional intraday (fonte D-1, issue #14): snapshot estático
+      // da sessão atual, independente do range multi-day.
+      try {
+        await loadPivotIntraday();
+      } catch (e) {
+        debugPrint('[loadData] Pivot load error: $e');
+      }
 
       // Full range for volume filter
       _dateRangeStart = 0;

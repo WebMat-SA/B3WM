@@ -39,6 +39,13 @@ class SymbolConfig {
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
 
+  /// Pivot Tradicional do Profit no splitter superior/intraday (issue #14):
+  /// fonte HLC de D-1, exibido só no dia atual/último pregão.
+  /// Opções da aba: só visible/opacity/lineCount (2–5, default 2).
+  bool pivotVisible;
+  double pivotOpacity;
+  int pivotLineCount;
+
   bool vwapVisible;
   double vwapOpacity;
   String vwapColor;
@@ -96,6 +103,9 @@ class SymbolConfig {
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.pivotVisible,
+    required this.pivotOpacity,
+    required this.pivotLineCount,
     required this.vwapVisible,
     required this.vwapOpacity,
     required this.vwapColor,
@@ -143,6 +153,9 @@ class SymbolConfig {
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        pivotVisible = true,
+        pivotOpacity = 0.7,
+        pivotLineCount = 2,
         vwapVisible = true,
         vwapOpacity = 0.5,
         vwapColor = '#FF8800',
@@ -215,6 +228,9 @@ class SymbolConfig {
         extremeOpacity: defaults.daily.extremeOpacity,
         extremeNoiseSensitivity: defaults.daily.extremeNoiseSensitivity,
         extremeMinimumProminence: defaults.daily.extremeMinimumProminence,
+        pivotVisible: true,
+        pivotOpacity: 0.7,
+        pivotLineCount: 2,
         profileAutoByPriceStructure: true,
         panelVisible: legacy.daily.panelVisible,
         panelFraction: legacy.daily.panelFraction,
@@ -223,6 +239,9 @@ class SymbolConfig {
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
       extremeMinimumProminence: defaults.extremeMinimumProminence,
+      pivotVisible: true,
+      pivotOpacity: 0.7,
+      pivotLineCount: 2,
       vwapVisible: defaults.vwapVisible,
       vwapOpacity: defaults.vwapOpacity,
       vwapColor: defaults.vwapColor,
@@ -283,6 +302,10 @@ class SymbolConfig {
         extremeMinimumProminence:
             (json['extremeMinimumProminence'] as num?)?.toDouble() ??
                 Defaults.extremeMinimumProminence,
+        pivotVisible: json['pivotVisible'] as bool? ?? true,
+        pivotOpacity: (json['pivotOpacity'] as num?)?.toDouble() ?? 0.7,
+        pivotLineCount:
+            ((json['pivotLineCount'] as num?)?.toInt() ?? 2).clamp(2, 5),
         vwapVisible: json['vwapVisible'] as bool? ?? true,
         vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
         vwapColor: json['vwapColor'] as String? ?? '#FF8800',
@@ -340,6 +363,9 @@ class SymbolConfig {
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'pivotVisible': pivotVisible,
+        'pivotOpacity': pivotOpacity,
+        'pivotLineCount': pivotLineCount,
         'vwapVisible': vwapVisible,
         'vwapOpacity': vwapOpacity,
         'vwapColor': vwapColor,

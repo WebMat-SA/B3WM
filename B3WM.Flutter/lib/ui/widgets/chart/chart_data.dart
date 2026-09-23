@@ -121,6 +121,54 @@ class ExtremeLineData {
   });
 }
 
+/// Níveis do Pivot Tradicional (issue #14): linhas horizontais estáticas do
+/// dia atual/último pregão (P, R1..R5, S1..S5). Desenho sólido com cores
+/// próprias para não confundir com o tracejado de topos/vales.
+class PivotLineData {
+  final double pivot;
+  final List<double> resistances;
+  final List<double> supports;
+  final bool visible;
+  final double opacity;
+
+  PivotLineData({
+    required this.pivot,
+    required this.resistances,
+    required this.supports,
+    required this.visible,
+    required this.opacity,
+  });
+
+  /// Ordena por chave (P, R1..R5, S1..S5) a partir dos níveis do backend.
+  factory PivotLineData.fromLevels(
+    List<({String key, double value})> levels, {
+    required bool visible,
+    required double opacity,
+  }) {
+    double pivot = double.nan;
+    final resistances = <double>[];
+    final supports = <double>[];
+    for (final l in levels) {
+      if (l.key == 'P') {
+        pivot = l.value;
+      } else if (l.key.startsWith('R')) {
+        resistances.add(l.value);
+      } else if (l.key.startsWith('S')) {
+        supports.add(l.value);
+      }
+    }
+    resistances.sort();
+    supports.sort();
+    return PivotLineData(
+      pivot: pivot,
+      resistances: resistances,
+      supports: supports,
+      visible: visible,
+      opacity: opacity,
+    );
+  }
+}
+
 class ChartData {
   final List<CandlePoint> candles;
   final List<BubblePoint> redBubbles;
@@ -128,6 +176,7 @@ class ChartData {
   final List<VolumeBarData> volumeProfile;
   final StructureLineData? structures;
   final ExtremeLineData? extremes;
+  final PivotLineData? pivots;
   final List<VwapPoint> vwapPoints;
   final double minPrice;
   final double maxPrice;
@@ -136,6 +185,7 @@ class ChartData {
   final List<int> daySeparatorIndices;
   final int rangeStart;
   final int rangeEnd;
+  final bool profileVisible;
   final String symbol;
   final int timeFrame;
   final DateTime? currentBarTime;
@@ -165,6 +215,7 @@ class ChartData {
     required this.volumeProfile,
     this.structures,
     this.extremes,
+    this.pivots,
     required this.vwapPoints,
     required this.minPrice,
     required this.maxPrice,
@@ -173,6 +224,7 @@ class ChartData {
     this.daySeparatorIndices = const [],
     this.rangeStart = 0,
     this.rangeEnd = 0,
+    this.profileVisible = true,
     this.symbol = '',
     this.timeFrame = 2,
     this.currentBarTime,
@@ -376,6 +428,18 @@ ChartData buildChartData(StateService state) {
     }
   }
 
+  PivotLineData? pivots;
+  if (state.pivotVisible) {
+    final pv = state.pivotIntraday;
+    if (pv != null && pv.levels.isNotEmpty) {
+      pivots = PivotLineData.fromLevels(
+        [for (final l in pv.levels) (key: l.key, value: l.value)],
+        visible: true,
+        opacity: state.pivotOpacity,
+      );
+    }
+  }
+
   int calcRemainingSeconds() {
     if (state.currentBar == null || state.timeFrame <= 0) return 0;
     final totalMinutes = state.currentBar!.date.hour * 60 + state.currentBar!.date.minute;
@@ -468,6 +532,7 @@ ChartData buildChartData(StateService state) {
     volumeProfile: volumeProfile,
     structures: structures,
     extremes: extremes,
+    pivots: pivots,
     vwapPoints: vwapPoints,
     minPrice: minPrice,
     maxPrice: maxPrice,
@@ -476,6 +541,7 @@ ChartData buildChartData(StateService state) {
     daySeparatorIndices: daySepIndices,
     rangeStart: rangeStart,
     rangeEnd: rangeEnd,
+    profileVisible: state.profileVisible,
     symbol: state.symbol,
     timeFrame: state.timeFrame,
     remainingSeconds: calcRemainingSeconds(),

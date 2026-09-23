@@ -11,6 +11,7 @@ import '../models/verifier_config.dart';
 import '../models/verifier_state.dart';
 import '../models/verifier_log_day.dart';
 import '../models/extreme_storage_item.dart';
+import '../models/pivot_storage_item.dart';
 
 class ApiService {
   final http.Client _client;
@@ -407,6 +408,38 @@ class ApiService {
 
   String _formatDate(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  /// Pivot Tradicional do Profit no splitter superior (issue #14): fonte HLC
+  /// de D-1, linhas só sobre a sessão exibida. Rota pura, sem estado ao vivo.
+  Future<PivotStorageItem?> getPivotIntraday(
+    String symbol, {
+    int? lineCount,
+  }) async {
+    final lc = lineCount != null ? 'lineCount=$lineCount' : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetPivotIntraday/$symbol?$lc'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return PivotStorageItem.fromJson(json);
+  }
+
+  /// Pivot Tradicional do Profit no widget diário (issue #14): fonte HLC da
+  /// semana anterior (fiel ao Profit). Rota pura, sem estado ao vivo.
+  Future<PivotStorageItem?> getPivotDaily(
+    String symbol, {
+    int? lineCount,
+  }) async {
+    final lc = lineCount != null ? 'lineCount=$lineCount' : '';
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetPivotDaily/$symbol?$lc'),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return PivotStorageItem.fromJson(json);
+  }
 
   void dispose() {
     _client.close();

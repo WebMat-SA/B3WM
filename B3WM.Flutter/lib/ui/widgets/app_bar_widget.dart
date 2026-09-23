@@ -10,6 +10,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onVolumeProfileTap;
   final VoidCallback onTradingTap;
   final VoidCallback onExtremeTap;
+  final VoidCallback onPivotTap;
   final VoidCallback onVwapTap;
   final VoidCallback onDateRangeTap;
   final VoidCallback? onBackupTap;
@@ -22,6 +23,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onVolumeProfileTap,
     required this.onTradingTap,
     required this.onExtremeTap,
+    required this.onPivotTap,
     required this.onVwapTap,
     required this.onDateRangeTap,
     this.onBackupTap,
@@ -165,6 +167,12 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   icon: const Icon(Icons.terrain, size: 20),
                   onPressed: widget.onExtremeTap,
                   tooltip: 'Topos/Vales',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.drag_handle, size: 20),
+                  onPressed: widget.onPivotTap,
+                  tooltip: 'Pivot Tradicional',
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(

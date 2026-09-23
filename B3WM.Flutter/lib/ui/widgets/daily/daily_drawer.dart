@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'daily_extreme_tab.dart';
+import 'daily_pivot_tab.dart';
 import 'daily_structure_tab.dart';
 import 'daily_volume_tab.dart';
 
 /// Drawer de configurações do widget diário (issue #12), espelhando o
 /// padrão do intraday (`AppDrawer`): toolbar do split abre aqui na aba
-/// correspondente (0=Estruturas, 1=Volume, 2=Topos/Vales).
+/// correspondente (0=Estruturas, 1=Volume, 2=Topos/Vales, 3=Pivot).
 class DailyDrawer extends StatefulWidget {
   final int initialTab;
   const DailyDrawer({super.key, this.initialTab = 0});
@@ -23,7 +24,7 @@ class _DailyDrawerState extends State<DailyDrawer>
   void initState() {
     super.initState();
     _tabController =
-        TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
+        TabController(length: 4, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -79,6 +80,12 @@ class _DailyDrawerState extends State<DailyDrawer>
                       child: Icon(Icons.terrain, size: 18),
                     ),
                   ),
+                  Tab(
+                    icon: Tooltip(
+                      message: 'Pivot Tradicional 1D',
+                      child: Icon(Icons.drag_handle, size: 18),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -89,6 +96,7 @@ class _DailyDrawerState extends State<DailyDrawer>
                   SingleChildScrollView(child: DailyStructureTab()),
                   SingleChildScrollView(child: DailyVolumeTab()),
                   SingleChildScrollView(child: DailyExtremeTab()),
+                  SingleChildScrollView(child: DailyPivotTab()),
                 ],
               ),
             ),

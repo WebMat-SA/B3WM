@@ -83,6 +83,13 @@ class _DailyPanelState extends State<DailyPanel> {
                         tooltip: 'Topos/Vales 1D',
                         visualDensity: VisualDensity.compact,
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.drag_handle,
+                            size: 20, color: Colors.grey),
+                        onPressed: () => _openTab(3),
+                        tooltip: 'Pivot Tradicional 1D',
+                        visualDensity: VisualDensity.compact,
+                      ),
                       const Spacer(),
                       Chip(
                         label: Text(state.symbol,
