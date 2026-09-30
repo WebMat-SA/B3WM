@@ -397,7 +397,7 @@ namespace B3WM.Services.Core
             if ((toDate - fromDate).TotalDays > 365)
                 fromDate = toDate.AddDays(-365);
 
-            var profile = await BuildDailyProfileFromFiles(keeper, Symbol, fromDate, toDate);
+            var profile = await BuildDailyProfileWithLiveAsync(keeper, fromDate, toDate);
 
             var prices = profile.Select(v => v.Price).ToArray();
             var totals = profile.Select(v => (double)v.Total).ToArray();
@@ -478,6 +478,104 @@ namespace B3WM.Services.Core
                     {
                         byPrice[lvl.Price] = (lvl.Total, lvl.BuyVolume, lvl.SellVolume);
                     }
+                }
+            }
+
+            return byPrice
+                .Where(kv => kv.Value.Total > 0)
+                .Select(kv => new VolumeLevel
+                {
+                    Price = kv.Key,
+                    Total = kv.Value.Total,
+                    BuyVolume = kv.Value.Buy,
+                    SellVolume = kv.Value.Sell
+                })
+                .OrderBy(v => v.Price)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Perfil diário com o dia vivo incluído: soma os arquivos até D-1 e
+        /// adiciona o snapshot em memória do VolumeService para hoje (quando
+        /// hoje está na janela). Sem isso, o refresh periódico do cliente
+        /// continuaria sem o volume do pregão em andamento — preço além de
+        /// D-1 não aparecia no gráfico diário. O arquivo de hoje é ignorado
+        /// nesse caso para não duplicar (arquivo + vivo contêm o mesmo pregão).
+        /// Se o vivo estiver vazio/stale, usa o arquivo de hoje como fallback.
+        /// </summary>
+        public async Task<List<VolumeLevel>> BuildDailyProfileWithLiveAsync(
+            DataKeeperBase keeper, DateTime fromDate, DateTime toDate)
+        {
+            var from = fromDate.Date;
+            var to = toDate.Date;
+            if (to < from)
+                (from, to) = (to, from);
+            if ((to - from).TotalDays > 365)
+                from = to.AddDays(-365);
+
+            var today = DateTime.Today;
+            var includeLive = to >= today && from <= today;
+
+            var fileTo = includeLive ? today.AddDays(-1) : to;
+            var agg = new List<VolumeLevel>();
+            if (fileTo >= from)
+                agg = await BuildDailyProfileFromFiles(keeper, Symbol, from, fileTo);
+
+            if (!includeLive)
+                return agg;
+
+            var live = GetLiveVolumeLevels(today);
+            if (live.Count > 0)
+                return MergeProfiles(agg, live);
+
+            var todayFile = await BuildDailyProfileFromFiles(keeper, Symbol, today, today);
+            return MergeProfiles(agg, todayFile);
+        }
+
+        private List<VolumeLevel> GetLiveVolumeLevels(DateTime today)
+        {
+            try
+            {
+                var volumeService = _serviceProvider.GetServices<VolumeService>()
+                    .FirstOrDefault(v => v.Symbol == Symbol);
+                var snap = volumeService?.GetSnapshot();
+                if (snap?.Volumes == null || snap.Volumes.Count == 0)
+                    return new List<VolumeLevel>();
+                // Evita merge de snapshot stale (ex.: virou o dia e ainda
+                // não chegou tick novo — o _volumes ainda guarda o pregão anterior).
+                if (snap.Date.Date != today.Date)
+                    return new List<VolumeLevel>();
+                return snap.Volumes;
+            }
+            catch
+            {
+                return new List<VolumeLevel>();
+            }
+        }
+
+        public static List<VolumeLevel> MergeProfiles(
+            List<VolumeLevel> baseLevels, List<VolumeLevel> extraLevels)
+        {
+            if (baseLevels == null || baseLevels.Count == 0)
+                return (extraLevels ?? new List<VolumeLevel>()).OrderBy(v => v.Price).ToList();
+            if (extraLevels == null || extraLevels.Count == 0)
+                return baseLevels.OrderBy(v => v.Price).ToList();
+
+            var byPrice = new Dictionary<double, (long Total, long Buy, long Sell)>();
+            foreach (var lvl in baseLevels.Concat(extraLevels))
+            {
+                if (lvl == null || lvl.Total <= 0)
+                    continue;
+                if (byPrice.TryGetValue(lvl.Price, out var acc))
+                {
+                    byPrice[lvl.Price] = (
+                        acc.Total + lvl.Total,
+                        acc.Buy + lvl.BuyVolume,
+                        acc.Sell + lvl.SellVolume);
+                }
+                else
+                {
+                    byPrice[lvl.Price] = (lvl.Total, lvl.BuyVolume, lvl.SellVolume);
                 }
             }
 

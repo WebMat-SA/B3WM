@@ -233,7 +233,11 @@ class StateService extends ChangeNotifier {
     _currentConfig.daily.panelVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
-    if (v) loadDailyAll();
+    if (v) {
+      loadDailyAll();
+    } else {
+      _stopDailyLiveRefresh();
+    }
   }
 
   void setDailyPanelFraction(double v) {
@@ -1004,6 +1008,8 @@ class StateService extends ChangeNotifier {
 
   /// Carga completa do widget diário (lazy, ao abrir o sheet): histórico
   /// 1440 → janela → candles 1440 + perfil agregado + extremos.
+  /// Ao final, liga o refresh vivo (perfil + topos juntos a cada 45s)
+  /// para que o volume do pregão em andamento entre no 1D.
   Future<void> loadDailyAll() async {
     if (_symbol.isEmpty || _isDailyLoading) return;
     _isDailyLoading = true;
@@ -1040,7 +1046,49 @@ class StateService extends ChangeNotifier {
     } finally {
       _isDailyLoading = false;
       notifyListeners();
+      _startDailyLiveRefresh();
     }
+  }
+
+  /// Refresh vivo do 1D: recarrega perfil + extremos juntos a cada 45s,
+  /// só com o painel aberto e hoje dentro da janela carregada. Reusa o
+  /// from/to armazenados para não deslocar a sombra do gráfico durante
+  /// o pregão. Pula o ciclo se já houver carga/Confirm em voo.
+  Timer? _dailyLiveTimer;
+  void _startDailyLiveRefresh() {
+    _dailyLiveTimer?.cancel();
+    if (_symbol.isEmpty || !_currentConfig.daily.panelVisible) return;
+    _dailyLiveTimer =
+        Timer.periodic(const Duration(seconds: 45), (_) => _onDailyLiveTick());
+  }
+
+  void _stopDailyLiveRefresh() {
+    _dailyLiveTimer?.cancel();
+    _dailyLiveTimer = null;
+  }
+
+  void _onDailyLiveTick() {
+    if (_symbol.isEmpty) return;
+    if (!_currentConfig.daily.panelVisible) return;
+    final pf = _dailyProfileFrom;
+    final pt = _dailyProfileTo;
+    if (pf == null || pt == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final f = DateTime(pf.year, pf.month, pf.day);
+    final t = DateTime(pt.year, pt.month, pt.day);
+    // Janela histórica sem hoje: nada muda no vivo, não recarrega.
+    if (today.isBefore(f) || today.isAfter(t)) return;
+    if (_isDailyLoading ||
+        _isDailyProfileLoading ||
+        _isDailyExtremeLoading ||
+        _isDailyStructureConfirmRunning ||
+        _isDailyStructureUpdating) {
+      return;
+    }
+    debugPrint('[dailyLive] tick refresh from=$pf to=$pt');
+    // ignore: discarded_futures
+    loadDailyProfileAndExtremes(from: pf, to: pt);
   }
 
   /// Recarrega perfil + extremos diários na janela vigente — auto-mode
@@ -1084,9 +1132,10 @@ class StateService extends ChangeNotifier {
     }
   }
 
-  /// Carga dos topos/vales diários. Estática por janela: recarrega em
-  /// mudança de estrutura (auto-mode), no slider manual (onChangeEnd), no
-  /// debounce de Noise/Prominence ou pelo botão "Atualizar" da aba.
+  /// Carga dos topos/vales diários. Recarrega em mudança de estrutura
+  /// (auto-mode), no slider manual (onChangeEnd), no debounce de
+  /// Noise/Prominence, pelo botão "Atualizar" da aba e no refresh vivo
+  /// de 45s (junto com o perfil, mesmo from/to).
   Future<void> loadDailyExtremes({bool force = true, DateTime? from, DateTime? to}) async {
     if (_symbol.isEmpty || _isDailyExtremeLoading) return;
     _isDailyExtremeLoading = true;
@@ -1428,6 +1477,7 @@ class StateService extends ChangeNotifier {
 
   Future<void> setSymbol(String value) async {
     _saveConfigForSymbol(_symbol);
+    _stopDailyLiveRefresh();
     _symbol = value.toUpperCase();
     _allBubbleAgents.clear();
     _extremes = null;
@@ -2477,6 +2527,7 @@ class StateService extends ChangeNotifier {
   void reset() {
     _processTimer?.cancel();
     _watchdogTimer?.cancel();
+    _stopDailyLiveRefresh();
     _stopVerifierPolling();
     _signalRService.dispose();
     _audioService.dispose();

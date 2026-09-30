@@ -356,13 +356,19 @@ namespace B3WM.Controllers
         {
             // Volume Profile diário (issue #12): perfil agregado multi-dia a
             // partir dos arquivos diários do VolumeService (soma tick-a-tick
-            // real de cada dia). Função pura, sem tocar no estado ao vivo.
+            // real de cada dia) + snapshot vivo de hoje quando hoje está na
+            // janela. Sem o vivo, o preço além de D-1 não aparecia no 1D.
             var toDate = (to ?? DateTime.Today).Date;
             var fromDate = (from ?? toDate.AddDays(-60)).Date;
             if (toDate < fromDate)
                 (fromDate, toDate) = (toDate, fromDate);
             if ((toDate - fromDate).TotalDays > 365)
                 fromDate = toDate.AddDays(-365);
+
+            var service = _extremeServices.FirstOrDefault(s => s.Symbol == symbol);
+            if (service != null)
+                return Ok(await service.BuildDailyProfileWithLiveAsync(
+                    dataKeeper, fromDate, toDate));
 
             return Ok(await ExtremeService.BuildDailyProfileFromFiles(
                 dataKeeper, symbol, fromDate, toDate));
