@@ -5,7 +5,6 @@ import '../models/bar_storage_item.dart';
 import '../models/bubble_storage_item.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
-import '../models/indicator_value.dart';
 import '../models/signal_event.dart';
 import '../models/throttling_data.dart';
 import '../models/extreme_storage_item.dart';
@@ -34,7 +33,6 @@ class SignalRService {
   /// do throttling — espelha o caminho da barra corrente intraday.
   void Function(BarStorageItem)? onDailyBar;
   void Function(StructureStorageItem)? onNewStructure;
-  void Function(IndicatorValue)? onIndicatorValue;
   void Function(SignalEvent)? onSignal;
   void Function(ExtremeStorageItem)? onExtreme;
   void Function(List<BarStorageItem>)? onMissedBars;
@@ -87,7 +85,6 @@ class SignalRService {
       _hubConnection!.on('ReceiveOnBubble', (List<dynamic>? args) => _handleBubble(args));
       _hubConnection!.on('ReceiveOnStructure', (List<dynamic>? args) => _handleStructure(args));
       _hubConnection!.on('ReceiveThrottlingData', (List<dynamic>? args) => _handleThrottlingData(args));
-      _hubConnection!.on('ReceiveOnIndicatorValue', (List<dynamic>? args) => _handleIndicatorValue(args));
       _hubConnection!.on('ReceiveOnSignal', (List<dynamic>? args) => _handleSignal(args));
       _hubConnection!.on('ReceiveOnExtreme', (List<dynamic>? args) => _handleExtreme(args));
 
@@ -161,13 +158,6 @@ class SignalRService {
     if (currentVolume != null) {
       onVolumeUpdate?.call(currentVolume);
     }
-  }
-
-  void _handleIndicatorValue(List<dynamic>? args) {
-    if (args == null || args.isEmpty) return;
-    final json = args[0] as Map<String, dynamic>;
-    final indicator = IndicatorValue.fromJson(json);
-    onIndicatorValue?.call(indicator);
   }
 
   void _handleSignal(List<dynamic>? args) {

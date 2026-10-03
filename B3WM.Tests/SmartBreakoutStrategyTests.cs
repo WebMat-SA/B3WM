@@ -82,7 +82,7 @@ public class SmartBreakoutStrategyTests
         await strategy.InitializeAsync();
 
         var bar = MakeBar(70000, 70100, 69900, 70050);
-        var signal = strategy.Evaluate(bar, hasPosition: false);
+        var signal = strategy.TryGetEntry(bar);
         Assert.Null(signal);
     }
 
@@ -94,7 +94,7 @@ public class SmartBreakoutStrategyTests
         await strategy.InitializeAsync();
 
         var bar = MakeBar(70000, 70100, 69900, 70050);
-        var signal = strategy.Evaluate(bar, hasPosition: false);
+        var signal = strategy.TryGetEntry(bar);
 
         Assert.Null(signal);
     }
@@ -106,8 +106,8 @@ public class SmartBreakoutStrategyTests
         var strategy = CreateStrategy(keeper, DefaultConfig);
 
         var bar = MakeBar(70000, 70100, 69900, 70050);
-        strategy.Evaluate(bar, false);
-        var signal = strategy.Evaluate(bar, false);
+        strategy.TryGetEntry(bar);
+        var signal = strategy.TryGetEntry(bar);
 
         Assert.Null(signal);
     }
@@ -125,12 +125,12 @@ public class SmartBreakoutStrategyTests
         await strategy.InitializeAsync();
 
         var bar1 = MakeBar(70000, 70200, 69800, 70100, minute: 0);
-        strategy.Evaluate(bar1, false);
+        strategy.TryGetEntry(bar1);
 
         var bar2 = MakeBar(70100, 70350, 70050, 70200,
             volumeLevel: new List<VolumeLevel> { MakeVL(70050, 10), MakeVL(70100, 1000), MakeVL(70200, 1000) },
             minute: 2);
-        var signal = strategy.Evaluate(bar2, false);
+        var signal = strategy.TryGetEntry(bar2);
 
         Assert.NotNull(signal);
         Assert.Equal(OrderSide.Buy, signal.Side);
@@ -152,12 +152,12 @@ public class SmartBreakoutStrategyTests
         await strategy.InitializeAsync();
 
         var bar1 = MakeBar(70000, 70200, 69800, 70100, minute: 0);
-        strategy.Evaluate(bar1, false);
+        strategy.TryGetEntry(bar1);
 
         var bar2 = MakeBar(69900, 70100, 69700, 69800,
             volumeLevel: new List<VolumeLevel> { MakeVL(69950, 10), MakeVL(69800, 1000), MakeVL(70000, 1000) },
             minute: 2);
-        var signal = strategy.Evaluate(bar2, false);
+        var signal = strategy.TryGetEntry(bar2);
 
         Assert.NotNull(signal);
         Assert.Equal(OrderSide.Sell, signal.Side);
@@ -179,10 +179,10 @@ public class SmartBreakoutStrategyTests
         await strategy.InitializeAsync();
 
         var bar1 = MakeBar(70000, 70200, 69800, 70100, minute: 0);
-        strategy.Evaluate(bar1, false);
+        strategy.TryGetEntry(bar1);
 
         var bar2 = MakeBar(70100, 70350, 70050, 70200, minute: 2);
-        var signal = strategy.Evaluate(bar2, hasPosition: true);
+        var signal = strategy.TryGetExit(bar2, new BacktestPosition { Side = OrderSide.Buy });
 
         Assert.NotNull(signal);
         Assert.Equal("Exit: large bubble", signal.Reason);
@@ -201,10 +201,10 @@ public class SmartBreakoutStrategyTests
         await strategy.InitializeAsync();
 
         var bar1 = MakeBar(70000, 70200, 69800, 70100, minute: 0);
-        strategy.Evaluate(bar1, false);
+        strategy.TryGetEntry(bar1);
 
         var bar2 = MakeBar(70100, 70350, 70050, 70200, minute: 2);
-        var signal = strategy.Evaluate(bar2, hasPosition: true);
+        var signal = strategy.TryGetExit(bar2, new BacktestPosition { Side = OrderSide.Buy });
 
         Assert.Null(signal);
     }
@@ -216,11 +216,11 @@ public class SmartBreakoutStrategyTests
         var strategy = CreateStrategy(keeper, DefaultConfig);
 
         var bar = MakeBar(70000, 70100, 69900, 70050);
-        strategy.Evaluate(bar, false);
+        strategy.TryGetEntry(bar);
         strategy.Reset();
 
         var bar2 = MakeBar(70100, 70200, 70000, 70150);
-        var signal = strategy.Evaluate(bar2, false);
+        var signal = strategy.TryGetEntry(bar2);
         Assert.Null(signal);
     }
 }

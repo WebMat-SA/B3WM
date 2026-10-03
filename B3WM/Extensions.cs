@@ -1,7 +1,6 @@
 ﻿using B3WM.Services;
 using B3WM.Services.Backtest;
 using B3WM.Services.Core;
-using B3WM.Services.Indicators;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
@@ -15,6 +14,7 @@ namespace B3WM
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
             services.AddScoped<BacktestEngine>();
+            services.AddScoped<IStrategyFactory, StrategyFactory>();
             // Verifier desabilitado. Para reativar: descomente abaixo e remova os
             // Compile Remove do B3WM.csproj.
             //services.AddSingleton<VerifierManager>();
@@ -22,11 +22,6 @@ namespace B3WM
             services.AddWinfutServices(config);
 
             services.AddWdofutServices(config);
-
-            services.AddSingleton<IIndicator, BollingerBands>();
-            services.AddSingleton<IIndicator, BollingerBounce>();
-            services.AddSingleton<IndicatorService>();
-            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<IndicatorService>());
 
             //pre-carrega a estrutura de todos os symbol/timeframe no startup, fazendo o backfill
             //do dia antes de o servidor aceitar conexoes

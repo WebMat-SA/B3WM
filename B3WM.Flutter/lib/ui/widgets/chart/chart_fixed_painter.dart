@@ -317,8 +317,8 @@ class ChartFixedPainter extends CustomPainter {
   }
 
   /// Níveis do Pivot Tradicional (issue #14): linhas horizontais sólidas
-  /// (diferente do tracejado de topos/vales) com cores próprias — P amarelo
-  /// (como no Profit), R vermelho, S verde — e tag com a chave do nível.
+  /// (diferente do tracejado de topos/vales) com cores próprias — P cinza,
+  /// R ciano, S roxo — e tag com a chave do nível.
   void _drawPivotLines(Canvas canvas) {
     final pv = data.pivots;
     if (pv == null || !pv.visible) return;
@@ -350,10 +350,10 @@ class ChartFixedPainter extends CustomPainter {
       drawLevel('P', pv.pivot, const Color(0xFFBDBDBD));
     }
     for (int i = 0; i < pv.resistances.length; i++) {
-      drawLevel('R${i + 1}', pv.resistances[i], const Color(0xFFCE93D8));
+      drawLevel('R${i + 1}', pv.resistances[i], const Color(0xFF4DD0E1));
     }
     for (int i = 0; i < pv.supports.length; i++) {
-      drawLevel('S${i + 1}', pv.supports[i], const Color(0xFF4DD0E1));
+      drawLevel('S${i + 1}', pv.supports[i], const Color(0xFFCE93D8));
     }
   }
 

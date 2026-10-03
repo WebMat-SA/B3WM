@@ -59,12 +59,13 @@ namespace B3WM.Services
                 var backtestConfig = _config.ToBacktestConfig();
                 var logger = _serviceProvider.GetRequiredService<ILogger<SmartBreakoutStrategy>>();
 
-                _strategy = _config.StrategyName switch
-                {
-                    StrategyType.Breakout => CreateSimpleBreakout(backtestConfig),
-                    StrategyType.SmartBreakout => CreateSmartBreakout(backtestConfig, logger),
-                    _ => throw new ArgumentException($"Unknown strategy: {_config.StrategyName}")
-                };
+                _structureService = _serviceProvider.GetServices<StructureService>()
+                    .FirstOrDefault(s => s.Symbol == _symbol && s.TimeFrame == _timeFrame);
+
+                _strategy = LiveStrategyFactory.Create(
+                    backtestConfig,
+                    _ => _structureService?.GetLastStructure(),
+                    logger);
 
                 _simulator = new BacktestSimulator(backtestConfig, _strategy);
                 _signals.Clear();
@@ -76,28 +77,8 @@ namespace B3WM.Services
                 var bubble = _serviceProvider.GetServices<BubbleService>().FirstOrDefault(b => b.Symbol == _symbol);
 
                 if (orchestrator != null) orchestrator.OnCandleClosed += OnCandleClosed;
-                if (bubble != null && _strategy is SmartBreakoutStrategy) bubble.OnUpdate += OnBubble;
+                if (bubble != null && _strategy is IBubbleConsumer) bubble.OnUpdate += OnBubble;
             }
-        }
-
-        private SmartBreakoutStrategy CreateSmartBreakout(BacktestConfig config, ILogger<SmartBreakoutStrategy> logger)
-        {
-            _structureService = _serviceProvider.GetServices<StructureService>()
-                .FirstOrDefault(s => s.Symbol == _symbol && s.TimeFrame == _timeFrame);
-
-            return new SmartBreakoutStrategy(
-                null,
-                config,
-                logger,
-                _ => _structureService?.GetLastStructure());
-        }
-
-        private SimpleBreakoutStrategy CreateSimpleBreakout(BacktestConfig config)
-        {
-            _structureService = _serviceProvider.GetServices<StructureService>()
-                .FirstOrDefault(s => s.Symbol == _symbol && s.TimeFrame == _timeFrame);
-
-            return new SimpleBreakoutStrategy(config, null, _ => _structureService?.GetLastStructure());
         }
 
         public void Stop()
@@ -188,8 +169,8 @@ namespace B3WM.Services
 
             IStrategy? s;
             lock (_stateLock) { s = _strategy; }
-            if (s is SmartBreakoutStrategy smart)
-                smart.AddBubble(bubble);
+            if (s is IBubbleConsumer consumer)
+                consumer.OnBubble(bubble);
         }
 
         /// <summary>
@@ -270,7 +251,7 @@ namespace B3WM.Services
             };
         }
 
-        private static VerifierPendingSignal? MapPending(Signal? s)
+        private static VerifierPendingSignal? MapPending(EntrySignal? s)
         {
             if (s == null) return null;
             return new VerifierPendingSignal

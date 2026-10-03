@@ -3,17 +3,6 @@ using B3WM.Shared.Models.Backtest;
 
 namespace B3WM.Services.Backtest
 {
-    internal class BacktestPosition
-    {
-        public OrderSide Side { get; set; }
-        public double EntryPrice { get; set; }
-        public double StopPrice { get; set; }
-        public double TargetPrice { get; set; }
-        public int Quantity { get; set; }
-        public DateTime EntryDate { get; set; }
-        public string? EntryReason { get; set; }
-    }
-
     /// <summary>
     /// Simulador candle a candle, incremental. É usado tanto pelo backtest
     /// (loop sobre os candles salvos) quanto pelo verificador ao vivo
@@ -27,7 +16,7 @@ namespace B3WM.Services.Backtest
         private readonly double _pointValue;
 
         private BacktestPosition? _position;
-        private Signal? _pendingEntry;
+        private EntrySignal? _pendingEntry;
 
         private readonly List<BacktestTrade> _trades = new();
         private double _cumulativePL;
@@ -39,8 +28,8 @@ namespace B3WM.Services.Backtest
         public IReadOnlyList<double> EquityCurve => _equityCurve;
         public double NetProfit => _cumulativePL;
         public double MaxDrawdown => _maxDd;
-        internal BacktestPosition? OpenPosition => _position;
-        internal Signal? PendingEntry => _pendingEntry;
+        public BacktestPosition? OpenPosition => _position;
+        public EntrySignal? PendingEntry => _pendingEntry;
         public BacktestConfig Config => _config;
 
         public BacktestSimulator(BacktestConfig config, IStrategy strategy)
@@ -121,13 +110,15 @@ namespace B3WM.Services.Backtest
                 }
             }
 
-            // 3. Reversão pela estratégia
+            // 3. Saída pela estratégia
             if (_position != null)
             {
-                var signal = _strategy.Evaluate(bar, hasPosition: true);
-                if (signal != null)
+                var exit = _strategy.TryGetExit(bar, _position);
+                if (exit != null)
                 {
-                    events.Add(CloseTrade(_position, bar.Close, ExitReason.StrategySignal, bar.Date));
+                    var ev = CloseTrade(_position, bar.Close, ExitReason.StrategySignal, bar.Date);
+                    if (!string.IsNullOrEmpty(exit.Reason)) ev.Reason = exit.Reason;
+                    events.Add(ev);
                     _position = null;
                 }
             }
@@ -146,7 +137,7 @@ namespace B3WM.Services.Backtest
             // 5. Novo sinal (sem posição e sem sinal pendente)
             if (_position == null && _pendingEntry == null)
             {
-                var signal = _strategy.Evaluate(bar, hasPosition: false);
+                var signal = _strategy.TryGetEntry(bar);
                 if (signal != null && signal.IsValidEntry)
                 {
                     _pendingEntry = signal;

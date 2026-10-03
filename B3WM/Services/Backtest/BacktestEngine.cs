@@ -15,9 +15,9 @@ namespace B3WM.Services.Backtest
             _logger = logger;
         }
 
-        public async Task<BacktestResult> Run(BacktestConfig config, IStrategy strategy)
+        public async Task<BacktestResult> Run(BacktestConfig config, IStrategy strategy, CancellationToken ct = default)
         {
-            await strategy.InitializeAsync();
+            await strategy.InitializeAsync(ct);
 
             var bars = await LoadBars(config);
             var result = new BacktestResult
@@ -40,8 +40,8 @@ namespace B3WM.Services.Backtest
 
             simulator.CalculateMetrics(result);
 
-            if (strategy is SmartBreakoutStrategy smart)
-                result.StructureLines = smart.StructureLines;
+            if (strategy is IStructureProvider provider)
+                result.StructureLines = provider.StructureLines.ToList();
 
             return result;
         }

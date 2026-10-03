@@ -6,7 +6,6 @@ import '../models/bubble_storage_item.dart';
 import '../models/volume_level.dart';
 import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
-import '../models/indicator_value.dart';
 import '../models/verifier_config.dart';
 import '../models/verifier_state.dart';
 import '../models/verifier_log_day.dart';
@@ -185,19 +184,6 @@ class ApiService {
     final list = jsonDecode(response.body) as List? ?? [];
     return list
         .map((e) => BubbleStorageItem.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<List<IndicatorValue>> evaluateIndicators(
-      String symbol, DateTime date) async {
-    final dateStr = _formatDate(date);
-    final response = await _client.get(
-      Uri.parse('$_baseUrl/api/indicator/evaluate/$symbol/$dateStr'),
-    );
-    if (response.statusCode != 200) return [];
-    final list = jsonDecode(response.body) as List? ?? [];
-    return list
-        .map((e) => IndicatorValue.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

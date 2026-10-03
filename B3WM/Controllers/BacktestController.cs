@@ -10,18 +10,16 @@ namespace B3WM.Controllers
     public class BacktestController : ControllerBase
     {
         private readonly BacktestEngine _engine;
-        private readonly DataKeeperBase _dataKeeper;
-        private readonly ILogger<SmartBreakoutStrategy> _smartLogger;
+        private readonly IStrategyFactory _strategies;
 
-        public BacktestController(BacktestEngine engine, DataKeeperBase dataKeeper, ILogger<SmartBreakoutStrategy> smartLogger)
+        public BacktestController(BacktestEngine engine, IStrategyFactory strategies)
         {
             _engine = engine;
-            _dataKeeper = dataKeeper;
-            _smartLogger = smartLogger;
+            _strategies = strategies;
         }
 
         [HttpPost]
-        public async Task<ActionResult<BacktestResult>> Run([FromBody] BacktestConfig config)
+        public async Task<ActionResult<BacktestResult>> Run([FromBody] BacktestConfig config, CancellationToken ct)
         {
             if (config.StartDate >= config.EndDate)
                 return BadRequest("StartDate must be before EndDate");
@@ -29,14 +27,17 @@ namespace B3WM.Controllers
             if (config.StopLossPoints <= 0 && config.TakeProfitPoints <= 0)
                 return BadRequest("At least StopLossPoints or TakeProfitPoints must be > 0");
 
-            IStrategy strategy = config.StrategyName switch
+            IStrategy strategy;
+            try
             {
-                StrategyType.Breakout => new SimpleBreakoutStrategy(config, _dataKeeper),
-                StrategyType.SmartBreakout => new SmartBreakoutStrategy(_dataKeeper, config, _smartLogger),
-                _ => throw new ArgumentException($"Unknown strategy: {config.StrategyName}")
-            };
+                strategy = _strategies.Create(config);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
 
-            var result = await _engine.Run(config, strategy);
+            var result = await _engine.Run(config, strategy, ct);
             return Ok(result);
         }
     }

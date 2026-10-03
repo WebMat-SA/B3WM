@@ -88,7 +88,8 @@ public class BacktestEngineTests
         var config = DefaultConfig;
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), It.IsAny<bool>())).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>())).Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -109,7 +110,8 @@ public class BacktestEngineTests
         var config = DefaultConfig;
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), It.IsAny<bool>())).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>())).Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -130,10 +132,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -160,10 +162,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -189,10 +191,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69900, TakeProfitPrice = 70500 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69900, TakeProfitPrice = 70500 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -217,10 +219,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -247,10 +249,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -275,10 +277,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Sell, Reason = "Entry", StopLossPrice = 70200, TakeProfitPrice = 69600 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -303,12 +305,12 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
-            .Returns((Signal?)null);
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), true))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Exit signal" })
-            .Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
+            .Returns((EntrySignal?)null);
+        strategy.SetupSequence(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>()))
+            .Returns(new ExitSignal { Reason = "Exit signal" })
+            .Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -334,9 +336,9 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -362,10 +364,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69900, TakeProfitPrice = 70200 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69900, TakeProfitPrice = 70200 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -391,10 +393,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -425,18 +427,18 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         int call = 0;
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
             .Returns(() =>
             {
                 call++;
                 return call switch
                 {
-                    1 => new Signal { Side = OrderSide.Buy, Reason = "Entry1", StopLossPrice = 69700, TakeProfitPrice = 70500 },
-                    3 => new Signal { Side = OrderSide.Buy, Reason = "Entry2", StopLossPrice = 70150, TakeProfitPrice = 70950 },
+                    1 => new EntrySignal { Side = OrderSide.Buy, Reason = "Entry1", StopLossPrice = 69700, TakeProfitPrice = 70500 },
+                    3 => new EntrySignal { Side = OrderSide.Buy, Reason = "Entry2", StopLossPrice = 70150, TakeProfitPrice = 70950 },
                     _ => null
                 };
             });
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -467,18 +469,18 @@ public class BacktestEngineTests
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
         int call = 0;
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
             .Returns(() =>
             {
                 call++;
                 return call switch
                 {
-                    1 => new Signal { Side = OrderSide.Buy, Reason = "Entry1", StopLossPrice = 69700, TakeProfitPrice = 70300 },
-                    3 => new Signal { Side = OrderSide.Buy, Reason = "Entry2", StopLossPrice = 69900, TakeProfitPrice = 70500 },
+                    1 => new EntrySignal { Side = OrderSide.Buy, Reason = "Entry1", StopLossPrice = 69700, TakeProfitPrice = 70300 },
+                    3 => new EntrySignal { Side = OrderSide.Buy, Reason = "Entry2", StopLossPrice = 69900, TakeProfitPrice = 70500 },
                     _ => null
                 };
             });
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -506,9 +508,9 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -531,9 +533,9 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.Setup(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 });
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var result = await engine.Run(config, strategy.Object);
 
@@ -549,10 +551,10 @@ public class BacktestEngineTests
 
         var strategy = new Mock<IStrategy>();
         strategy.Setup(s => s.Name).Returns("Test");
-        strategy.SetupSequence(s => s.Evaluate(It.IsAny<BarStorageItem>(), false))
-            .Returns(new Signal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
-            .Returns((Signal?)null);
-        strategy.Setup(s => s.Evaluate(It.IsAny<BarStorageItem>(), true)).Returns((Signal?)null);
+        strategy.SetupSequence(s => s.TryGetEntry(It.IsAny<BarStorageItem>()))
+            .Returns(new EntrySignal { Side = OrderSide.Buy, Reason = "Entry", StopLossPrice = 69700, TakeProfitPrice = 70500 })
+            .Returns((EntrySignal?)null);
+        strategy.Setup(s => s.TryGetExit(It.IsAny<BarStorageItem>(), It.IsAny<BacktestPosition>())).Returns((ExitSignal?)null);
 
         var sim = new BacktestSimulator(config, strategy.Object);
 
