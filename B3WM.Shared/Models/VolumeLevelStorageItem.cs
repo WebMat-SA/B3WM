@@ -24,8 +24,6 @@ namespace B3WM.Shared.Models
         {
             List<VolumeLevel> result = new List<VolumeLevel>();
 
-            Console.WriteLine($"From: {from}, To: {to}");
-
             var barStorageTo = data.FirstOrDefault(q => q.Date == to);
             var barStorageFrom = data.FirstOrDefault(q => q.Date == from);
 

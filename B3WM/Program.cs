@@ -49,6 +49,14 @@ namespace B3WM
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
             });
 
+            builder.Services.AddHttpClient("Jev", client =>
+            {
+                var baseUrl = builder.Configuration.GetValue<string>("TypeSafe:BaseUrl") ?? "https://api.typesafe.ai";
+                client.BaseAddress = new Uri(baseUrl);
+                var timeoutSec = builder.Configuration.GetValue<int?>("TypeSafe:TimeoutSeconds") ?? 30;
+                client.Timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSec, 5, 120));
+            });
+
             builder.Services.AddHttpClient("PythonService", client =>
             {
                 var baseUrl = builder.Configuration.GetValue<string>("PythonService:BaseUrl") ?? "http://localhost:8000";
@@ -76,10 +84,9 @@ namespace B3WM
 
             Extensions.AddCustomService(builder.Services, builder.Configuration);
 
-#if DEBUG
-            builder.WebHost.UseUrls("https://localhost:5002",
-                "https://0.0.0.0:5002");
-#endif
+            // URLs de debug vêm do Properties/launchSettings.json (profiles
+            // https / http / https-network). Não usar UseUrls aqui pois
+            // sobrescreve o profile selecionado no Visual Studio (F5).
 
             var app = builder.Build();
 
@@ -108,11 +115,8 @@ namespace B3WM
 
             app.UseAuthorization();
 
-            app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapControllers();
-                endpoints.MapHub<DataHub>("/api/datahub");
-            });
+            app.MapControllers();
+            app.MapHub<DataHub>("/api/datahub");
 
             app.Run();
         }

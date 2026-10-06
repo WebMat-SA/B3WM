@@ -87,9 +87,10 @@ namespace B3WM.Controllers
                     if (dayBubbles != null)
                         allBubbles.AddRange(dayBubbles);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // skip missing days
+                    // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
+                    _logger.LogWarning(ex, "Falha lendo bubbles do dia {Path}", path);
                 }
                 current = current.AddDays(1);
             }
@@ -231,9 +232,10 @@ namespace B3WM.Controllers
                         if (day != null)
                             all.AddRange(day.Where(s => s.TimeFrame != 1440));
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // dias sem arquivo (fds/feriado/servidor novo): ignora
+                        // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
+                        _logger.LogWarning(ex, "Falha lendo structures do dia {Path}", path);
                     }
                 }
             }
@@ -268,9 +270,10 @@ namespace B3WM.Controllers
                     if (day != null)
                         all.AddRange(day);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // dias sem arquivo (fds/feriado/servidor novo): ignora
+                    // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
+                    _logger.LogWarning(ex, "Falha lendo structures do dia {Path}", path);
                 }
             }
             // Fallback 1440: o arquivo leva a distância no nome; se o app
@@ -293,9 +296,10 @@ namespace B3WM.Controllers
                             if (day != null)
                                 all.AddRange(day);
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // dias sem arquivo (fds/feriado/servidor novo): ignora
+                            // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
+                            _logger.LogWarning(ex, "Falha lendo structures do dia {Path}", path);
                         }
                     }
                 }

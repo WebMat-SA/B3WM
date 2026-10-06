@@ -26,3 +26,6 @@ opencode.ps1 - Atalho.lnk
 
 # Python cache
 **/__pycache__/
+
+# signing keys (local only, never commit)
+*.pfx

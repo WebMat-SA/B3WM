@@ -11,10 +11,4 @@
     <ProjectReference Include="..\B3WM.Shared\B3WM.Shared.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="Controllers\VerifierController.cs" />
-    <Compile Remove="Services\VerifierManager.cs" />
-    <Compile Remove="Services\SignalVerifierService.cs" />
-  </ItemGroup>
-
 </Project>

@@ -76,9 +76,10 @@ O drawer lateral organiza as ferramentas de análise em abas (ícones na AppBar 
   <p><em>Pivot Tradicional estilo Profit no intraday (fonte HLC de D-1, 2–5 pares de níveis). Sem dados de D-1, a aba mostra os controles e a mensagem de sessão sem pivot.</em></p>
 </div>
 
-Outras abas sem screenshot dedicado: **VWAP Diário**, **Período / Dados Históricos** e **Backup (exportar/importar)**.
+Outras abas sem screenshot dedicado: **VWAP Diário**, **Período / Dados Históricos**, **Backup (exportar/importar)** e **Estratégias**.
 
-> ℹ️ O **Verifier** (backtest manual) está **desabilitado** no momento — o código segue em `lib/ui/widgets/verifier_drawer.dart`, mas sem aba ativa.
+#### ▶️ Estratégias (rodar no backend)
+A 9ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava tudo até PAUSE/STOP — a execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
 
 ### Análise diária (painel inferior 1D)
 
@@ -103,11 +104,11 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 - Análise de delta acumulado por nível de preço
 - Reconstrução de perfil de volume por intervalo selecionado
 
-### Backtest de Estratégias
-- Motor de backtest server-side em .NET
-- Estratégias baseadas em bubbles, volume profile e estrutura de preços
-- Visualização dos trades no gráfico (entrada/saída com motivos)
-- Métricas: Win Rate, Profit Factor, Drawdown, P&L
+### Estratégias (rodar no backend)
+- Contrato `IStrategy`: `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); gatilhos por fechamento de candle ou bubble visível
+- `JevAnalysis`: pergunta à Jev o que fazer com o contexto da tela (foto dos filtros enviada no PLAY)
+- Paper trades com relatório diário em JSON; envio real ao MT5 implementado mas comentado (`LiveTradingEnabled=false`)
+- Receita de strategy nova em `B3WM/Services/Strategies/README.md`
 
 ### Trading Automatizado (Integração MT5)
 - Bridge Python/FastAPI para execução de ordens via MetaTrader 5
@@ -277,7 +278,7 @@ flutter test test/screenshots_golden_test.dart --update-goldens
 cp test/goldens/overview.png test/goldens/drawer_bubbles.png test/goldens/drawer_estrutura.png test/goldens/drawer_volume_profile.png test/goldens/drawer_extreme.png test/goldens/drawer_pivot.png test/goldens/trading_panel.png ../screenshots/
 ```
 
-> Os goldens cobrem: visão geral, Bubbles, Estrutura, Volume Profile, **Topos/Vales**, **Pivot Tradicional** e painel de trading. VWAP/Período/Backup e o painel 1D ainda não têm goldens dedicados.
+> Os goldens cobrem: visão geral, Bubbles, Estrutura, Volume Profile, **Topos/Vales**, **Pivot Tradicional** e painel de trading. VWAP/Período/Backup/Estratégias e o painel 1D ainda não têm goldens dedicados (gerar com o comando acima + aba Estratégia na máquina com Flutter).
 
 ---
 
@@ -289,15 +290,16 @@ B3WM.sln                          # Solução principal (.NET 10)
 ├── B3WM/                         # 🖥️ Servidor ASP.NET Core + SignalR
 │   ├── Program.cs                #    Entry point (https://localhost:5002, hub /api/datahub)
 │   ├── Services/Core/            #    Candle, Bubble, Volume, Structure, Extreme, PivotService
-│   ├── Services/Backtest/        #    BacktestEngine, SmartBreakoutStrategy
-│   ├── Controllers/              #    REST API endpoints (incl. DataController: pivot/extreme/daily)
+│   ├── Services/Strategies/      #    IStrategy, runner paper, JevAnalysis (+ README de receita)
+│   ├── Services/AI|Market|Screen/ #   Jev (transporte+prompt), dados, foto da tela
+│   ├── Controllers/              #    REST API endpoints (Data, Trade, Strategy, Ai)
 │   └── appsettings.json          #    PythonService:BaseUrl (http://localhost:8000)
 │
 ├── Data/                         # 📁 JSONs diários gerados em runtime (IGNORADO pelo git)
 │
 ├── B3WM.Shared/                  # 📦 Modelos, DTOs, Interfaces (incl. PivotStorageItem)
 │
-├── B3WM.Tests/                   # ✅ Testes unitários (xUnit, inclui PivotServiceTests)
+├── B3WM.Tests/                   # ✅ Testes unitários (xUnit: contrato de DTOs, strategies, detector)
 │
 ├── B3WM.Flutter/                 # 📱 Frontend Flutter (Map Flow Chart)
 │   ├── lib/main.dart             #    Entry point do app (baseUrl https://localhost:5002)

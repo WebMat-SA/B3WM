@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 
 import '../models/config_backup.dart';
+import '../app_log.dart';
 
 /// Resultado da leitura de um arquivo de backup.
 class BackupFileRead {
@@ -61,7 +61,7 @@ class ConfigFileService {
     if (path == null) return null;
     final file = File(path);
     await file.writeAsString(content, encoding: utf8);
-    debugPrint('[backup] exported to $path');
+    logD('[backup] exported to $path');
     return path;
   }
 

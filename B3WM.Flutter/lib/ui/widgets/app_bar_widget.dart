@@ -14,6 +14,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onVwapTap;
   final VoidCallback onDateRangeTap;
   final VoidCallback? onBackupTap;
+  final VoidCallback? onStrategyTap;
   final bool tradingActive;
 
   const MapFlowAppBar({
@@ -27,6 +28,7 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onVwapTap,
     required this.onDateRangeTap,
     this.onBackupTap,
+    this.onStrategyTap,
     this.tradingActive = false,
   });
 
@@ -194,12 +196,13 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                     tooltip: 'Backup (exportar/importar)',
                     visualDensity: VisualDensity.compact,
                   ),
-                // IconButton(
-                //   icon: const Icon(Icons.verified, size: 20),
-                //   onPressed: widget.onVerifierTap,
-                //   tooltip: 'Verificador',
-                //   visualDensity: VisualDensity.compact,
-                // ),
+                if (widget.onStrategyTap != null)
+                  IconButton(
+                    icon: const Icon(Icons.auto_graph, size: 20),
+                    onPressed: widget.onStrategyTap,
+                    tooltip: 'Estratégias (rodar)',
+                    visualDensity: VisualDensity.compact,
+                  ),
               ],
             ),
           ),

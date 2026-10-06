@@ -1,3 +1,5 @@
+> **Nota (histórico):** este documento registra a migração Blazor → Flutter do gráfico (paridade `MapFlowChart` × `NewMapFlow.razor`). Projeto consolidado no Flutter; ver `README.md` para o estado atual (aba Estratégia, rodar no backend).
+
 ## Objective
 - Make the Flutter `MapFlowChart` functionally equivalent to Blazor `NewMapFlow.razor` in zoom, volume profile, agent filters, tooltips, and configuration.
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/trade_models.dart';
+import '../app_config.dart';
 
 class TradingApiService {
   final http.Client _client;
@@ -8,7 +9,7 @@ class TradingApiService {
 
   TradingApiService({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ?? 'https://localhost:5002';
+        _baseUrl = baseUrl ?? AppConfig.apiBaseUrl;
 
   Future<OrderResult?> placeMarketOrder(MarketOrderRequest request) async {
     final response = await _client.post(

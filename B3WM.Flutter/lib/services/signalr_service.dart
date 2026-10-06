@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:signalr_core/signalr_core.dart' as signalr;
 import '../models/bar_storage_item.dart';
 import '../models/bubble_storage_item.dart';
@@ -9,6 +8,7 @@ import '../models/signal_event.dart';
 import '../models/throttling_data.dart';
 import '../models/extreme_storage_item.dart';
 import 'api_service.dart';
+import '../app_log.dart';
 
 class SignalRService {
   signalr.HubConnection? _hubConnection;
@@ -183,7 +183,7 @@ class SignalRService {
         onMissedBars?.call(missed);
       }
     } catch (e) {
-      debugPrint('Failed to fetch missed bars: $e');
+      logD('Failed to fetch missed bars: $e');
     }
   }
 
@@ -196,7 +196,7 @@ class SignalRService {
         onMissedBubbles?.call(missed);
       }
     } catch (e) {
-      debugPrint('Failed to fetch missed bubbles: $e');
+      logD('Failed to fetch missed bubbles: $e');
     }
   }
 

@@ -4,6 +4,23 @@ namespace B3WM.Services
 {
     public class DataKeeperBase
     {
+        private readonly ILogger<DataKeeperBase>? _logger;
+
+        /// <summary>Logger opcional (DI injeta automaticamente; `new` manual segue no Console).</summary>
+        public DataKeeperBase(ILogger<DataKeeperBase>? logger = null) => _logger = logger;
+
+        private void Warn(string message)
+        {
+            if (_logger != null) _logger.LogWarning("{Message}", message);
+            else Console.WriteLine(message);
+        }
+
+        private void Warn(Exception ex, string message)
+        {
+            if (_logger != null) _logger.LogWarning(ex, "{Message}", message);
+            else Console.WriteLine($"{message} ({ex.Message})");
+        }
+
         /// <summary>Diretório raiz dos arquivos de dados (relativo ao cwd).</summary>
         protected virtual string RootDirectory => "Data";
 
@@ -27,7 +44,7 @@ namespace B3WM.Services
                 //isola o arquivo para nao derrubar a leitura e retorna dado vazio para ser regenerado
                 if (json.Contains('\0'))
                 {
-                    Console.WriteLine($"Warning: {path} is corrupted (contains NUL bytes). Quarantining and returning empty data.");
+                    Warn($"Warning: {path} is corrupted (contains NUL bytes). Quarantining and returning empty data.");
                     QuarantineFile(fullPath, path);
                     return new T();
                 }
@@ -37,13 +54,13 @@ namespace B3WM.Services
             }
             catch (JsonException ex)
             {
-                Console.WriteLine($"Warning: {path} contains invalid JSON ({ex.Message}). Quarantining and returning empty data.");
+                Warn(ex, $"Warning: {path} contains invalid JSON. Quarantining and returning empty data.");
                 QuarantineFile(Path.Combine("Data", path), path);
                 return new T();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred while reading data from {path}: {ex.Message}");
+                Warn(ex, $"Error occurred while reading data from {path}");
                 throw;
             }
         }
@@ -73,12 +90,12 @@ namespace B3WM.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred while writing data to {path}: {ex.Message}");
+                Warn(ex, $"Error occurred while writing data to {path}");
                 throw;
             }
         }
 
-        private static void QuarantineFile(string fullPath, string path)
+        private void QuarantineFile(string fullPath, string path)
         {
             try
             {
@@ -87,11 +104,11 @@ namespace B3WM.Services
 
                 var quarantinePath = $"{fullPath}.corrupt-{DateTime.Now:yyyyMMddHHmmss}";
                 File.Move(fullPath, quarantinePath);
-                Console.WriteLine($"Quarantined corrupted file {path} to {Path.GetFileName(quarantinePath)}");
+                Warn($"Quarantined corrupted file {path} to {Path.GetFileName(quarantinePath)}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to quarantine corrupted file {path}: {ex.Message}");
+                Warn(ex, $"Failed to quarantine corrupted file {path}");
             }
         }
     }

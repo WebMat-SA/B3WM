@@ -7,12 +7,14 @@ namespace B3WM.Services
         public string Symbol { get; }
         private readonly IEnumerable<TickChannelService> _tickChannel;
         private readonly IEnumerable<OrchestratorService> _orchestratorService;
+        private readonly ILogger<TickProcessorService> _logger;
 
-        public TickProcessorService(string symbol, IEnumerable<TickChannelService> tickChannel, IEnumerable<OrchestratorService> orchestrators)
+        public TickProcessorService(string symbol, IEnumerable<TickChannelService> tickChannel, IEnumerable<OrchestratorService> orchestrators, ILogger<TickProcessorService> logger)
         {
             this.Symbol = symbol;
             _tickChannel = tickChannel;
             _orchestratorService = orchestrators;
+            _logger = logger;
         }
 
 
@@ -23,7 +25,7 @@ namespace B3WM.Services
 
             if (orchestrator == null || tickChannel == null)
             {
-                Console.WriteLine($"TickProcessorService for symbol {Symbol} could not find matching OrchestratorService or TickChannelService.");
+                _logger.LogError("TickProcessorService for symbol {Symbol} could not find matching OrchestratorService or TickChannelService.", Symbol);
                 return;
             }
 
@@ -35,7 +37,7 @@ namespace B3WM.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    _logger.LogWarning(ex, "TickProcessorService.Enqueue error");
                 }
             }
         }

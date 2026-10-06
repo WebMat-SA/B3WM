@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'backup_tab.dart';
+import 'strategy_drawer.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
 import 'volume_profile_drawer.dart';
@@ -7,8 +8,6 @@ import 'extreme_drawer.dart';
 import 'pivot_drawer.dart';
 import 'vwap_drawer.dart';
 import 'date_range_tab.dart';
-// Verifier desabilitado. Para reativar, re-importe 'verifier_drawer.dart',
-// volte o TabController para 6 e re-adicione a Tab/VerifierDrawer abaixo.
 
 class AppDrawer extends StatefulWidget {
   final int initialTab;
@@ -25,7 +24,7 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 9, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -110,6 +109,12 @@ tabs: const [
                     child: Icon(Icons.settings_backup_restore, size: 18),
                   ),
                 ),
+                Tab(
+                  icon: Tooltip(
+                    message: 'Estratégias (rodar)',
+                    child: Icon(Icons.auto_graph, size: 18),
+                  ),
+                ),
               ],
             ),
           ),
@@ -125,6 +130,7 @@ children: const [
                 VwapDrawer(noDrawer: true),
                 DateRangeTab(noDrawer: true),
                 BackupTab(noDrawer: true),
+                StrategyDrawer(noDrawer: true),
               ],
             ),
           ),
