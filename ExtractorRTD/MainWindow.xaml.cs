@@ -99,6 +99,8 @@ namespace ExtractorRTD
             FlushQueue(
                 _otherBuffer,
                 OtherMessages);
+
+            SwapButton.IsEnabled = !IsRtdRunning();
         }
 
         private void FlushQueue(
@@ -228,6 +230,61 @@ namespace ExtractorRTD
             }));
         }
 
+        private void Swap_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (IsRtdRunning())
+            {
+                MessageBox.Show(
+                    "Pare o RTD antes de fazer o swap T0 <-> T1.",
+                    "Extractor RTD",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return;
+            }
+
+            var t0 = Tnts.FirstOrDefault(x =>
+                string.Equals(
+                    x.TNTSymbol?.Trim(),
+                    "T&T0",
+                    StringComparison.OrdinalIgnoreCase));
+
+            var t1 = Tnts.FirstOrDefault(x =>
+                string.Equals(
+                    x.TNTSymbol?.Trim(),
+                    "T&T1",
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (t0 == null || t1 == null)
+            {
+                MessageBox.Show(
+                    "Não encontrei as linhas T&T0 e T&T1 no mapeamento.",
+                    "Extractor RTD",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return;
+            }
+
+            string tmp = t0.Symbol;
+            t0.Symbol = t1.Symbol;
+            t1.Symbol = tmp;
+
+            OtherMessages.Insert(
+                0,
+                $"Swap: T&T0={t0.Symbol}, T&T1={t1.Symbol}");
+        }
+
+        private bool IsRtdRunning()
+        {
+            return workerTnT != null &&
+                workerTnT.IsBusy &&
+                SourceTnT != null &&
+                !SourceTnT.IsCancellationRequested;
+        }
+
         private async void Clear_Click(
             object sender,
             RoutedEventArgs e)
@@ -251,10 +308,40 @@ namespace ExtractorRTD
         }
     }
 
-    public class TntItem
+    public class TntItem : INotifyPropertyChanged
     {
-        public string TNTSymbol { get; set; }
+        private string _tntSymbol;
+        private string _symbol;
 
-        public string Symbol { get; set; }
+        public string TNTSymbol
+        {
+            get => _tntSymbol;
+            set
+            {
+                if (_tntSymbol != value)
+                {
+                    _tntSymbol = value;
+                    OnPropertyChanged(nameof(TNTSymbol));
+                }
+            }
+        }
+
+        public string Symbol
+        {
+            get => _symbol;
+            set
+            {
+                if (_symbol != value)
+                {
+                    _symbol = value;
+                    OnPropertyChanged(nameof(Symbol));
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected void OnPropertyChanged(string name) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }
