@@ -13,6 +13,7 @@ import '../models/symbol_config.dart'
     show DateRangeMode, SymbolConfig;
 import '../models/daily_analysis_config.dart';
 import 'api_service.dart';
+import 'strategy_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
 import 'audio_service.dart';
@@ -33,10 +34,13 @@ class StateService extends ChangeNotifier {
     required SignalRService signalRService,
     required PreferencesService preferencesService,
     required AudioService audioService,
+    StrategyService? strategyService,
   })  : _apiService = apiService,
         _signalRService = signalRService,
         _preferencesService = preferencesService,
-        _audioService = audioService {
+        _audioService = audioService,
+        _strategyService = strategyService ?? StrategyService(),
+        _ownsStrategyService = strategyService == null {
     _init();
   }
 
@@ -170,8 +174,11 @@ class StateService extends ChangeNotifier {
   bool get isConnected => _signalRService.isConnected;
 
   // Config setters
+  // Navegação (símbolo/timeframe) NUNCA trava: só troca o que é exibido e
+  // recarregado do servidor; os valores de filtro salvos seguem intactos e
+  // a sessão armada continua usando a foto do PLAY. É o que permite abrir o
+  // app com estratégia rodando e só olhar o gráfico (botão play superior).
   Future<void> setTimeFrame(int v) async {
-    if (_guardLocked('setTimeFrame')) return;
     // Migração #12: 1D saiu do seletor principal (só intraday).
     if (v == 1440) v = 2;
     _currentConfig.timeFrame = v;
@@ -580,8 +587,8 @@ class StateService extends ChangeNotifier {
 
   void setBubbleAmountFilter(bool v) { if (_guardLocked('setBubbleAmountFilter')) return; _currentConfig.bubbleAmountFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleAgentsFilter(bool v) { if (_guardLocked('setBubbleAgentsFilter')) return; _currentConfig.bubbleAgentsFilter = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSoundEnabled(bool v) { if (_guardLocked('setBubbleSoundEnabled')) return; _currentConfig.bubbleSoundEnabled = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSoundVolume(double v) { if (_guardLocked('setBubbleSoundVolume')) return; _currentConfig.bubbleSoundVolume = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSoundEnabled(bool v) { _currentConfig.bubbleSoundEnabled = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSoundVolume(double v) { _currentConfig.bubbleSoundVolume = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setTradingHistoryVisible(bool v) { if (_guardLocked('setTradingHistoryVisible')) return; _currentConfig.tradingHistoryVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setPositionVisible(bool v) { if (_guardLocked('setPositionVisible')) return; _currentConfig.positionVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
@@ -669,6 +676,9 @@ class StateService extends ChangeNotifier {
   /// Trava de filtros com estratégia armada (rodar estratégias): enquanto
   /// houver sessão no backend, os setters de config recusam mudanças
   /// (PLAY congela a foto; para alterar: PAUSE/STOP, edita, PLAY de novo).
+  /// Exceções de propósito (nunca travam): som (setBubbleSound*) e navegação
+  /// (setSymbol/setTimeFrame) — são alerta local e troca de exibição, não
+  /// alteram nenhum dado que a estratégia enxerga.
   bool _strategiesArmed = false;
   bool get strategiesArmed => _strategiesArmed;
   bool get configLocked => _strategiesArmed;
@@ -681,6 +691,65 @@ class StateService extends ChangeNotifier {
     if (!_strategiesArmed) return false;
     logD('[lock] $what bloqueado: pause a estratégia para alterar');
     return true;
+  }
+
+  // --- Sessões de estratégia (fonte única p/ aba + overlay do gráfico) ---
+  // Poll compartilhado de 10s (gatilho típico é 2min); liga sob demanda e
+  // fica ligado pelo tempo de vida do app. Aba e overlay consomem daqui.
+  final StrategyService _strategyService;
+  final bool _ownsStrategyService;
+  List<StrategySession> _strategySessions = [];
+  List<StrategySession> get strategySessions => _strategySessions;
+  Timer? _strategyPollTimer;
+
+  Future<void> refreshStrategySessions() async {
+    try {
+      final sessions = await _strategyService.state();
+      _strategySessions = sessions;
+      final armed = sessions.any((s) => !s.paused);
+      if (strategiesArmed != armed) setStrategiesArmed(armed);
+      notifyListeners();
+    } catch (e) {
+      logD('[strategy] refresh sessions error: $e');
+    }
+  }
+
+  void ensureStrategyPolling() {
+    if (_strategyPollTimer != null) return;
+    _strategyPollTimer =
+        Timer.periodic(const Duration(seconds: 10), (_) => refreshStrategySessions());
+    refreshStrategySessions();
+  }
+
+  void _stopStrategyPolling() {
+    _strategyPollTimer?.cancel();
+    _strategyPollTimer = null;
+  }
+
+  // Opacidade do relatório sobre o gráfico (display local; sem guard de
+  // propósito, como o som: não altera nenhum dado que a estratégia enxerga,
+  // então pode ajustar com sessão rodando).
+  double _strategyOverlayOpacity = 0.72;
+  double get strategyOverlayOpacity => _strategyOverlayOpacity;
+  void setStrategyOverlayOpacity(double v) {
+    _strategyOverlayOpacity = v.clamp(0.01, 1.0);
+    notifyListeners();
+    _preferencesService.setDouble(
+        'strategy_overlay_opacity', _strategyOverlayOpacity);
+  }
+
+  // Visibilidade do overlay por sessão (só display local; default visível).
+  // Controlada na aba Estratégia (ícone de olho); não vai ao backend.
+  final Set<String> _hiddenStrategySessions = {};
+  bool isStrategySessionVisible(String sessionId) =>
+      !_hiddenStrategySessions.contains(sessionId);
+  void setStrategySessionVisible(String sessionId, bool visible) {
+    if (visible) {
+      _hiddenStrategySessions.remove(sessionId);
+    } else {
+      _hiddenStrategySessions.add(sessionId);
+    }
+    notifyListeners();
   }
 
   /// Range de datas carregado (para modo multi-day)
@@ -1506,6 +1575,8 @@ class StateService extends ChangeNotifier {
   static const int maxBubbles = 2000;
 
   void _init() {
+    _strategyOverlayOpacity =
+        _preferencesService.getDouble('strategy_overlay_opacity') ?? 0.72;
     _signalRService.onCloseBar = _handleCloseBar;
     _signalRService.onNewBubble = _handleNewBubble;
     _signalRService.onVolumeUpdate = _handleVolumeUpdate;
@@ -1518,7 +1589,8 @@ class StateService extends ChangeNotifier {
   }
 
   Future<void> setSymbol(String value) async {
-    if (_guardLocked('setSymbol')) return;
+    // Sem guard de propósito (ver comentário em setTimeFrame): trocar de
+    // símbolo é navegação e recarrega a tela; não altera filtros salvos.
     _saveConfigForSymbol(_symbol);
     _stopDailyLiveRefresh();
     _symbol = value.toUpperCase();
@@ -2493,8 +2565,10 @@ class StateService extends ChangeNotifier {
     _processTimer?.cancel();
     _watchdogTimer?.cancel();
     _stopDailyLiveRefresh();
+    _stopStrategyPolling();
     _signalRService.dispose();
     _audioService.dispose();
+    if (_ownsStrategyService) _strategyService.dispose();
   }
 
   @override

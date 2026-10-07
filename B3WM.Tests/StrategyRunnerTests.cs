@@ -96,6 +96,29 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public void EvaluationTime_CandleCloseVsBubble()
+    {
+        var open = new DateTime(2026, 10, 6, 10, 4, 0);
+        var atClose = StrategyRunner.EvaluationTime(new CandleClosed
+        {
+            Symbol = "WINFUT",
+            At = open,
+            Bar = new BarStorageItem { Date = open, Symbol = "WINFUT", TimeFrame = 2 },
+        });
+        // Candle 2min aberto às 10:04 foi avaliado no fechamento, às 10:06.
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 6, 0), atClose);
+
+        var bubbleAt = new DateTime(2026, 10, 6, 10, 5, 30);
+        var atBubble = StrategyRunner.EvaluationTime(new BubbleAppeared
+        {
+            Symbol = "WINFUT",
+            At = bubbleAt,
+            Item = Bubble(122, 500, 100, bubbleAt),
+        });
+        Assert.Equal(bubbleAt, atBubble);
+    }
+
+    [Fact]
     public void SnapshotHash_Deterministic()
     {
         Assert.Equal(StrategyRunner.SnapshotHashOf("{}"), StrategyRunner.SnapshotHashOf("{}"));

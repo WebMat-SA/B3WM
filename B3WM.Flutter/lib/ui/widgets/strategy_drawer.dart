@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/state_service.dart';
 import '../../services/strategy_service.dart';
 import 'drawer_controls.dart';
+import 'strategy_report_list.dart';
 import '../../app_log.dart';
 
 /// Aba Estratégia: escolhe dentre todas as IStrategy do backend, configura o
@@ -26,10 +27,8 @@ class _StrategyDrawerState extends State<StrategyDrawer>
 
   List<StrategyInfo> _strategies = [];
   String? _selected;
-  List<StrategySession> _sessions = [];
   bool _busy = false;
   String? _evalResult;
-  Timer? _poll;
 
   late final StrategyService _svc = StrategyService();
 
@@ -37,14 +36,10 @@ class _StrategyDrawerState extends State<StrategyDrawer>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAll());
-    _poll = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) _refreshSessions(silent: true);
-    });
   }
 
   @override
   void dispose() {
-    _poll?.cancel();
     _svc.dispose();
     super.dispose();
   }
@@ -56,27 +51,7 @@ class _StrategyDrawerState extends State<StrategyDrawer>
       _strategies = list;
       _selected ??= list.isNotEmpty ? list.first.name : null;
     });
-    await _refreshSessions(silent: true);
-    _syncLock();
-  }
-
-  Future<void> _refreshSessions({bool silent = false}) async {
-    final sessions = await _svc.state();
-    if (!mounted) return;
-    setState(() => _sessions = sessions
-        .where((s) =>
-            s.symbol == context.read<StateService>().symbol ||
-            context.read<StateService>().symbol.isEmpty)
-        .toList());
-    _syncLock();
-  }
-
-  void _syncLock() {
-    final state = context.read<StateService>();
-    final armed = _sessions.any((s) => !s.paused);
-    if (state.strategiesArmed != armed) {
-      state.setStrategiesArmed(armed);
-    }
+    if (mounted) context.read<StateService>().refreshStrategySessions();
   }
 
   Future<void> _play() async {
@@ -101,6 +76,11 @@ class _StrategyDrawerState extends State<StrategyDrawer>
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _refreshSessions() async {
+    if (!mounted) return;
+    await context.read<StateService>().refreshStrategySessions();
   }
 
   Future<void> _pause(String id, bool paused) async {
@@ -198,25 +178,54 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                   style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: (_busy || state.configLocked) ? null : _play,
-                        icon: const Icon(Icons.play_arrow, size: 18),
-                        label: const Text('PLAY'),
-                      ),
+                if (state.configLocked)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                          color: Colors.green.withValues(alpha: 0.35)),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
+                    child: Text(
+                      '▶ ${_runningDesc(state)} — acompanhando abaixo e no gráfico, sem precisar fazer nada.\nPara armar outra sessão, pare a atual.',
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.green),
+                    ),
+                  ),
+                if (!state.configLocked)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _play,
+                          icon: const Icon(Icons.play_arrow, size: 18),
+                          label: const Text('PLAY'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _busy ? null : _evaluateNow,
+                          icon: const Icon(Icons.analytics, size: 18),
+                          label: const Text('Avaliar agora'),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (state.configLocked)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SizedBox(
+                      width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: _busy ? null : _evaluateNow,
                         icon: const Icon(Icons.analytics, size: 18),
                         label: const Text('Avaliar agora'),
                       ),
                     ),
-                  ],
-                ),
+                  ),
                 if (_evalResult != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -235,14 +244,32 @@ class _StrategyDrawerState extends State<StrategyDrawer>
             ),
           ),
           ExpandableSection(
-            icon: Icons.list,
-            title: 'Sessões (${_sessions.length})',
+            icon: Icons.visibility,
+            title: 'Exibição no gráfico',
             defaultExpanded: true,
-            child: _sessions.isEmpty
+            child: Column(
+              children: [
+                SliderRow(
+                    'Opacidade do relatório',
+                    state.strategyOverlayOpacity,
+                    0.01,
+                    1.0, (v) => state.setStrategyOverlayOpacity(v)),
+                const Text(
+                  'Vale com sessão rodando: só muda a exibição local.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          ExpandableSection(
+            icon: Icons.list,
+            title: 'Sessões (${_visibleSessions(state).length})',
+            defaultExpanded: true,
+            child: _visibleSessions(state).isEmpty
                 ? const Text('Nenhuma sessão.',
                     style: TextStyle(fontSize: 12, color: Colors.grey))
                 : Column(
-                    children: _sessions
+                    children: _visibleSessions(state)
                         .map((s) => Card(
                               color: const Color(0xFF1e1e1e),
                               child: Column(
@@ -262,6 +289,26 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
+                                        IconButton(
+                                          icon: Icon(
+                                              state.isStrategySessionVisible(
+                                                      s.sessionId)
+                                                  ? Icons.visibility
+                                                  : Icons.visibility_off,
+                                              size: 20,
+                                              color: state
+                                                      .isStrategySessionVisible(
+                                                          s.sessionId)
+                                                  ? Colors.grey
+                                                  : Colors.grey.shade700),
+                                          tooltip:
+                                              'Mostrar/ocultar no gráfico',
+                                          onPressed: () => state
+                                              .setStrategySessionVisible(
+                                                  s.sessionId,
+                                                  !state.isStrategySessionVisible(
+                                                      s.sessionId)),
+                                        ),
                                         IconButton(
                                           icon: Icon(
                                               s.paused
@@ -307,20 +354,8 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                                                   fontWeight:
                                                       FontWeight.bold)),
                                           const SizedBox(height: 4),
-                                          ...s.reportItems.map(
-                                              (d) => Padding(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(vertical: 1),
-                                                    child: Text(
-                                                      _formatItem(d),
-                                                      style: TextStyle(
-                                                          fontSize: 11,
-                                                          fontFamily:
-                                                              'monospace',
-                                                          color: _itemColor(
-                                                              d)),
-                                                    ),
-                                                  )),
+                                          StrategyReportList(
+                                              items: s.reportItems),
                                         ],
                                       ),
                                     ),
@@ -337,26 +372,19 @@ class _StrategyDrawerState extends State<StrategyDrawer>
     });
   }
 
-  String _formatItem(StrategyDecisionItem d) {
-    if (d.kind == 'execucao') {
-      return '${d.time} ⚙ ${d.action}';
-    }
-    final conf =
-        d.confidence > 0 ? ' ${d.confidence.toStringAsFixed(2)}' : '';
-    return '${d.time} ${d.side}$conf → ${d.action}';
+  /// Sessões do símbolo atual (mesmo filtro de antes, agora do state central).
+  /// Descreve as sessões ativas p/ o aviso de "já rodando".
+  String _runningDesc(StateService state) {
+    final active = state.strategySessions.where((s) => !s.paused).toList();
+    if (active.isEmpty) return 'Nenhuma sessão ativa';
+    return active.map((s) => '${s.strategy} em ${s.symbol}').join(' • ');
   }
 
-  Color _itemColor(StrategyDecisionItem d) {
-    if (d.kind == 'execucao') return Colors.orange;
-    switch (d.side) {
-      case 'comprar':
-        return Colors.lightBlue;
-      case 'vender':
-        return Colors.redAccent;
-      default:
-        return Colors.grey;
-    }
-  }
+  List<StrategySession> _visibleSessions(StateService state) =>
+      state.strategySessions
+          .where((s) =>
+              s.symbol == state.symbol || state.symbol.isEmpty)
+          .toList();
 }
 
 extension<T> on Iterable<T> {

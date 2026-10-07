@@ -123,6 +123,7 @@ class _DailyPanelState extends State<DailyPanel> {
                               key: ValueKey(
                                   'daily_${state.symbol}'),
                               data: buildDailyChartData(state),
+                              showStrategyOverlay: false,
                             ),
                 ),
               ],

@@ -254,7 +254,9 @@ namespace B3WM.Services.Strategies
             var item = new StrategyDecisionLog
             {
                 Kind = "avaliacao",
-                Time = ev.At.ToString("HH:mm"),
+                // Hora da AVALIAÇÃO (quando a Jev foi chamada), não da abertura:
+                // candle -> fechamento (open + timeframe); bubble -> hora do evento.
+                Time = EvaluationTime(ev).ToString("HH:mm"),
                 Event = why,
                 Side = decision.Side,
                 Confidence = decision.Confidence,
@@ -306,6 +308,13 @@ namespace B3WM.Services.Strategies
 
         private static string Summarize(StrategyDecisionLog item) =>
             $"{item.Time} {item.Side} conf={item.Confidence:F2} enc={item.Encerrar:F2} snap={item.SnapshotHash}";
+
+        /// <summary>
+        /// Hora a exibir no relatório = momento da avaliação: fechamento do
+        /// candle (abertura + timeframe) ou hora do evento (bubble).
+        /// </summary>
+        public static DateTime EvaluationTime(StrategyEvent ev) =>
+            ev is CandleClosed cc ? cc.Bar.Date.AddMinutes(cc.Bar.TimeFrame) : ev.At;
 
         /// <summary>Registra item + resumo (chamar com _lock).</summary>
         private void NoteLocked(StrategySession s, StrategyDecisionLog item)

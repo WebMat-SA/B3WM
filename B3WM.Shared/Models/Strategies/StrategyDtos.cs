@@ -39,6 +39,7 @@ namespace B3WM.Shared.Models.Strategies
     {
         /// <summary>avaliacao | execucao</summary>
         public string Kind { get; set; } = "avaliacao";
+        /// <summary>Hora da avaliação (candle: fechamento; bubble/exec: hora do evento).</summary>
         public string Time { get; set; } = "";
         /// <summary>candle_close | bubble | exec | virada do dia</summary>
         public string Event { get; set; } = "";
