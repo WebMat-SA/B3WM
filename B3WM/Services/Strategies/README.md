@@ -68,5 +68,5 @@ no open seguinte, zera na virada do dia) → `WOULD-SEND` no log.
 Relatório paper em `Data/{SYM}_Strategy_{Nome}_{data}.json`.
 Cada avaliação e cada execução gera um `StrategyDecisionLog`
 (Kind avaliacao/execucao, hora, evento, lado, confiança, ação);
-os 15 mais recentes voltam no `State` (`RecentDecisions`) e aparecem
+todos os itens do dia voltam no `State` (`ReportItems`, mais recentes primeiro) e aparecem
 sob a sessão aberta na aba Estratégia.

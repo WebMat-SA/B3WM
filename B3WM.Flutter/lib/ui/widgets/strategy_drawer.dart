@@ -285,7 +285,7 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                                       ],
                                     ),
                                   ),
-                                  if (s.recentDecisions.isNotEmpty)
+                                  if (s.reportItems.isNotEmpty)
                                     Container(
                                       margin: const EdgeInsets.only(
                                           left: 12, right: 12, bottom: 8),
@@ -300,14 +300,14 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          const Text('Relatório (recentes)',
+                                          const Text('Relatório do dia',
                                               style: TextStyle(
                                                   fontSize: 11,
                                                   color: Colors.grey,
                                                   fontWeight:
                                                       FontWeight.bold)),
                                           const SizedBox(height: 4),
-                                          ...s.recentDecisions.map(
+                                          ...s.reportItems.map(
                                               (d) => Padding(
                                                     padding: const EdgeInsets
                                                         .symmetric(vertical: 1),

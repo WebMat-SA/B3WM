@@ -79,8 +79,8 @@ namespace B3WM.Services.Strategies
                     RealizedPts = s.PaperTrades.Sum(t => t.Pts),
                     StartedAt = s.StartedAt,
                     LastDecision = s.LastDecision,
-                    // Mais recentes primeiro (a aba mostra de cima p/ baixo).
-                    RecentDecisions = s.Decisions.TakeLast(15).Reverse().ToList(),
+                    // Todos do dia, mais recentes primeiro (a aba mostra de cima p/ baixo).
+                    ReportItems = s.Decisions.AsEnumerable().Reverse().ToList(),
                 }).ToList();
         }
 
@@ -416,7 +416,7 @@ namespace B3WM.Services.Strategies
                     Symbol = s.Symbol,
                     Strategy = s.Strategy,
                     SnapshotHash = s.SnapshotHash,
-                    Decisions = s.Decisions.TakeLast(500).ToList(),
+                    Decisions = s.Decisions.ToList(),
                     PaperTrades = s.PaperTrades.ToList(),
                     RealizedPts = s.PaperTrades.Sum(t => t.Pts),
                 };

@@ -27,8 +27,8 @@ namespace B3WM.Shared.Models.Strategies
         public double RealizedPts { get; set; }
         public DateTime StartedAt { get; set; }
         public string? LastDecision { get; set; }
-        /// <summary>Últimos itens (mais recentes primeiro), p/ exibir sob a sessão.</summary>
-        public List<StrategyDecisionLog> RecentDecisions { get; set; } = new();
+        /// <summary>Todos os itens do dia (mais recentes primeiro), p/ exibir sob a sessão.</summary>
+        public List<StrategyDecisionLog> ReportItems { get; set; } = new();
     }
 
     /// <summary>

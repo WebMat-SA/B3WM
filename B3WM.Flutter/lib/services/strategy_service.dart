@@ -78,7 +78,7 @@ class StrategySession {
   final int decisions;
   final double realizedPts;
   final String? lastDecision;
-  final List<StrategyDecisionItem> recentDecisions;
+  final List<StrategyDecisionItem> reportItems;
 
   const StrategySession({
     required this.sessionId,
@@ -90,7 +90,7 @@ class StrategySession {
     required this.decisions,
     required this.realizedPts,
     required this.lastDecision,
-    required this.recentDecisions,
+    required this.reportItems,
   });
 
   factory StrategySession.fromJson(Map<String, dynamic> json) =>
@@ -104,7 +104,9 @@ class StrategySession {
         decisions: (json['decisions'] as num?)?.toInt() ?? 0,
         realizedPts: (json['realizedPts'] as num?)?.toDouble() ?? 0,
         lastDecision: json['lastDecision'] as String?,
-        recentDecisions: ((json['recentDecisions'] as List?) ?? [])
+        reportItems: (((json['reportItems'] as List?) ??
+                    json['recentDecisions'] as List?) ??
+                [])
             .map((e) => StrategyDecisionItem.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
