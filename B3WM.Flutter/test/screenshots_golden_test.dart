@@ -20,13 +20,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:b3wm_flutter/main.dart';
 import 'package:b3wm_flutter/models/bar_storage_item.dart';
 import 'package:b3wm_flutter/models/bubble_storage_item.dart';
-import 'package:b3wm_flutter/models/signal_event.dart';
 import 'package:b3wm_flutter/models/structure_storage_item.dart';
 import 'package:b3wm_flutter/models/ticks2.dart';
 import 'package:b3wm_flutter/models/trade_models.dart';
-import 'package:b3wm_flutter/models/verifier_config.dart';
-import 'package:b3wm_flutter/models/verifier_position.dart';
-import 'package:b3wm_flutter/models/verifier_state.dart';
 import 'package:b3wm_flutter/models/volume_level.dart';
 import 'package:b3wm_flutter/models/volume_level_storage_item.dart';
 import 'package:b3wm_flutter/services/api_service.dart';
@@ -161,75 +157,6 @@ List<StructureStorageItem> _buildStructures() {
     ));
   }
   return structures;
-}
-
-VerifierState _buildVerifierState() {
-  final config = VerifierConfig(
-    symbol: 'WINFUT',
-    timeFrame: 2,
-    strategyName: 'SmartBreakout',
-    isDayTrade: true,
-    dayTradeCloseTime: '13:00',
-    quantity: 1,
-  );
-  final d = DateTime(2024, 5, 10);
-  SignalEvent s({
-    required String type,
-    required String side,
-    required double entry,
-    double exit = 0,
-    double pl = 0,
-    required int i,
-  }) =>
-      SignalEvent(
-        symbol: 'WINFUT',
-        timeFrame: 2,
-        date: d.add(Duration(minutes: i)),
-        type: type,
-        side: side,
-        entryPrice: entry,
-        exitPrice: exit,
-        stopPrice: 0,
-        targetPrice: 0,
-        quantity: 1,
-        points: 0,
-        profitLoss: pl,
-        commission: 0,
-        cumulativePL: 0,
-        positionOpen: type.startsWith('Entry'),
-      );
-  return VerifierState(
-    symbol: 'WINFUT',
-    timeFrame: 2,
-    isRunning: true,
-    config: config,
-    openPosition: VerifierPosition(
-      side: 'Buy',
-      entryPrice: 151480.50,
-      stopPrice: 151230.50,
-      targetPrice: 151820.50,
-      quantity: 2,
-      entryDate: d,
-      entryReason: 'Bubble acima da borda superior',
-    ),
-    totalTrades: 12,
-    winCount: 7,
-    lossCount: 5,
-    winRate: 0.58,
-    netProfit: 352.50,
-    grossProfit: 1280.00,
-    grossLoss: 927.50,
-    maxDrawdown: 215.00,
-    signals: [
-      s(type: 'Entry Buy', side: 'Buy', entry: 151480.5, i: 10),
-      s(type: 'Exit Buy', side: 'Buy', entry: 151480.5, exit: 151512.5, pl: 32.0, i: 22),
-      s(type: 'Entry Sell', side: 'Sell', entry: 151540.0, i: 40),
-      s(type: 'Exit Sell', side: 'Sell', entry: 151540.0, exit: 151558.5, pl: -18.5, i: 55),
-      s(type: 'Entry Buy', side: 'Buy', entry: 151455.0, i: 70),
-      s(type: 'Exit Buy', side: 'Buy', entry: 151455.0, exit: 151479.0, pl: 24.0, i: 88),
-    ],
-    equityCurve: [1000, 1010, 995, 1030, 1050, 1040, 1100, 1120, 1150, 1180, 1200, 1235],
-  );
 }
 
 AccountInfo _buildAccount() => AccountInfo(
@@ -375,10 +302,6 @@ class FakeApiService extends ApiService {
   @override
   Future<DateTime> findLastDateWithData(String symbol) async =>
       DateTime(2024, 5, 10);
-
-  @override
-  Future<VerifierState?> getVerifierState(String symbol, int timeFrame) async =>
-      _buildVerifierState();
 }
 
 class FakeSignalRService extends SignalRService {
@@ -502,7 +425,6 @@ Future<_Env> _createEnv() async {
   state.updatePositions(_buildPositions());
   state.updateOrders(_buildOrders());
   state.updateHistory(_buildHistory());
-  await state.refreshVerifierState();
   return _Env(
     api: api,
     tradingApi: tradingApi,

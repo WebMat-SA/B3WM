@@ -90,8 +90,8 @@ class _PivotRow extends StatelessWidget {
     final color = levelKey == 'P'
         ? const Color(0xFFBDBDBD)
         : levelKey.startsWith('R')
-            ? const Color(0xFFCE93D8)
-            : const Color(0xFF4DD0E1);
+            ? const Color(0xFF4DD0E1)
+            : const Color(0xFFCE93D8);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(

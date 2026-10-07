@@ -13,12 +13,13 @@ namespace B3WM.Services.Core
         private readonly IEnumerable<VolumeService> volumeService;
         private readonly IEnumerable<StructureService> structureService;
         private readonly IEnumerable<AdjustmentForecastService> adjustmentForecastService;
+        private readonly ILogger<OrchestratorService> _logger;
         public string Symbol { get; }
 
         /// <summary>Disparado ao final do fechamento de um candle, com a barra finalizada (volume/forecast) e a estrutura calculada.</summary>
         public event Func<BarStorageItem, StructureStorageItem, Task>? OnCandleClosed;
 
-        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<AdjustmentForecastService> adjustmentForecastService)
+        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<AdjustmentForecastService> adjustmentForecastService, ILogger<OrchestratorService> logger)
         {
             this.Symbol = Symbol;
 
@@ -28,6 +29,7 @@ namespace B3WM.Services.Core
             this.structureService = structureService.Where(q=>q.Symbol == Symbol);
             this.adjustmentForecastService = adjustmentForecastService.Where(q=>q.Symbol == Symbol);
 
+            _logger = logger;
             SubscribeAll(this.candleService, OnCandleUpdate);
         }
 
@@ -78,12 +80,11 @@ namespace B3WM.Services.Core
                 if (OnCandleClosed != null && structure != null)
                     await OnCandleClosed.Invoke(bar, structure);
 
-                Console.WriteLine(
-                    $"Bar atualizado: {bar} ");
+                _logger.LogDebug("Bar atualizado: {Bar}", bar);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"OrchestratorService.OnCandleUpdate error: {ex.Message}");
+                _logger.LogWarning(ex, "OrchestratorService.OnCandleUpdate error");
             }
         }
 

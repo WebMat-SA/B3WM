@@ -62,7 +62,7 @@ namespace B3WM.Shared.Extensions
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error in Description: " + e.Message);
+                System.Diagnostics.Debug.WriteLine("Error in Description: " + e.Message);
                 return "Description Not Found";
             }
         }

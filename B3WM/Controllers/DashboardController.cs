@@ -1,11 +1,6 @@
 ﻿using B3WM.Services;
 using B3WM.Services.Core;
-using B3WM.Shared.Entity;
-using B3WM.Shared.Interfaces;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
-using System.Globalization;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace B3WM.Controllers
 {
@@ -25,7 +20,7 @@ namespace B3WM.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAsync()
+        public IActionResult Get()
         {
             List<object> data = new();
             foreach(var iprocess in candleService)

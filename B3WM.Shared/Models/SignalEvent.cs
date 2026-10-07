@@ -1,5 +1,3 @@
-using B3WM.Shared.Models.Backtest;
-
 namespace B3WM.Shared.Models
 {
     public enum SignalType

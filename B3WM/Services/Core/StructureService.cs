@@ -12,6 +12,7 @@ namespace B3WM.Services.Core
         public int TimeFrame { get; private set; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
+        private readonly ILogger<StructureService> _logger;
 
         public event Func<StructureStorageItem, Task>? OnUpdate;
 
@@ -31,13 +32,14 @@ namespace B3WM.Services.Core
         #endregion
 
 
-        public StructureService(string symbol, int timeFrame, double minDistance ,IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+        public StructureService(string symbol, int timeFrame, double minDistance ,IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<StructureService> logger)
             : base(serviceProvider)
         {
             Symbol = symbol;
             TimeFrame = timeFrame;
             _minDistanceUpdateBorder = minDistance;
             this.hubContext = hubContext;
+            _logger = logger;
         }
 
         public async Task PreLoad()
@@ -134,7 +136,7 @@ namespace B3WM.Services.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"StructureService.Calculate error: {ex.Message}");
+                _logger.LogWarning(ex, "StructureService.Calculate error");
                 return _lastStructure ?? new StructureStorageItem
                 {
                     Symbol = newBar.Symbol,

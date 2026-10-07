@@ -2,6 +2,26 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": ".NET Core: B3WM https",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "dotnet-build-B3WM",
+      "program": "${workspaceFolder}/B3WM/bin/Debug/net10.0/B3WM.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/B3WM",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+        "uriFormat": "%s/api/Dashboard/Get"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "https://localhost:5002;http://localhost:5000"
+      }
+    },
+    {
       "name": "Python: B3WM MT5 Bridge",
       "type": "debugpy",
       "request": "launch",

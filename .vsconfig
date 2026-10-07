@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "components": [
+    "Microsoft.VisualStudio.Workload.NetWeb",
+    "Microsoft.VisualStudio.Component.Web",
+    "Microsoft.VisualStudio.Component.AspNet45",
+    "Microsoft.NetCore.Component.SDK",
+    "Microsoft.Net.Component.10.0.SDK",
+    "Microsoft.Net.Component.10.0.TargetingPack",
+    "Microsoft.VisualStudio.Component.Git",
+    "Microsoft.VisualStudio.Component.Debugger.JustInTime"
+  ]
+}

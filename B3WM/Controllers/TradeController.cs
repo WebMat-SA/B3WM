@@ -10,15 +10,12 @@ namespace B3WM.Controllers;
 public class TradeController : ControllerBase
 {
     private readonly HttpClient _http;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-    };
+    private readonly ILogger<TradeController> _logger;
 
-    public TradeController(IHttpClientFactory httpClientFactory)
+    public TradeController(IHttpClientFactory httpClientFactory, ILogger<TradeController> logger)
     {
         _http = httpClientFactory.CreateClient("PythonService");
+        _logger = logger;
     }
 
     [HttpPost("order-market")]
@@ -91,17 +88,43 @@ public class TradeController : ControllerBase
 
     private async Task<IActionResult> ForwardPost(string path, JsonElement body)
     {
-        var json = body.GetRawText();
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync(path, content);
-        var result = await response.Content.ReadAsStringAsync();
-        return StatusCode((int)response.StatusCode, result);
+        try
+        {
+            var json = body.GetRawText();
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(path, content);
+            var result = await response.Content.ReadAsStringAsync();
+            return StatusCode((int)response.StatusCode, result);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Timeout no bridge Python POST {Path}", path);
+            return StatusCode(504, "Bridge Python (MT5) sem resposta (timeout).");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Bridge Python indisponível POST {Path}", path);
+            return StatusCode(503, "Bridge Python (MT5) indisponível.");
+        }
     }
 
     private async Task<IActionResult> ForwardGet(string path)
     {
-        var response = await _http.GetAsync(path);
-        var result = await response.Content.ReadAsStringAsync();
-        return StatusCode((int)response.StatusCode, result);
+        try
+        {
+            var response = await _http.GetAsync(path);
+            var result = await response.Content.ReadAsStringAsync();
+            return StatusCode((int)response.StatusCode, result);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Timeout no bridge Python GET {Path}", path);
+            return StatusCode(504, "Bridge Python (MT5) sem resposta (timeout).");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Bridge Python indisponível GET {Path}", path);
+            return StatusCode(503, "Bridge Python (MT5) indisponível.");
+        }
     }
 }

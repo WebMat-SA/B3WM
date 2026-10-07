@@ -8,10 +8,12 @@ namespace B3WM.Services
     public class DataHub : Hub<IDataHubClient>
     {
         private readonly IEnumerable<TickChannelService> _tickChannel;
+        private readonly ILogger<DataHub> _logger;
 
-        public DataHub(IEnumerable<TickChannelService> tickChannel)
+        public DataHub(IEnumerable<TickChannelService> tickChannel, ILogger<DataHub> logger)
         {
             _tickChannel = tickChannel;
+            _logger = logger;
         }
 
         public async Task JoinGroup(string group)
@@ -33,7 +35,7 @@ namespace B3WM.Services
                 }
                 else
                 {
-                    Console.WriteLine($"Channel for symbol '{group}' not found.");
+                    _logger.LogWarning("Channel for symbol '{Group}' not found.", group);
                 }
                 //await Clients.Group(group).ReceiveTnTProfit(data);
             }

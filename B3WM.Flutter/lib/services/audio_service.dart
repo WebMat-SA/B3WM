@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../app_log.dart';
 
 class AudioService {
   AudioPlayer? _player;
@@ -11,7 +11,7 @@ class AudioService {
       await _player?.stop();
       await _player?.play(AssetSource('sounds/icq-message-sound.mp3'));
     } catch (e) {
-      debugPrint('[AudioService] Error playing sound: $e');
+      logD('[AudioService] Error playing sound: $e');
     }
   }
 

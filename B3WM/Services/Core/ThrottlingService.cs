@@ -10,13 +10,15 @@ namespace B3WM.Services.Core
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
         private readonly IServiceProvider _serviceProvider;
         private readonly int timerMiliseconds;
+        private readonly ILogger<ThrottlingService> _logger;
 
-        public ThrottlingService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, int intervalMilliseconds=250)
+        public ThrottlingService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<ThrottlingService> logger, int intervalMilliseconds=250)
         {
             this.Symbol = symbol;
             this.hubContext = hubContext;
             this._serviceProvider = serviceProvider;
             this.timerMiliseconds = intervalMilliseconds;
+            _logger = logger;
             
         }
 
@@ -51,7 +53,7 @@ namespace B3WM.Services.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    _logger.LogWarning(ex, "ThrottlingService error");
                 }
             }
         }

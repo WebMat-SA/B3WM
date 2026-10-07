@@ -14,6 +14,7 @@ namespace B3WM.Services.Core
         public int TimeFrame { get; private set; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
+        private readonly ILogger<CandleService> _logger;
 
         private readonly Channel<Ticks2[]> _channel =
             Channel.CreateUnbounded<Ticks2[]>();
@@ -31,12 +32,13 @@ namespace B3WM.Services.Core
 
         public string GetPathForDate(DateTime date) => $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{date:yyyy-MM-dd}.json";
 
-        public CandleService(string symbol, int timeFrame, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider)
+        public CandleService(string symbol, int timeFrame, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<CandleService> logger)
             : base(serviceProvider)
         {
             Symbol = symbol;
             TimeFrame = timeFrame;
             this.hubContext = hubContext;
+            _logger = logger;
             _loadedDate = DateTime.Now.Date;
             _ = Task.Run(ProcessLoop);
             // Flush periódico só para o diário: o candle aberto vive o pregão inteiro
@@ -88,7 +90,7 @@ namespace B3WM.Services.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"CandleService restore 1440 error: {ex.Message}");
+                    _logger.LogWarning(ex, "CandleService restore 1440 error");
                 }
             }
 
@@ -107,7 +109,7 @@ namespace B3WM.Services.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"CandleService.ProcessLoop error: {ex.Message}");
+                    _logger.LogWarning(ex, "CandleService.ProcessLoop error");
                 }
             }
         }
@@ -145,7 +147,7 @@ namespace B3WM.Services.Core
                 if (TimeFrame == 1440)
                 {
                     try { await FlushCurrentBarAsync(); }
-                    catch (Exception ex) { Console.WriteLine($"CandleService initial flush error: {ex.Message}"); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "CandleService initial flush error"); }
                 }
                 return;
             }
@@ -206,7 +208,7 @@ namespace B3WM.Services.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"CandleService.PersistClosedBar error: {ex.Message}");
+                _logger.LogWarning(ex, "CandleService.PersistClosedBar error");
             }
         }
 
@@ -224,13 +226,13 @@ namespace B3WM.Services.Core
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"CandleService.FlushLoop error: {ex.Message}");
+                        _logger.LogWarning(ex, "CandleService.FlushLoop error");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"CandleService.FlushLoop fatal: {ex.Message}");
+                _logger.LogError(ex, "CandleService.FlushLoop fatal");
             }
         }
 
@@ -270,7 +272,7 @@ namespace B3WM.Services.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"CandleService.EnsureDayRollover error: {ex.Message}");
+                _logger.LogWarning(ex, "CandleService.EnsureDayRollover error");
             }
         }
 

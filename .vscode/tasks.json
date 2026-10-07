@@ -2,6 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "dotnet-build-B3WM",
+      "type": "shell",
+      "command": "dotnet build B3WM/B3WM.csproj -c Debug",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "silent"
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "python-service",
       "type": "shell",
       "command": "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload",

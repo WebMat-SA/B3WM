@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'app_config.dart';
 import 'services/api_service.dart';
 import 'services/signalr_service.dart';
 import 'services/preferences_service.dart';
@@ -16,11 +17,10 @@ import 'ui/widgets/chart/chart_data.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final baseUrl = 'https://localhost:5002';
-  final apiService = ApiService(baseUrl: baseUrl);
-  final tradingApiService = TradingApiService(baseUrl: baseUrl);
+  final apiService = ApiService(baseUrl: AppConfig.apiBaseUrl);
+  final tradingApiService = TradingApiService(baseUrl: AppConfig.apiBaseUrl);
   final signalRService = SignalRService(
-    hubUrl: '$baseUrl/api/datahub',
+    hubUrl: AppConfig.hubUrl,
     apiService: apiService,
   );
   final preferencesService = PreferencesService();
@@ -127,10 +127,10 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
               setState(() => _drawerTabIndex = 7);
               _scaffoldKey.currentState?.openDrawer();
             },
-            // onVerifierTap: () {
-            //   setState(() => _drawerTabIndex = 4);
-            //   _scaffoldKey.currentState?.openDrawer();
-            // },
+            onStrategyTap: () {
+              setState(() => _drawerTabIndex = 8);
+              _scaffoldKey.currentState?.openDrawer();
+            },
             onTradingTap: () =>
                 state.setTradingPanelVisible(!state.tradingPanelVisible),
             tradingActive: state.tradingPanelVisible,

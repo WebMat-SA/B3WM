@@ -7,12 +7,17 @@ import 'package:provider/provider.dart';
 import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
+import 'strategy_report_overlay.dart';
 import '../../../services/trading_service.dart';
 import '../../../services/state_service.dart';
 
 class MapFlowChart extends StatefulWidget {
   final ChartData data;
-  const MapFlowChart({super.key, required this.data});
+
+  /// Exibe o overlay do relatório da sessão. Desligado no gráfico diário.
+  final bool showStrategyOverlay;
+  const MapFlowChart(
+      {super.key, required this.data, this.showStrategyOverlay = true});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -582,8 +587,14 @@ class _MapFlowChartState extends State<MapFlowChart>
                     ),
                   ),
                 ),
+              ),
             ),
-          ),
+            // Relatório da sessão ativa sobre o gráfico (só com sessão
+            // armada; altura máxima = altura do gráfico, com rolagem).
+            if (widget.showStrategyOverlay)
+              StrategyReportOverlay(
+                maxHeight: candleAreaHeight - 16,
+              ),
           if (_hoveredBubble != null && _hoverPos != null)
             Positioned(
               left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,

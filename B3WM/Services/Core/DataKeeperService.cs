@@ -4,6 +4,7 @@
     {
         private static readonly SemaphoreSlim _fileSemaphore = new(1, 1);
         public readonly IServiceProvider _serviceProvider;
+        private ILogger? _logger;
 
         public virtual string Path => throw new Exception("Implement Path on your service");
 
@@ -13,6 +14,11 @@
         {
             _serviceProvider = serviceProvider;
         }
+
+        /// <summary>Logger resolvido sob demanda (evita mudar os ctors das subclasses).</summary>
+        protected ILogger Logger =>
+            _logger ??= _serviceProvider.GetService<ILogger<DataKeeperService<T>>>() as ILogger
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
         public async Task<T> GetDataAsync(string? path = null)
         {
@@ -80,7 +86,7 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred while loading data for {Path}: {ex.Message}");
+                Logger.LogWarning(ex, "Error occurred while loading data for {Path}", Path);
             }
         }
 

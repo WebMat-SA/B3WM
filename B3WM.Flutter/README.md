@@ -39,8 +39,8 @@ lib/
 └── ui/widgets/
     ├── chart/                 # MapFlowChart (CustomPainter) + chart_data
     ├── app_bar_widget.dart    # atalhos p/ cada aba do drawer
-    ├── app_drawer.dart        # 8 abas: Bubbles, Estrutura, Volume Profile,
-    │                          # Topos/Vales, Pivot, VWAP, Período, Backup
+    ├── app_drawer.dart        # 9 abas: Bubbles, Estrutura, Volume Profile,
+    │                          # Topos/Vales, Pivot, VWAP, Período, Backup, Estratégias
     ├── trading_drawer.dart    # painel lateral de trading (conta/ordens/posições/histórico)
     └── daily/                 # painel inferior 1D: structure/volume/extreme/pivot
 test/
