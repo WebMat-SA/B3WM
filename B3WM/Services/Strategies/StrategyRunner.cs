@@ -9,7 +9,7 @@ using B3WM.Shared.Models.ExtremeDetection;
 using B3WM.Shared.Models.Strategies;
 namespace B3WM.Services.Strategies
 {
-    /// <summary>Sessão armada: spec cru da tela + posição paper.</summary>
+    /// <summary>Sessão armada: spec cru da tela + posição paper + relatório.</summary>
     public sealed class StrategySession
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -17,7 +17,6 @@ namespace B3WM.Services.Strategies
         public string Symbol { get; set; } = "";
         /// <summary>TF da tela no PLAY (filtros travados, não muda na sessão).</summary>
         public int TriggerTimeFrame { get; set; } = 2;
-        public Dictionary<string, double> Params { get; set; } = new();
         public string ScreenSpecJson { get; set; } = "{}";
         public BubbleFilter Filter { get; set; } = new();
         public string SnapshotHash { get; set; } = "";
@@ -27,7 +26,8 @@ namespace B3WM.Services.Strategies
         public double PendingEntryConf { get; set; }
         public bool PendingExit { get; set; }
         public double PendingExitScore { get; set; }
-        public List<string> Decisions { get; set; } = new();
+        public List<StrategyDecisionLog> Decisions { get; set; } = new();
+        public int PersistedDecisions { get; set; }
         public List<PaperTrade> PaperTrades { get; set; } = new();
         public DateTime StartedAt { get; set; } = DateTime.Now;
         public string? LastDecision { get; set; }
@@ -79,6 +79,8 @@ namespace B3WM.Services.Strategies
                     RealizedPts = s.PaperTrades.Sum(t => t.Pts),
                     StartedAt = s.StartedAt,
                     LastDecision = s.LastDecision,
+                    // Mais recentes primeiro (a aba mostra de cima p/ baixo).
+                    RecentDecisions = s.Decisions.TakeLast(15).Reverse().ToList(),
                 }).ToList();
         }
 
@@ -145,6 +147,12 @@ namespace B3WM.Services.Strategies
             foreach (var s in SessionsOf(bar.Symbol))
                 if (s.Position != null && bar.Date.Date > s.Position.EntryTime.Date)
                     ClosePaper(s, bar.Open, bar.Date, "virada do dia");
+            foreach (var s in SessionsOf(bar.Symbol))
+                if (s.Decisions.Count % 10 == 0 && s.Decisions.Count > s.PersistedDecisions)
+                {
+                    s.PersistedDecisions = s.Decisions.Count;
+                    await PersistLogAsync(ToLogDay(s));
+                }
         }
 
         private async Task OnBubbleAsync(BubbleStorageItem bubble)
@@ -240,27 +248,70 @@ namespace B3WM.Services.Strategies
             // Threshold de saída do paper engine (política do runner; a
             // strategy só informa Encerrar 0..1).
             const double exitThr = 0.5;
-            var summary = $"{ev.At:HH:mm} {decision.Side} conf={decision.Confidence:F2} enc={decision.Encerrar:F2} snap={s.SnapshotHash}";
+            var posBefore = s.Position == null ? "flat"
+                : $"{(s.Position.Side == "comprar" ? "comprado" : "vendido")} @{s.Position.Entry:F0}";
+            var (action, wantEntry, wantExit) = DescribeEvaluation(decision, s.Position != null, exitThr);
+            var item = new StrategyDecisionLog
+            {
+                Kind = "avaliacao",
+                Time = ev.At.ToString("HH:mm"),
+                Event = why,
+                Side = decision.Side,
+                Confidence = decision.Confidence,
+                Encerrar = decision.Encerrar,
+                ShouldTrade = decision.ShouldTrade,
+                Reason = decision.Reason,
+                StateChars = decision.StateChars,
+                SnapshotHash = s.SnapshotHash,
+                PositionBefore = posBefore,
+                Action = action,
+            };
             lock (_lock)
             {
-                s.Decisions.Add(summary);
-                s.LastDecision = summary;
-                if (s.Position == null && decision.ShouldTrade &&
-                    (decision.Side == "comprar" || decision.Side == "vender"))
+                NoteLocked(s, item);
+                if (wantEntry != null)
                 {
-                    s.PendingEntry = decision.Side;
+                    s.PendingEntry = wantEntry;
                     s.PendingEntryConf = decision.Confidence;
                 }
-                else if (s.Position != null && decision.Encerrar > exitThr)
+                else if (wantExit)
                 {
                     s.PendingExit = true;
                     s.PendingExitScore = decision.Encerrar;
                 }
             }
             _logger.LogInformation("[strategy:{Name}:{Id}] {Summary} ({Why})",
-                s.Strategy, s.Id, summary, why);
+                s.Strategy, s.Id, Summarize(item), why);
             if (s.Decisions.Count % 10 == 0)
+            {
+                s.PersistedDecisions = s.Decisions.Count;
                 await PersistLogAsync(ToLogDay(s));
+            }
+        }
+
+        /// <summary>
+        /// Regra pura do paper engine na avaliação (testável sem runner):
+        /// devolve (ação descrita, lado p/ entrada pendente?, saída pendente?).
+        /// </summary>
+        public static (string Action, string? WantEntry, bool WantExit) DescribeEvaluation(
+            StrategyDecision decision, bool hasPosition, double exitThr)
+        {
+            if (!hasPosition && decision.ShouldTrade &&
+                (decision.Side == "comprar" || decision.Side == "vender"))
+                return ($"sinal abre {decision.Side} (conf {decision.Confidence:F2})", decision.Side, false);
+            if (hasPosition && decision.Encerrar > exitThr)
+                return ($"sinal fecha (encerrar {decision.Encerrar:F2})", null, true);
+            return ("manter", null, false);
+        }
+
+        private static string Summarize(StrategyDecisionLog item) =>
+            $"{item.Time} {item.Side} conf={item.Confidence:F2} enc={item.Encerrar:F2} snap={item.SnapshotHash}";
+
+        /// <summary>Registra item + resumo (chamar com _lock).</summary>
+        private void NoteLocked(StrategySession s, StrategyDecisionLog item)
+        {
+            s.Decisions.Add(item);
+            s.LastDecision = Summarize(item);
         }
 
         private void ExecutePending(StrategySession s, double open, DateTime at, string execReason)
@@ -279,6 +330,17 @@ namespace B3WM.Services.Strategies
                     _logger.LogInformation(
                         "[strategy:{Name}:{Id}] WOULD-SEND {Side} 1 @{Price:F0} ({Reason}) snap={Hash} [paper]",
                         s.Strategy, s.Id, s.Position.Side, open, execReason, s.SnapshotHash);
+                    NoteLocked(s, new StrategyDecisionLog
+                    {
+                        Kind = "execucao",
+                        Time = at.ToString("HH:mm"),
+                        Event = "exec",
+                        Side = s.Position.Side,
+                        Confidence = s.Position.EntryConf,
+                        SnapshotHash = s.SnapshotHash,
+                        PositionBefore = "flat",
+                        Action = $"exec abre {s.Position.Side} @{open:F0}",
+                    });
                     s.PendingEntry = null;
                 }
                 if (s.PendingExit && s.Position != null)
@@ -313,6 +375,16 @@ namespace B3WM.Services.Strategies
                 Pts = pts,
                 ExitReason = reason,
                 EntryConf = s.Position.EntryConf,
+            });
+            NoteLocked(s, new StrategyDecisionLog
+            {
+                Kind = "execucao",
+                Time = at.ToString("HH:mm"),
+                Event = reason,
+                Side = s.Position.Side,
+                SnapshotHash = s.SnapshotHash,
+                PositionBefore = $"{(s.Position.Side == "comprar" ? "comprado" : "vendido")} @{s.Position.Entry:F0}",
+                Action = $"fecha @{price:F0} ({pts:+0;-0} pts)",
             });
             s.Position = null;
             s.PendingExit = false;

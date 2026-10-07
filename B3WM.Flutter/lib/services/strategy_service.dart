@@ -20,6 +20,54 @@ class StrategyInfo {
   }
 }
 
+/// Um item do relatório da sessão: cada avaliação (gatilho) e cada
+/// execução paper geram um. Exibido sob a sessão aberta na aba.
+class StrategyDecisionItem {
+  final String kind; // avaliacao | execucao
+  final String time;
+  final String event;
+  final String side;
+  final double confidence;
+  final double encerrar;
+  final bool shouldTrade;
+  final String reason;
+  final int stateChars;
+  final String snapshotHash;
+  final String positionBefore;
+  final String action;
+
+  const StrategyDecisionItem({
+    required this.kind,
+    required this.time,
+    required this.event,
+    required this.side,
+    required this.confidence,
+    required this.encerrar,
+    required this.shouldTrade,
+    required this.reason,
+    required this.stateChars,
+    required this.snapshotHash,
+    required this.positionBefore,
+    required this.action,
+  });
+
+  factory StrategyDecisionItem.fromJson(Map<String, dynamic> json) =>
+      StrategyDecisionItem(
+        kind: json['kind'] as String? ?? 'avaliacao',
+        time: json['time'] as String? ?? '',
+        event: json['event'] as String? ?? '',
+        side: json['side'] as String? ?? '',
+        confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+        encerrar: (json['encerrar'] as num?)?.toDouble() ?? 0,
+        shouldTrade: json['shouldTrade'] as bool? ?? false,
+        reason: json['reason'] as String? ?? '',
+        stateChars: (json['stateChars'] as num?)?.toInt() ?? 0,
+        snapshotHash: json['snapshotHash'] as String? ?? '',
+        positionBefore: json['positionBefore'] as String? ?? 'flat',
+        action: json['action'] as String? ?? '',
+      );
+}
+
 class StrategySession {
   final String sessionId;
   final String strategy;
@@ -30,6 +78,7 @@ class StrategySession {
   final int decisions;
   final double realizedPts;
   final String? lastDecision;
+  final List<StrategyDecisionItem> recentDecisions;
 
   const StrategySession({
     required this.sessionId,
@@ -41,6 +90,7 @@ class StrategySession {
     required this.decisions,
     required this.realizedPts,
     required this.lastDecision,
+    required this.recentDecisions,
   });
 
   factory StrategySession.fromJson(Map<String, dynamic> json) =>
@@ -54,6 +104,9 @@ class StrategySession {
         decisions: (json['decisions'] as num?)?.toInt() ?? 0,
         realizedPts: (json['realizedPts'] as num?)?.toDouble() ?? 0,
         lastDecision: json['lastDecision'] as String?,
+        recentDecisions: ((json['recentDecisions'] as List?) ?? [])
+            .map((e) => StrategyDecisionItem.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
 }
 

@@ -27,6 +27,31 @@ namespace B3WM.Shared.Models.Strategies
         public double RealizedPts { get; set; }
         public DateTime StartedAt { get; set; }
         public string? LastDecision { get; set; }
+        /// <summary>Últimos itens (mais recentes primeiro), p/ exibir sob a sessão.</summary>
+        public List<StrategyDecisionLog> RecentDecisions { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Um item do relatório: cada avaliação (gatilho) e cada execução paper
+    /// geram um. Exibido sob a sessão aberta na aba Estratégia.
+    /// </summary>
+    public sealed class StrategyDecisionLog
+    {
+        /// <summary>avaliacao | execucao</summary>
+        public string Kind { get; set; } = "avaliacao";
+        public string Time { get; set; } = "";
+        /// <summary>candle_close | bubble | exec | virada do dia</summary>
+        public string Event { get; set; } = "";
+        public string Side { get; set; } = "";
+        public double Confidence { get; set; }
+        public double Encerrar { get; set; }
+        public bool ShouldTrade { get; set; }
+        public string Reason { get; set; } = "";
+        public int StateChars { get; set; }
+        public string SnapshotHash { get; set; } = "";
+        public string PositionBefore { get; set; } = "flat";
+        /// <summary>O que resultou: manter | sinal abre X | sinal fecha | exec abre X @P | fecha @P (+N pts) | zera fim do dia</summary>
+        public string Action { get; set; } = "";
     }
 
     public sealed class PaperTrade
@@ -47,7 +72,7 @@ namespace B3WM.Shared.Models.Strategies
         public string Symbol { get; set; } = "";
         public string Strategy { get; set; } = "";
         public string SnapshotHash { get; set; } = "";
-        public List<string> Decisions { get; set; } = new();
+        public List<StrategyDecisionLog> Decisions { get; set; } = new();
         public List<PaperTrade> PaperTrades { get; set; } = new();
         public double RealizedPts { get; set; }
     }

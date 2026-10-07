@@ -245,38 +245,86 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                     children: _sessions
                         .map((s) => Card(
                               color: const Color(0xFF1e1e1e),
-                              child: ListTile(
-                                dense: true,
-                                title: Text(
-                                    '${s.strategy} ${s.paused ? '(pausada)' : ''}',
-                                    style: const TextStyle(fontSize: 13)),
-                                subtitle: Text(
-                                  'pos=${s.position ?? 'flat'} dec=${s.decisions} pts=${s.realizedPts.toStringAsFixed(0)} snap=${s.snapshotHash}\n${s.lastDecision ?? ''}',
-                                  style: const TextStyle(
-                                      fontSize: 11, color: Colors.grey),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(
-                                          s.paused
-                                              ? Icons.play_arrow
-                                              : Icons.pause,
-                                          size: 20),
-                                      tooltip: s.paused
-                                          ? 'Retomar'
-                                          : 'Pausar',
-                                      onPressed: () =>
-                                          _pause(s.sessionId, !s.paused),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ListTile(
+                                    dense: true,
+                                    title: Text(
+                                        '${s.strategy} ${s.paused ? '(pausada)' : ''}',
+                                        style:
+                                            const TextStyle(fontSize: 13)),
+                                    subtitle: Text(
+                                      'pos=${s.position ?? 'flat'} dec=${s.decisions} pts=${s.realizedPts.toStringAsFixed(0)} snap=${s.snapshotHash}\n${s.lastDecision ?? ''}',
+                                      style: const TextStyle(
+                                          fontSize: 11, color: Colors.grey),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.stop, size: 20),
-                                      tooltip: 'Parar (encerra + relatório)',
-                                      onPressed: () => _stop(s.sessionId),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: Icon(
+                                              s.paused
+                                                  ? Icons.play_arrow
+                                                  : Icons.pause,
+                                              size: 20),
+                                          tooltip: s.paused
+                                              ? 'Retomar'
+                                              : 'Pausar',
+                                          onPressed: () =>
+                                              _pause(s.sessionId, !s.paused),
+                                        ),
+                                        IconButton(
+                                          icon:
+                                              const Icon(Icons.stop, size: 20),
+                                          tooltip:
+                                              'Parar (encerra + relatório)',
+                                          onPressed: () =>
+                                              _stop(s.sessionId),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  if (s.recentDecisions.isNotEmpty)
+                                    Container(
+                                      margin: const EdgeInsets.only(
+                                          left: 12, right: 12, bottom: 8),
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF141414),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                            color: const Color(0xFF3d3d3d)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('Relatório (recentes)',
+                                              style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey,
+                                                  fontWeight:
+                                                      FontWeight.bold)),
+                                          const SizedBox(height: 4),
+                                          ...s.recentDecisions.map(
+                                              (d) => Padding(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(vertical: 1),
+                                                    child: Text(
+                                                      _formatItem(d),
+                                                      style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontFamily:
+                                                              'monospace',
+                                                          color: _itemColor(
+                                                              d)),
+                                                    ),
+                                                  )),
+                                        ],
+                                      ),
+                                    ),
+                                ],
                               ),
                             ))
                         .toList(),
@@ -287,6 +335,27 @@ class _StrategyDrawerState extends State<StrategyDrawer>
       if (widget.noDrawer) return body;
       return Drawer(width: 360, child: body);
     });
+  }
+
+  String _formatItem(StrategyDecisionItem d) {
+    if (d.kind == 'execucao') {
+      return '${d.time} ⚙ ${d.action}';
+    }
+    final conf =
+        d.confidence > 0 ? ' ${d.confidence.toStringAsFixed(2)}' : '';
+    return '${d.time} ${d.side}$conf → ${d.action}';
+  }
+
+  Color _itemColor(StrategyDecisionItem d) {
+    if (d.kind == 'execucao') return Colors.orange;
+    switch (d.side) {
+      case 'comprar':
+        return Colors.lightBlue;
+      case 'vender':
+        return Colors.redAccent;
+      default:
+        return Colors.grey;
+    }
   }
 }
 

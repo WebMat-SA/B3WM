@@ -102,4 +102,55 @@ public class StrategyRunnerTests
         Assert.NotEqual(StrategyRunner.SnapshotHashOf("{}"), StrategyRunner.SnapshotHashOf("{ }"));
         Assert.Equal(12, StrategyRunner.SnapshotHashOf("{}").Length);
     }
+
+    [Fact]
+    public void DescribeEvaluation_PaperRule()
+    {
+        var buy = new StrategyDecision { Side = "comprar", Confidence = 0.85, ShouldTrade = true };
+        var (a1, e1, x1) = StrategyRunner.DescribeEvaluation(buy, hasPosition: false, exitThr: 0.5);
+        Assert.Equal("sinal abre comprar (conf 0.85)", a1);
+        Assert.Equal("comprar", e1);
+        Assert.False(x1);
+
+        var hold = new StrategyDecision { Side = "manter", Confidence = 0.4 };
+        var (a2, e2, x2) = StrategyRunner.DescribeEvaluation(hold, hasPosition: false, exitThr: 0.5);
+        Assert.Equal("manter", a2);
+        Assert.Null(e2);
+        Assert.False(x2);
+
+        var exit = new StrategyDecision { Side = "manter", Encerrar = 0.7 };
+        var (a3, e3, x3) = StrategyRunner.DescribeEvaluation(exit, hasPosition: true, exitThr: 0.5);
+        Assert.Equal("sinal fecha (encerrar 0.70)", a3);
+        Assert.Null(e3);
+        Assert.True(x3);
+
+        var holdPos = new StrategyDecision { Side = "comprar", Encerrar = 0.2 };
+        var (a4, _, x4) = StrategyRunner.DescribeEvaluation(holdPos, hasPosition: true, exitThr: 0.5);
+        Assert.Equal("manter", a4);
+        Assert.False(x4);
+    }
+
+    [Fact]
+    public void DecisionLog_Serializes()
+    {
+        var log = new B3WM.Shared.Models.Strategies.StrategyLogDay
+        {
+            Date = new DateTime(2026, 10, 6),
+            Symbol = "WINFUT",
+            Strategy = "JevAnalysis",
+            SnapshotHash = "abc123",
+            Decisions = new()
+            {
+                new() { Kind = "avaliacao", Time = "10:04", Event = "candle_close", Side = "comprar", Confidence = 0.85, ShouldTrade = true, SnapshotHash = "abc123", PositionBefore = "flat", Action = "sinal abre comprar (conf 0.85)" },
+                new() { Kind = "execucao", Time = "10:06", Event = "exec", Side = "comprar", SnapshotHash = "abc123", PositionBefore = "flat", Action = "exec abre comprar @189230" },
+            },
+            RealizedPts = 915,
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(log);
+        var back = System.Text.Json.JsonSerializer.Deserialize<B3WM.Shared.Models.Strategies.StrategyLogDay>(json);
+        Assert.NotNull(back);
+        Assert.Equal(2, back!.Decisions.Count);
+        Assert.Equal("exec abre comprar @189230", back.Decisions[1].Action);
+        Assert.Equal("avaliacao", back.Decisions[0].Kind);
+    }
 }
