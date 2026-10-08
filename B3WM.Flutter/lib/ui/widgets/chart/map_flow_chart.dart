@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
+import 'measure_ruler.dart';
 import 'strategy_report_overlay.dart';
 import '../../../services/trading_service.dart';
 import '../../../services/state_service.dart';
@@ -48,6 +49,23 @@ class _MapFlowChartState extends State<MapFlowChart>
   final Set<int> _cancellingTickets = {};
   late final AnimationController _loadingCtrl;
 
+  // Régua de medição (issue #20): toggle 📏 + Ctrl+drag medem, drag puro dá pan.
+  // O InteractiveViewer aceita todos os botões por padrão, então enquanto
+  // mede (`_isMeasuring`) o pan é suprimido via `_panEnabled = false` + o
+  // bloqueio de translação em `_onTransformChanged`. Fora da medição o pan
+  // esquerdo/direito e o touch seguem livres.
+  bool _panEnabled = true;
+  bool _isMeasuring = false;
+  bool _rulerMode = false;
+  int? _measureIdx1;
+  int? _measureIdx2;
+  double? _measurePrice1;
+  double? _measurePrice2;
+  Offset? _measureCursorLocal;
+  Offset? _measureDownLocal;
+  Matrix4? _measureBlockMatrix;
+  Offset? _pendingTapDownLocal;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +80,25 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _onTransformChanged() {
+    if (_isMeasuring && _measureBlockMatrix != null) {
+      // Bloqueia o pan do botão esquerdo durante a medição.
+      final cur = _controller.value;
+      final blocked = _measureBlockMatrix!;
+      final ctx = cur.getTranslation().x;
+      final cty = cur.getTranslation().y;
+      final btx = blocked.getTranslation().x;
+      final bty = blocked.getTranslation().y;
+      if (ctx != btx || cty != bty) {
+        if (!_isClamping) {
+          _isClamping = true;
+          final m = cur.clone();
+          m.setTranslationRaw(btx, bty, cur.getTranslation().z);
+          _controller.value = m;
+          _isClamping = false;
+          return;
+        }
+      }
+    }
     if (!_isClamping) _clampPan();
     if (mounted) setState(() {});
   }
@@ -101,6 +138,12 @@ class _MapFlowChartState extends State<MapFlowChart>
     super.didUpdateWidget(oldWidget);
     if (widget.data.yZoom != oldWidget.data.yZoom && _yZoom != widget.data.yZoom) {
       _yZoom = widget.data.yZoom;
+    }
+    if (widget.data.symbol != oldWidget.data.symbol ||
+        widget.data.timeFrame != oldWidget.data.timeFrame) {
+      _isMeasuring = false;
+      _panEnabled = true;
+      _clearMeasure();
     }
     if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
       final areaW = _lastCandleAreaWidth;
@@ -172,6 +215,10 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _handleScroll(PointerScrollEvent event) {
+    // Durante a medição o zoom por roda é ignorado para não deslocar a
+    // referência (o bloqueio de translação em `_onTransformChanged`
+    // reverteria o ajuste de `ty` do zoom).
+    if (_isMeasuring) return;
     final areaH = _lastCandleAreaHeight;
     final range = widget.data.priceRange;
     if (areaH <= 0 || range <= 0) return;
@@ -229,6 +276,9 @@ class _MapFlowChartState extends State<MapFlowChart>
 
   void _handleHover(PointerEvent event, double candleAreaWidth, double candleAreaHeight, double stepX) {
     if (!_initialFitDone) return;
+    // Esconde o hover (linha horizontal + bubble) enquanto a régua está
+    // sendo arrastada para não poluir o tooltip de medição.
+    if (_isMeasuring) return;
 
     final localX = event.localPosition.dx;
     final localY = event.localPosition.dy;
@@ -291,7 +341,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     });
   }
 
-  void _handleTap(PointerDownEvent event, double candleAreaWidth, double candleAreaHeight) {
+  void _handleTap(PointerEvent event, double candleAreaWidth, double candleAreaHeight) {
     final m = _controller.value;
     final scaleY = m[5];
     final ty = m.getTranslation().y;
@@ -316,6 +366,155 @@ class _MapFlowChartState extends State<MapFlowChart>
         return;
       }
     }
+  }
+
+  bool _isLeftMouseDown(PointerDownEvent event) {
+    return event.kind == PointerDeviceKind.mouse &&
+        (event.buttons & kPrimaryButton) != 0;
+  }
+
+  bool _isRightMouseDown(PointerDownEvent event) {
+    return event.kind == PointerDeviceKind.mouse &&
+        (event.buttons & kSecondaryButton) != 0;
+  }
+
+  bool get _isCtrlPressed => HardwareKeyboard.instance.isControlPressed;
+
+  void _toggleRulerMode() {
+    setState(() {
+      _rulerMode = !_rulerMode;
+      // Ao sair do modo régua, limpa medição em andamento/finalizada para
+      // não deixar régua órfã sem contexto de modo.
+      if (!_rulerMode) {
+        _isMeasuring = false;
+        _panEnabled = true;
+        _clearMeasure();
+      }
+    });
+  }
+
+  int _localToCandleIndex(double localX, double stepX) {
+    final m = _controller.value;
+    final scaleX = m[0];
+    final tx = m.getTranslation().x;
+    final childX = (localX - tx) / scaleX;
+    return (childX / stepX).round().clamp(0, widget.data.candles.length - 1);
+  }
+
+  double _localToPrice(double localY, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5];
+    final ty = m.getTranslation().y;
+    final childY = (localY - ty) / scaleY;
+    return _yToPrice(childY, candleAreaHeight);
+  }
+
+  Offset _dataToLocal(int index, double price, double stepX, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleX = m[0];
+    final scaleY = m[5];
+    final tx = m.getTranslation().x;
+    final ty = m.getTranslation().y;
+    final childX = index * stepX + stepX / 2;
+    final childY = _toChildY(price, candleAreaHeight);
+    return Offset(childX * scaleX + tx, childY * scaleY + ty);
+  }
+
+  bool _hasMeasure() {
+    return _measureIdx1 != null &&
+        _measureIdx2 != null &&
+        _measurePrice1 != null &&
+        _measurePrice2 != null;
+  }
+
+  void _clearMeasure() {
+    _measureIdx1 = null;
+    _measureIdx2 = null;
+    _measurePrice1 = null;
+    _measurePrice2 = null;
+    _measureCursorLocal = null;
+    _measureDownLocal = null;
+    _measureBlockMatrix = null;
+  }
+
+  MeasureResult? _currentMeasure() {
+    if (!_hasMeasure()) return null;
+    return computeMeasureFromCandles(
+      candles: widget.data.candles,
+      idx1: _measureIdx1!,
+      idx2: _measureIdx2!,
+      price1: _measurePrice1!,
+      price2: _measurePrice2!,
+      timeFrame: widget.data.timeFrame,
+    );
+  }
+
+  void _onMeasureDown(PointerDownEvent event, double stepX, double candleAreaHeight) {
+    final idx = _localToCandleIndex(event.localPosition.dx, stepX);
+    final price = _localToPrice(event.localPosition.dy, candleAreaHeight);
+    setState(() {
+      _measureIdx1 = idx;
+      _measureIdx2 = idx;
+      _measurePrice1 = price;
+      _measurePrice2 = price;
+      _measureCursorLocal = event.localPosition;
+      _measureDownLocal = event.localPosition;
+      _isMeasuring = true;
+      _panEnabled = false;
+      _measureBlockMatrix = _controller.value.clone();
+      // Esconde hover/bubbles para não competir com a régua.
+      _hoverY = null;
+      _hoverCandleIndex = null;
+      _hoveredBubble = null;
+      _hoveredHistory = null;
+      _hoverPos = null;
+    });
+  }
+
+  void _onMeasureMove(PointerEvent event, double stepX, double candleAreaHeight) {
+    if (!_isMeasuring) return;
+    final idx = _localToCandleIndex(event.localPosition.dx, stepX);
+    final price = _localToPrice(event.localPosition.dy, candleAreaHeight);
+    setState(() {
+      _measureIdx2 = idx;
+      _measurePrice2 = price;
+      _measureCursorLocal = event.localPosition;
+    });
+  }
+
+  void _onMeasureUp(PointerUpEvent event, double candleAreaHeight) {
+    if (!_isMeasuring) return;
+    final down = _measureDownLocal;
+    final dist = down == null
+        ? double.infinity
+        : (event.localPosition - down).distance;
+    const clickThreshold = 4.0;
+    if (dist < clickThreshold) {
+      // Clique simples: limpa a régua e repassa como tap (fechar
+      // posição/cancelar ordem) para preservar `_handleTap`.
+      setState(() {
+        _isMeasuring = false;
+        _panEnabled = true;
+        _clearMeasure();
+      });
+      _handleTap(event, 0, candleAreaHeight);
+    } else {
+      // Soltou após arrastar: a régua some junto (só visível durante o drag).
+      setState(() {
+        _isMeasuring = false;
+        _panEnabled = true;
+        _clearMeasure();
+      });
+    }
+  }
+
+  void _onMeasureCancel() {
+    if (!_isMeasuring) return;
+    setState(() {
+      _isMeasuring = false;
+      _panEnabled = true;
+      _clearMeasure();
+    });
   }
 
   void _cleanupStaleTickets() {
@@ -496,6 +695,16 @@ class _MapFlowChartState extends State<MapFlowChart>
           });
         }
 
+        final measure = _currentMeasure();
+        Offset? rulerStart;
+        Offset? rulerEnd;
+        if (measure != null && _hasMeasure()) {
+          rulerStart =
+              _dataToLocal(_measureIdx1!, _measurePrice1!, stepX, candleAreaHeight);
+          rulerEnd =
+              _dataToLocal(_measureIdx2!, _measurePrice2!, stepX, candleAreaHeight);
+        }
+
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -529,13 +738,92 @@ class _MapFlowChartState extends State<MapFlowChart>
                       _resetChart();
                       return KeyEventResult.handled;
                     }
+                    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+                      if (_hasMeasure() || _isMeasuring) {
+                        setState(() {
+                          _isMeasuring = false;
+                          _panEnabled = true;
+                          _clearMeasure();
+                        });
+                        return KeyEventResult.handled;
+                      }
+                      if (_rulerMode) {
+                        setState(() {
+                          _rulerMode = false;
+                        });
+                        return KeyEventResult.handled;
+                      }
+                    }
                     return KeyEventResult.ignored;
                   },
                   child: Listener(
                   onPointerDown: (event) {
                     _focusNode.requestFocus();
-                    _handleTap(event, candleAreaWidth, candleAreaHeight);
+                    if (_isLeftMouseDown(event)) {
+                      // Modo régua (toggle 📏) ou Ctrl+drag medem; drag puro
+                      // mantém pan esquerdo original + tap para fechar/cancelar.
+                      if (_rulerMode || _isCtrlPressed) {
+                        _pendingTapDownLocal = null;
+                        _onMeasureDown(event, stepX, candleAreaHeight);
+                      } else {
+                        // Próximo clique limpa régua anterior (paridade com
+                        // "manter visível até o próximo clique/Esc").
+                        if (_hasMeasure()) {
+                          setState(() {
+                            _clearMeasure();
+                          });
+                        }
+                        _pendingTapDownLocal = event.localPosition;
+                      }
+                    } else if (_isRightMouseDown(event)) {
+                      // Botão direito: sempre pan via InteractiveViewer.
+                      // Não mede nem fecha posição.
+                      _pendingTapDownLocal = null;
+                    } else {
+                      // Touch/stylus: em modo régua o arrasto mede (acesso
+                      // mobile ao recurso); fora dele mantém pan + tap para
+                      // fechar/cancelar.
+                      if (_rulerMode) {
+                        _pendingTapDownLocal = null;
+                        _onMeasureDown(event, stepX, candleAreaHeight);
+                      } else {
+                        if (_hasMeasure()) {
+                          setState(() {
+                            _clearMeasure();
+                          });
+                        }
+                        _pendingTapDownLocal = event.localPosition;
+                      }
+                    }
                   },
+                  onPointerMove: (event) {
+                    if (_isMeasuring) {
+                      _onMeasureMove(event, stepX, candleAreaHeight);
+                    }
+                  },
+                  onPointerUp: (event) {
+                    if (_isMeasuring) {
+                      _onMeasureUp(event, candleAreaHeight);
+                    } else if (_pendingTapDownLocal != null) {
+                      final dist = (event.localPosition - _pendingTapDownLocal!).distance;
+                      _pendingTapDownLocal = null;
+                      if (dist < 6.0) {
+                        _handleTap(event, candleAreaWidth, candleAreaHeight);
+                      }
+                      if (mounted) setState(() {});
+                    } else if (event.kind == PointerDeviceKind.mouse &&
+                        (event.buttons & kSecondaryButton) == 0) {
+                      // Soltou o botão esquerdo sem ter medido (ex: clique que
+                      // começou fora e terminou dentro): garante pan religado.
+                      if (!_panEnabled && mounted) {
+                        setState(() {
+                          _panEnabled = true;
+                          _measureBlockMatrix = null;
+                        });
+                      }
+                    }
+                  },
+                  onPointerCancel: (_) => _onMeasureCancel(),
                   onPointerSignal: (event) {
                     if (event is PointerScrollEvent) {
                       _handleScroll(event);
@@ -550,6 +838,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                         boundaryMargin: const EdgeInsets.all(double.infinity),
                         minScale: _minAllowedScale,
                         maxScale: 5.0,
+                        panEnabled: _panEnabled,
                         onInteractionEnd: (_) => _onInteractionEnd(),
 
                         child: CustomPaint(
@@ -567,26 +856,81 @@ class _MapFlowChartState extends State<MapFlowChart>
                 ),
               ),
             ),
-            Positioned(
-              right: 4.0,
-              top: 4.0,
-              child: Tooltip(
-                message: 'Press space',
-                preferBelow: false,
-                child: GestureDetector(
-                  onTap: _resetChart,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      '⟲',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+            if (measure != null && rulerStart != null && rulerEnd != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft,
+                top: ChartFixedPainter.marginTop,
+                width: max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+                height: candleAreaHeight,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _RulerPainter(
+                      start: rulerStart,
+                      end: rulerEnd,
+                      color: measure.isUp ? Colors.green : Colors.red,
                     ),
                   ),
                 ),
+              ),
+            Positioned(
+              right: 4.0,
+              top: 4.0,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Tooltip(
+                    message: _rulerMode
+                        ? 'Régua ativa — arraste para medir (Esc sai)'
+                        : 'Régua de medição (Ctrl+arrastar)',
+                    preferBelow: false,
+                    child: GestureDetector(
+                      onTap: _toggleRulerMode,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _rulerMode
+                              ? Colors.blue.withValues(alpha: 0.85)
+                              : Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
+                          border: _rulerMode
+                              ? Border.all(color: Colors.white70, width: 1)
+                              : null,
+                        ),
+                        child: Text(
+                          '📏',
+                          style: TextStyle(
+                            color: _rulerMode
+                                ? Colors.white
+                                : Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: 'Press space',
+                    preferBelow: false,
+                    child: GestureDetector(
+                      onTap: _resetChart,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          '⟲',
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             // Relatório da sessão ativa sobre o gráfico (só com sessão
@@ -606,6 +950,16 @@ class _MapFlowChartState extends State<MapFlowChart>
               left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
               top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
               child: _buildHistoryTooltip(_hoveredHistory!),
+            ),
+          if (measure != null && _measureCursorLocal != null)
+            Positioned(
+              left: _measureTooltipLeft(
+                  candleAreaWidth, _measureCursorLocal!.dx),
+              top: _measureTooltipTop(
+                  candleAreaHeight, _measureCursorLocal!.dy),
+              child: IgnorePointer(
+                child: _buildMeasureTooltip(measure),
+              ),
             ),
         ],
       );
@@ -629,6 +983,48 @@ class _MapFlowChartState extends State<MapFlowChart>
     );
   }
 
+  double _measureTooltipLeft(double candleAreaWidth, double cursorDx) {
+    // Tooltip à direita do cursor, com clamp para não vazar da área.
+    const tooltipWidth = 210.0;
+    final viewerW =
+        max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved);
+    var left =
+        ChartFixedPainter.marginLeft + cursorDx + 12;
+    if (left + tooltipWidth > ChartFixedPainter.marginLeft + viewerW) {
+      left = ChartFixedPainter.marginLeft + cursorDx - tooltipWidth - 12;
+    }
+    return max(ChartFixedPainter.marginLeft, left);
+  }
+
+  double _measureTooltipTop(double candleAreaHeight, double cursorDy) {
+    const tooltipHeight = 130.0;
+    var top = ChartFixedPainter.marginTop + cursorDy - 20;
+    if (top + tooltipHeight >
+        ChartFixedPainter.marginTop + candleAreaHeight) {
+      top = ChartFixedPainter.marginTop +
+          candleAreaHeight -
+          tooltipHeight -
+          4;
+    }
+    return max(ChartFixedPainter.marginTop, top);
+  }
+
+  Widget _buildMeasureTooltip(MeasureResult m) {
+    final color = m.isUp ? Colors.green : Colors.red;
+    final symbol = widget.data.symbol;
+    return _buildTooltip(
+      '${formatPts(m.pts)} ${formatPct(m.pct)}',
+      [
+        _TooltipRow('Diferença', formatDiferenca(m.diferenca)),
+        _TooltipRow('Ponto 1', formatRulerPrice(m.p1, symbol)),
+        _TooltipRow('Ponto 2', formatRulerPrice(m.p2, symbol)),
+        _TooltipRow('Intervalo', m.intervaloLabel),
+        _TooltipRow('Candles', '${m.candles}'),
+      ],
+      titleColor: color,
+    );
+  }
+
   Widget _buildHistoryTooltip(HistoryDealPoint hp) {
     final deal = hp.deal;
     final color = hp.isBuy ? Colors.green : Colors.red;
@@ -647,7 +1043,7 @@ class _MapFlowChartState extends State<MapFlowChart>
 
   Widget _buildTooltip(String title, List<_TooltipRow> rows, {Color? titleColor}) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 180),
+      constraints: const BoxConstraints(maxWidth: 210),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: const Color(0xDD2d2d2d),
@@ -672,7 +1068,13 @@ class _MapFlowChartState extends State<MapFlowChart>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('${row.label}: ', style: const TextStyle(color: Colors.grey, fontSize: 10)),
-                  Text(row.value, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                  Flexible(
+                    child: Text(
+                      row.value,
+                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -686,4 +1088,43 @@ class _TooltipRow {
   final String label;
   final String value;
   const _TooltipRow(this.label, this.value);
+}
+
+class _RulerPainter extends CustomPainter {
+  final Offset start;
+  final Offset end;
+  final Color color;
+
+  const _RulerPainter({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(start, end, linePaint);
+
+    final dotFill = Paint()..color = color;
+    final dotBorder = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    const r = 4.0;
+    canvas.drawCircle(start, r, dotFill);
+    canvas.drawCircle(start, r, dotBorder);
+    canvas.drawCircle(end, r, dotFill);
+    canvas.drawCircle(end, r, dotBorder);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RulerPainter oldDelegate) {
+    return oldDelegate.start != start ||
+        oldDelegate.end != end ||
+        oldDelegate.color != color;
+  }
 }
