@@ -174,6 +174,18 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public void ShouldExecuteOnBar_SessionTimeFrameOnly()
+    {
+        StrategySession Session(int tf) => new() { Strategy = "JevAnalysis", Symbol = "WINFUT", TriggerTimeFrame = tf };
+        BarStorageItem Bar(int tf) => new()
+            { Date = new DateTime(2026, 10, 6, 10, 6, 0), Symbol = "WINFUT", TimeFrame = tf, Open = 100 };
+        Assert.True(StrategyRunner.ShouldExecuteOnBar(Session(2), Bar(2)));
+        Assert.False(StrategyRunner.ShouldExecuteOnBar(Session(2), Bar(5)));
+        Assert.True(StrategyRunner.ShouldExecuteOnBar(Session(5), Bar(5)));
+        Assert.False(StrategyRunner.ShouldExecuteOnBar(Session(2), Bar(1440)));
+    }
+
+    [Fact]
     public void SnapshotHash_Deterministic()
     {
         Assert.Equal(StrategyRunner.SnapshotHashOf("{}"), StrategyRunner.SnapshotHashOf("{}"));

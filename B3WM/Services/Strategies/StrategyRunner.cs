@@ -155,10 +155,11 @@ namespace B3WM.Services.Strategies
             await PublishAsync(
                 new CandleClosed { Symbol = bar.Symbol, At = bar.Date, Bar = bar },
                 "candle_close");
-            // Execuções pendentes no open do candle novo + zeragem na virada do dia.
-            foreach (var s in SessionsOf(bar.Symbol))
-                ExecutePending(s, bar.Open, bar.Date, "open seguinte");
-            foreach (var s in SessionsOf(bar.Symbol))
+            // Execução amarrada ao TF da sessão: pendências e zeragem diária
+            // só no open do candle do próprio TF (não no de qualquer TF).
+            foreach (var s in SessionsOf(bar.Symbol).Where(s => ShouldExecuteOnBar(s, bar)))
+                ExecutePending(s, bar.Open, bar.Date, $"open seguinte TF{bar.TimeFrame}");
+            foreach (var s in SessionsOf(bar.Symbol).Where(s => ShouldExecuteOnBar(s, bar)))
                 if (s.Position != null && bar.Date.Date > s.Position.EntryTime.Date)
                     ClosePaper(s, bar.Open, bar.Date, "virada do dia");
             foreach (var s in SessionsOf(bar.Symbol))
@@ -229,6 +230,13 @@ namespace B3WM.Services.Strategies
         /// </summary>
         public static bool IsNewBubbleBucket(DateTime? lastBucket, DateTime bucket) =>
             !lastBucket.HasValue || lastBucket.Value != bucket;
+
+        /// <summary>
+        /// Execução amarrada ao TF: a sessão só executa pendências/virada no
+        /// open do candle do próprio TF da foto do PLAY. Testável sem runner.
+        /// </summary>
+        public static bool ShouldExecuteOnBar(StrategySession s, BarStorageItem bar) =>
+            s.TriggerTimeFrame == bar.TimeFrame;
 
         /// <summary>
         /// O contrato: cada strategy decide no próprio ShouldTrigger.
