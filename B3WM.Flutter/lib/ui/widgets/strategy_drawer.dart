@@ -7,8 +7,8 @@ import 'drawer_controls.dart';
 import 'strategy_report_list.dart';
 import '../../app_log.dart';
 
-/// Aba Estratégia: escolhe dentre todas as IStrategy do backend, configura o
-/// gatilho (fechamento de candle / bubble / proximidade) + params e dá PLAY.
+/// Aba Estratégia: escolhe dentre todas as IStrategy do backend e dá PLAY.
+/// Gatilho exclusivo: aparecimento de bubble visível (filtro da tela no PLAY).
 /// O PLAY envia a foto da tela (snapshot) e TRAVA os filtros — para alterar:
 /// PAUSE/STOP, edita, PLAY de novo. Execução toda no backend (pode fechar o
 /// app). Tudo log-only (envio real comentado no runner).
@@ -173,7 +173,7 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                           const TextStyle(fontSize: 11, color: Colors.grey)),
                 const SizedBox(height: 8),
                 const Text(
-                  'Gatilho e parâmetros moram no código da strategy. '
+                  'Gatilho mora no código da strategy (ex.: JevAnalysis só em bubble visível; candle só executa no open seguinte). '
                   'O PLAY congela a foto dos filtros da tela.',
                   style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),

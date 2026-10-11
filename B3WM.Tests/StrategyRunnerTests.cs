@@ -1,5 +1,6 @@
 using B3WM.Services.Strategies;
 using B3WM.Shared.Models;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -11,7 +12,7 @@ public sealed class StubStrategy : StrategyBase
     public StubStrategy() : base(new Mock<ILogger<StubStrategy>>().Object) { }
     public override string Name => "Stub";
     public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
-        TriggerChecks.IsCandleClose(ev, ctx.TimeFrame);
+        TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
     public override Task<StrategyDecision?> EvaluateAsync(
         StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default) =>
         Task.FromResult<StrategyDecision?>(new StrategyDecision { Side = "manter" });
@@ -22,8 +23,7 @@ public class StrategyRunnerTests
 
     private static StrategyRunner Runner() => new(
         new Mock<IServiceScopeFactory>().Object,
-        Enumerable.Empty<B3WM.Services.Core.CandleService>(),
-        Enumerable.Empty<B3WM.Services.Core.BubbleService>(),
+        Enumerable.Empty<B3WM.Services.Core.OrchestratorService>(),
         new Mock<ILogger<StrategyRunner>>().Object);
 
     private static BubbleStorageItem Bubble(int agent, decimal amount, double price, DateTime date) => new()
@@ -48,18 +48,23 @@ public class StrategyRunnerTests
     };
 
     [Fact]
-    public void ShouldTrigger_CandleClose_UsesScreenTimeFrame()
+    public void ShouldTrigger_BubbleOnly_NoCandleClose()
     {
         var s = new StubStrategy();
         BarStorageItem Bar(int tf) => new()
             { Date = DateTime.Now, Symbol = "WINFUT", TimeFrame = tf };
-        // Tela em 5min: só fecha de 5 dispara; tela em 2: só 2.
-        Assert.True(s.ShouldTrigger(
+        // Somente-bubble: candle nunca dispara, mesmo no TF da tela.
+        Assert.False(s.ShouldTrigger(
             new CandleClosed { Symbol = "WINFUT", At = DateTime.Now, Bar = Bar(5) }, Tctx(5)));
         Assert.False(s.ShouldTrigger(
             new CandleClosed { Symbol = "WINFUT", At = DateTime.Now, Bar = Bar(2) }, Tctx(5)));
-        Assert.False(s.ShouldTrigger(
+        // Bubble visível (agente 122 + amount 500 ≥ 475) dispara.
+        Assert.True(s.ShouldTrigger(
             new BubbleAppeared { Symbol = "WINFUT", At = DateTime.Now, Item = Bubble(122, 500, 100, DateTime.Now) },
+            Tctx(5)));
+        // Bubble fora do filtro não dispara.
+        Assert.False(s.ShouldTrigger(
+            new BubbleAppeared { Symbol = "WINFUT", At = DateTime.Now, Item = Bubble(122, 100, 100, DateTime.Now) },
             Tctx(5)));
     }
 
@@ -119,6 +124,56 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public void BubbleBucket_UsesBubbleTimeAndSessionTimeFrame()
+    {
+        // TF2: 10:04:00 e 10:05:59 caem no bucket 10:04; 10:06:00 abre bucket novo.
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 4, 0),
+            StrategyRunner.BubbleBucketFor(new DateTime(2026, 10, 6, 10, 4, 0), 2));
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 4, 0),
+            StrategyRunner.BubbleBucketFor(new DateTime(2026, 10, 6, 10, 5, 59), 2));
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 6, 0),
+            StrategyRunner.BubbleBucketFor(new DateTime(2026, 10, 6, 10, 6, 0), 2));
+        // Mesmo instante, TF5 alinha diferente: 10:04:59 e 10:06:30 estão no bucket 10:05.
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 0, 0),
+            StrategyRunner.BubbleBucketFor(new DateTime(2026, 10, 6, 10, 4, 59), 5));
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 5, 0),
+            StrategyRunner.BubbleBucketFor(new DateTime(2026, 10, 6, 10, 6, 30), 5));
+    }
+
+    [Fact]
+    public void BubbleBucketGate_FirstPerBucketOnly()
+    {
+        var bucket = new DateTime(2026, 10, 6, 10, 4, 0);
+        // Sessão nova (sem bucket): dispara.
+        Assert.True(StrategyRunner.IsNewBubbleBucket(null, bucket));
+        // Mesmo bucket já avaliado: não dispara (2ª bubble do bucket é skip).
+        Assert.False(StrategyRunner.IsNewBubbleBucket(bucket, bucket));
+        // Bucket seguinte: dispara de novo.
+        Assert.True(StrategyRunner.IsNewBubbleBucket(bucket, bucket.AddMinutes(2)));
+    }
+
+    [Fact]
+    public void BubbleBucketGate_DifferentTimeFramesFireOnDifferentBubbles()
+    {
+        // Mesma bubble (10:05:30): @2 está no bucket 10:04, @5 no bucket 10:05.
+        var at = new DateTime(2026, 10, 6, 10, 5, 30);
+        var b2 = StrategyRunner.BubbleBucketFor(at, 2);
+        var b5 = StrategyRunner.BubbleBucketFor(at, 5);
+        Assert.NotEqual(b2, b5);
+        // Simulando o gate do PublishAsync por sessão:
+        DateTime? last2 = null, last5 = null;
+        Assert.True(StrategyRunner.IsNewBubbleBucket(last2, b2)); last2 = b2;
+        Assert.True(StrategyRunner.IsNewBubbleBucket(last5, b5)); last5 = b5;
+        // 2ª bubble no mesmo instante/bucket: ambas as sessões pulam.
+        Assert.False(StrategyRunner.IsNewBubbleBucket(last2, StrategyRunner.BubbleBucketFor(at, 2)));
+        Assert.False(StrategyRunner.IsNewBubbleBucket(last5, StrategyRunner.BubbleBucketFor(at, 5)));
+        // Bubble seguinte (10:06:10) abre bucket novo só p/ @2 (10:06); @5 segue em 10:05.
+        var next = new DateTime(2026, 10, 6, 10, 6, 10);
+        Assert.True(StrategyRunner.IsNewBubbleBucket(last2, StrategyRunner.BubbleBucketFor(next, 2)));
+        Assert.False(StrategyRunner.IsNewBubbleBucket(last5, StrategyRunner.BubbleBucketFor(next, 5)));
+    }
+
+    [Fact]
     public void SnapshotHash_Deterministic()
     {
         Assert.Equal(StrategyRunner.SnapshotHashOf("{}"), StrategyRunner.SnapshotHashOf("{}"));
@@ -175,5 +230,40 @@ public class StrategyRunnerTests
         Assert.Equal(2, back!.Decisions.Count);
         Assert.Equal("exec abre comprar @189230", back.Decisions[1].Action);
         Assert.Equal("avaliacao", back.Decisions[0].Kind);
+    }
+}
+
+public class OrchestratorTriggerTests
+{
+    private static B3WM.Services.Core.OrchestratorService Orchestrator() => new(
+        "WINFUT",
+        new Mock<IHubContext<B3WM.Services.DataHub, B3WM.Shared.Interfaces.IDataHubClient>>().Object,
+        Enumerable.Empty<B3WM.Services.Core.CandleService>(),
+        Enumerable.Empty<B3WM.Services.Core.BubbleService>(),
+        Enumerable.Empty<B3WM.Services.Core.VolumeService>(),
+        Enumerable.Empty<B3WM.Services.Core.StructureService>(),
+        Enumerable.Empty<B3WM.Services.Core.AdjustmentForecastService>(),
+        new Mock<ILogger<B3WM.Services.Core.OrchestratorService>>().Object);
+
+    [Fact]
+    public void Orchestrator_ExposesBubbleAndCandleClosed_ForRunner()
+    {
+        using var o = Orchestrator();
+        o.OnBubble += _ => Task.CompletedTask;
+        o.OnCandleClosed += (_, _) => Task.CompletedTask;
+        // Runner consome o orchestrator (padrão Core→Strategies).
+        var r = new StrategyRunner(
+            new Mock<IServiceScopeFactory>().Object,
+            new[] { o },
+            new Mock<ILogger<StrategyRunner>>().Object);
+        Assert.Empty(r.States());
+    }
+
+    [Fact]
+    public void Orchestrator_Dispose_UnsubscribesCleanly()
+    {
+        var o = Orchestrator();
+        var ex = Record.Exception(() => o.Dispose());
+        Assert.Null(ex);
     }
 }

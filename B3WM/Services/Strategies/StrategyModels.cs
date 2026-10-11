@@ -34,6 +34,8 @@ namespace B3WM.Services.Strategies
     public sealed class StrategyContext
     {
         public string Symbol { get; set; } = "";
+        /// <summary>TF da sessão (foto do PLAY). Bubble não carrega TF no evento.</summary>
+        public int TimeFrame { get; set; } = 2;
         /// <summary>Blob cru da tela (foto do Arm). Parse sob demanda e descarte.</summary>
         public string ScreenSpecJson { get; set; } = "{}";
         public string SnapshotHash { get; set; } = "";

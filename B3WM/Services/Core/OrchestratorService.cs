@@ -16,8 +16,11 @@ namespace B3WM.Services.Core
         private readonly ILogger<OrchestratorService> _logger;
         public string Symbol { get; }
 
-        /// <summary>Disparado ao final do fechamento de um candle, com a barra finalizada (volume/forecast) e a estrutura calculada.</summary>
-        public event Func<BarStorageItem, StructureStorageItem, Task>? OnCandleClosed;
+        /// <summary>Disparado ao final do fechamento de um candle, com a barra finalizada (volume/forecast) e a estrutura calculada (pode ser nula em fallback: o evento sempre dispara).</summary>
+        public event Func<BarStorageItem, StructureStorageItem?, Task>? OnCandleClosed;
+
+        /// <summary>Repassa as bubbles do símbolo (o broadcast SignalR segue no BubbleService; aqui é só forward in-process p/ consumidores como o StrategyRunner).</summary>
+        public event Func<BubbleStorageItem, Task>? OnBubble;
 
         public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<AdjustmentForecastService> adjustmentForecastService, ILogger<OrchestratorService> logger)
         {
@@ -31,6 +34,7 @@ namespace B3WM.Services.Core
 
             _logger = logger;
             SubscribeAll(this.candleService, OnCandleUpdate);
+            SubscribeAll(this.bubbleService, OnBubbleForward);
         }
 
         public Task Enqueue(Ticks2[] ticks)
@@ -77,7 +81,10 @@ namespace B3WM.Services.Core
 
                 #endregion
 
-                if (OnCandleClosed != null && structure != null)
+                // O fechamento do candle é o fato: dispara sempre (mesmo com
+                // structure nula em fallback) para não perder execução de
+                // consumidores (ex.: StrategyRunner: pending/virada/persist).
+                if (OnCandleClosed != null)
                     await OnCandleClosed.Invoke(bar, structure);
 
                 _logger.LogDebug("Bar atualizado: {Bar}", bar);
@@ -88,9 +95,23 @@ namespace B3WM.Services.Core
             }
         }
 
+        private async Task OnBubbleForward(BubbleStorageItem bubble)
+        {
+            try
+            {
+                if (OnBubble != null)
+                    await OnBubble.Invoke(bubble);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "OrchestratorService.OnBubbleForward error");
+            }
+        }
+
         public void Dispose()
         {
             UnsubscribeAll(candleService, OnCandleUpdate);
+            UnsubscribeAll(bubbleService, OnBubbleForward);
         }
 
         private void SubscribeAll<T>(IEnumerable<IProcessor<Ticks2, T>> services, Func<T, Task> handler)

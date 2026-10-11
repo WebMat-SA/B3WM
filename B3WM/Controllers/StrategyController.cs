@@ -158,7 +158,7 @@ namespace B3WM.Controllers
                     },
                     new StrategyContext
                     {
-                        Symbol = req.Symbol, ScreenSpecJson = specRaw,
+                        Symbol = req.Symbol, TimeFrame = tf, ScreenSpecJson = specRaw,
                         SnapshotHash = hash, Snapshot = state,
                     }, ct);
             }

@@ -34,8 +34,10 @@ A aba Estratégia do app lista e arma sem mudar nada no Flutter.
    barato, sem I/O**, lendo só o evento + `ctx{Symbol, TimeFrame, Filter}`.
    `TimeFrame` = TF da tela no PLAY (filtros travados, não muda).
    Blocos prontos em `TriggerChecks`: `IsCandleClose(ev, tf)`,
-   `IsVisibleBubble(ev, filter)`.
-   Ex.: `ev is CandleClosed c && c.Bar.TimeFrame == ctx.TimeFrame`.
+   `IsVisibleBubble(ev, filter)` — combine como quiser.
+   Ex. bubble (1ª visível por bucket do TF, ritmo no runner):
+   `TriggerChecks.IsVisibleBubble(ev, ctx.Filter)`.
+   Ex. candle: `ev is CandleClosed c && c.Bar.TimeFrame == ctx.TimeFrame`.
 3. **Metadados + config no código**: `Name` (único, aparece no dropdown),
    `Description` e `private const` para thresholds/lookbacks — **nada de
    config vai para a aba** (só dropdown, PLAY e sessões).
@@ -60,11 +62,18 @@ o teste `ScreenSpecKeysTest` falha até isso estar feito.
 ## Gatilhos e execução (runner)
 
 Cada strategy decide no próprio `ShouldTrigger(ev, tctx{Symbol, TimeFrame,
-Filter})` — TF = TF da tela no PLAY. O runner repassa todo candle
-fechado / bubble do símbolo; disparou → `EvaluateAsync` com
-`StrategyContext` → decisão logada (`[strategy:Nome:sessão] ...`) → paper
+Filter})` — TF = TF da tela no PLAY. Fonte dos fatos: `OrchestratorService`
+por símbolo (candle enriquecido + bubble repassada); o runner é genérico
+multi-trigger: repassa todo evento do símbolo (`candle_close`, `bubble`,
+futuros via `PublishAsync`) e cada strategy filtra no `ShouldTrigger` (ex.:
+`JevAnalysis` só `IsVisibleBubble` — 1ª por bucket do TF, ritmo no runner;
+outra pode ser só `IsCandleClose`). Disparou →
+`EvaluateAsync` com `StrategyContext{Symbol, TimeFrame, ...}` → decisão logada (`[strategy:Nome:sessão] ...`) → paper
 engine genérica (abre no gate, fecha em `encerrar > 0.5`, executa
 no open seguinte, zera na virada do dia) → `WOULD-SEND` no log.
+Candle fechado além de evento também move execução/persistência.
+Futuro (ex.: toque em pivot): criar o `StrategyEvent` novo e despachar via
+`StrategyRunner.PublishAsync(ev, "motivo")`, sem mudar o runner.
 Relatório paper em `Data/{SYM}_Strategy_{Nome}_{data}.json`.
 Cada avaliação e cada execução gera um `StrategyDecisionLog`
 (Kind avaliacao/execucao, hora, evento, lado, confiança, ação);
