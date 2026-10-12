@@ -48,6 +48,7 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
                   (v) => state.setExtremeNoiseSensitivity(v),
                   decimals: 1,
                   step: Defaults.extremeNoiseSensitivityStep,
+                  locked: state.configLocked,
                 ),
                 SliderRow(
                   'Min Prominence',
@@ -57,6 +58,7 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
                   (v) => state.setExtremeMinimumProminence(v),
                   decimals: 2,
                   step: Defaults.extremeMinimumProminenceStep,
+                  locked: state.configLocked,
                 ),
               ],
             ),

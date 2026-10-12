@@ -6,6 +6,7 @@ import '../../models/ticks2.dart';
 import '../../services/state_service.dart';
 import '../../services/extensions.dart';
 import 'drawer_controls.dart';
+import 'locked_badge.dart';
 
 class BubbleDrawer extends StatefulWidget {
   final bool noDrawer;
@@ -68,10 +69,20 @@ class _BubbleDrawerState extends State<BubbleDrawer>
               children: [
                 const Icon(Icons.filter_alt, size: 20),
                 const SizedBox(width: 8),
-                const Expanded(
-                  child: Text('Notificação de Bubbles',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Flexible(
+                        child: Text('Notificação de Bubbles',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold)),
+                      ),
+                      // Filtros de quantidade/agents travam com estratégia
+                      // rodando (som continua livre).
+                      LockedBadge(locked: state.configLocked),
+                    ],
+                  ),
                 ),
                 _filterIcon(
                   icon: Icons.bar_chart,
@@ -163,7 +174,8 @@ class _BubbleDrawerState extends State<BubbleDrawer>
               5000,
               (v) => state.setThresholdBubble(v.round()),
               decimals: 0,
-              step: 25),
+              step: 25,
+              locked: state.configLocked),
           SliderRow('Size', state.bubbleSize, 0, 1,
               (v) => state.setBubbleSize(v)),
           SliderRow('Min Size (px)', state.bubbleSizeMin, 5, 200,
@@ -201,7 +213,15 @@ class _BubbleDrawerState extends State<BubbleDrawer>
 
     return ExpansionTile(
       leading: const Icon(Icons.people, size: 20),
-      title: const Text('Agents', style: TextStyle(fontSize: 13)),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Flexible(
+            child: Text('Agents', style: TextStyle(fontSize: 13)),
+          ),
+          LockedBadge(locked: state.configLocked),
+        ],
+      ),
       initiallyExpanded: false,
       tilePadding: const EdgeInsets.symmetric(horizontal: 8),
       childrenPadding: const EdgeInsets.only(bottom: 8),

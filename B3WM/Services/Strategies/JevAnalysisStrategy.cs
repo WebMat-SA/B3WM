@@ -27,6 +27,18 @@ namespace B3WM.Services.Strategies
         public override string Name => "JevAnalysis";
         public override string Description => "Análise Jev/TypeSafe do contexto (bolhas, volume, candles, topos/vales, pivots)";
 
+        public override string DetailsMd =>
+            "## JevAnalysis\n" +
+            "Análise Jev/TypeSafe do contexto de mercado (bolhas, volume, candles, topos/vales, pivots).\n" +
+            "\n" +
+            "- **Gatilho:** fechamento de candle do TF da tela (foto do PLAY).\n" +
+            "- **TF:** o TF vigente no PLAY (filtros travados na sessão).\n" +
+            "- **Parâmetros fixos no código:** `Threshold=0.7`, `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
+            "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
+            "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
+            "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
+            "para mudar filtros é preciso `STOP`, editar e `PLAY` de novo.";
+
         /// <summary>Dispara no fechamento do candle do TF da tela (foto do PLAY).</summary>
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
             TriggerChecks.IsCandleClose(ev, ctx.TimeFrame);

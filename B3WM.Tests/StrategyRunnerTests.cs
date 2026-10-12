@@ -10,6 +10,7 @@ public sealed class StubStrategy : StrategyBase
 {
     public StubStrategy() : base(new Mock<ILogger<StubStrategy>>().Object) { }
     public override string Name => "Stub";
+    public override string DetailsMd => "## Stub\nStrategy de teste.";
     public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
         TriggerChecks.IsCandleClose(ev, ctx.TimeFrame);
     public override Task<StrategyDecision?> EvaluateAsync(

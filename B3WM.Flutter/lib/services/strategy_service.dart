@@ -6,16 +6,19 @@ import '../app_log.dart';
 class StrategyInfo {
   final String name;
   final String description;
+  final String detailsMd;
 
   const StrategyInfo({
     required this.name,
     required this.description,
+    this.detailsMd = '',
   });
 
   factory StrategyInfo.fromJson(Map<String, dynamic> json) {
     return StrategyInfo(
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      detailsMd: json['detailsMd'] as String? ?? '',
     );
   }
 }
@@ -203,34 +206,6 @@ class StrategyService {
     } catch (e) {
       logD('[strategy] State error: $e');
       return [];
-    }
-  }
-
-  /// Avaliação avulsa (botão "avaliar agora"): sem sessão, só log.
-  Future<Map<String, dynamic>?> evaluate({
-    required String strategy,
-    required String symbol,
-    required Map<String, dynamic> screenConfig,
-  }) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$_baseUrl/api/Strategy/Evaluate'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'strategy': strategy,
-          'symbol': symbol,
-          'screenConfig': screenConfig,
-        }),
-      );
-      if (response.statusCode != 200) {
-        logD(
-            '[strategy] Evaluate HTTP ${response.statusCode}: ${response.body}');
-        return null;
-      }
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } catch (e) {
-      logD('[strategy] Evaluate error: $e');
-      return null;
     }
   }
 

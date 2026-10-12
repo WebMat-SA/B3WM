@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/state_service.dart';
 import '../../models/symbol_config.dart';
+import 'locked_badge.dart';
 
 class DateRangeTab extends StatelessWidget {
   final bool noDrawer;
@@ -13,7 +14,14 @@ class DateRangeTab extends StatelessWidget {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildSectionTitle('Modo de Exibição'),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Flexible(child: Text('Modo de Exibição', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+              LockedBadge(locked: state.configLocked),
+            ],
+          ),
+          const SizedBox(height: 8),
           SegmentedButton<DateRangeMode>(
             segments: const [
               ButtonSegment(
@@ -33,7 +41,14 @@ class DateRangeTab extends StatelessWidget {
 
           if (state.dateRangeMode == DateRangeMode.multiDay) ...[
             const SizedBox(height: 16),
-            _buildSectionTitle('Período (Últimos N dias)'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Flexible(child: Text('Período (Últimos N dias)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+                LockedBadge(locked: state.configLocked),
+              ],
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [1, 3, 5, 10, 20, 30].map((d) => FilterChip(
