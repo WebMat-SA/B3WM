@@ -32,7 +32,8 @@ class _VolumeProfileDrawerState extends State<VolumeProfileDrawer>
               children: [
                 ToggleRow('Auto Mode (por Estrutura)',
                     state.profileAutoByPriceStructure,
-                    (v) => state.setProfileAutoByPriceStructure(v)),
+                    (v) => state.setProfileAutoByPriceStructure(v),
+                    locked: state.configLocked),
                 const TimeRangeSlider(),
                 ToggleRow('Show on Chart', state.profileVisible,
                     (v) => state.setProfileVisible(v)),

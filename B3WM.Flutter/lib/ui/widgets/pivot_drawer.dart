@@ -47,6 +47,7 @@ class _PivotDrawerState extends State<PivotDrawer>
                   (v) => state.setPivotLineCount(v.round()),
                   decimals: 0,
                   step: 1,
+                  locked: state.configLocked,
                 ),
               ],
             ),

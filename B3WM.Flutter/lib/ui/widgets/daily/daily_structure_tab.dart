@@ -52,6 +52,7 @@ class _DailyStructureTabState extends State<DailyStructureTab>
                   (v) => state.setDailyStructureRangeUpd(v),
                   decimals: 0,
                   step: Defaults.structureRangeUpdDailyStep(state.symbol),
+                  locked: state.configLocked,
                   onChangeEnd: (_) =>
                       state.scheduleDailyStructureConfirm(immediate: true),
                   trailing: state.isDailyStructureConfirmRunning || _isConfirmLoading

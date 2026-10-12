@@ -105,7 +105,7 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 - Reconstrução de perfil de volume por intervalo selecionado
 
 ### Estratégias (rodar no backend)
-- Contrato `IStrategy`: `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` só bubble visível)
+- Contrato `IStrategy`: `Name`/`Description`/`DetailsMd` (MD obrigatório, renderizado na aba) + `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` 1ª bubble visível por bucket do TF)
 - `JevAnalysis`: pergunta à Jev o que fazer com o contexto da tela (foto dos filtros enviada no PLAY)
 - Paper trades com relatório diário em JSON; envio real ao MT5 implementado mas comentado (`LiveTradingEnabled=false`)
 - Receita de strategy nova em `B3WM/Services/Strategies/README.md`

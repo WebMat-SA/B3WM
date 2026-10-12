@@ -34,6 +34,7 @@ class DailyTimeRangeSlider extends StatelessWidget {
         // só dispara no release, e o reload é 1 request por gesto).
         // ignore: discarded_futures
         onApply: state.applyDailyVolumeFilterAndSyncExtremes,
+        locked: state.configLocked,
       );
     });
   }

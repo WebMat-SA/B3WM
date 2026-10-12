@@ -11,6 +11,7 @@ public sealed class StubStrategy : StrategyBase
 {
     public StubStrategy() : base(new Mock<ILogger<StubStrategy>>().Object) { }
     public override string Name => "Stub";
+    public override string DetailsMd => "## Stub\nStrategy de teste.";
     public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
         TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
     public override Task<StrategyDecision?> EvaluateAsync(

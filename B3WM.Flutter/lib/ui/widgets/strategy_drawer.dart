@@ -4,14 +4,15 @@ import 'package:provider/provider.dart';
 import '../../services/state_service.dart';
 import '../../services/strategy_service.dart';
 import 'drawer_controls.dart';
-import 'strategy_report_list.dart';
+import 'locked_badge.dart';
+import 'strategy_details_md.dart';
 import '../../app_log.dart';
 
 /// Aba Estratégia: escolhe dentre todas as IStrategy do backend e dá PLAY.
-/// Gatilho exclusivo: aparecimento de bubble visível (filtro da tela no PLAY).
-/// O PLAY envia a foto da tela (snapshot) e TRAVA os filtros — para alterar:
-/// PAUSE/STOP, edita, PLAY de novo. Execução toda no backend (pode fechar o
-/// app). Tudo log-only (envio real comentado no runner).
+/// O PLAY envia a foto da tela (snapshot) e TRAVA os filtros funcionais —
+/// para alterar: PAUSE/STOP, edita, PLAY de novo. Execução toda no backend
+/// (pode fechar o app). Detalhe da fonte única de acompanhamento: overlay
+/// no gráfico (+ opacidade em `Exibição no gráfico`).
 class StrategyDrawer extends StatefulWidget {
   final bool noDrawer;
   const StrategyDrawer({super.key, this.noDrawer = false});
@@ -28,7 +29,6 @@ class _StrategyDrawerState extends State<StrategyDrawer>
   List<StrategyInfo> _strategies = [];
   String? _selected;
   bool _busy = false;
-  String? _evalResult;
 
   late final StrategyService _svc = StrategyService();
 
@@ -97,54 +97,15 @@ class _StrategyDrawerState extends State<StrategyDrawer>
     await _refreshSessions();
   }
 
-  Future<void> _evaluateNow() async {
-    final state = context.read<StateService>();
-    if (_selected == null || state.symbol.isEmpty) return;
-    setState(() {
-      _busy = true;
-      _evalResult = null;
-    });
-    try {
-      final res = await _svc.evaluate(
-        strategy: _selected!,
-        symbol: state.symbol,
-        screenConfig: state.currentScreenConfig,
-      );
-      final side = res?['side'] ?? res?['Side'] ?? '?';
-      final conf = res?['confidence'] ?? res?['Confidence'] ?? 0;
-      setState(() => _evalResult = '$side conf=$conf (só log)');
-      logD('[strategy] avulso $side conf=$conf');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final info =
           _strategies.where((s) => s.name == _selected).firstOrNull;
-      final body = ListView(
+      final listView = ListView(
         padding: EdgeInsets.zero,
         children: [
-          if (state.configLocked)
-            Container(
-              padding: const EdgeInsets.all(12),
-              color: Colors.orange.withValues(alpha: 0.12),
-              child: const Row(
-                children: [
-                  Icon(Icons.lock, size: 18, color: Colors.orange),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Estratégia rodando — filtros travados. PAUSE/STOP para alterar.',
-                      style: TextStyle(fontSize: 12, color: Colors.orange),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ExpandableSection(
             icon: Icons.play_arrow,
             title: 'Rodar estratégia',
@@ -152,7 +113,14 @@ class _StrategyDrawerState extends State<StrategyDrawer>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Estratégia', style: TextStyle(fontSize: 13)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Estratégia',
+                        style: TextStyle(fontSize: 13)),
+                    LockedBadge(locked: state.configLocked),
+                  ],
+                ),
                 DropdownButton<String>(
                   value: _selected,
                   isExpanded: true,
@@ -167,76 +135,38 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                           setState(() => _selected = v);
                         },
                 ),
-                if (info != null)
+                if (info != null) ...[
                   Text(info.description,
                       style:
                           const TextStyle(fontSize: 11, color: Colors.grey)),
+                  const SizedBox(height: 4),
+                  StrategyDetailsMd(markdown: info.detailsMd),
+                ],
                 const SizedBox(height: 8),
                 const Text(
-                  'Gatilho mora no código da strategy (ex.: JevAnalysis só em bubble visível; candle só executa no open seguinte). '
+                  'Gatilho e parâmetros moram no código da strategy. '
                   'O PLAY congela a foto dos filtros da tela.',
                   style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
-                if (state.configLocked)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                          color: Colors.green.withValues(alpha: 0.35)),
-                    ),
-                    child: Text(
-                      '▶ ${_runningDesc(state)} — acompanhando abaixo e no gráfico, sem precisar fazer nada.\nPara armar outra sessão, pare a atual.',
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.green),
-                    ),
-                  ),
                 if (!state.configLocked)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _busy ? null : _play,
-                          icon: const Icon(Icons.play_arrow, size: 18),
-                          label: const Text('PLAY'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _busy ? null : _evaluateNow,
-                          icon: const Icon(Icons.analytics, size: 18),
-                          label: const Text('Avaliar agora'),
-                        ),
-                      ),
-                    ],
-                  ),
-                if (state.configLocked)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _busy ? null : _evaluateNow,
-                        icon: const Icon(Icons.analytics, size: 18),
-                        label: const Text('Avaliar agora'),
-                      ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : _play,
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label: const Text('PLAY'),
                     ),
-                  ),
-                if (_evalResult != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(_evalResult!,
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.lightBlue)),
+                  )
+                else
+                  const Text(
+                    'Sessão em andamento — PAUSE/STOP nas sessões abaixo para armar outra.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 const Padding(
                   padding: EdgeInsets.only(top: 4),
                   child: Text(
-                    'PLAY envia a foto dos filtros e trava tudo. Pode fechar o app.',
+                    'PLAY envia a foto dos filtros e trava os funcionais. Pode fechar o app.',
                     style: TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ),
@@ -272,94 +202,62 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                     children: _visibleSessions(state)
                         .map((s) => Card(
                               color: const Color(0xFF1e1e1e),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  ListTile(
-                                    dense: true,
-                                    title: Text(
-                                        '${s.strategy} ${s.paused ? '(pausada)' : ''}',
-                                        style:
-                                            const TextStyle(fontSize: 13)),
-                                    subtitle: Text(
-                                      'pos=${s.position ?? 'flat'} dec=${s.decisions} pts=${s.realizedPts.toStringAsFixed(0)} snap=${s.snapshotHash}\n${s.lastDecision ?? ''}',
-                                      style: const TextStyle(
-                                          fontSize: 11, color: Colors.grey),
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(
-                                              state.isStrategySessionVisible(
+                              child: ListTile(
+                                dense: true,
+                                title: Text(
+                                    '${s.strategy} ${s.paused ? '(pausada)' : ''}',
+                                    style:
+                                        const TextStyle(fontSize: 13)),
+                                subtitle: Text(
+                                  'pos=${s.position ?? 'flat'} dec=${s.decisions} pts=${s.realizedPts.toStringAsFixed(0)} snap=${s.snapshotHash}\n${s.lastDecision ?? ''}',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                          state.isStrategySessionVisible(
+                                                  s.sessionId)
+                                              ? Icons.visibility
+                                              : Icons.visibility_off,
+                                          size: 20,
+                                          color: state
+                                                  .isStrategySessionVisible(
                                                       s.sessionId)
-                                                  ? Icons.visibility
-                                                  : Icons.visibility_off,
-                                              size: 20,
-                                              color: state
-                                                      .isStrategySessionVisible(
-                                                          s.sessionId)
-                                                  ? Colors.grey
-                                                  : Colors.grey.shade700),
-                                          tooltip:
-                                              'Mostrar/ocultar no gráfico',
-                                          onPressed: () => state
-                                              .setStrategySessionVisible(
-                                                  s.sessionId,
-                                                  !state.isStrategySessionVisible(
-                                                      s.sessionId)),
-                                        ),
-                                        IconButton(
-                                          icon: Icon(
-                                              s.paused
-                                                  ? Icons.play_arrow
-                                                  : Icons.pause,
-                                              size: 20),
-                                          tooltip: s.paused
-                                              ? 'Retomar'
-                                              : 'Pausar',
-                                          onPressed: () =>
-                                              _pause(s.sessionId, !s.paused),
-                                        ),
-                                        IconButton(
-                                          icon:
-                                              const Icon(Icons.stop, size: 20),
-                                          tooltip:
-                                              'Parar (encerra + relatório)',
-                                          onPressed: () =>
-                                              _stop(s.sessionId),
-                                        ),
-                                      ],
+                                              ? Colors.grey
+                                              : Colors.grey.shade700),
+                                      tooltip:
+                                          'Mostrar/ocultar no gráfico',
+                                      onPressed: () => state
+                                          .setStrategySessionVisible(
+                                              s.sessionId,
+                                              !state.isStrategySessionVisible(
+                                                  s.sessionId)),
                                     ),
-                                  ),
-                                  if (s.reportItems.isNotEmpty)
-                                    Container(
-                                      margin: const EdgeInsets.only(
-                                          left: 12, right: 12, bottom: 8),
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF141414),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                            color: const Color(0xFF3d3d3d)),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('Relatório do dia',
-                                              style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey,
-                                                  fontWeight:
-                                                      FontWeight.bold)),
-                                          const SizedBox(height: 4),
-                                          StrategyReportList(
-                                              items: s.reportItems),
-                                        ],
-                                      ),
+                                    IconButton(
+                                      icon: Icon(
+                                          s.paused
+                                              ? Icons.play_arrow
+                                              : Icons.pause,
+                                          size: 20),
+                                      tooltip: s.paused
+                                          ? 'Retomar'
+                                          : 'Pausar',
+                                      onPressed: () =>
+                                          _pause(s.sessionId, !s.paused),
                                     ),
-                                ],
+                                    IconButton(
+                                      icon:
+                                          const Icon(Icons.stop, size: 20),
+                                      tooltip:
+                                          'Parar (encerra + relatório)',
+                                      onPressed: () =>
+                                          _stop(s.sessionId),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ))
                         .toList(),
@@ -367,19 +265,12 @@ class _StrategyDrawerState extends State<StrategyDrawer>
           ),
         ],
       );
-      if (widget.noDrawer) return body;
-      return Drawer(width: 360, child: body);
+      if (widget.noDrawer) return listView;
+      return Drawer(width: 360, child: listView);
     });
   }
 
   /// Sessões do símbolo atual (mesmo filtro de antes, agora do state central).
-  /// Descreve as sessões ativas p/ o aviso de "já rodando".
-  String _runningDesc(StateService state) {
-    final active = state.strategySessions.where((s) => !s.paused).toList();
-    if (active.isEmpty) return 'Nenhuma sessão ativa';
-    return active.map((s) => '${s.strategy} em ${s.symbol}').join(' • ');
-  }
-
   List<StrategySession> _visibleSessions(StateService state) =>
       state.strategySessions
           .where((s) =>

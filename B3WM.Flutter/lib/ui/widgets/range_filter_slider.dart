@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'locked_badge.dart';
 
 /// Slider de período compartilhado (intraday + diário).
 ///
@@ -14,6 +15,7 @@ class RangeFilterSlider extends StatefulWidget {
   final String Function(int idx) formatDate;
   final void Function(int newStart, int newEnd) onApply;
   final String autoLabel;
+  final bool locked;
 
   const RangeFilterSlider({
     super.key,
@@ -24,6 +26,7 @@ class RangeFilterSlider extends StatefulWidget {
     required this.formatDate,
     required this.onApply,
     this.autoLabel = 'Auto Mode (por Estrutura)',
+    this.locked = false,
   });
 
   @override
@@ -70,6 +73,19 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
     return _buildManualSlider(count, safeStart, safeEnd, onChangeEnd);
   }
 
+  Widget _headerEnd(String text) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          LockedBadge(locked: widget.locked),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAutoModeLabel(int safeEnd) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -80,11 +96,7 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(widget.formatDate(safeEnd),
-                style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          ),
+          _headerEnd(widget.formatDate(safeEnd)),
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -120,11 +132,7 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // End date label
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(widget.formatDate(safeEnd),
-                style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          ),
+          _headerEnd(widget.formatDate(safeEnd)),
           // Range filter
           RangeSlider(
             min: 0,

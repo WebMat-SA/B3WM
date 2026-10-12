@@ -1,18 +1,17 @@
 ﻿using B3WM.Services;
-using B3WM.Services.AI;
 using B3WM.Services.Screen;
 using B3WM.Services.Strategies;
 using B3WM.Shared.Models;
-using B3WM.Shared.Models.AI;
 using B3WM.Shared.Models.Strategies;
 using Microsoft.AspNetCore.Mvc;
 
 namespace B3WM.Controllers
 {
     /// <summary>
-    /// Aba Estratégia (issue #16): lista strategies, arma/pausa/para sessões
-    /// com snapshot da tela, avalia avulso e expõe o log + relatório paper.
+    /// Aba Estratégia (issue #16, #22): lista strategies, arma/pausa/para sessões
+    /// com snapshot da tela e expõe o log + relatório paper.
     /// Tudo log-only: envio real comentado no runner.
+    /// PLAY é a ação única da seção Rodar estratégia (sem avaliação avulsa).
     /// </summary>
     [ApiController]
     [Route("api/[controller]/[action]")]
@@ -20,20 +19,17 @@ namespace B3WM.Controllers
     {
         private readonly StrategyRegistry _registry;
         private readonly StrategyRunner _runner;
-        private readonly ScreenStateBuilder _builder;
         private readonly DataKeeperBase _keeper;
         private readonly ILogger<StrategyController> _logger;
 
         public StrategyController(
             StrategyRegistry registry,
             StrategyRunner runner,
-            ScreenStateBuilder builder,
             DataKeeperBase keeper,
             ILogger<StrategyController> logger)
         {
             _registry = registry;
             _runner = runner;
-            _builder = builder;
             _keeper = keeper;
             _logger = logger;
         }
@@ -45,6 +41,7 @@ namespace B3WM.Controllers
             {
                 Name = s.Name,
                 Description = s.Description,
+                DetailsMd = s.DetailsMd,
             }).ToList());
         }
 
@@ -111,66 +108,6 @@ namespace B3WM.Controllers
 
         [HttpGet]
         public IActionResult State() => Ok(_runner.States());
-
-        /// <summary>Avaliação avulsa (botão "avaliar agora"): sem sessão, só log.</summary>
-        [HttpPost]
-        public async Task<IActionResult> Evaluate([FromBody] StrategyArmRequest req, CancellationToken ct)
-        {
-            if (string.IsNullOrWhiteSpace(req.Strategy))
-                return BadRequest("Strategy é obrigatória (ver List).");
-            IStrategy strategy;
-            try { strategy = _registry.Get(req.Strategy); }
-            catch (ArgumentException ex) { return BadRequest(ex.Message); }
-
-            var displayDate = (req.DisplayDate?.Date ?? DateTime.Today);
-            var specRaw = req.ScreenConfig?.GetRawText() ?? "{}";
-            using var specDoc = System.Text.Json.JsonDocument.Parse(specRaw);
-            var tf = ScreenSpec.Int(specDoc.RootElement, "timeFrame", 2);
-            if (tf == 1440) tf = 2;
-            // Só o último candle (evento); a strategy resolve o snapshot
-            // completo com os próprios consts.
-            var state = await _builder.BuildAsync(new ScreenStateRequest
-            {
-                Symbol = req.Symbol,
-                TimeFrame = tf,
-                DisplayDate = displayDate,
-                VisibleTimeFrames = new() { tf },
-                Spec = specDoc.RootElement.Clone(),
-                IncludeDaily = ScreenSpec.Bool(ScreenSpec.Daily(specDoc.RootElement), "panelVisible", false),
-                LookbackCandles = 1,
-                LookbackBubbles = 0,
-            }, ct);
-
-            var hash = StrategyRunner.SnapshotHashOf(specRaw);
-            var candles = state.Get<List<Shared.Models.BarStorageItem>>(SnapshotLayers.Candles) ?? new();
-            StrategyDecision? decision;
-            try
-            {
-                using var scope = HttpContext.RequestServices.CreateScope();
-                var scoped = scope.ServiceProvider.GetServices<IStrategy>()
-                    .First(s => string.Equals(s.Name, strategy.Name, StringComparison.OrdinalIgnoreCase));
-                decision = await scoped.EvaluateAsync(
-                    new CandleClosed
-                    {
-                        Symbol = req.Symbol,
-                        At = DateTime.Now,
-                        Bar = candles.Count > 0 ? candles[^1] : new(),
-                    },
-                    new StrategyContext
-                    {
-                        Symbol = req.Symbol, TimeFrame = tf, ScreenSpecJson = specRaw,
-                        SnapshotHash = hash, Snapshot = state,
-                    }, ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Falha no Evaluate avulso");
-                return StatusCode(502, "Falha ao avaliar: " + ex.Message);
-            }
-            _logger.LogInformation("[strategy:{Name}:avulso] side={Side} conf={Conf:F2} snap={Hash} (só log)",
-                strategy.Name, decision?.Side, decision?.Confidence ?? 0, hash);
-            return Ok(decision);
-        }
 
         [HttpGet("{symbol}/{date}")]
         public async Task<IActionResult> Log(string symbol, DateTime date)

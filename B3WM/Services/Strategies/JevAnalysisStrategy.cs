@@ -28,6 +28,18 @@ namespace B3WM.Services.Strategies
         public override string Name => "JevAnalysis";
         public override string Description => "Análise Jev/TypeSafe do contexto (bolhas, volume, candles, topos/vales, pivots)";
 
+        public override string DetailsMd =>
+            "## JevAnalysis\n" +
+            "Análise Jev/TypeSafe do contexto de mercado (bolhas, volume, candles, topos/vales, pivots).\n" +
+            "\n" +
+            "- **Gatilho:** primeira bubble visível por candle do TF da sessão (filtro da tela congelado no PLAY; bucket pela hora da bubble).\n" +
+            "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
+            "- **Parâmetros fixos no código:** `Threshold=0.7`, `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
+            "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
+            "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
+            "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
+            "para mudar filtros é preciso `STOP`, editar e `PLAY` de novo.";
+
         /// <summary>Dispara na 1ª bubble visível de cada bucket do TF (filtro da tela no PLAY; ritmo no runner).</summary>
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
             TriggerChecks.IsVisibleBubble(ev, ctx.Filter);

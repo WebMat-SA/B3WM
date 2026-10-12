@@ -186,17 +186,17 @@ class StateService extends ChangeNotifier {
     _saveConfigForSymbol(_symbol);
     await loadData();
   }
-  void setBubbleVisible(bool v) { if (_guardLocked('setBubbleVisible')) return; _currentConfig.bubbleVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSize(double v) { if (_guardLocked('setBubbleSize')) return; _currentConfig.bubbleSize = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleOpacity(double v) { if (_guardLocked('setBubbleOpacity')) return; _currentConfig.bubbleOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSizeMin(double v) { if (_guardLocked('setBubbleSizeMin')) return; _currentConfig.bubbleSizeMin = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSizeMax(double v) { if (_guardLocked('setBubbleSizeMax')) return; _currentConfig.bubbleSizeMax = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleVisible(bool v) { _currentConfig.bubbleVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSize(double v) { _currentConfig.bubbleSize = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleOpacity(double v) { _currentConfig.bubbleOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSizeMin(double v) { _currentConfig.bubbleSizeMin = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setBubbleSizeMax(double v) { _currentConfig.bubbleSizeMax = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setThresholdBubble(int v) { if (_guardLocked('setThresholdBubble')) return; _currentConfig.thresholdBubble = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setProfileVisible(bool v) { if (_guardLocked('setProfileVisible')) return; _currentConfig.profileVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setProfileSizeH(double v) { if (_guardLocked('setProfileSizeH')) return; _currentConfig.profileSizeH = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setProfileSizeV(double v) { if (_guardLocked('setProfileSizeV')) return; _currentConfig.profileSizeV = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setProfileOpacity(double v) { if (_guardLocked('setProfileOpacity')) return; _currentConfig.profileOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileVisible(bool v) { _currentConfig.profileVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileSizeH(double v) { _currentConfig.profileSizeH = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileSizeV(double v) { _currentConfig.profileSizeV = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setProfileOpacity(double v) { _currentConfig.profileOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setProfileAutoByPriceStructure(bool v) {
     if (_guardLocked('setProfileAutoByPriceStructure')) return;
     _currentConfig.profileAutoByPriceStructure = v;
@@ -209,9 +209,9 @@ class StateService extends ChangeNotifier {
     }
   }
 
-  void setStructureVisible(bool v) { if (_guardLocked('setStructureVisible')) return; _currentConfig.structureVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setStructureAuxVisible(bool v) { if (_guardLocked('setStructureAuxVisible')) return; _currentConfig.structureAuxVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setStructureOpacity(double v) { if (_guardLocked('setStructureOpacity')) return; _currentConfig.structureOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureVisible(bool v) { _currentConfig.structureVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureAuxVisible(bool v) { _currentConfig.structureAuxVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setStructureOpacity(double v) { _currentConfig.structureOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setStructureRangeUpd(double v) { if (_guardLocked('setStructureRangeUpd')) return; _currentConfig.structureRangeUpd = v; _isStructureUpdating = true; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   // --- Análise diária (issue #12): configs escopadas ao widget diário ---
@@ -231,7 +231,6 @@ class StateService extends ChangeNotifier {
   double get dailyPanelFraction => _currentConfig.daily.panelFraction;
 
   void setDailyPanelVisible(bool v) {
-    if (_guardLocked('setDailyPanelVisible')) return;
     _currentConfig.daily.panelVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -243,7 +242,6 @@ class StateService extends ChangeNotifier {
   }
 
   void setDailyPanelFraction(double v) {
-    if (_guardLocked('setDailyPanelFraction')) return;
     _currentConfig.daily.panelFraction = v.clamp(0.3, 0.7);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -263,28 +261,24 @@ class StateService extends ChangeNotifier {
       _saveConfigForSymbol(_symbol);
 
   void setDailyStructureVisible(bool v) {
-    if (_guardLocked('setDailyStructureVisible')) return;
     _currentConfig.daily.structureVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
 
   void setDailyStructureAuxVisible(bool v) {
-    if (_guardLocked('setDailyStructureAuxVisible')) return;
     _currentConfig.daily.structureAuxVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
 
   void setDailyStructureOpacity(double v) {
-    if (_guardLocked('setDailyStructureOpacity')) return;
     _currentConfig.daily.structureOpacity = v.clamp(0.0, 1.0);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
 
   void setDailyProfileVisible(bool v) {
-    if (_guardLocked('setDailyProfileVisible')) return;
     _currentConfig.daily.profileVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -306,21 +300,18 @@ class StateService extends ChangeNotifier {
   }
 
   void setDailyProfileSizeH(double v) {
-    if (_guardLocked('setDailyProfileSizeH')) return;
     _currentConfig.daily.profileSizeH = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
 
   void setDailyProfileSizeV(double v) {
-    if (_guardLocked('setDailyProfileSizeV')) return;
     _currentConfig.daily.profileSizeV = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
 
   void setDailyProfileOpacity(double v) {
-    if (_guardLocked('setDailyProfileOpacity')) return;
     _currentConfig.daily.profileOpacity = v.clamp(0.0, 1.0);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -464,8 +455,8 @@ class StateService extends ChangeNotifier {
     }
   }
 
-  void setExtremeVisible(bool v) { if (_guardLocked('setExtremeVisible')) return; _currentConfig.extremeVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setExtremeOpacity(double v) { if (_guardLocked('setExtremeOpacity')) return; _currentConfig.extremeOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setExtremeVisible(bool v) { _currentConfig.extremeVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setExtremeOpacity(double v) { _currentConfig.extremeOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setExtremeNoiseSensitivity(double v) {
     if (_guardLocked('setExtremeNoiseSensitivity')) return;
     _currentConfig.extremeNoiseSensitivity = v;
@@ -490,13 +481,11 @@ class StateService extends ChangeNotifier {
       _currentConfig.daily.extremeMinimumProminence;
 
   void setDailyExtremeVisible(bool v) {
-    if (_guardLocked('setDailyExtremeVisible')) return;
     _currentConfig.daily.extremeVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
   void setDailyExtremeOpacity(double v) {
-    if (_guardLocked('setDailyExtremeOpacity')) return;
     _currentConfig.daily.extremeOpacity = v.clamp(0.0, 1.0);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -522,13 +511,11 @@ class StateService extends ChangeNotifier {
   int get dailyPivotLineCount => _currentConfig.daily.pivotLineCount;
 
   void setDailyPivotVisible(bool v) {
-    if (_guardLocked('setDailyPivotVisible')) return;
     _currentConfig.daily.pivotVisible = v;
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
   void setDailyPivotOpacity(double v) {
-    if (_guardLocked('setDailyPivotOpacity')) return;
     _currentConfig.daily.pivotOpacity = v.clamp(0.0, 1.0);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -569,12 +556,12 @@ class StateService extends ChangeNotifier {
     });
   }
 
-  void setVwapVisible(bool v) { if (_guardLocked('setVwapVisible')) return; _currentConfig.vwapVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setVwapOpacity(double v) { if (_guardLocked('setVwapOpacity')) return; _currentConfig.vwapOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setVwapColor(String v) { if (_guardLocked('setVwapColor')) return; _currentConfig.vwapColor = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setVwapVisible(bool v) { _currentConfig.vwapVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setVwapOpacity(double v) { _currentConfig.vwapOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setVwapColor(String v) { _currentConfig.vwapColor = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setColorBuyer(String v) { if (_guardLocked('setColorBuyer')) return; _currentConfig.colorBuyer = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setColorSeller(String v) { if (_guardLocked('setColorSeller')) return; _currentConfig.colorSeller = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setColorBuyer(String v) { _currentConfig.colorBuyer = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setColorSeller(String v) { _currentConfig.colorSeller = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   /// Confirma o range INTRADAY: regenera só os timeframes < 1440 no
   /// servidor. Nunca toca no 1440 (que tem range próprio em
@@ -590,16 +577,16 @@ class StateService extends ChangeNotifier {
   void setBubbleSoundEnabled(bool v) { _currentConfig.bubbleSoundEnabled = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleSoundVolume(double v) { _currentConfig.bubbleSoundVolume = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setTradingHistoryVisible(bool v) { if (_guardLocked('setTradingHistoryVisible')) return; _currentConfig.tradingHistoryVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setPositionVisible(bool v) { if (_guardLocked('setPositionVisible')) return; _currentConfig.positionVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setOpenOrdersVisible(bool v) { if (_guardLocked('setOpenOrdersVisible')) return; _currentConfig.openOrdersVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingHistoryVisible(bool v) { _currentConfig.tradingHistoryVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setPositionVisible(bool v) { _currentConfig.positionVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setOpenOrdersVisible(bool v) { _currentConfig.openOrdersVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setTradingPanelVisible(bool v) { if (_guardLocked('setTradingPanelVisible')) return; _currentConfig.tradingPanelVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setTradingConfigExpanded(bool v) { if (_guardLocked('setTradingConfigExpanded')) return; _currentConfig.tradingConfigExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setTradingAccountExpanded(bool v) { if (_guardLocked('setTradingAccountExpanded')) return; _currentConfig.tradingAccountExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setTradingOrdersExpanded(bool v) { if (_guardLocked('setTradingOrdersExpanded')) return; _currentConfig.tradingOrdersExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setTradingPositionsExpanded(bool v) { if (_guardLocked('setTradingPositionsExpanded')) return; _currentConfig.tradingPositionsExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setTradingHistoryExpanded(bool v) { if (_guardLocked('setTradingHistoryExpanded')) return; _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingPanelVisible(bool v) { _currentConfig.tradingPanelVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingConfigExpanded(bool v) { _currentConfig.tradingConfigExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingAccountExpanded(bool v) { _currentConfig.tradingAccountExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingOrdersExpanded(bool v) { _currentConfig.tradingOrdersExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingPositionsExpanded(bool v) { _currentConfig.tradingPositionsExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setTradingHistoryExpanded(bool v) { _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
 
@@ -635,8 +622,8 @@ class StateService extends ChangeNotifier {
   double get pivotOpacity => _currentConfig.pivotOpacity;
   int get pivotLineCount => _currentConfig.pivotLineCount;
 
-  void setPivotVisible(bool v) { if (_guardLocked('setPivotVisible')) return; _currentConfig.pivotVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setPivotOpacity(double v) { if (_guardLocked('setPivotOpacity')) return; _currentConfig.pivotOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setPivotVisible(bool v) { _currentConfig.pivotVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  void setPivotOpacity(double v) { _currentConfig.pivotOpacity = v.clamp(0.0, 1.0); notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setPivotLineCount(int v) {
     if (_guardLocked('setPivotLineCount')) return;
     v = v.clamp(2, 5);
@@ -673,12 +660,16 @@ class StateService extends ChangeNotifier {
   /// mesmo schema do export da aba Backup.
   Map<String, dynamic> get currentScreenConfig => _currentConfig.toJson();
 
-  /// Trava de filtros com estratégia armada (rodar estratégias): enquanto
-  /// houver sessão no backend, os setters de config recusam mudanças
-  /// (PLAY congela a foto; para alterar: PAUSE/STOP, edita, PLAY de novo).
-  /// Exceções de propósito (nunca travam): som (setBubbleSound*) e navegação
-  /// (setSymbol/setTimeFrame) — são alerta local e troca de exibição, não
-  /// alteram nenhum dado que a estratégia enxerga.
+  /// Trava de filtros com estratégia armada (rodar estratégias, issue #22):
+  /// enquanto houver sessão no backend, só os setters funcionais/de filtro
+  /// recusam mudanças (PLAY congela a foto; para alterar: PAUSE/STOP, edita,
+  /// PLAY de novo). Travam: threshold/agents/filtros de bubble, auto-mode e
+  /// janela de volume, range de estrutura, noise/prominence, lineCount de
+  /// pivot, dateRange/lookback e o dropdown de estratégia.
+  /// Nunca travam (só display local, sem cadeado): visibilidade (*Visible),
+  /// opacidade (*Opacity), tamanho visual (*Size), cores, layout/expansão
+  /// (panelFraction, trading*Expanded), som (setBubbleSound*), navegação
+  /// (setSymbol/setTimeFrame), opacidade do overlay e olho por sessão.
   bool _strategiesArmed = false;
   bool get strategiesArmed => _strategiesArmed;
   bool get configLocked => _strategiesArmed;

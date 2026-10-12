@@ -12,6 +12,8 @@ namespace B3WM.Services.Strategies
     {
         string Name { get; }
         string Description { get; }
+        /// <summary>Detalhe em Markdown (o que faz, gatilho, TF, params fixos, riscos). Obrigatório.</summary>
+        string DetailsMd { get; }
         IReadOnlyList<StrategyParam> DeclaredParams { get; }
         bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx);
         Task<StrategyDecision?> EvaluateAsync(StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default);
@@ -30,6 +32,7 @@ namespace B3WM.Services.Strategies
 
         public abstract string Name { get; }
         public virtual string Description => Name;
+        public abstract string DetailsMd { get; }
         public virtual IReadOnlyList<StrategyParam> DeclaredParams => Array.Empty<StrategyParam>();
         public abstract bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx);
         public abstract Task<StrategyDecision?> EvaluateAsync(StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default);

@@ -43,7 +43,8 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
               children: [
                 ToggleRow('Auto Mode (por Estrutura)',
                     state.dailyProfileAutoByPriceStructure,
-                    (v) => state.setDailyProfileAutoByPriceStructure(v)),
+                    (v) => state.setDailyProfileAutoByPriceStructure(v),
+                    locked: state.configLocked),
                 const DailyTimeRangeSlider(),
                 ToggleRow('Show on Chart', state.dailyProfileVisible,
                     (v) => state.setDailyProfileVisible(v)),

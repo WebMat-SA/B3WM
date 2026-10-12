@@ -91,6 +91,7 @@ class _StructureDrawerState extends State<StructureDrawer>
               Defaults.structureRangeUpdMax(state.symbol),
               (v) => state.setStructureRangeUpd(v),
               decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol),
+              locked: state.configLocked,
               trailing: state.isStructureUpdating
                   ? _isStructureRangeLoading
                       ? const Padding(

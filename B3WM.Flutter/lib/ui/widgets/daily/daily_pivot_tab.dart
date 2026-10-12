@@ -46,6 +46,7 @@ class _DailyPivotTabState extends State<DailyPivotTab>
                   (v) => state.setDailyPivotLineCount(v.round()),
                   decimals: 0,
                   step: 1,
+                  locked: state.configLocked,
                 ),
                 if (pv != null && pv.levels.isNotEmpty)
                   Padding(
