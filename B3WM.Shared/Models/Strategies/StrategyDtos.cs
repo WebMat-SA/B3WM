@@ -4,6 +4,7 @@ namespace B3WM.Shared.Models.Strategies
     {
         public string Name { get; set; } = "";
         public string Description { get; set; } = "";
+        public string DetailsMd { get; set; } = "";
     }
 
     public sealed class StrategyArmRequest

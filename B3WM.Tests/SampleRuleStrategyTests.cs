@@ -22,6 +22,7 @@ public class SampleRuleStrategyTests
 
         public override string Name => "SampleBuyPressure";
         public override string Description => "Exemplo rule-based (teste): compra em pressão compradora de bolhas";
+        public override string DetailsMd => "## SampleBuyPressure\nExemplo de teste (pressão compradora de bolhas).";
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
             TriggerChecks.IsCandleClose(ev, 2);
 

@@ -33,6 +33,7 @@ class TimeRangeSlider extends StatelessWidget {
         formatDate: formatDate,
         // Aplica o filtro e sincroniza extremos imediatamente (sem debounce)
         onApply: state.applyVolumeFilterAndSyncExtremes,
+        locked: state.configLocked,
       );
     });
   }

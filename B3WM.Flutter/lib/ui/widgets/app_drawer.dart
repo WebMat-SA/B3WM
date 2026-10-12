@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../services/state_service.dart';
 import 'backup_tab.dart';
+import 'locked_badge.dart';
 import 'strategy_drawer.dart';
 import 'bubble_drawer.dart';
 import 'structure_drawer.dart';
@@ -60,50 +63,50 @@ class _AppDrawerState extends State<AppDrawer>
               indicatorColor: Colors.blue,
               labelColor: Colors.blue,
               unselectedLabelColor: Colors.grey,
-tabs: const [
-                Tab(
+tabs: [
+                const Tab(
                   icon: Tooltip(
                     message: 'Bubbles',
                     child: Icon(Icons.bubble_chart, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'Estrutura',
                     child: Icon(Icons.stacked_line_chart, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'Volume Profile',
                     child: Icon(Icons.align_horizontal_right, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'Topos/Vales',
                     child: Icon(Icons.terrain, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'Pivot Tradicional',
                     child: Icon(Icons.drag_handle, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'VWAP Diário',
                     child: Icon(Icons.trending_up, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'Período',
                     child: Icon(Icons.date_range, size: 18),
                   ),
                 ),
-                Tab(
+                const Tab(
                   icon: Tooltip(
                     message: 'Backup (exportar/importar)',
                     child: Icon(Icons.settings_backup_restore, size: 18),
@@ -112,7 +115,20 @@ tabs: const [
                 Tab(
                   icon: Tooltip(
                     message: 'Estratégias (rodar)',
-                    child: Icon(Icons.auto_graph, size: 18),
+                    child: Consumer<StateService>(
+                      builder: (context, state, _) => Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(Icons.auto_graph, size: 18),
+                          Positioned(
+                            right: -4,
+                            top: -4,
+                            child: StrategyLockDot(
+                                locked: state.configLocked),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],

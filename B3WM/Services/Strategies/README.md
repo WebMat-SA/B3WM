@@ -37,8 +37,10 @@ A aba Estratégia do app lista e arma sem mudar nada no Flutter.
    `IsVisibleBubble(ev, filter)`.
    Ex.: `ev is CandleClosed c && c.Bar.TimeFrame == ctx.TimeFrame`.
 3. **Metadados + config no código**: `Name` (único, aparece no dropdown),
-   `Description` e `private const` para thresholds/lookbacks — **nada de
-   config vai para a aba** (só dropdown, PLAY e sessões).
+   `Description` (1 linha sob o dropdown) e `DetailsMd` (obrigatório, Markdown
+   renderizado sob o dropdown: o que faz, gatilho, TF, parâmetros fixos no
+   código, riscos/limitações) + `private const` para thresholds/lookbacks —
+   **nada de config vai para a aba** (só dropdown, PLAY e sessões).
 4. **Regra**: `EvaluateAsync(StrategyEvent ev, StrategyContext ctx, ct)`
    retorna `StrategyDecision { Side, Confidence, Encerrar, ShouldTrade, Reason }`
    ou `null`. `ctx.Position` traz a posição paper (null = flat).

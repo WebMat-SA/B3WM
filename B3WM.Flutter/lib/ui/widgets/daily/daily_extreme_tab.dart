@@ -47,6 +47,7 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
                   (v) => state.setDailyExtremeNoiseSensitivity(v),
                   decimals: 1,
                   step: Defaults.extremeNoiseSensitivityStep,
+                  locked: state.configLocked,
                 ),
                 SliderRow(
                   'Min Prominence',
@@ -56,6 +57,7 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
                   (v) => state.setDailyExtremeMinimumProminence(v),
                   decimals: 2,
                   step: Defaults.extremeMinimumProminenceStep,
+                  locked: state.configLocked,
                 ),
                 Padding(
                   padding:

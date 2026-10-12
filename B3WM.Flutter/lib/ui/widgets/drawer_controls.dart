@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flex_color_picker/flex_color_picker.dart';
+import 'locked_badge.dart';
 
 class SectionHeader extends StatelessWidget {
   final String title;
@@ -24,19 +25,29 @@ class ExpandableSection extends StatelessWidget {
   final IconData icon;
   final Widget child;
   final bool defaultExpanded;
+  final bool locked;
   const ExpandableSection({
     super.key,
     required this.title,
     required this.icon,
     required this.child,
     this.defaultExpanded = false,
+    this.locked = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return ExpansionTile(
       leading: Icon(icon, size: 20),
-      title: Text(title, style: const TextStyle(fontSize: 14)),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(title, style: const TextStyle(fontSize: 14)),
+          ),
+          LockedBadge(locked: locked),
+        ],
+      ),
       initiallyExpanded: defaultExpanded,
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
       childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
@@ -49,13 +60,25 @@ class ToggleRow extends StatelessWidget {
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
-  const ToggleRow(this.label, this.value, this.onChanged, {super.key});
+  final bool locked;
+  const ToggleRow(this.label, this.value, this.onChanged,
+      {super.key, this.locked = false});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(label, style: const TextStyle(fontSize: 13)),
+              ),
+              LockedBadge(locked: locked),
+            ],
+          ),
+        ),
         Switch(
           value: value,
           onChanged: onChanged,
@@ -79,6 +102,7 @@ class SliderRow extends StatelessWidget {
   final double step;
   final Widget? trailing;
   final Widget? tooltip;
+  final bool locked;
   const SliderRow(
     this.label,
     this.value,
@@ -91,6 +115,7 @@ class SliderRow extends StatelessWidget {
     this.trailing,
     this.tooltip,
     this.onChangeEnd,
+    this.locked = false,
   });
 
   @override
@@ -102,7 +127,16 @@ class SliderRow extends StatelessWidget {
           children: [
             Expanded(
               child: tooltip == null
-                  ? Text(label, style: const TextStyle(fontSize: 13))
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(label,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                        LockedBadge(locked: locked),
+                      ],
+                    )
                   : Tooltip(
                       richMessage: TextSpan(
                         children: [
@@ -122,6 +156,7 @@ class SliderRow extends StatelessWidget {
                           const SizedBox(width: 4),
                           const Icon(Icons.info_outline,
                               size: 14, color: Colors.grey),
+                          LockedBadge(locked: locked),
                         ],
                       ),
                     ),

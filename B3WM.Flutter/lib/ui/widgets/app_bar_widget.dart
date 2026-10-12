@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/state_service.dart';
+import 'locked_badge.dart';
 import 'timeframe_selector.dart';
 
 class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
@@ -197,11 +198,22 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                     visualDensity: VisualDensity.compact,
                   ),
                 if (widget.onStrategyTap != null)
-                  IconButton(
-                    icon: const Icon(Icons.auto_graph, size: 20),
-                    onPressed: widget.onStrategyTap,
-                    tooltip: 'Estratégias (rodar)',
-                    visualDensity: VisualDensity.compact,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.auto_graph, size: 20),
+                        onPressed: widget.onStrategyTap,
+                        tooltip: 'Estratégias (rodar)',
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: StrategyLockDot(
+                            locked: state.configLocked),
+                      ),
+                    ],
                   ),
               ],
             ),
