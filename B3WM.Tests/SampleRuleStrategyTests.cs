@@ -9,8 +9,8 @@ namespace B3WM.Tests;
 /// <summary>
 /// Prova de DX: strategy rule-based completa em ~30 linhas, usando SÓ
 /// IMarketData mockado (sem builder, snapshot, runner ou Jev).
-/// Regra: compra se a última bolha visível do candle for de compra com
-/// amount ≥ threshold do param; nunca vende (só demonstração).
+/// Regra (somente-bubble): compra se houver mais compras que vendas com
+/// amount ≥ threshold na janela do TF da sessão; nunca vende (demonstração).
 /// </summary>
 public class SampleRuleStrategyTests
 {
@@ -24,7 +24,7 @@ public class SampleRuleStrategyTests
         public override string Description => "Exemplo rule-based (teste): compra em pressão compradora de bolhas";
         public override string DetailsMd => "## SampleBuyPressure\nExemplo de teste (pressão compradora de bolhas).";
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
-            TriggerChecks.IsCandleClose(ev, 2);
+            TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
 
         /// <summary>Config 100% no código (nada no tab).</summary>
         private const int MinAmount = 250;
@@ -32,10 +32,11 @@ public class SampleRuleStrategyTests
         public override async Task<StrategyDecision?> EvaluateAsync(
             StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default)
         {
-            if (ev is not CandleClosed cc) return null;
+            if (ev is not BubbleAppeared) return null;
+            var tf = ctx.TimeFrame <= 0 ? 2 : ctx.TimeFrame;
             var bubbles = await _market.BubblesAsync(ctx.Symbol, null, ct);
             var fresh = bubbles
-                .Where(b => b.Date > cc.Bar.Date.AddMinutes(-cc.Bar.TimeFrame) && b.Date <= cc.Bar.Date)
+                .Where(b => b.Date > ev.At.AddMinutes(-tf) && b.Date <= ev.At)
                 .ToList();
             var buys = fresh.Where(b => b.ActionType == B3WM.Shared.Entity.Ticks2.ActionType.Buy && b.Amount >= MinAmount).ToList();
             var sells = fresh.Where(b => b.ActionType != B3WM.Shared.Entity.Ticks2.ActionType.Buy && b.Amount >= MinAmount).ToList();
@@ -67,14 +68,15 @@ public class SampleRuleStrategyTests
         var s = new SampleBuyPressureStrategy(
             new Mock<ILogger<SampleBuyPressureStrategy>>().Object, market.Object);
         var decision = await s.EvaluateAsync(
-            new CandleClosed
+            new BubbleAppeared
             {
                 Symbol = "WINFUT", At = t,
-                Bar = new BarStorageItem { Date = t, Symbol = "WINFUT", TimeFrame = 2 },
+                Item = Bubble(2, 400, true, t.AddSeconds(-10)),
             },
             new StrategyContext
             {
                 Symbol = "WINFUT",
+                TimeFrame = 2,
             });
         Assert.NotNull(decision);
         Assert.Equal("comprar", decision!.Side);
@@ -88,13 +90,18 @@ public class SampleRuleStrategyTests
             new Mock<ILogger<SampleBuyPressureStrategy>>().Object,
             new Mock<IMarketData>().Object);
         Assert.Equal("SampleBuyPressure", s.Name);
+        // Somente-bubble: bubble dispara (filtro null = passa), candle nunca.
         Assert.True(s.ShouldTrigger(
+            new BubbleAppeared { Symbol = "WINFUT", At = DateTime.Now, Item = Bubble(1, 300, true, DateTime.Now) },
+            new StrategyTriggerContext { Symbol = "WINFUT", TimeFrame = 2 }));
+        Assert.False(s.ShouldTrigger(
             new CandleClosed { Symbol = "WINFUT", At = DateTime.Now,
                 Bar = new BarStorageItem { Date = DateTime.Now, Symbol = "WINFUT", TimeFrame = 2 } },
             new StrategyTriggerContext { Symbol = "WINFUT", TimeFrame = 2 }));
         s.Reset(); // não explode
         Assert.Null(await s.EvaluateAsync(
-            new BubbleAppeared { Symbol = "WINFUT", At = DateTime.Now, Item = Bubble(1, 1, true, DateTime.Now) },
-            new StrategyContext { Symbol = "WINFUT" }));
+            new CandleClosed { Symbol = "WINFUT", At = DateTime.Now,
+                Bar = new BarStorageItem { Date = DateTime.Now, Symbol = "WINFUT", TimeFrame = 2 } },
+            new StrategyContext { Symbol = "WINFUT", TimeFrame = 2 }));
     }
 }

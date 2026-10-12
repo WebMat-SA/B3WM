@@ -7,8 +7,9 @@ namespace B3WM.Services.Strategies
     /// <summary>
     /// Análise da IA como strategy: injeta JevService, monta o snapshot
     /// WYSIWYG a partir do spec cru da sessão e converte a resposta em
-    /// StrategyDecision. Suporta gatilho de fechamento de candle (qualquer
-    /// TF) e de bubble.
+    /// StrategyDecision. Gatilho: primeira bubble visível por candle do TF
+    /// da sessão (filtro da tela congelado no PLAY; ritmo via bucket da hora
+    /// da bubble no runner). Sem trigger em fechamento de candle.
     /// </summary>
     public sealed class JevAnalysisStrategy : StrategyBase
     {
@@ -31,17 +32,17 @@ namespace B3WM.Services.Strategies
             "## JevAnalysis\n" +
             "Análise Jev/TypeSafe do contexto de mercado (bolhas, volume, candles, topos/vales, pivots).\n" +
             "\n" +
-            "- **Gatilho:** fechamento de candle do TF da tela (foto do PLAY).\n" +
-            "- **TF:** o TF vigente no PLAY (filtros travados na sessão).\n" +
+            "- **Gatilho:** primeira bubble visível por candle do TF da sessão (filtro da tela congelado no PLAY; bucket pela hora da bubble).\n" +
+            "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
             "- **Parâmetros fixos no código:** `Threshold=0.7`, `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
             "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
             "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
             "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
             "para mudar filtros é preciso `STOP`, editar e `PLAY` de novo.";
 
-        /// <summary>Dispara no fechamento do candle do TF da tela (foto do PLAY).</summary>
+        /// <summary>Dispara na 1ª bubble visível de cada bucket do TF (filtro da tela no PLAY; ritmo no runner).</summary>
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
-            TriggerChecks.IsCandleClose(ev, ctx.TimeFrame);
+            TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
 
         /// <summary>Config 100% no código (nada no tab).</summary>
         private const double Threshold = 0.7;
@@ -51,7 +52,8 @@ namespace B3WM.Services.Strategies
         public override async Task<StrategyDecision?> EvaluateAsync(
             StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default)
         {
-            var tf = ev is CandleClosed cc ? cc.Bar.TimeFrame : 2;
+            // TF da sessão (não do evento): bubble não carrega TF.
+            var tf = ctx.TimeFrame;
 
             using var doc = JsonDocument.Parse(
                 string.IsNullOrWhiteSpace(ctx.ScreenSpecJson) ? "{}" : ctx.ScreenSpecJson);

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using B3WM.Services.AI;
 using B3WM.Services.Core;
+using B3WM.Shared.Extensions;
 using B3WM.Shared.Models;
 using B3WM.Shared.Models.AI;
 using B3WM.Shared.Models.ExtremeDetection;
@@ -17,6 +18,12 @@ namespace B3WM.Services.Strategies
         public string Symbol { get; set; } = "";
         /// <summary>TF da tela no PLAY (filtros travados, não muda na sessão).</summary>
         public int TriggerTimeFrame { get; set; } = 2;
+        /// <summary>
+        /// Ritmo bubble: bucket do TF já avaliado (hora da bubble via
+        /// GetCandleStart). Só a 1ª bubble visível de cada bucket dispara;
+        /// filtro reprovado não consome o bucket. Runtime, sem persistência.
+        /// </summary>
+        public DateTime? LastBubbleBucket { get; set; }
         public string ScreenSpecJson { get; set; } = "{}";
         public BubbleFilter Filter { get; set; } = new();
         public string SnapshotHash { get; set; } = "";
@@ -35,7 +42,13 @@ namespace B3WM.Services.Strategies
 
     /// <summary>
     /// Executa as strategies armadas no backend (funciona com o app fechado).
-    /// Avalia o gatilho em cada candle fechado / bubble e invoca a strategy.
+    /// Fonte dos fatos: OrchestratorService por símbolo (candle enriquecido +
+    /// bubble repassada); o runner consome e cada strategy decide no próprio
+    /// `ShouldTrigger` (ex.: JevAnalysis só bubble, outra pode ser só
+    /// candle_close). Runner genérico multi-trigger: despacha todo evento para
+    /// todas as sessões do símbolo. Ritmo bubble: 1ª bubble visível
+    /// por bucket do TF da sessão (pela hora da bubble). Candle serve também p/
+    /// execução (open seguinte), zeragem na virada do dia e persistência.
     /// Log-only: o envio real está implementado mas COMENTADO (conta real: só
     /// descomentar sob flag explícita). Relatório paper em StrategyLogDay.
     /// </summary>
@@ -51,16 +64,19 @@ namespace B3WM.Services.Strategies
 
         public StrategyRunner(
             IServiceScopeFactory scopes,
-            IEnumerable<CandleService> candles,
-            IEnumerable<BubbleService> bubbles,
+            IEnumerable<OrchestratorService> orchestrators,
             ILogger<StrategyRunner> logger)
         {
             _scopes = scopes;
             _logger = logger;
-            foreach (var c in candles)
-                c.OnUpdate += bar => OnCandleAsync(bar);
-            foreach (var b in bubbles)
-                b.OnUpdate += bubble => OnBubbleAsync(bubble);
+            // Padrão do projeto: o Core (OrchestratorService, por símbolo)
+            // captura/publica os fatos (candle enriquecido, bubble); o runner
+            // consome e cada strategy decide no ShouldTrigger.
+            foreach (var o in orchestrators)
+            {
+                o.OnCandleClosed += (bar, _) => OnCandleAsync(bar);
+                o.OnBubble += bubble => OnBubbleAsync(bubble);
+            }
         }
 
         public IReadOnlyList<StrategySessionState> States()
@@ -133,18 +149,17 @@ namespace B3WM.Services.Strategies
 
         private async Task OnCandleAsync(BarStorageItem bar)
         {
-            var mine = SessionsOf(bar.Symbol);
-            if (mine.Count == 0) return;
-            foreach (var s in mine)
-            {
-                if (!CheckTrigger(s, new CandleClosed { Symbol = bar.Symbol, At = bar.Date, Bar = bar }))
-                    continue;
-                await FireAsync(s, new CandleClosed { Symbol = bar.Symbol, At = bar.Date, Bar = bar }, "candle_close");
-            }
-            // Execuções pendentes no open do candle novo + zeragem na virada do dia.
-            foreach (var s in SessionsOf(bar.Symbol))
-                ExecutePending(s, bar.Open, bar.Date, "open seguinte");
-            foreach (var s in SessionsOf(bar.Symbol))
+            if (SessionsOf(bar.Symbol).Count == 0) return;
+            // Despacha o evento para todas as sessões do símbolo; cada
+            // strategy filtra no ShouldTrigger (candle_close, bubble, etc.).
+            await PublishAsync(
+                new CandleClosed { Symbol = bar.Symbol, At = bar.Date, Bar = bar },
+                "candle_close");
+            // Execução amarrada ao TF da sessão: pendências e zeragem diária
+            // só no open do candle do próprio TF (não no de qualquer TF).
+            foreach (var s in SessionsOf(bar.Symbol).Where(s => ShouldExecuteOnBar(s, bar)))
+                ExecutePending(s, bar.Open, bar.Date, $"open seguinte TF{bar.TimeFrame}");
+            foreach (var s in SessionsOf(bar.Symbol).Where(s => ShouldExecuteOnBar(s, bar)))
                 if (s.Position != null && bar.Date.Date > s.Position.EntryTime.Date)
                     ClosePaper(s, bar.Open, bar.Date, "virada do dia");
             foreach (var s in SessionsOf(bar.Symbol))
@@ -157,16 +172,71 @@ namespace B3WM.Services.Strategies
 
         private async Task OnBubbleAsync(BubbleStorageItem bubble)
         {
-            var mine = SessionsOf(bubble.Symbol);
+            if (SessionsOf(bubble.Symbol).Count == 0) return;
+            await PublishAsync(
+                new BubbleAppeared { Symbol = bubble.Symbol, At = bubble.Date, Item = bubble },
+                "bubble");
+        }
+
+        /// <summary>
+        /// Ponto de extensão para qualquer trigger atual ou futuro
+        /// (candle_close, bubble, toque em pivot, etc.): despacha `ev` para
+        /// todas as sessões não-pausadas do símbolo; cada strategy decide no
+        /// `ShouldTrigger`. Futuro: basta criar o `StrategyEvent` novo e chamar aqui.
+        /// Ritmo bubble: só a 1ª bubble visível de cada bucket do TF da sessão
+        /// dispara (bucket pela hora da bubble, `ev.At`); filtro reprovado não
+        /// consome o bucket; bucket sem bubble = silêncio (sem fallback).
+        /// </summary>
+        public async Task PublishAsync(StrategyEvent ev, string why)
+        {
+            var mine = SessionsOf(ev.Symbol);
             if (mine.Count == 0) return;
-            var ev = new BubbleAppeared { Symbol = bubble.Symbol, At = bubble.Date, Item = bubble };
             foreach (var s in mine)
             {
+                if (ev is BubbleAppeared)
+                {
+                    var bucket = BubbleBucketFor(ev.At, s.TriggerTimeFrame);
+                    bool alreadyFired;
+                    lock (_lock)
+                        alreadyFired = !IsNewBubbleBucket(s.LastBubbleBucket, bucket);
+                    if (alreadyFired)
+                    {
+                        _logger.LogDebug("[strategy:{Name}:{Id}] bubble skip bucket {Bucket:HH:mm} já avaliado",
+                            s.Strategy, s.Id, bucket);
+                        continue;
+                    }
+                    if (!CheckTrigger(s, ev))
+                        continue; // filtro reprovou: bucket segue livre
+                    lock (_lock) { s.LastBubbleBucket = bucket; }
+                    await FireAsync(s, ev, why);
+                    continue;
+                }
                 if (!CheckTrigger(s, ev))
                     continue;
-                await FireAsync(s, ev, "bubble");
+                await FireAsync(s, ev, why);
             }
         }
+
+        /// <summary>
+        /// Bucket do TF pela hora da bubble (mesmo alinhamento do CandleService).
+        /// Testável sem runner (puro).
+        /// </summary>
+        public static DateTime BubbleBucketFor(DateTime bubbleTime, int triggerTimeFrame) =>
+            bubbleTime.GetCandleStart(triggerTimeFrame <= 0 ? 2 : triggerTimeFrame);
+
+        /// <summary>
+        /// Gate puro: true se o bucket ainda não foi avaliado pela sessão.
+        /// Testável sem runner.
+        /// </summary>
+        public static bool IsNewBubbleBucket(DateTime? lastBucket, DateTime bucket) =>
+            !lastBucket.HasValue || lastBucket.Value != bucket;
+
+        /// <summary>
+        /// Execução amarrada ao TF: a sessão só executa pendências/virada no
+        /// open do candle do próprio TF da foto do PLAY. Testável sem runner.
+        /// </summary>
+        public static bool ShouldExecuteOnBar(StrategySession s, BarStorageItem bar) =>
+            s.TriggerTimeFrame == bar.TimeFrame;
 
         /// <summary>
         /// O contrato: cada strategy decide no próprio ShouldTrigger.
@@ -225,6 +295,7 @@ namespace B3WM.Services.Strategies
             var ctx = new StrategyContext
             {
                 Symbol = s.Symbol,
+                TimeFrame = s.TriggerTimeFrame,
                 ScreenSpecJson = s.ScreenSpecJson,
                 SnapshotHash = s.SnapshotHash,
                 Position = s.Position == null ? null : new PaperPosition
@@ -254,8 +325,8 @@ namespace B3WM.Services.Strategies
             var item = new StrategyDecisionLog
             {
                 Kind = "avaliacao",
-                // Hora da AVALIAÇÃO (quando a Jev foi chamada), não da abertura:
-                // candle -> fechamento (open + timeframe); bubble -> hora do evento.
+                // Hora da AVALIAÇÃO (quando a strategy foi chamada), não da abertura:
+                // candle -> fechamento (open + timeframe); bubble/futuros -> hora do evento.
                 Time = EvaluationTime(ev).ToString("HH:mm"),
                 Event = why,
                 Side = decision.Side,

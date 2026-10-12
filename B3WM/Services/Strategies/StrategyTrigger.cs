@@ -34,6 +34,8 @@ namespace B3WM.Services.Strategies
     /// <summary>
     /// Predicados reutilizáveis para `ShouldTrigger` (blocos de montar das
     /// condições, com a decisão final sempre na strategy).
+    /// Runner é multi-trigger: cada strategy combina os blocos como quiser
+    /// (ex.: `JevAnalysis` só `IsVisibleBubble`; outra só `IsCandleClose`).
     /// </summary>
     public static class TriggerChecks
     {
