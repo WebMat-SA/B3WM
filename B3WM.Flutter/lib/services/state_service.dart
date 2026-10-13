@@ -168,17 +168,29 @@ class StateService extends ChangeNotifier {
     };
   }
 
+  /// Limites únicos do zoom Y (preço) — Fase B-1.
+  /// Unifica o clamp da roda (`MapFlowChart._handleScroll`), dos botões `−/+`
+  /// e da API programática [setYZoom]. Faixa `0.3..10.0` = superset dos antigos
+  /// `0.9..10.0` (roda) e `0.3..5.0` (setYZoom): nenhuma regressão de alcance.
+  /// Cada `MapFlowChart` (intraday vs 1D) mantém `_yZoom` local; o global só
+  /// sincroniza via `didUpdateWidget` quando `widget.data.yZoom` muda de fora
+  /// (ex. reset global), evitando contaminação 1D <> intraday por `notifyListeners`.
+  static const double minYZoom = 0.3;
+  static const double maxYZoom = 10.0;
+
   double _yZoom = 1.0;
   double get yZoom => _yZoom;
 
   bool get isConnected => _signalRService.isConnected;
 
   // Config setters
-  // Navegação (símbolo/timeframe) NUNCA trava: só troca o que é exibido e
-  // recarregado do servidor; os valores de filtro salvos seguem intactos e
-  // a sessão armada continua usando a foto do PLAY. É o que permite abrir o
-  // app com estratégia rodando e só olhar o gráfico (botão play superior).
+  // Navegação (símbolo) NUNCA trava: só troca o que é exibido e recarregado
+  // do servidor. Já o timeframe TRAVA com estratégia armada: a sessão usa a
+  // foto do PLAY e trocar o TF no meio embaralha candles/estruturas da tela
+  // com o que a estratégia avalia. Símbolo segue livre (só olhar outro
+  // gráfico), inclusive com estratégia rodando (botão play superior).
   Future<void> setTimeFrame(int v) async {
+    if (_guardLocked('setTimeFrame')) return;
     // Migração #12: 1D saiu do seletor principal (só intraday).
     if (v == 1440) v = 2;
     _currentConfig.timeFrame = v;
@@ -588,8 +600,11 @@ class StateService extends ChangeNotifier {
   void setTradingPositionsExpanded(bool v) { _currentConfig.tradingPositionsExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setTradingHistoryExpanded(bool v) { _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
+  void setYZoom(double v) { _yZoom = v.clamp(minYZoom, maxYZoom); notifyListeners(); }
 
+  /// Mantido por compat (backups/JSONs antigos). UI da aba Período removida
+  /// (issue #18): o fluxo é sempre intraday + histórico incremental via
+  /// [loadPreviousHistory]. O modo multiDay segue carregável se vier do disco.
   Future<void> setDateRangeMode(DateRangeMode mode) async {
     if (_guardLocked('setDateRangeMode')) return;
     if (_currentConfig.dateRangeMode == mode) return;
@@ -668,8 +683,8 @@ class StateService extends ChangeNotifier {
   /// pivot, dateRange/lookback e o dropdown de estratégia.
   /// Nunca travam (só display local, sem cadeado): visibilidade (*Visible),
   /// opacidade (*Opacity), tamanho visual (*Size), cores, layout/expansão
-  /// (panelFraction, trading*Expanded), som (setBubbleSound*), navegação
-  /// (setSymbol/setTimeFrame), opacidade do overlay e olho por sessão.
+  /// (panelFraction, trading*Expanded), som (setBubbleSound*), navegação de
+  /// símbolo (setSymbol), opacidade do overlay e olho por sessão.
   bool _strategiesArmed = false;
   bool get strategiesArmed => _strategiesArmed;
   bool get configLocked => _strategiesArmed;
@@ -743,11 +758,19 @@ class StateService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Range de datas carregado (para modo multi-day)
+  /// Range de datas carregado (para modo multi-day / histórico incremental)
   DateTime? _rangeStartDate;
   DateTime? get rangeStartDate => _rangeStartDate;
   DateTime? _rangeEndDate;
   DateTime? get rangeEndDate => _rangeEndDate;
+
+  /// Histórico incremental (issue #18): botão ← inferior-esquerdo.
+  bool _isLoadingHistory = false;
+  bool get isLoadingHistory => _isLoadingHistory;
+  bool _hasMoreHistory = true;
+  bool get hasMoreHistory => _hasMoreHistory;
+  String? _historyError;
+  String? get historyError => _historyError;
 
   ExtremeStorageItem? _extremes;
   ExtremeStorageItem? get extremes => _extremes;
@@ -1602,6 +1625,9 @@ class StateService extends ChangeNotifier {
     _displayDate = null;
     _lastExtremeFrom = null;
     _lastExtremeTo = null;
+    _hasMoreHistory = true;
+    _historyError = null;
+    _isLoadingHistory = false;
     notifyListeners();
     await loadData();
   }
@@ -1659,6 +1685,9 @@ class StateService extends ChangeNotifier {
       _bars = bars;
       _displayDate = effectiveDate;
       _rangeStartDate = _rangeEndDate = effectiveDate;
+      _hasMoreHistory = true;
+      _historyError = null;
+      _isLoadingHistory = false;
       notifyListeners();
 
       final filteredCount = barsTimeFrameFilter.length;
@@ -1761,6 +1790,9 @@ class StateService extends ChangeNotifier {
     _rangeStartDate = startDate;
     _rangeEndDate = endDate;
     _displayDate = endDate;  // for compatibility
+    _hasMoreHistory = true;
+    _historyError = null;
+    _isLoadingHistory = false;
 
     try {
       logD('[loadData] Multi-day: ${_formatDate(startDate)} to ${_formatDate(endDate)}');
@@ -1819,6 +1851,260 @@ class StateService extends ChangeNotifier {
       logD('[loadData] Multi-day error: $e');
       logD('[loadData] Stack: ${StackTrace.current}');
     }
+  }
+
+  /// Navegação histórica incremental (issue #18): busca do mesmo timeframe,
+  /// do dia anterior ao mais antigo já carregado, com prepend + ordenação.
+  ///
+  /// Batch inteligente (semana útil / mês): se o range carregado já cobre
+  /// uma semana útil completa (seg–sex) e o próximo passo cruzaria de
+  /// semana, busca a semana anterior inteira de uma vez (pulando fds).
+  /// Análogo para mês completo → mês anterior inteiro. Dias sem pregão
+  /// (backend retorna vazio) são pulados automaticamente.
+  /// Retorna true quando algo foi prependido.
+  Future<bool> loadPreviousHistory() async {
+    if (_symbol.isEmpty || _isLoadingHistory || !_hasMoreHistory) return false;
+    if (_guardLocked('loadPreviousHistory')) return false;
+    _isLoadingHistory = true;
+    _historyError = null;
+    notifyListeners();
+    try {
+      final oldest =
+          _rangeStartDate ?? _displayDate ?? DateTime.now();
+      final currentEnd =
+          _rangeEndDate ?? _displayDate ?? DateTime.now();
+      final loadedDays = <DateTime>{
+        for (final b in barsTimeFrameFilter)
+          DateTime(b.date.year, b.date.month, b.date.day),
+      };
+      if (loadedDays.isEmpty && _bars.isNotEmpty) {
+        for (final b in _bars) {
+          loadedDays.add(DateTime(b.date.year, b.date.month, b.date.day));
+        }
+      }
+      final oldestDay =
+          DateTime(oldest.year, oldest.month, oldest.day);
+
+      // O backend filtra `b.Date >= start && b.Date <= end` com o DateTime
+      // exato: fim à meia-noite excluiria todos os candles do dia. Por isso
+      // toda consulta usa fim-de-dia inclusivo (23:59:59); o loop por arquivos
+      // diários do backend (`start.Date..end.Date`) não é afetado.
+      DateTime endOfDay(DateTime d) =>
+          DateTime(d.year, d.month, d.day, 23, 59, 59);
+
+      var batch = computePreviousBatch(loadedDays, oldestDay);
+      var batchStart = batch.$1;
+      var batchEnd = endOfDay(batch.$2);
+      final isMultiDayBatch =
+          batch.$1.day != batch.$2.day ||
+              batch.$1.month != batch.$2.month ||
+              batch.$1.year != batch.$2.year;
+      var candidate = isMultiDayBatch
+          ? DateTime(batch.$1.year, batch.$1.month, batch.$1.day)
+          : DateTime(batch.$2.year, batch.$2.month, batch.$2.day);
+      var attempts = 0;
+      while (attempts < 10) {
+        final bars = await _apiService.getBarRange(
+            _symbol, batchStart, batchEnd, _currentConfig.timeFrame);
+        if (bars.isNotEmpty) {
+          await _prependHistoryRange(
+              DateTime(batchStart.year, batchStart.month, batchStart.day),
+              batchEnd,
+              bars,
+              currentEnd);
+          return true;
+        }
+        // Dia(s) sem pregão: recua dia a dia (sem pular: o batch inteligente
+        // só vale para o primeiro passo; no skip cada dia é tentado).
+        logD('[history] sem dados ${_formatDate(batchStart)}..${_formatDate(batchEnd)}, pulando');
+        candidate = candidate.subtract(const Duration(days: 1));
+        // Evita loop infinito no passado distante.
+        if (candidate.isBefore(DateTime(2015))) {
+          _hasMoreHistory = false;
+          notifyListeners();
+          return false;
+        }
+        batchStart = DateTime(candidate.year, candidate.month, candidate.day);
+        batchEnd = endOfDay(candidate);
+        attempts++;
+      }
+      _hasMoreHistory = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _historyError = '$e';
+      logD('[history] erro: $e');
+      notifyListeners();
+      return false;
+    } finally {
+      _isLoadingHistory = false;
+      notifyListeners();
+    }
+  }
+
+  /// Calcula o próximo batch a buscar dado o conjunto de dias já
+  /// carregados e o dia mais antigo. Puro e testável (sem I/O).
+  static (DateTime, DateTime) computePreviousBatch(
+      Set<DateTime> loadedDays, DateTime oldestDay) {
+    final o = DateTime(oldestDay.year, oldestDay.month, oldestDay.day);
+    // Mês completo → mês anterior inteiro (precedência sobre semana).
+    if (_coversFullMonth(loadedDays, o)) {
+      final firstOfMonth = DateTime(o.year, o.month, 1);
+      final prevMonthEnd = firstOfMonth.subtract(const Duration(days: 1));
+      final prevMonthStart =
+          DateTime(prevMonthEnd.year, prevMonthEnd.month, 1);
+      return (prevMonthStart, prevMonthEnd);
+    }
+    // Semana útil completa (seg–sex da semana de `o`) e `o` é segunda
+    // → semana anterior inteira (seg–sex, pulando fds).
+    // seg - 7..seg - 3 = seg–sex anterior.
+    if (o.weekday == DateTime.monday && _coversFullWorkWeek(loadedDays, o)) {
+      final start = o.subtract(const Duration(days: 7));
+      final end = o.subtract(const Duration(days: 3));
+      return (DateTime(start.year, start.month, start.day),
+          DateTime(end.year, end.month, end.day));
+    }
+    // Caso comum: dia anterior ao mais antigo (weekday mantido; fds e
+    // feriados são pulados pelo loop de `loadPreviousHistory` quando o
+    // backend retorna vazio).
+    final prev = o.subtract(const Duration(days: 1));
+    return (prev, prev);
+  }
+
+  static bool _coversFullWorkWeek(Set<DateTime> loaded, DateTime oldest) {
+    final monday = oldest.subtract(Duration(days: oldest.weekday - 1));
+    for (var i = 0; i < 5; i++) {
+      final d = DateTime(monday.year, monday.month, monday.day + i);
+      // DateTime normaliza overflow de dia automaticamente.
+      final day = DateTime(d.year, d.month, d.day);
+      if (!loaded.contains(day)) return false;
+    }
+    return true;
+  }
+
+  static bool _coversFullMonth(Set<DateTime> loaded, DateTime oldest) {
+    final lastDay = DateTime(oldest.year, oldest.month + 1, 0).day;
+    for (var day = oldest.day; day <= lastDay; day++) {
+      final d = DateTime(oldest.year, oldest.month, day);
+      if (d.weekday == DateTime.saturday ||
+          d.weekday == DateTime.sunday) {
+        continue;
+      }
+      if (!loaded.contains(DateTime(d.year, d.month, d.day))) return false;
+    }
+    // Só considera "mês cheio" se o mais antigo está no início do mês
+    // (até o 3º dia útil): evita batch mensal no meio do mês.
+    var businessSeen = 0;
+    for (var day = 1; day <= oldest.day; day++) {
+      final d = DateTime(oldest.year, oldest.month, day);
+      if (d.weekday != DateTime.saturday &&
+          d.weekday != DateTime.sunday) {
+        businessSeen++;
+      }
+    }
+    return businessSeen <= 3;
+  }
+
+  Future<void> _prependHistoryRange(DateTime batchStart, DateTime batchEnd,
+      List<BarStorageItem> newBars, DateTime currentEnd) async {
+    final oldFilteredCount = barsTimeFrameFilter.length;
+    final oldKeys = <String>{
+      for (final b in _bars) '${b.date.toIso8601String()}|${b.timeFrame}',
+    };
+    final freshBars = <BarStorageItem>[];
+    for (final b in newBars) {
+      final k = '${b.date.toIso8601String()}|${b.timeFrame}';
+      if (!oldKeys.contains(k)) {
+        freshBars.add(b);
+        oldKeys.add(k);
+      }
+    }
+    // Paridade com _loadMultiDay: mesmo TF, bubbles + estruturas + extremos.
+    final bubbles = await _apiService.getBubbleRange(
+        _symbol, batchStart, batchEnd);
+    final structures = await _apiService.getStructureRange(_symbol,
+        batchStart, batchEnd, _currentConfig.structureRangeUpd);
+    final bubbleKeys = <String>{
+      for (final b in _bubbles)
+        '${b.date.toIso8601String()}|${b.agent}|${b.price}|${b.amount}',
+    };
+    final freshBubbles = <BubbleStorageItem>[];
+    for (final b in bubbles) {
+      final k =
+          '${b.date.toIso8601String()}|${b.agent}|${b.price}|${b.amount}';
+      if (!bubbleKeys.contains(k)) {
+        freshBubbles.add(b);
+        bubbleKeys.add(k);
+      }
+    }
+    final structKeys = <String>{
+      for (final s in _structures)
+        '${s.timeFrame}|${s.date.toIso8601String()}',
+    };
+    final freshStructures = <StructureStorageItem>[];
+    for (final s in structures) {
+      if (s.timeFrame == 1440) continue;
+      final k = '${s.timeFrame}|${s.date.toIso8601String()}';
+      if (!structKeys.contains(k)) {
+        freshStructures.add(s);
+        structKeys.add(k);
+      }
+    }
+
+    _bars = [..._bars, ...freshBars]
+      ..sort((a, b) => a.date.compareTo(b.date));
+    _bubbles = [..._bubbles, ...freshBubbles]
+      ..sort((a, b) => a.date.compareTo(b.date));
+    _structures = [..._structures, ...freshStructures];
+
+    var knownChanged = false;
+    for (final b in freshBubbles) {
+      _allBubbleAgents.add(b.agent);
+      if (!_currentConfig.knownAgents.contains(b.agent)) {
+        _currentConfig.knownAgents.add(b.agent);
+        _currentConfig.selectedAgents.add(b.agent);
+        knownChanged = true;
+      }
+    }
+    if (knownChanged) _saveConfigForSymbol(_symbol);
+    _allBubbleAgents.addAll(_currentConfig.selectedAgents);
+    _allBubbleAgents.addAll(_currentConfig.knownAgents);
+
+    _recomputeStructureChanges(_structures);
+
+    final newStart = batchStart.isBefore(_rangeStartDate ?? batchStart)
+        ? batchStart
+        : (_rangeStartDate ?? batchStart);
+    _rangeStartDate = DateTime(newStart.year, newStart.month, newStart.day);
+    _rangeEndDate = currentEnd;
+    // displayDate segue como o dia mais recente (âncora do VWAP intraday).
+    _displayDate = currentEnd;
+
+    logD('[history] prepend ${_formatDate(batchStart)}..${_formatDate(batchEnd)} '
+        '+${freshBars.length} bars +${freshBubbles.length} bubbles '
+        '+${freshStructures.length} struct range=${_formatDate(_rangeStartDate!)}..${_formatDate(currentEnd)}');
+
+    // Extremos do range estendido (paridade com _loadMultiDay).
+    await _loadExtremesForRange(_rangeStartDate!, currentEnd);
+
+    // Mantém filtro de volume consistente: desloca a janela pelo delta
+    // prependido (barras do TF vigente antes do range antigo).
+    final newFilteredCount = barsTimeFrameFilter.length;
+    final delta = newFilteredCount - oldFilteredCount;
+    if (_volumeFilterActive && delta > 0) {
+      _dateRangeStart += delta;
+      _dateRangeEnd += delta;
+      _applyVolumeFilter(_dateRangeStart, _dateRangeEnd);
+    } else {
+      _dateRangeStart = 0;
+      _dateRangeEnd = newFilteredCount;
+      _volumeFilterActive = false;
+      _filteredVolumeLevels = null;
+      if (_currentConfig.profileAutoByPriceStructure) {
+        _applyStructureAutoFilter();
+      }
+    }
+    notifyListeners();
   }
 
   Future<void> _loadCumulativeVolume(DateTime start, DateTime end) async {

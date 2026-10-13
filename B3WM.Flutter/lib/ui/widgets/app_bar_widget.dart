@@ -13,7 +13,6 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
   final VoidCallback onExtremeTap;
   final VoidCallback onPivotTap;
   final VoidCallback onVwapTap;
-  final VoidCallback onDateRangeTap;
   final VoidCallback? onBackupTap;
   final VoidCallback? onStrategyTap;
   final bool tradingActive;
@@ -27,7 +26,6 @@ class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onExtremeTap,
     required this.onPivotTap,
     required this.onVwapTap,
-    required this.onDateRangeTap,
     this.onBackupTap,
     this.onStrategyTap,
     this.tradingActive = false,
@@ -136,16 +134,28 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
             child: Row(
               children: [
                 const SizedBox(width: 8),
-                IconButton(
-                  key: _clockKey,
-                  icon: Icon(
-                    _showTimeframe ? Icons.schedule : Icons.access_time,
-                    size: 20,
-                    color: _showTimeframe ? Colors.blue : Colors.grey,
-                  ),
-                  onPressed: _toggleTimeframe,
-                  tooltip: 'TimeFrame',
-                  visualDensity: VisualDensity.compact,
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      key: _clockKey,
+                      icon: Icon(
+                        _showTimeframe ? Icons.schedule : Icons.access_time,
+                        size: 20,
+                        color: _showTimeframe ? Colors.blue : Colors.grey,
+                      ),
+                      onPressed:
+                          state.configLocked ? null : _toggleTimeframe,
+                      tooltip: 'TimeFrame',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    Positioned(
+                      right: 4,
+                      top: 4,
+                      child: StrategyLockDot(
+                          locked: state.configLocked),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 4),
                 IconButton(
@@ -182,12 +192,6 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   icon: const Icon(Icons.trending_up, size: 20),
                   onPressed: widget.onVwapTap,
                   tooltip: 'VWAP Diário',
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.date_range, size: 20),
-                  onPressed: widget.onDateRangeTap,
-                  tooltip: 'Período / Dados Históricos',
                   visualDensity: VisualDensity.compact,
                 ),
                 if (widget.onBackupTap != null)

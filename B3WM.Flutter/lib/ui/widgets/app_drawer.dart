@@ -10,7 +10,6 @@ import 'volume_profile_drawer.dart';
 import 'extreme_drawer.dart';
 import 'pivot_drawer.dart';
 import 'vwap_drawer.dart';
-import 'date_range_tab.dart';
 
 class AppDrawer extends StatefulWidget {
   final int initialTab;
@@ -27,14 +26,14 @@ class _AppDrawerState extends State<AppDrawer>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 9, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(length: 8, vsync: this, initialIndex: widget.initialTab.clamp(0, 7));
   }
 
   @override
   void didUpdateWidget(AppDrawer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialTab != oldWidget.initialTab) {
-      _tabController.animateTo(widget.initialTab);
+      _tabController.animateTo(widget.initialTab.clamp(0, 7));
     }
   }
 
@@ -102,12 +101,6 @@ tabs: [
                 ),
                 const Tab(
                   icon: Tooltip(
-                    message: 'Período',
-                    child: Icon(Icons.date_range, size: 18),
-                  ),
-                ),
-                const Tab(
-                  icon: Tooltip(
                     message: 'Backup (exportar/importar)',
                     child: Icon(Icons.settings_backup_restore, size: 18),
                   ),
@@ -144,7 +137,6 @@ children: const [
                 ExtremeDrawer(noDrawer: true),
                 PivotDrawer(noDrawer: true),
                 VwapDrawer(noDrawer: true),
-                DateRangeTab(noDrawer: true),
                 BackupTab(noDrawer: true),
                 StrategyDrawer(noDrawer: true),
               ],

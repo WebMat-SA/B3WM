@@ -17,8 +17,21 @@ class MapFlowChart extends StatefulWidget {
 
   /// Exibe o overlay do relatório da sessão. Desligado no gráfico diário.
   final bool showStrategyOverlay;
+
+  /// Botão ← de histórico incremental (issue #18). Ligado só no intraday;
+  /// o gráfico diário passa false (default) e não muda.
+  final bool showHistoryButton;
+  final bool isHistoryLoading;
+  final bool hasMoreHistory;
+  final Future<void> Function()? onLoadHistory;
   const MapFlowChart(
-      {super.key, required this.data, this.showStrategyOverlay = true});
+      {super.key,
+      required this.data,
+      this.showStrategyOverlay = true,
+      this.showHistoryButton = false,
+      this.isHistoryLoading = false,
+      this.hasMoreHistory = true,
+      this.onLoadHistory});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -115,12 +128,72 @@ class _MapFlowChartState extends State<MapFlowChart>
     final viewerH = _lastCandleAreaHeight;
 
     if (childW <= 0 || childH <= 0 || viewerW <= 0 || viewerH <= 0) return;
+    if (!s.isFinite || s <= 0) return;
+    // X usa a escala X (m[0]): o zoom X por roda e o zoom Y por label são
+    // independentes, então as escalas podem divergir.
+    final sx = m[0].isFinite && m[0] > 0 ? m[0].toDouble() : s;
 
-    const margin = 200.0;
-    final minX = -margin - childW * s;
-    final maxX = viewerW + margin;
-    final minY = -margin - childH * s;
-    final maxY = viewerH + margin;
+    // Mínimo sempre visível (em vez de margem além do sumiço): garante que
+    // os candles nunca saiam 100% da tela. Em pixels de tela.
+    // X: max(20% viewerW, 10 candles * stepX * scale), com piso/teto e
+    // fallback para não inverter o intervalo quando há poucos candles.
+    const stepX = 8.0; // 6.0 width + 2.0 spacing (igual ao build)
+    const minCandles = 10;
+    final rawMinX = (viewerW * 0.20).clamp(80.0, 400.0).toDouble();
+    final needX = minCandles * stepX * sx;
+    final minVisibleX =
+        min(min(max(rawMinX, needX), childW * sx), viewerW).toDouble();
+    // Y: âncora na banda de preço (min..max) em vez do filho cheio — o filho
+    // tem a mesma altura do viewer, então overlap de filho não garante preço
+    // visível. Com zoom-in a banda fica maior que a tela: nesse caso ela tem
+    // que COBRIR o viewport (sem vazio acima do max nem abaixo do min). Com
+    // zoom-out (banda menor), ela fica CONTIDA com respiro proporcional.
+    final minX = minVisibleX - childW * sx;
+    final maxX = viewerW - minVisibleX;
+    double minY;
+    double maxY;
+    final range = widget.data.priceRange;
+    final areaH = _lastCandleAreaHeight;
+    final sy = m[5].isFinite && m[5] > 0 ? m[5].toDouble() : s;
+    if (range > 0 && areaH > 0) {
+      final yTop = _toChildY(widget.data.maxPrice, areaH);
+      final yBot = _toChildY(widget.data.minPrice, areaH);
+      final bandH = (yBot - yTop) * sy;
+      if (bandH > 0 && bandH.isFinite) {
+        if (bandH >= viewerH) {
+          // Cobertura: topo da banda no máximo `tol` abaixo do topo e base no
+          // mínimo `tol` acima da base — nenhum vazio aparece.
+          const tol = 8.0;
+          minY = viewerH - tol - yBot * sy;
+          maxY = tol - yTop * sy;
+        } else {
+          // Contenção: banda menor que a tela fica dentro, com respiro que
+          // converge para `tol` na fronteira (bandH == viewerH) para não dar
+          // salto no `ty` ao atravessar o zoom 1x nos dois sentidos.
+          const tol = 8.0;
+          final mOut = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+          final t = ((viewerH - bandH) / viewerH).clamp(0.0, 1.0).toDouble();
+          final margin = (tol + (mOut - tol) * t).toDouble();
+          minY = -margin - yTop * sy;
+          maxY = viewerH + margin - yBot * sy;
+        }
+        if (minY > maxY) {
+          // Não deveria acontecer, mas por segurança volta para margem
+          // simples em vez de travar o eixo.
+          final marginY = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+          minY = -marginY - childH * sy;
+          maxY = viewerH + marginY;
+        }
+      } else {
+        final marginY = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+        minY = -marginY - childH * sy;
+        maxY = viewerH + marginY;
+      }
+    } else {
+      final marginY = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+      minY = -marginY - childH * sy;
+      maxY = viewerH + marginY;
+    }
 
     final clampedX = tx.clamp(minX, maxX);
     final clampedY = ty.clamp(minY, maxY);
@@ -145,6 +218,11 @@ class _MapFlowChartState extends State<MapFlowChart>
       _panEnabled = true;
       _clearMeasure();
     }
+    // NOTA: sem re-clamp automático quando min/max mudam com o dado ao vivo:
+    // mover o `ty` por conta de tick novo desfazia o zoom/pan que o usuário
+    // setou (label/scroll). O clamp do Y segue valendo em todo gesto
+    // (pan/zoom/pinch) via `_onTransformChanged`, então continua impossível
+    // perder o preço arrastando.
     if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
       final areaW = _lastCandleAreaWidth;
       if (areaW > 0) {
@@ -152,14 +230,38 @@ class _MapFlowChartState extends State<MapFlowChart>
         if (viewerW <= 0) return;
         const stepX = 6.0 + 2.0;
         final vw = (widget.data.candles.length * stepX).clamp(200, 50000).toDouble();
+        final oldVw = (oldWidget.data.candles.length * stepX).clamp(200, 50000).toDouble();
         final t = _controller.value.getTranslation();
         final tx = t.x;
         final ty = t.y;
         final s = _controller.value[0];
-        final rightOffset = viewerW - (tx + vw * s);
+        // Prepend (histórico ←): os candles antigos deslocam `delta` para a
+        // direita no child; recua o tx pelo mesmo valor para manter na tela
+        // exatamente o que já estava visível ("sem perder o que já está").
+        if (widget.data.candles.isNotEmpty &&
+            oldWidget.data.candles.isNotEmpty &&
+            widget.data.candles.first.date
+                .isBefore(oldWidget.data.candles.first.date)) {
+          final delta = vw - oldVw;
+          if (delta > 0) {
+            final m = _controller.value.clone();
+            m.setTranslationRaw(tx - delta * s, ty, 0.0);
+            _controller.value = m;
+          }
+          return;
+        }
+        // Append ao vivo: só acompanha a borda direita (follow) se o usuário
+        // já estava nela; se ele navegou para a esquerda (histórico com zoom
+        // in), preserva o tx para o candle direito não "colar" e puxar a
+        // navegação de volta.
+        final oldRightOffset = viewerW - (tx + oldVw * s);
         const defaultRightMargin = 0.15;
-        if (rightOffset < viewerW * defaultRightMargin) {
-          final newTx = viewerW * (1 - defaultRightMargin) - vw * s;
+        final minRightMargin = viewerW * defaultRightMargin;
+        const followTolerance = 8.0;
+        if (oldRightOffset > minRightMargin + followTolerance) return;
+        final rightOffset = viewerW - (tx + vw * s);
+        if (rightOffset < minRightMargin) {
+          final newTx = viewerW - minRightMargin - vw * s;
           final m = _controller.value.clone();
           m.setTranslationRaw(newTx, ty, 0.0);
           _controller.value = m;
@@ -214,8 +316,14 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _onInteractionEnd() {
   }
 
-  void _handleScroll(PointerScrollEvent event) {
-    // Durante a medição o zoom por roda é ignorado para não deslocar a
+  /// Caminho único do zoom Y (só via arrasto na coluna de labels Y): usa
+  /// matemática ancorada, com clamp unificado `StateService.min/maxYZoom`.
+  /// Mantém `_yZoom` local (não chama `setYZoom`/notify) para não contaminar
+  /// a outra instância (1D <> intraday). Só toca `ty` do controller; `tx`,
+  /// `_clampPan` e o follow da borda direita seguem intactos. A roda do mouse
+  /// NÃO mexe no Y (dá zoom no X via `_applyXZoomAt`).
+  void _applyYZoomAt(double factor, double localDy) {
+    // Durante a medição o zoom por roda/botão é ignorado para não deslocar a
     // referência (o bloqueio de translação em `_onTransformChanged`
     // reverteria o ajuste de `ty` do zoom).
     if (_isMeasuring) return;
@@ -227,11 +335,11 @@ class _MapFlowChartState extends State<MapFlowChart>
     final scaleY = (m[5].isFinite && m[5] > 0) ? m[5] : 1.0;
     final ty = m.getTranslation().y.isFinite ? m.getTranslation().y : 0.0;
 
-    final childY = (event.localPosition.dy - ty) / scaleY;
+    final childY = (localDy - ty) / scaleY;
     final price = _yToPrice(childY, areaH);
 
-    final newZoom =
-        (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.9, 10.0);
+    final newZoom = (_yZoom * factor)
+        .clamp(StateService.minYZoom, StateService.maxYZoom);
     if (newZoom == _yZoom) return;
 
     final newChildY = _toChildY(price, areaH, newZoom);
@@ -244,6 +352,46 @@ class _MapFlowChartState extends State<MapFlowChart>
     final mm = Matrix4.copy(_controller.value);
     mm.setTranslationRaw(mm.getTranslation().x, newTy, mm.getTranslation().z);
     _controller.value = mm;
+  }
+
+  /// Roda do mouse = zoom no eixo X (tempo), ancorado no cursor: o candle sob
+  /// o cursor fica parado na tela. Só toca `m[0]` e `tx`; `m[5]`, `ty` e
+  /// `_yZoom` ficam intactos, então o Y não muda. Piso `fitScale`
+  /// (mostra todos os candles), teto `5.0` (igual ao pinch).
+  void _applyXZoomAt(double factor, double localDx) {
+    if (_isMeasuring) return;
+    if (_lastVirtualCandleWidth <= 0) return;
+
+    final m = _controller.value;
+    final scaleX = (m[0].isFinite && m[0] > 0) ? m[0].toDouble() : 1.0;
+    final tx = m.getTranslation().x.isFinite ? m.getTranslation().x : 0.0;
+
+    final childX = (localDx - tx) / scaleX;
+    final newScale =
+        (scaleX * factor).clamp(_minAllowedScale, 5.0).toDouble();
+    if (newScale == scaleX) return;
+
+    final newTx = localDx - childX * newScale;
+
+    final mm = Matrix4.copy(_controller.value);
+    mm[0] = newScale;
+    mm.setTranslationRaw(newTx, mm.getTranslation().y, mm.getTranslation().z);
+    _controller.value = mm;
+  }
+
+  void _handleScroll(PointerScrollEvent event) {
+    _applyXZoomAt(event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25,
+        event.localPosition.dx);
+  }
+
+  /// Arrasto vertical exclusivo na coluna dos labels Y (`rightLabelMargin` 64px):
+  /// para cima (dy negativo) = zoom in (+), para baixo = zoom out (−).
+  /// Único caminho de zoom Y (a roda do mouse dá zoom no X). Suave e
+  /// contínuo: cada evento aplica `exp(-dy * k)` ancorado no centro,
+  /// reusando `_applyYZoomAt` (mesmo clamp `0.3..10.0` e ajuste `ty`).
+  /// `k=0.005` ≈ 140px para dobrar/metade — fino o bastante para ajuste preciso.
+  void _onYLabelDragUpdate(DragUpdateDetails d) {
+    _applyYZoomAt(exp(-d.delta.dy * 0.005), _lastCandleAreaHeight / 2);
   }
 
   void _centerLastCandleY() {
@@ -296,6 +444,11 @@ class _MapFlowChartState extends State<MapFlowChart>
 
     BubblePoint? hit;
 
+    // Mesma razão usada pelo ChartPainter para desenhar bubbles redondos.
+    final aspect = (scaleX.isFinite && scaleX > 0 && scaleY.isFinite && scaleY > 0)
+        ? (scaleY / scaleX)
+        : 1.0;
+
     void checkBubbles(List<BubblePoint> bubbles) {
       for (final b in bubbles) {
         final bx = b.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
@@ -305,7 +458,12 @@ class _MapFlowChartState extends State<MapFlowChart>
         if (r < 2) continue;
         final dx = childX - bx;
         final dy = childY - by;
-        if (dx * dx + dy * dy <= r * r) {
+        // Elipse que acompanha o desenho (`xyAspect` do ChartPainter): com
+        // escala uniforme recai no teste circular anterior.
+        final rx = r * aspect;
+        final ex = dx / rx;
+        final ey = dy / r;
+        if (ex * ex + ey * ey <= 1.0) {
           hit = b;
           return;
         }
@@ -391,6 +549,17 @@ class _MapFlowChartState extends State<MapFlowChart>
         _clearMeasure();
       }
     });
+  }
+
+  /// Razão `scaleY/scaleX` atual (1.0 = uniforme ou inválida). Vai para o
+  /// ChartPainter compensar o esticamento do zoom X nos bubbles/marcadores.
+  double _chartAspect() {
+    final m = _controller.value;
+    final sx = m[0];
+    final sy = m[5];
+    if (!sx.isFinite || !sy.isFinite || sx <= 0 || sy <= 0) return 1.0;
+    final a = sy / sx;
+    return a.isFinite && a > 0 ? a : 1.0;
   }
 
   int _localToCandleIndex(double localX, double stepX) {
@@ -848,11 +1017,32 @@ class _MapFlowChartState extends State<MapFlowChart>
                             candleWidth: candleWidth,
                             candleSpacing: candleSpacing,
                             yZoom: _yZoom,
+                            xyAspect: _chartAspect(),
                           ),
                         ),
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+            // Zoom Y por arrasto exclusivo na coluna dos labels Y (`rightLabelMargin`).
+            // Fora do InteractiveViewer e fora do Volume Profile: não compete
+            // com pan/pinch/régua/hover dos candles nem cobre o perfil.
+            // Cima = +, baixo = − (suave, via `_applyYZoomAt`).
+            Positioned(
+              left: ChartFixedPainter.marginLeft +
+                  max(0.0,
+                      candleAreaWidth - ChartFixedPainter.rightLabelMargin),
+              top: ChartFixedPainter.marginTop,
+              width: ChartFixedPainter.rightLabelMargin,
+              height: candleAreaHeight,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeUpDown,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: _onYLabelDragUpdate,
+                  child: const SizedBox.expand(),
                 ),
               ),
             ),
@@ -911,7 +1101,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                   ),
                   const SizedBox(width: 4),
                   Tooltip(
-                    message: 'Press space',
+                    message: 'Reset chart (Espaço)',
                     preferBelow: false,
                     child: GestureDetector(
                       onTap: _resetChart,
@@ -933,6 +1123,54 @@ class _MapFlowChartState extends State<MapFlowChart>
                 ],
               ),
             ),
+            // Histórico incremental (issue #18): canto inferior esquerdo,
+            // só no intraday (`showHistoryButton`). Diário passa false.
+            if (widget.showHistoryButton)
+              Positioned(
+                left: 8.0,
+                bottom: 8.0,
+                child: Tooltip(
+                  message: widget.hasMoreHistory
+                      ? 'Carregar dia anterior'
+                      : 'Sem mais dados históricos',
+                  preferBelow: false,
+                  child: GestureDetector(
+                    onTap: (widget.isHistoryLoading ||
+                            !widget.hasMoreHistory ||
+                            widget.onLoadHistory == null)
+                        ? null
+                        : () {
+                            // ignore: discarded_futures
+                            widget.onLoadHistory!();
+                          },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: widget.hasMoreHistory
+                            ? Colors.black54
+                            : Colors.black26,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: widget.isHistoryLoading
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70),
+                            )
+                          : Icon(
+                              Icons.chevron_left,
+                              color: widget.hasMoreHistory
+                                  ? Colors.white70
+                                  : Colors.white24,
+                              size: 16,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
             // Relatório da sessão ativa sobre o gráfico (só com sessão
             // armada; altura máxima = altura do gráfico, com rolagem).
             if (widget.showStrategyOverlay)

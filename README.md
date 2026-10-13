@@ -76,10 +76,10 @@ O drawer lateral organiza as ferramentas de análise em abas (ícones na AppBar 
   <p><em>Pivot Tradicional estilo Profit no intraday (fonte HLC de D-1, 2–5 pares de níveis). Sem dados de D-1, a aba mostra os controles e a mensagem de sessão sem pivot.</em></p>
 </div>
 
-Outras abas sem screenshot dedicado: **VWAP Diário**, **Período / Dados Históricos**, **Backup (exportar/importar)** e **Estratégias**.
+Outras abas sem screenshot dedicado: **VWAP Diário**, **Backup (exportar/importar)** e **Estratégias**. O histórico intraday é incremental pelo botão `←` inferior-esquerdo do gráfico (dia anterior / semana anterior seg–sex / mês anterior).
 
 #### ▶️ Estratégias (rodar no backend)
-A 9ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava tudo até PAUSE/STOP — a execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
+A 8ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava tudo até PAUSE/STOP — a execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
 
 ### Análise diária (painel inferior 1D)
 

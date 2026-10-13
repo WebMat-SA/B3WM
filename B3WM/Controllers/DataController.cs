@@ -65,7 +65,7 @@ namespace B3WM.Controllers
             }
 
             var filtered = allBars
-                .Where(b => b.Date >= startDate && b.Date <= endDate)
+                .Where(b => b.Date.Date >= startDate.Date && b.Date.Date <= endDate.Date)
                 .OrderBy(b => b.Date)
                 .ToList();
 
@@ -96,7 +96,7 @@ namespace B3WM.Controllers
             }
 
             var filtered = allBubbles
-                .Where(b => b.Date >= startDate && b.Date <= endDate)
+                .Where(b => b.Date.Date >= startDate.Date && b.Date.Date <= endDate.Date)
                 .ToList();
 
             return Ok(filtered);

@@ -11,23 +11,31 @@ class TimeframeSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     const timeframes = Defaults.timeFrames;
     return Consumer<StateService>(builder: (context, state, _) {
-      return Wrap(
+      final locked = state.configLocked;
+      Widget chips = Wrap(
         spacing: 4,
         children: timeframes
             .map((tf) => ChoiceChip(
                   label: Text(Defaults.timeFrameLabel(tf),
                       style: const TextStyle(fontSize: 12)),
                   selected: state.timeFrame == tf,
-                  onSelected: (_) {
-                    state.setTimeFrame(tf);
-                    onSelected?.call(tf);
-                  },
+                  onSelected: locked
+                      ? null
+                      : (_) {
+                          state.setTimeFrame(tf);
+                          onSelected?.call(tf);
+                        },
                   showCheckmark: false,
                   visualDensity: VisualDensity.compact,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                 ))
             .toList(),
+      );
+      if (!locked) return chips;
+      return Tooltip(
+        message: 'Timeframe bloqueado: pause a estratégia para alterar',
+        child: chips,
       );
     });
   }
