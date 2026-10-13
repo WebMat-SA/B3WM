@@ -128,12 +128,64 @@ class _MapFlowChartState extends State<MapFlowChart>
     final viewerH = _lastCandleAreaHeight;
 
     if (childW <= 0 || childH <= 0 || viewerW <= 0 || viewerH <= 0) return;
+    if (!s.isFinite || s <= 0) return;
 
-    const margin = 200.0;
-    final minX = -margin - childW * s;
-    final maxX = viewerW + margin;
-    final minY = -margin - childH * s;
-    final maxY = viewerH + margin;
+    // Mínimo sempre visível (em vez de margem além do sumiço): garante que
+    // os candles nunca saiam 100% da tela. Em pixels de tela.
+    // X: max(20% viewerW, 10 candles * stepX * scale), com piso/teto e
+    // fallback para não inverter o intervalo quando há poucos candles.
+    const stepX = 8.0; // 6.0 width + 2.0 spacing (igual ao build)
+    const minCandles = 10;
+    final rawMinX = (viewerW * 0.20).clamp(80.0, 400.0).toDouble();
+    final needX = minCandles * stepX * s;
+    final minVisibleX =
+        min(min(max(rawMinX, needX), childW * s), viewerW).toDouble();
+    // Y: âncora na banda de preço (min..max) em vez do filho cheio — o filho
+    // tem a mesma altura do viewer, então overlap de filho não garante preço
+    // visível. Com zoom-in a banda fica maior que a tela: nesse caso ela tem
+    // que COBRIR o viewport (sem vazio acima do max nem abaixo do min). Com
+    // zoom-out (banda menor), ela fica CONTIDA com respiro proporcional.
+    final minX = minVisibleX - childW * s;
+    final maxX = viewerW - minVisibleX;
+    double minY;
+    double maxY;
+    final range = widget.data.priceRange;
+    final areaH = _lastCandleAreaHeight;
+    final sy = m[5].isFinite && m[5] > 0 ? m[5].toDouble() : s;
+    if (range > 0 && areaH > 0) {
+      final yTop = _toChildY(widget.data.maxPrice, areaH);
+      final yBot = _toChildY(widget.data.minPrice, areaH);
+      final bandH = (yBot - yTop) * sy;
+      if (bandH > 0 && bandH.isFinite) {
+        if (bandH >= viewerH) {
+          // Cobertura: topo da banda no máximo `tol` abaixo do topo e base no
+          // mínimo `tol` acima da base — nenhum vazio aparece.
+          const tol = 8.0;
+          minY = viewerH - tol - yBot * sy;
+          maxY = tol - yTop * sy;
+        } else {
+          // Contenção: banda menor que a tela fica dentro, com respiro.
+          final mOut = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+          minY = -mOut - yTop * sy;
+          maxY = viewerH + mOut - yBot * sy;
+        }
+        if (minY > maxY) {
+          // Não deveria acontecer, mas por segurança volta para margem
+          // simples em vez de travar o eixo.
+          final marginY = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+          minY = -marginY - childH * sy;
+          maxY = viewerH + marginY;
+        }
+      } else {
+        final marginY = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+        minY = -marginY - childH * sy;
+        maxY = viewerH + marginY;
+      }
+    } else {
+      final marginY = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
+      minY = -marginY - childH * sy;
+      maxY = viewerH + marginY;
+    }
 
     final clampedX = tx.clamp(minX, maxX);
     final clampedY = ty.clamp(minY, maxY);
@@ -157,6 +209,17 @@ class _MapFlowChartState extends State<MapFlowChart>
       _isMeasuring = false;
       _panEnabled = true;
       _clearMeasure();
+    }
+    // A banda de preço mudou (novo candle/extremo): reaplica o clamp do Y no
+    // próximo frame para não deixar vazio vertical parado na tela. Via
+    // post-frame para não mutar o controller durante o build.
+    if ((widget.data.minPrice != oldWidget.data.minPrice ||
+            widget.data.maxPrice != oldWidget.data.maxPrice) &&
+        _initialFitDone) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _clampPan();
+      });
     }
     if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
       final areaW = _lastCandleAreaWidth;
