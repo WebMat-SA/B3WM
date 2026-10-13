@@ -45,5 +45,75 @@
 - `/mnt/c/Users/webma/b3wm/B3WM.Flutter/lib/ui/widgets/chart/map_flow_chart.dart` — Y‑zoom buttons, `_onMatrixChanged` (vertical‑pan lock), `MouseRegion` hover, tap tooltip with inverse matrix, Positioned fix
 - `/mnt/c/Users/webma/b3wm/B3WM.Flutter/lib/ui/widgets/config_drawer.dart` — Delta, bubble range sections (no indicators)
 
+---
+
+## Anexo (2026-10-13) — Gráfico: amostra, reset, zoom, splitter 1D vs intraday
+
+> Fase A-1: fonte única da verdade para área de amostra, reset e zoom.
+> Mesmo widget `MapFlowChart` (instâncias independentes) nos dois painéis;
+> o que muda é o builder de dados.
+
+```mermaid
+graph LR
+    SS[StateService<br/>yZoom, ranges, dailyBars] -->|intraday| CD[buildChartData<br/>barsTimeFrameFilter]
+    SS -->|1D| DD[buildDailyChartData<br/>dailyBars TF1440]
+    CD --> MF[MapFlowChart<br/>_yZoom local + _controller]
+    DD --> MF
+    MF --> CP[ChartPainter<br/>candles/bubbles/structure]
+    MF --> FP[ChartFixedPainter<br/>grid/eixos/profile/amostra]
+```
+
+### Área de amostra (sombra Volume Profile)
+
+- Pintura `chart_fixed_painter.dart:240-256 _drawMarkArea`: `Rect` `0x08c8c8c8`, só se
+  `profileVisible` e janela < full-range. X calculado com `controller m[0]/tx` + `candleStep=8.0`.
+- Intraday `chart_data.dart`: `rangeStart/End = state.dateRangeStart/End`
+  (`TimeRangeSlider` + `applyVolumeFilterAndSyncExtremes` + Auto-Mode por estrutura).
+- 1D `daily_chart_data.dart:161-193`: mapeia janela efetivamente carregada
+  `dailyProfileFrom/To` sobre `dailyBars` (fallback `dailyRangeStart/End`).
+
+### Botão reset ⟲
+
+- `map_flow_chart.dart:244-249 _resetChart`: `setState(_yZoom=1.0)` + `_fitChart(...)`.
+- `225-242 _fitChart`: `fitScale=min(1.0, fitWidth/virtualW)`, `minAllowedScale=fitScale`,
+  `tx/ty` centralizados. Triggers: botão `⟲` (`950-969`) + `Espaço` (`774-776`).
+- Independente por painel (cada gráfico tem seu `_MapFlowChartState`); não mexe em
+  `rangeStart/End` nem em histórico prepend.
+
+### Zoom in/out (duplo, sem viewport dedicado)
+
+- **Zoom Y (preço):** `_yZoom` local init de `widget.data.yZoom` (=`state.yZoom`).
+  Roda `_handleScroll` fator `1.25`, clamp unificado `StateService.min/maxYZoom`
+  (`0.3..10.0`), ancorado no cursor (`_yToPrice/_toChildY`).
+  Fórmula centro-fixo `zoomedHalf=halfRange/yZoom` em `chart_painter:50`,
+  `chart_fixed_painter:65,86`.
+  Arrasto vertical exclusivo na coluna dos labels Y (`rightLabelMargin` 64px,
+  cursor `resizeUpDown`, sem tooltip): cima = +, baixo = −, suave
+  `exp(-dy*0.005)` ancorado no centro via `_applyYZoomAt`/`_onYLabelDragUpdate`
+  (mesmo clamp e ajuste `ty` da roda). Fora do Volume Profile e dos candles.
+  Top-right tem só `📏/⟲` (botões `−/+` removidos).
+- **Zoom X / Pan:** `InteractiveViewer` (`minScale=_minAllowedScale`, `maxScale:5.0`),
+  `_clampPan` margem 200px, `didUpdateWidget` preserva `tx` no prepend
+  e só dá follow na borda direita se já estava nela.
+  (Arrasto nos labels X avaliado e revertido — eixo X segue só com pinch/pan.)
+- `StateService.setYZoom` é API programática (mesmo clamp); roda/botões mantêm
+  `_yZoom` local para não contaminar 1D <> intraday via `notifyListeners`.
+
+### Splitter 1D
+
+- Divisória física `main.dart:183-205,252-350`: `_DailyDivider` 24px
+  (`previewDailyPanelFraction` + `commitDailyPanelFraction` + collapse) e
+  `_ExpandDailyBar`. `fraction clamp 0.3..0.7`, `panelH clamp 220..totalH-200`.
+- "Splitter superior" nos comentários = convenção pivot intraday D-1 no gráfico de cima
+  (`GetPivotIntraday`) vs pivot diário W-1 no inferior (`GetPivotDaily`). Não é widget.
+
+| | Intraday (superior) | 1D (inferior `DailyPanel`) |
+|---|---|---|
+| TF | `1,2,5,15,30,60` (`setTimeFrame` bloqueia 1440→2) | fixo `1440`, label `1D`, eixo `dd/MM` |
+| Candles | `barsTimeFrameFilter` ao vivo | `dailyBars` (`getBarRange` 120d) |
+| Extras | bubbles, VWAP, trading, botão `←` histórico, overlay | sem bubbles/VWAP/trading/overlay |
+| Volume | `filteredVolumeLevels` + `TimeRangeSlider` | `dailyProfileLevels` + `DailyTimeRangeSlider` |
+| Zoom/Reset | instância própria `MapFlowChart` (roda + arrasto coluna labels Y 64px + `⟲`) | mesma widget, instância própria (mesmos controles) |
+
 > **Nota:** o frontend Blazor (`B3WM/B3WM.Client`, incluindo `NewMapFlow.razor`) foi removido do
 > repositório (issue #8). O Flutter `MapFlowChart` é agora a implementação canônica do cliente.

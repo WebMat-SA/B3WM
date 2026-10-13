@@ -168,6 +168,16 @@ class StateService extends ChangeNotifier {
     };
   }
 
+  /// Limites únicos do zoom Y (preço) — Fase B-1.
+  /// Unifica o clamp da roda (`MapFlowChart._handleScroll`), dos botões `−/+`
+  /// e da API programática [setYZoom]. Faixa `0.3..10.0` = superset dos antigos
+  /// `0.9..10.0` (roda) e `0.3..5.0` (setYZoom): nenhuma regressão de alcance.
+  /// Cada `MapFlowChart` (intraday vs 1D) mantém `_yZoom` local; o global só
+  /// sincroniza via `didUpdateWidget` quando `widget.data.yZoom` muda de fora
+  /// (ex. reset global), evitando contaminação 1D <> intraday por `notifyListeners`.
+  static const double minYZoom = 0.3;
+  static const double maxYZoom = 10.0;
+
   double _yZoom = 1.0;
   double get yZoom => _yZoom;
 
@@ -588,7 +598,7 @@ class StateService extends ChangeNotifier {
   void setTradingPositionsExpanded(bool v) { _currentConfig.tradingPositionsExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setTradingHistoryExpanded(bool v) { _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
-  void setYZoom(double v) { _yZoom = v.clamp(0.3, 5.0); notifyListeners(); }
+  void setYZoom(double v) { _yZoom = v.clamp(minYZoom, maxYZoom); notifyListeners(); }
 
   /// Mantido por compat (backups/JSONs antigos). UI da aba Período removida
   /// (issue #18): o fluxo é sempre intraday + histórico incremental via

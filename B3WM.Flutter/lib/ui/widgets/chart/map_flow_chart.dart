@@ -251,8 +251,14 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _onInteractionEnd() {
   }
 
-  void _handleScroll(PointerScrollEvent event) {
-    // Durante a medição o zoom por roda é ignorado para não deslocar a
+  /// Caminho único do zoom Y (Fase B-1/B-2 revisada): roda do mouse e arrasto
+  /// vertical na faixa direita (labels Y) usam a mesma matemática ancorada,
+  /// com clamp unificado `StateService.min/maxYZoom`.
+  /// Mantém `_yZoom` local (não chama `setYZoom`/notify) para não contaminar
+  /// a outra instância (1D <> intraday). Só toca `ty` do controller; `tx`,
+  /// `_clampPan` e o follow da borda direita seguem intactos.
+  void _applyYZoomAt(double factor, double localDy) {
+    // Durante a medição o zoom por roda/botão é ignorado para não deslocar a
     // referência (o bloqueio de translação em `_onTransformChanged`
     // reverteria o ajuste de `ty` do zoom).
     if (_isMeasuring) return;
@@ -264,11 +270,11 @@ class _MapFlowChartState extends State<MapFlowChart>
     final scaleY = (m[5].isFinite && m[5] > 0) ? m[5] : 1.0;
     final ty = m.getTranslation().y.isFinite ? m.getTranslation().y : 0.0;
 
-    final childY = (event.localPosition.dy - ty) / scaleY;
+    final childY = (localDy - ty) / scaleY;
     final price = _yToPrice(childY, areaH);
 
-    final newZoom =
-        (_yZoom * (event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25)).clamp(0.9, 10.0);
+    final newZoom = (_yZoom * factor)
+        .clamp(StateService.minYZoom, StateService.maxYZoom);
     if (newZoom == _yZoom) return;
 
     final newChildY = _toChildY(price, areaH, newZoom);
@@ -281,6 +287,20 @@ class _MapFlowChartState extends State<MapFlowChart>
     final mm = Matrix4.copy(_controller.value);
     mm.setTranslationRaw(mm.getTranslation().x, newTy, mm.getTranslation().z);
     _controller.value = mm;
+  }
+
+  void _handleScroll(PointerScrollEvent event) {
+    _applyYZoomAt(event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25,
+        event.localPosition.dy);
+  }
+
+  /// Arrasto vertical exclusivo na coluna dos labels Y (`rightLabelMargin` 64px):
+  /// para cima (dy negativo) = zoom in (+), para baixo = zoom out (−).
+  /// Suave e contínuo: cada evento aplica `exp(-dy * k)` ancorado no centro,
+  /// reusando `_applyYZoomAt` (mesmo clamp `0.3..10.0` e ajuste `ty` da roda).
+  /// `k=0.005` ≈ 140px para dobrar/metade — fino o bastante para ajuste preciso.
+  void _onYLabelDragUpdate(DragUpdateDetails d) {
+    _applyYZoomAt(exp(-d.delta.dy * 0.005), _lastCandleAreaHeight / 2);
   }
 
   void _centerLastCandleY() {
@@ -893,6 +913,26 @@ class _MapFlowChartState extends State<MapFlowChart>
                 ),
               ),
             ),
+            // Zoom Y por arrasto exclusivo na coluna dos labels Y (`rightLabelMargin`).
+            // Fora do InteractiveViewer e fora do Volume Profile: não compete
+            // com pan/pinch/régua/hover dos candles nem cobre o perfil.
+            // Cima = +, baixo = − (suave, via `_applyYZoomAt`).
+            Positioned(
+              left: ChartFixedPainter.marginLeft +
+                  max(0.0,
+                      candleAreaWidth - ChartFixedPainter.rightLabelMargin),
+              top: ChartFixedPainter.marginTop,
+              width: ChartFixedPainter.rightLabelMargin,
+              height: candleAreaHeight,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeUpDown,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: _onYLabelDragUpdate,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
             if (measure != null && rulerStart != null && rulerEnd != null)
               Positioned(
                 left: ChartFixedPainter.marginLeft,
@@ -948,7 +988,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                   ),
                   const SizedBox(width: 4),
                   Tooltip(
-                    message: 'Press space',
+                    message: 'Reset chart (Espaço)',
                     preferBelow: false,
                     child: GestureDetector(
                       onTap: _resetChart,
