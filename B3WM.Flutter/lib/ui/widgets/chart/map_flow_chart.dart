@@ -17,8 +17,21 @@ class MapFlowChart extends StatefulWidget {
 
   /// Exibe o overlay do relatório da sessão. Desligado no gráfico diário.
   final bool showStrategyOverlay;
+
+  /// Botão ← de histórico incremental (issue #18). Ligado só no intraday;
+  /// o gráfico diário passa false (default) e não muda.
+  final bool showHistoryButton;
+  final bool isHistoryLoading;
+  final bool hasMoreHistory;
+  final Future<void> Function()? onLoadHistory;
   const MapFlowChart(
-      {super.key, required this.data, this.showStrategyOverlay = true});
+      {super.key,
+      required this.data,
+      this.showStrategyOverlay = true,
+      this.showHistoryButton = false,
+      this.isHistoryLoading = false,
+      this.hasMoreHistory = true,
+      this.onLoadHistory});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -152,14 +165,38 @@ class _MapFlowChartState extends State<MapFlowChart>
         if (viewerW <= 0) return;
         const stepX = 6.0 + 2.0;
         final vw = (widget.data.candles.length * stepX).clamp(200, 50000).toDouble();
+        final oldVw = (oldWidget.data.candles.length * stepX).clamp(200, 50000).toDouble();
         final t = _controller.value.getTranslation();
         final tx = t.x;
         final ty = t.y;
         final s = _controller.value[0];
-        final rightOffset = viewerW - (tx + vw * s);
+        // Prepend (histórico ←): os candles antigos deslocam `delta` para a
+        // direita no child; recua o tx pelo mesmo valor para manter na tela
+        // exatamente o que já estava visível ("sem perder o que já está").
+        if (widget.data.candles.isNotEmpty &&
+            oldWidget.data.candles.isNotEmpty &&
+            widget.data.candles.first.date
+                .isBefore(oldWidget.data.candles.first.date)) {
+          final delta = vw - oldVw;
+          if (delta > 0) {
+            final m = _controller.value.clone();
+            m.setTranslationRaw(tx - delta * s, ty, 0.0);
+            _controller.value = m;
+          }
+          return;
+        }
+        // Append ao vivo: só acompanha a borda direita (follow) se o usuário
+        // já estava nela; se ele navegou para a esquerda (histórico com zoom
+        // in), preserva o tx para o candle direito não "colar" e puxar a
+        // navegação de volta.
+        final oldRightOffset = viewerW - (tx + oldVw * s);
         const defaultRightMargin = 0.15;
-        if (rightOffset < viewerW * defaultRightMargin) {
-          final newTx = viewerW * (1 - defaultRightMargin) - vw * s;
+        final minRightMargin = viewerW * defaultRightMargin;
+        const followTolerance = 8.0;
+        if (oldRightOffset > minRightMargin + followTolerance) return;
+        final rightOffset = viewerW - (tx + vw * s);
+        if (rightOffset < minRightMargin) {
+          final newTx = viewerW - minRightMargin - vw * s;
           final m = _controller.value.clone();
           m.setTranslationRaw(newTx, ty, 0.0);
           _controller.value = m;
@@ -933,6 +970,54 @@ class _MapFlowChartState extends State<MapFlowChart>
                 ],
               ),
             ),
+            // Histórico incremental (issue #18): canto inferior esquerdo,
+            // só no intraday (`showHistoryButton`). Diário passa false.
+            if (widget.showHistoryButton)
+              Positioned(
+                left: 8.0,
+                bottom: 8.0,
+                child: Tooltip(
+                  message: widget.hasMoreHistory
+                      ? 'Carregar dia anterior'
+                      : 'Sem mais dados históricos',
+                  preferBelow: false,
+                  child: GestureDetector(
+                    onTap: (widget.isHistoryLoading ||
+                            !widget.hasMoreHistory ||
+                            widget.onLoadHistory == null)
+                        ? null
+                        : () {
+                            // ignore: discarded_futures
+                            widget.onLoadHistory!();
+                          },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: widget.hasMoreHistory
+                            ? Colors.black54
+                            : Colors.black26,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: widget.isHistoryLoading
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70),
+                            )
+                          : Icon(
+                              Icons.chevron_left,
+                              color: widget.hasMoreHistory
+                                  ? Colors.white70
+                                  : Colors.white24,
+                              size: 16,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
             // Relatório da sessão ativa sobre o gráfico (só com sessão
             // armada; altura máxima = altura do gráfico, com rolagem).
             if (widget.showStrategyOverlay)

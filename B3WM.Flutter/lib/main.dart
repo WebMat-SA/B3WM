@@ -119,16 +119,12 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
               setState(() => _drawerTabIndex = 5);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onDateRangeTap: () {
+            onBackupTap: () {
               setState(() => _drawerTabIndex = 6);
               _scaffoldKey.currentState?.openDrawer();
             },
-            onBackupTap: () {
-              setState(() => _drawerTabIndex = 7);
-              _scaffoldKey.currentState?.openDrawer();
-            },
             onStrategyTap: () {
-              setState(() => _drawerTabIndex = 8);
+              setState(() => _drawerTabIndex = 7);
               _scaffoldKey.currentState?.openDrawer();
             },
             onTradingTap: () =>
@@ -160,6 +156,28 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                         key: ValueKey(
                                             'chart_${state.symbol}_${state.timeFrame}'),
                                         data: buildChartData(state),
+                                        showHistoryButton: true,
+                                        isHistoryLoading:
+                                            state.isLoadingHistory,
+                                        hasMoreHistory:
+                                            state.hasMoreHistory,
+                                        onLoadHistory: () async {
+                                          final ok = await state
+                                              .loadPreviousHistory();
+                                          if (!context.mounted) return;
+                                          if (!ok) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(state
+                                                            .historyError !=
+                                                        null
+                                                    ? 'Erro ao carregar histórico: ${state.historyError}'
+                                                    : 'Sem mais dados históricos'),
+                                              ),
+                                            );
+                                          }
+                                        },
                                       ),
                                     ),
                                     if (state.dailyPanelVisible) ...[
