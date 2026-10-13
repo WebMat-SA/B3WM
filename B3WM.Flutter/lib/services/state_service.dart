@@ -184,11 +184,13 @@ class StateService extends ChangeNotifier {
   bool get isConnected => _signalRService.isConnected;
 
   // Config setters
-  // Navegação (símbolo/timeframe) NUNCA trava: só troca o que é exibido e
-  // recarregado do servidor; os valores de filtro salvos seguem intactos e
-  // a sessão armada continua usando a foto do PLAY. É o que permite abrir o
-  // app com estratégia rodando e só olhar o gráfico (botão play superior).
+  // Navegação (símbolo) NUNCA trava: só troca o que é exibido e recarregado
+  // do servidor. Já o timeframe TRAVA com estratégia armada: a sessão usa a
+  // foto do PLAY e trocar o TF no meio embaralha candles/estruturas da tela
+  // com o que a estratégia avalia. Símbolo segue livre (só olhar outro
+  // gráfico), inclusive com estratégia rodando (botão play superior).
   Future<void> setTimeFrame(int v) async {
+    if (_guardLocked('setTimeFrame')) return;
     // Migração #12: 1D saiu do seletor principal (só intraday).
     if (v == 1440) v = 2;
     _currentConfig.timeFrame = v;
@@ -681,8 +683,8 @@ class StateService extends ChangeNotifier {
   /// pivot, dateRange/lookback e o dropdown de estratégia.
   /// Nunca travam (só display local, sem cadeado): visibilidade (*Visible),
   /// opacidade (*Opacity), tamanho visual (*Size), cores, layout/expansão
-  /// (panelFraction, trading*Expanded), som (setBubbleSound*), navegação
-  /// (setSymbol/setTimeFrame), opacidade do overlay e olho por sessão.
+  /// (panelFraction, trading*Expanded), som (setBubbleSound*), navegação de
+  /// símbolo (setSymbol), opacidade do overlay e olho por sessão.
   bool _strategiesArmed = false;
   bool get strategiesArmed => _strategiesArmed;
   bool get configLocked => _strategiesArmed;

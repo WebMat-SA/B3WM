@@ -8,6 +8,14 @@ class ChartPainter extends CustomPainter {
   final double candleSpacing;
   final double yZoom;
 
+  /// Razão `scaleY/scaleX` da matriz (1.0 = uniforme). O InteractiveViewer
+  /// escala o canvas filho; com zoom só no X (roda), círculos virariam
+  /// elipses. Bubbles e marcadores compensam desenhando elipse
+  /// (`rx = r*xyAspect`) para seguirem redondos na tela. Com escala uniforme
+  /// o resultado é idêntico ao `drawCircle` anterior.
+
+  final double xyAspect;
+
   static const Color candleUpColor = Color(0xFFFFFFFF);
   static const Color candleDownColor = Color(0xFF000000);
   static const Color candleBorderColor = Color(0xFFFFFFFF);
@@ -18,6 +26,7 @@ class ChartPainter extends CustomPainter {
     this.candleWidth = 6.0,
     this.candleSpacing = 2.0,
     this.yZoom = 1.0,
+    this.xyAspect = 1.0,
   });
 
   @override
@@ -174,6 +183,18 @@ class ChartPainter extends CustomPainter {
     }
   }
 
+  void _drawAspectCircle(Canvas canvas, Offset center, double r, Paint paint) {
+    if ((xyAspect - 1.0).abs() < 1e-6) {
+      canvas.drawCircle(center, r, paint);
+    } else {
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: center, width: 2 * r * xyAspect, height: 2 * r),
+        paint,
+      );
+    }
+  }
+
   void _drawBubbles(
       Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
     for (final b in data.redBubbles) {
@@ -185,13 +206,13 @@ class ChartPainter extends CustomPainter {
       final fillPaint = Paint()
         ..color = data.colorSeller.withOpacity(data.bubbleOpacity)
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(x, y), r, fillPaint);
+      _drawAspectCircle(canvas, Offset(x, y), r, fillPaint);
       final strokeOpacity = (data.bubbleOpacity + 0.3).clamp(0.0, 1.0);
       final strokePaint = Paint()
         ..color = data.colorSeller.withOpacity(strokeOpacity)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.1;
-      canvas.drawCircle(Offset(x, y), r, strokePaint);
+      _drawAspectCircle(canvas, Offset(x, y), r, strokePaint);
     }
 
     for (final b in data.blueBubbles) {
@@ -203,13 +224,13 @@ class ChartPainter extends CustomPainter {
       final fillPaint = Paint()
         ..color = data.colorBuyer.withOpacity(data.bubbleOpacity)
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(x, y), r, fillPaint);
+      _drawAspectCircle(canvas, Offset(x, y), r, fillPaint);
       final strokeOpacity = (data.bubbleOpacity + 0.3).clamp(0.0, 1.0);
       final strokePaint = Paint()
         ..color = data.colorBuyer.withOpacity(strokeOpacity)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.1;
-      canvas.drawCircle(Offset(x, y), r, strokePaint);
+      _drawAspectCircle(canvas, Offset(x, y), r, strokePaint);
     }
   }
 
@@ -229,15 +250,18 @@ class ChartPainter extends CustomPainter {
 
   void _drawTriangle(Canvas canvas, Offset center, double size, bool pointUp, Color color) {
     const half = 0.866;
+    // Compensa o esticamento horizontal do zoom X para o marcador seguir
+    // com a mesma forma na tela (idêntico quando a escala é uniforme).
+    final sizeX = size * xyAspect;
     final path = Path();
     if (pointUp) {
       path.moveTo(center.dx, center.dy - size);
-      path.lineTo(center.dx + size * half, center.dy + size * 0.5);
-      path.lineTo(center.dx - size * half, center.dy + size * 0.5);
+      path.lineTo(center.dx + sizeX * half, center.dy + size * 0.5);
+      path.lineTo(center.dx - sizeX * half, center.dy + size * 0.5);
     } else {
       path.moveTo(center.dx, center.dy + size);
-      path.lineTo(center.dx + size * half, center.dy - size * 0.5);
-      path.lineTo(center.dx - size * half, center.dy - size * 0.5);
+      path.lineTo(center.dx + sizeX * half, center.dy - size * 0.5);
+      path.lineTo(center.dx - sizeX * half, center.dy - size * 0.5);
     }
     path.close();
 

@@ -134,16 +134,28 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
             child: Row(
               children: [
                 const SizedBox(width: 8),
-                IconButton(
-                  key: _clockKey,
-                  icon: Icon(
-                    _showTimeframe ? Icons.schedule : Icons.access_time,
-                    size: 20,
-                    color: _showTimeframe ? Colors.blue : Colors.grey,
-                  ),
-                  onPressed: _toggleTimeframe,
-                  tooltip: 'TimeFrame',
-                  visualDensity: VisualDensity.compact,
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      key: _clockKey,
+                      icon: Icon(
+                        _showTimeframe ? Icons.schedule : Icons.access_time,
+                        size: 20,
+                        color: _showTimeframe ? Colors.blue : Colors.grey,
+                      ),
+                      onPressed:
+                          state.configLocked ? null : _toggleTimeframe,
+                      tooltip: 'TimeFrame',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    Positioned(
+                      right: 4,
+                      top: 4,
+                      child: StrategyLockDot(
+                          locked: state.configLocked),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 4),
                 IconButton(

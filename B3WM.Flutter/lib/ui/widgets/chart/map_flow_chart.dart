@@ -129,6 +129,9 @@ class _MapFlowChartState extends State<MapFlowChart>
 
     if (childW <= 0 || childH <= 0 || viewerW <= 0 || viewerH <= 0) return;
     if (!s.isFinite || s <= 0) return;
+    // X usa a escala X (m[0]): o zoom X por roda e o zoom Y por label são
+    // independentes, então as escalas podem divergir.
+    final sx = m[0].isFinite && m[0] > 0 ? m[0].toDouble() : s;
 
     // Mínimo sempre visível (em vez de margem além do sumiço): garante que
     // os candles nunca saiam 100% da tela. Em pixels de tela.
@@ -137,15 +140,15 @@ class _MapFlowChartState extends State<MapFlowChart>
     const stepX = 8.0; // 6.0 width + 2.0 spacing (igual ao build)
     const minCandles = 10;
     final rawMinX = (viewerW * 0.20).clamp(80.0, 400.0).toDouble();
-    final needX = minCandles * stepX * s;
+    final needX = minCandles * stepX * sx;
     final minVisibleX =
-        min(min(max(rawMinX, needX), childW * s), viewerW).toDouble();
+        min(min(max(rawMinX, needX), childW * sx), viewerW).toDouble();
     // Y: âncora na banda de preço (min..max) em vez do filho cheio — o filho
     // tem a mesma altura do viewer, então overlap de filho não garante preço
     // visível. Com zoom-in a banda fica maior que a tela: nesse caso ela tem
     // que COBRIR o viewport (sem vazio acima do max nem abaixo do min). Com
     // zoom-out (banda menor), ela fica CONTIDA com respiro proporcional.
-    final minX = minVisibleX - childW * s;
+    final minX = minVisibleX - childW * sx;
     final maxX = viewerW - minVisibleX;
     double minY;
     double maxY;
@@ -164,10 +167,15 @@ class _MapFlowChartState extends State<MapFlowChart>
           minY = viewerH - tol - yBot * sy;
           maxY = tol - yTop * sy;
         } else {
-          // Contenção: banda menor que a tela fica dentro, com respiro.
+          // Contenção: banda menor que a tela fica dentro, com respiro que
+          // converge para `tol` na fronteira (bandH == viewerH) para não dar
+          // salto no `ty` ao atravessar o zoom 1x nos dois sentidos.
+          const tol = 8.0;
           final mOut = (viewerH * 0.15).clamp(48.0, 300.0).toDouble();
-          minY = -mOut - yTop * sy;
-          maxY = viewerH + mOut - yBot * sy;
+          final t = ((viewerH - bandH) / viewerH).clamp(0.0, 1.0).toDouble();
+          final margin = (tol + (mOut - tol) * t).toDouble();
+          minY = -margin - yTop * sy;
+          maxY = viewerH + margin - yBot * sy;
         }
         if (minY > maxY) {
           // Não deveria acontecer, mas por segurança volta para margem
@@ -210,17 +218,11 @@ class _MapFlowChartState extends State<MapFlowChart>
       _panEnabled = true;
       _clearMeasure();
     }
-    // A banda de preço mudou (novo candle/extremo): reaplica o clamp do Y no
-    // próximo frame para não deixar vazio vertical parado na tela. Via
-    // post-frame para não mutar o controller durante o build.
-    if ((widget.data.minPrice != oldWidget.data.minPrice ||
-            widget.data.maxPrice != oldWidget.data.maxPrice) &&
-        _initialFitDone) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _clampPan();
-      });
-    }
+    // NOTA: sem re-clamp automático quando min/max mudam com o dado ao vivo:
+    // mover o `ty` por conta de tick novo desfazia o zoom/pan que o usuário
+    // setou (label/scroll). O clamp do Y segue valendo em todo gesto
+    // (pan/zoom/pinch) via `_onTransformChanged`, então continua impossível
+    // perder o preço arrastando.
     if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
       final areaW = _lastCandleAreaWidth;
       if (areaW > 0) {
@@ -314,12 +316,12 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _onInteractionEnd() {
   }
 
-  /// Caminho único do zoom Y (Fase B-1/B-2 revisada): roda do mouse e arrasto
-  /// vertical na faixa direita (labels Y) usam a mesma matemática ancorada,
-  /// com clamp unificado `StateService.min/maxYZoom`.
+  /// Caminho único do zoom Y (só via arrasto na coluna de labels Y): usa
+  /// matemática ancorada, com clamp unificado `StateService.min/maxYZoom`.
   /// Mantém `_yZoom` local (não chama `setYZoom`/notify) para não contaminar
   /// a outra instância (1D <> intraday). Só toca `ty` do controller; `tx`,
-  /// `_clampPan` e o follow da borda direita seguem intactos.
+  /// `_clampPan` e o follow da borda direita seguem intactos. A roda do mouse
+  /// NÃO mexe no Y (dá zoom no X via `_applyXZoomAt`).
   void _applyYZoomAt(double factor, double localDy) {
     // Durante a medição o zoom por roda/botão é ignorado para não deslocar a
     // referência (o bloqueio de translação em `_onTransformChanged`
@@ -352,15 +354,41 @@ class _MapFlowChartState extends State<MapFlowChart>
     _controller.value = mm;
   }
 
+  /// Roda do mouse = zoom no eixo X (tempo), ancorado no cursor: o candle sob
+  /// o cursor fica parado na tela. Só toca `m[0]` e `tx`; `m[5]`, `ty` e
+  /// `_yZoom` ficam intactos, então o Y não muda. Piso `fitScale`
+  /// (mostra todos os candles), teto `5.0` (igual ao pinch).
+  void _applyXZoomAt(double factor, double localDx) {
+    if (_isMeasuring) return;
+    if (_lastVirtualCandleWidth <= 0) return;
+
+    final m = _controller.value;
+    final scaleX = (m[0].isFinite && m[0] > 0) ? m[0].toDouble() : 1.0;
+    final tx = m.getTranslation().x.isFinite ? m.getTranslation().x : 0.0;
+
+    final childX = (localDx - tx) / scaleX;
+    final newScale =
+        (scaleX * factor).clamp(_minAllowedScale, 5.0).toDouble();
+    if (newScale == scaleX) return;
+
+    final newTx = localDx - childX * newScale;
+
+    final mm = Matrix4.copy(_controller.value);
+    mm[0] = newScale;
+    mm.setTranslationRaw(newTx, mm.getTranslation().y, mm.getTranslation().z);
+    _controller.value = mm;
+  }
+
   void _handleScroll(PointerScrollEvent event) {
-    _applyYZoomAt(event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25,
-        event.localPosition.dy);
+    _applyXZoomAt(event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25,
+        event.localPosition.dx);
   }
 
   /// Arrasto vertical exclusivo na coluna dos labels Y (`rightLabelMargin` 64px):
   /// para cima (dy negativo) = zoom in (+), para baixo = zoom out (−).
-  /// Suave e contínuo: cada evento aplica `exp(-dy * k)` ancorado no centro,
-  /// reusando `_applyYZoomAt` (mesmo clamp `0.3..10.0` e ajuste `ty` da roda).
+  /// Único caminho de zoom Y (a roda do mouse dá zoom no X). Suave e
+  /// contínuo: cada evento aplica `exp(-dy * k)` ancorado no centro,
+  /// reusando `_applyYZoomAt` (mesmo clamp `0.3..10.0` e ajuste `ty`).
   /// `k=0.005` ≈ 140px para dobrar/metade — fino o bastante para ajuste preciso.
   void _onYLabelDragUpdate(DragUpdateDetails d) {
     _applyYZoomAt(exp(-d.delta.dy * 0.005), _lastCandleAreaHeight / 2);
@@ -416,6 +444,11 @@ class _MapFlowChartState extends State<MapFlowChart>
 
     BubblePoint? hit;
 
+    // Mesma razão usada pelo ChartPainter para desenhar bubbles redondos.
+    final aspect = (scaleX.isFinite && scaleX > 0 && scaleY.isFinite && scaleY > 0)
+        ? (scaleY / scaleX)
+        : 1.0;
+
     void checkBubbles(List<BubblePoint> bubbles) {
       for (final b in bubbles) {
         final bx = b.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
@@ -425,7 +458,12 @@ class _MapFlowChartState extends State<MapFlowChart>
         if (r < 2) continue;
         final dx = childX - bx;
         final dy = childY - by;
-        if (dx * dx + dy * dy <= r * r) {
+        // Elipse que acompanha o desenho (`xyAspect` do ChartPainter): com
+        // escala uniforme recai no teste circular anterior.
+        final rx = r * aspect;
+        final ex = dx / rx;
+        final ey = dy / r;
+        if (ex * ex + ey * ey <= 1.0) {
           hit = b;
           return;
         }
@@ -511,6 +549,17 @@ class _MapFlowChartState extends State<MapFlowChart>
         _clearMeasure();
       }
     });
+  }
+
+  /// Razão `scaleY/scaleX` atual (1.0 = uniforme ou inválida). Vai para o
+  /// ChartPainter compensar o esticamento do zoom X nos bubbles/marcadores.
+  double _chartAspect() {
+    final m = _controller.value;
+    final sx = m[0];
+    final sy = m[5];
+    if (!sx.isFinite || !sy.isFinite || sx <= 0 || sy <= 0) return 1.0;
+    final a = sy / sx;
+    return a.isFinite && a > 0 ? a : 1.0;
   }
 
   int _localToCandleIndex(double localX, double stepX) {
@@ -968,6 +1017,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                             candleWidth: candleWidth,
                             candleSpacing: candleSpacing,
                             yZoom: _yZoom,
+                            xyAspect: _chartAspect(),
                           ),
                         ),
                       ),
