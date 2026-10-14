@@ -322,12 +322,14 @@ namespace B3WM.Services.Strategies
             var posBefore = s.Position == null ? "flat"
                 : $"{(s.Position.Side == "comprar" ? "comprado" : "vendido")} @{s.Position.Entry:F0}";
             var (action, wantEntry, wantExit) = DescribeEvaluation(decision, s.Position != null, exitThr);
+            var evalAt = EvaluationTime(ev);
             var item = new StrategyDecisionLog
             {
                 Kind = "avaliacao",
-                // Hora da AVALIAÇÃO (quando a strategy foi chamada), não da abertura:
+                // Data/hora completa da AVALIAÇÃO (quando a strategy foi chamada), não da abertura:
                 // candle -> fechamento (open + timeframe); bubble/futuros -> hora do evento.
-                Time = EvaluationTime(ev).ToString("HH:mm"),
+                At = evalAt,
+                Time = evalAt.ToString("HH:mm"),
                 Event = why,
                 Side = decision.Side,
                 Confidence = decision.Confidence,
@@ -381,7 +383,7 @@ namespace B3WM.Services.Strategies
             $"{item.Time} {item.Side} conf={item.Confidence:F2} enc={item.Encerrar:F2} snap={item.SnapshotHash}";
 
         /// <summary>
-        /// Hora a exibir no relatório = momento da avaliação: fechamento do
+        /// Data/hora canônica do relatório = momento da avaliação: fechamento do
         /// candle (abertura + timeframe) ou hora do evento (bubble).
         /// </summary>
         public static DateTime EvaluationTime(StrategyEvent ev) =>
@@ -413,6 +415,7 @@ namespace B3WM.Services.Strategies
                     NoteLocked(s, new StrategyDecisionLog
                     {
                         Kind = "execucao",
+                        At = at,
                         Time = at.ToString("HH:mm"),
                         Event = "exec",
                         Side = s.Position.Side,
@@ -448,8 +451,10 @@ namespace B3WM.Services.Strategies
             s.PaperTrades.Add(new PaperTrade
             {
                 Side = s.Position.Side,
+                EntryAt = s.Position.EntryTime,
                 EntryTime = s.Position.EntryTime.ToString("HH:mm"),
                 Entry = s.Position.Entry,
+                ExitAt = at,
                 ExitTime = at.ToString("HH:mm"),
                 Exit = price,
                 Pts = pts,
@@ -459,6 +464,7 @@ namespace B3WM.Services.Strategies
             NoteLocked(s, new StrategyDecisionLog
             {
                 Kind = "execucao",
+                At = at,
                 Time = at.ToString("HH:mm"),
                 Event = reason,
                 Side = s.Position.Side,
@@ -509,14 +515,51 @@ namespace B3WM.Services.Strategies
             {
                 using var scope = _scopes.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
-                await keeper.WriteDataAsync(
-                    $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json", log);
+                var path = $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json";
+                // O arquivo do dia ACUMULA todas as sessões: um novo PLAY/STOP
+                // faz merge com o que já está em disco em vez de sobrescrever
+                // (antes, a sessão anterior do mesmo dia era perdida).
+                var existing = await keeper.ReadDataAsync<StrategyLogDay>(path);
+                if (existing.Decisions.Count > 0 || existing.PaperTrades.Count > 0)
+                    log = MergeLogDay(existing, log);
+                await keeper.WriteDataAsync(path, log);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy-runner] falha ao persistir log");
             }
         }
+
+        /// <summary>
+        /// Merge puro do log do dia (testável sem runner): une decisões e
+        /// trades sem duplicar, ordena por At e recalcula o realizado.
+        /// SnapshotHash do dia mantém o da primeira sessão (cada item carrega
+        /// o próprio snapshot).
+        /// </summary>
+        public static StrategyLogDay MergeLogDay(StrategyLogDay existing, StrategyLogDay incoming)
+        {
+            var seen = new HashSet<string>(existing.Decisions.Select(DecisionKey));
+            foreach (var d in incoming.Decisions)
+                if (seen.Add(DecisionKey(d)))
+                    existing.Decisions.Add(d);
+            var seenTrades = new HashSet<string>(existing.PaperTrades.Select(TradeKey));
+            foreach (var t in incoming.PaperTrades)
+                if (seenTrades.Add(TradeKey(t)))
+                    existing.PaperTrades.Add(t);
+            existing.Decisions.Sort((a, b) =>
+            {
+                var c = a.At.CompareTo(b.At);
+                return c != 0 ? c : string.Compare(a.Time, b.Time, StringComparison.Ordinal);
+            });
+            existing.RealizedPts = existing.PaperTrades.Sum(t => t.Pts);
+            return existing;
+        }
+
+        private static string DecisionKey(StrategyDecisionLog d) =>
+            $"{(d.At == default ? d.Time : d.At.ToString("o"))}|{d.Kind}|{d.Side}|{d.Action}|{d.SnapshotHash}";
+
+        private static string TradeKey(PaperTrade t) =>
+            $"{(t.EntryAt == default ? t.EntryTime : t.EntryAt.ToString("o"))}|{t.Side}|{t.Entry}|{(t.ExitAt == default ? t.ExitTime : t.ExitAt.ToString("o"))}|{t.Exit}";
 
         public static string SnapshotHashOf(string rawJson)
         {

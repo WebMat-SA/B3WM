@@ -44,7 +44,7 @@ Future<void> _pumpChart(WidgetTester tester) async {
           height: 600,
           child: MapFlowChart(
             data: _sampleData(),
-            showStrategyOverlay: false,
+            showStrategyTimeline: false,
           ),
         ),
       ),

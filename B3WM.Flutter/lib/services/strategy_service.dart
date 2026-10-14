@@ -27,6 +27,8 @@ class StrategyInfo {
 /// execução paper geram um. Exibido sob a sessão aberta na aba.
 class StrategyDecisionItem {
   final String kind; // avaliacao | execucao
+  /// Data/hora completa canônica (p/ timeline X). Nulo só em log muito antigo.
+  final DateTime? at;
   final String time;
   final String event;
   final String side;
@@ -41,6 +43,7 @@ class StrategyDecisionItem {
 
   const StrategyDecisionItem({
     required this.kind,
+    this.at,
     required this.time,
     required this.event,
     required this.side,
@@ -57,6 +60,7 @@ class StrategyDecisionItem {
   factory StrategyDecisionItem.fromJson(Map<String, dynamic> json) =>
       StrategyDecisionItem(
         kind: json['kind'] as String? ?? 'avaliacao',
+        at: _parseAt(json['at']) ?? _parseAt(json['At']),
         time: json['time'] as String? ?? '',
         event: json['event'] as String? ?? '',
         side: json['side'] as String? ?? '',
@@ -112,6 +116,156 @@ class StrategySession {
                 [])
             .map((e) => StrategyDecisionItem.fromJson(e as Map<String, dynamic>))
             .toList(),
+      );
+}
+
+/// Parede BRT (UTC-3, sem horário de verão desde 2019): base comum entre
+/// `At` (absoluto, com ou sem offset) e as datas das barras (naive, já em
+/// parede BRT). Devolve naive-local com os componentes da parede BRT —
+/// imune ao fuso da máquina (gráfico e eixo X usam esses componentes).
+DateTime b3Wall(DateTime at) {
+  final u = at.toUtc().subtract(const Duration(hours: 3));
+  return DateTime(
+      u.year, u.month, u.day, u.hour, u.minute, u.second, u.millisecond);
+}
+
+/// Parse tolerante de data/hora completa (novo campo `at`/`At`).
+/// Com offset/Z: absoluto. Sem offset (backend serializa Unspecified sem
+/// offset): parede BRT. Retorna null se ausente/inválido (log muito antigo).
+DateTime? _parseAt(dynamic v) {
+  if (v == null) return null;
+  if (v is DateTime) return v;
+  if (v is String && v.isNotEmpty) {
+    final hasZone =
+        RegExp(r'([Zz]|[+-]\d{2}:?\d{2})$').hasMatch(v);
+    final parsed = DateTime.tryParse(v);
+    if (parsed == null) return null;
+    if (hasZone) return parsed;
+    return DateTime.utc(parsed.year, parsed.month, parsed.day, parsed.hour,
+            parsed.minute, parsed.second, parsed.millisecond)
+        .add(const Duration(hours: 3));
+  }
+  return null;
+}
+
+/// Item cru do timeline (com data completa; sem At não aparece na faixa).
+class StrategyTimelineItem {
+  final DateTime at;
+  final String kind; // avaliacao | execucao
+  final String event; // bubble | candle_close | exec | ...
+  final String side;
+  final double confidence;
+  final double encerrar;
+  final String action;
+  final String reason;
+  final String snapshotHash;
+
+  const StrategyTimelineItem({
+    required this.at,
+    required this.kind,
+    required this.event,
+    required this.side,
+    required this.confidence,
+    required this.encerrar,
+    required this.action,
+    required this.reason,
+    required this.snapshotHash,
+  });
+
+  factory StrategyTimelineItem.fromDecision(StrategyDecisionItem d,
+          {DateTime? at}) =>
+      StrategyTimelineItem(
+        at: at ?? d.at!,
+        kind: d.kind,
+        event: d.event,
+        side: d.side,
+        confidence: d.confidence,
+        encerrar: d.encerrar,
+        action: d.action,
+        reason: d.reason,
+        snapshotHash: d.snapshotHash,
+      );
+}
+
+/// Paper trade com data completa (timeline/histórico).
+class StrategyPaperTrade {
+  final String side;
+  final DateTime? entryAt;
+  final String entryTime;
+  final double entry;
+  final DateTime? exitAt;
+  final String exitTime;
+  final double exit;
+  final double pts;
+  final String exitReason;
+  final double entryConf;
+
+  const StrategyPaperTrade({
+    required this.side,
+    this.entryAt,
+    required this.entryTime,
+    required this.entry,
+    this.exitAt,
+    required this.exitTime,
+    required this.exit,
+    required this.pts,
+    required this.exitReason,
+    required this.entryConf,
+  });
+
+  factory StrategyPaperTrade.fromJson(Map<String, dynamic> json) =>
+      StrategyPaperTrade(
+        side: json['side'] as String? ?? '',
+        entryAt: _parseAt(json['entryAt']) ?? _parseAt(json['EntryAt']),
+        entryTime: json['entryTime'] as String? ?? '',
+        entry: (json['entry'] as num?)?.toDouble() ?? 0,
+        exitAt: _parseAt(json['exitAt']) ?? _parseAt(json['ExitAt']),
+        exitTime: json['exitTime'] as String? ?? '',
+        exit: (json['exit'] as num?)?.toDouble() ?? 0,
+        pts: (json['pts'] as num?)?.toDouble() ?? 0,
+        exitReason: json['exitReason'] as String? ?? '',
+        entryConf: (json['entryConf'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+/// Log diário persistido (`GET api/Strategy/Log/{symbol}/{date}`).
+class StrategyLogDay {
+  final DateTime? date;
+  final String symbol;
+  final String strategy;
+  final String snapshotHash;
+  final List<StrategyDecisionItem> decisions;
+  final List<StrategyPaperTrade> paperTrades;
+  final double realizedPts;
+
+  const StrategyLogDay({
+    this.date,
+    required this.symbol,
+    required this.strategy,
+    required this.snapshotHash,
+    required this.decisions,
+    required this.paperTrades,
+    required this.realizedPts,
+  });
+
+  factory StrategyLogDay.fromJson(Map<String, dynamic> json) => StrategyLogDay(
+        date: _parseAt(json['date']) ?? _parseAt(json['Date']),
+        symbol: json['symbol'] as String? ?? '',
+        strategy: json['strategy'] as String? ?? '',
+        snapshotHash: json['snapshotHash'] as String? ?? '',
+        decisions: ((json['decisions'] as List?) ?? (json['Decisions'] as List?) ?? [])
+            .whereType<Map>()
+            .map((e) => StrategyDecisionItem.fromJson(
+                e.map((k, v) => MapEntry(k.toString(), v))))
+            .toList(),
+        paperTrades: ((json['paperTrades'] as List?) ?? (json['PaperTrades'] as List?) ?? [])
+            .whereType<Map>()
+            .map((e) => StrategyPaperTrade.fromJson(
+                e.map((k, v) => MapEntry(k.toString(), v))))
+            .toList(),
+        realizedPts: (json['realizedPts'] as num?)?.toDouble() ??
+            (json['RealizedPts'] as num?)?.toDouble() ??
+            0,
       );
 }
 
@@ -205,6 +359,25 @@ class StrategyService {
           .toList();
     } catch (e) {
       logD('[strategy] State error: $e');
+      return [];
+    }
+  }
+
+  Future<List<StrategyLogDay>> log(String symbol, DateTime date) async {
+    try {
+      final ds =
+          '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final response = await _client
+          .get(Uri.parse('$_baseUrl/api/Strategy/Log/$symbol/$ds'));
+      if (response.statusCode != 200) return [];
+      final list = jsonDecode(response.body) as List? ?? [];
+      return list
+          .whereType<Map>()
+          .map((e) => StrategyLogDay.fromJson(
+              e.map((k, v) => MapEntry(k.toString(), v))))
+          .toList();
+    } catch (e) {
+      logD('[strategy] Log error: $e');
       return [];
     }
   }

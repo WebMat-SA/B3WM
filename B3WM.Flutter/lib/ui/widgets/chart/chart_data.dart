@@ -1,5 +1,7 @@
 import 'dart:ui' show Color;
+import '../../../app_log.dart';
 import '../../../services/state_service.dart';
+import '../../../services/strategy_service.dart' show b3Wall;
 import '../../../models/ticks2.dart';
 import '../../../models/trade_models.dart';
 import '../../../models/extreme_storage_item.dart';
@@ -107,6 +109,31 @@ class HistoryDealPoint {
   });
 }
 
+/// Chamada de estratégia posicionada no X (faixa timeline ⓘ).
+class StrategyPoint {
+  final int candleIndex;
+  final DateTime at;
+  final String kind; // avaliacao | execucao
+  final String side;
+  final double confidence;
+  final double encerrar;
+  final String action;
+  final String reason;
+  final String snapshotHash;
+
+  StrategyPoint({
+    required this.candleIndex,
+    required this.at,
+    required this.kind,
+    required this.side,
+    required this.confidence,
+    required this.encerrar,
+    required this.action,
+    required this.reason,
+    required this.snapshotHash,
+  });
+}
+
 class ExtremeLineData {
   final List<double> topPrices;
   final List<double> valleyPrices;
@@ -204,6 +231,7 @@ class ChartData {
   final List<PositionInfo> positions;
   final List<OrderInfo> orders;
   final List<HistoryDealPoint> historyPoints;
+  final List<StrategyPoint> strategyPoints;
   final bool tradingHistoryVisible;
   final bool positionVisible;
   final bool openOrdersVisible;
@@ -243,6 +271,7 @@ class ChartData {
     this.positions = const [],
     this.orders = const [],
     this.historyPoints = const [],
+    this.strategyPoints = const [],
     this.tradingHistoryVisible = true,
     this.positionVisible = true,
     this.openOrdersVisible = true,
@@ -491,6 +520,44 @@ ChartData buildChartData(StateService state) {
     }
   }
 
+  // Timeline de estratégias: At -> candleIndex (mesmo bucket de findCandleIndex).
+  // candle_close avalia no FECHAMENTO (= open seguinte), então recua 1s para
+  // cair no candle avaliado; demais eventos usam o At direto. Fora do range
+  // carregado o ponto é descartado (sem pilha no índice 0).
+  final strategyPoints = <StrategyPoint>[];
+  final timeline = state.strategyTimelineItems;
+  if (timeline.isNotEmpty && visible.isNotEmpty && state.timeFrame > 0) {
+    final first = visible.first.date;
+    final lastEnd = visible.last.date
+        .add(Duration(minutes: state.timeFrame));
+    for (final t in timeline) {
+      // Tudo em parede BRT (imune ao fuso da máquina): At pode ser absoluto
+      // (com offset) ou parede BRT (legado/backend sem offset) — b3Wall
+      // normaliza; as barras já são parede BRT.
+      final wall = b3Wall(t.at);
+      if (wall.isBefore(first) || wall.isAfter(lastEnd)) continue;
+      final probe = t.event == 'candle_close'
+          ? wall.subtract(const Duration(seconds: 1))
+          : wall;
+      strategyPoints.add(StrategyPoint(
+        candleIndex: findCandleIndex(probe),
+        at: t.at,
+        kind: t.kind,
+        side: t.side,
+        confidence: t.confidence,
+        encerrar: t.encerrar,
+        action: t.action,
+        reason: t.reason,
+        snapshotHash: t.snapshotHash,
+      ));
+    }
+    strategyPoints.sort((a, b) => a.candleIndex.compareTo(b.candleIndex));
+  }
+  // Diagnóstico: só fala quando algum item cai fora do range carregado.
+  if (timeline.isNotEmpty && strategyPoints.length != timeline.length) {
+    logD('[timeline] ${timeline.length} itens -> ${strategyPoints.length} pontos (fora do range)');
+  }
+
   // Compute intraday cumulative VWAP (updates per candle)
   final vwapPoints = <VwapPoint>[];
   if (state.vwapVisible && visible.isNotEmpty) {
@@ -559,6 +626,7 @@ ChartData buildChartData(StateService state) {
     positions: positions,
     orders: orders,
     historyPoints: historyPoints,
+    strategyPoints: strategyPoints,
     tradingHistoryVisible: state.tradingHistoryVisible,
     positionVisible: state.positionVisible,
     openOrdersVisible: state.openOrdersVisible,

@@ -714,6 +714,9 @@ class StateService extends ChangeNotifier {
       _strategySessions = sessions;
       final armed = sessions.any((s) => !s.paused);
       if (strategiesArmed != armed) setStrategiesArmed(armed);
+      // Histórico dos dias na tela (não bloqueia o refresh).
+      // ignore: discarded_futures
+      ensureStrategyHistoryFor(_loadedBarDays);
       notifyListeners();
     } catch (e) {
       logD('[strategy] refresh sessions error: $e');
@@ -732,31 +735,98 @@ class StateService extends ChangeNotifier {
     _strategyPollTimer = null;
   }
 
-  // Opacidade do relatório sobre o gráfico (display local; sem guard de
-  // propósito, como o som: não altera nenhum dado que a estratégia enxerga,
-  // então pode ajustar com sessão rodando).
-  double _strategyOverlayOpacity = 0.72;
-  double get strategyOverlayOpacity => _strategyOverlayOpacity;
-  void setStrategyOverlayOpacity(double v) {
-    _strategyOverlayOpacity = v.clamp(0.01, 1.0);
-    notifyListeners();
-    _preferencesService.setDouble(
-        'strategy_overlay_opacity', _strategyOverlayOpacity);
+  // --- Timeline de estratégias (faixa ⓘ sob o gráfico, sync com X) ---
+  // Logs persistidos por dia (`GET api/Strategy/Log`), com cache por
+  // símbolo+dia. O vivo (State) vem em refreshStrategySessions; o histórico
+  // acompanha os dias carregados no gráfico (botão ← via _prependHistoryRange).
+  final Map<String, List<StrategyLogDay>> _strategyLogCache = {};
+
+  String _strategyLogKey(String symbol, DateTime day) =>
+      '$symbol|${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+  /// Itens com At do símbolo atual: histórico (Log/dia) + sessões vivas
+  /// (State), sem duplicar (chave At|kind|side|action). Compat: item sem At
+  /// (backend antigo) usa dia-base + Time — o bucket do candle só precisa
+  /// de precisão de minuto.
+  List<StrategyTimelineItem> get strategyTimelineItems {
+    final out = <StrategyTimelineItem>[];
+    final seen = <String>{};
+    void add(StrategyTimelineItem t) {
+      final k =
+          '${t.at.toIso8601String()}|${t.kind}|${t.side}|${t.action}';
+      if (seen.add(k)) out.add(t);
+    }
+
+    DateTime? fallbackAt(DateTime? baseDay, String hhmm) {
+      if (baseDay == null) return null;
+      final parts = hhmm.split(':');
+      if (parts.length < 2) return null;
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h == null || m == null) return null;
+      // Dia-base em parede BRT + Time como escrito; absoluto p/ b3Wall
+      // recuperar em qualquer fuso.
+      final w = b3Wall(baseDay);
+      return DateTime.utc(w.year, w.month, w.day, h, m)
+          .add(const Duration(hours: 3));
+    }
+
+    final days = _strategyLogCache.keys
+        .where((k) => k.startsWith('$_symbol|'))
+        .toList()
+      ..sort();
+    for (final k in days) {
+      for (final log in _strategyLogCache[k]!) {
+        if (log.symbol != _symbol) continue;
+        for (final d in log.decisions) {
+          final at = d.at ?? fallbackAt(log.date, d.time);
+          if (at == null) continue;
+          add(StrategyTimelineItem.fromDecision(d, at: at));
+        }
+      }
+    }
+    for (final s in _strategySessions) {
+      if (s.symbol != _symbol && _symbol.isNotEmpty) continue;
+      for (final d in s.reportItems) {
+        final at = d.at ?? fallbackAt(_displayDate, d.time);
+        if (at == null) continue;
+        add(StrategyTimelineItem.fromDecision(d, at: at));
+      }
+    }
+    out.sort((a, b) => a.at.compareTo(b.at));
+    return out;
   }
 
-  // Visibilidade do overlay por sessão (só display local; default visível).
-  // Controlada na aba Estratégia (ícone de olho); não vai ao backend.
-  final Set<String> _hiddenStrategySessions = {};
-  bool isStrategySessionVisible(String sessionId) =>
-      !_hiddenStrategySessions.contains(sessionId);
-  void setStrategySessionVisible(String sessionId, bool visible) {
-    if (visible) {
-      _hiddenStrategySessions.remove(sessionId);
-    } else {
-      _hiddenStrategySessions.add(sessionId);
+  /// Busca os logs dos dias ainda sem cache (fire-and-forget; avisa ao chegar).
+  /// O dia atual é SEMPRE recarregado (o backend faz merge a cada persist —
+  /// cache fixo escondia restaurações e novas decisões até reiniciar o app);
+  /// dias passados são imutáveis e ficam no cache.
+  Future<void> ensureStrategyHistoryFor(Set<DateTime> days) async {
+    if (_symbol.isEmpty || days.isEmpty) return;
+    // Poda de outro símbolo (troca de ativo não recarrega a tela do zero).
+    _strategyLogCache.removeWhere((k, _) => !k.startsWith('$_symbol|'));
+    final now = DateTime.now();
+    final todayKey = _strategyLogKey(
+        _symbol, DateTime(now.year, now.month, now.day));
+    var fetched = false;
+    for (final d in days) {
+      final day = DateTime(d.year, d.month, d.day);
+      final k = _strategyLogKey(_symbol, day);
+      if (k != todayKey && _strategyLogCache.containsKey(k)) continue;
+      try {
+        _strategyLogCache[k] = await _strategyService.log(_symbol, day);
+        fetched = true;
+      } catch (e) {
+        logD('[strategy] history $k error: $e');
+      }
     }
-    notifyListeners();
+    if (fetched) notifyListeners();
   }
+
+  Set<DateTime> get _loadedBarDays => {
+        for (final b in barsTimeFrameFilter)
+          DateTime(b.date.year, b.date.month, b.date.day),
+      };
 
   /// Range de datas carregado (para modo multi-day / histórico incremental)
   DateTime? _rangeStartDate;
@@ -1589,8 +1659,6 @@ class StateService extends ChangeNotifier {
   static const int maxBubbles = 2000;
 
   void _init() {
-    _strategyOverlayOpacity =
-        _preferencesService.getDouble('strategy_overlay_opacity') ?? 0.72;
     _signalRService.onCloseBar = _handleCloseBar;
     _signalRService.onNewBubble = _handleNewBubble;
     _signalRService.onVolumeUpdate = _handleVolumeUpdate;
@@ -1864,7 +1932,10 @@ class StateService extends ChangeNotifier {
   /// Retorna true quando algo foi prependido.
   Future<bool> loadPreviousHistory() async {
     if (_symbol.isEmpty || _isLoadingHistory || !_hasMoreHistory) return false;
-    if (_guardLocked('loadPreviousHistory')) return false;
+    // Sem _guardLocked aqui de propósito: o prepend só ANEXA barras/bubbles
+    // à esquerda e não altera a foto congelada no PLAY (filtros/TF); o ritmo
+    // das sessions no backend é por horário (bucket do TF), não por índice.
+    // Bloquear aqui fazia o botão ← responder "sem dados" com sessão armada.
     _isLoadingHistory = true;
     _historyError = null;
     notifyListeners();
@@ -2104,6 +2175,9 @@ class StateService extends ChangeNotifier {
         _applyStructureAutoFilter();
       }
     }
+    // Logs de estratégia dos dias novos (timeline acompanha o ←).
+    // ignore: discarded_futures
+    ensureStrategyHistoryFor(_loadedBarDays);
     notifyListeners();
   }
 

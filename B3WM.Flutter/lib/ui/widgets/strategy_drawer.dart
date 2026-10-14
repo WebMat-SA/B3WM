@@ -11,8 +11,8 @@ import '../../app_log.dart';
 /// Aba Estratégia: escolhe dentre todas as IStrategy do backend e dá PLAY.
 /// O PLAY envia a foto da tela (snapshot) e TRAVA os filtros funcionais —
 /// para alterar: PAUSE/STOP, edita, PLAY de novo. Execução toda no backend
-/// (pode fechar o app). Detalhe da fonte única de acompanhamento: overlay
-/// no gráfico (+ opacidade em `Exibição no gráfico`).
+/// (pode fechar o app). Acompanhamento na faixa timeline ⓘ sob o gráfico
+/// (toque no ícone mostra o detalhe da chamada).
 class StrategyDrawer extends StatefulWidget {
   final bool noDrawer;
   const StrategyDrawer({super.key, this.noDrawer = false});
@@ -174,24 +174,6 @@ class _StrategyDrawerState extends State<StrategyDrawer>
             ),
           ),
           ExpandableSection(
-            icon: Icons.visibility,
-            title: 'Exibição no gráfico',
-            defaultExpanded: true,
-            child: Column(
-              children: [
-                SliderRow(
-                    'Opacidade do relatório',
-                    state.strategyOverlayOpacity,
-                    0.01,
-                    1.0, (v) => state.setStrategyOverlayOpacity(v)),
-                const Text(
-                  'Vale com sessão rodando: só muda a exibição local.',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          ExpandableSection(
             icon: Icons.list,
             title: 'Sessões (${_visibleSessions(state).length})',
             defaultExpanded: true,
@@ -216,26 +198,6 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    IconButton(
-                                      icon: Icon(
-                                          state.isStrategySessionVisible(
-                                                  s.sessionId)
-                                              ? Icons.visibility
-                                              : Icons.visibility_off,
-                                          size: 20,
-                                          color: state
-                                                  .isStrategySessionVisible(
-                                                      s.sessionId)
-                                              ? Colors.grey
-                                              : Colors.grey.shade700),
-                                      tooltip:
-                                          'Mostrar/ocultar no gráfico',
-                                      onPressed: () => state
-                                          .setStrategySessionVisible(
-                                              s.sessionId,
-                                              !state.isStrategySessionVisible(
-                                                  s.sessionId)),
-                                    ),
                                     IconButton(
                                       icon: Icon(
                                           s.paused
@@ -263,6 +225,15 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                         .toList(),
                   ),
           ),
+          ExpandableSection(
+            icon: Icons.timeline,
+            title: 'Timeline',
+            defaultExpanded: true,
+            child: Text(
+              _timelineSummary(state),
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ),
         ],
       );
       if (widget.noDrawer) return listView;
@@ -276,6 +247,22 @@ class _StrategyDrawerState extends State<StrategyDrawer>
           .where((s) =>
               s.symbol == state.symbol || state.symbol.isEmpty)
           .toList();
+
+  /// Resumo da faixa timeline (diagnóstico: quantos itens chegaram e o span).
+  String _timelineSummary(StateService state) {
+    final items = state.strategyTimelineItems;
+    if (items.isEmpty) return 'Nenhum item (sem At ou sem log/sessão).';
+    String hm(DateTime at) {
+      final w = b3Wall(at);
+      return '${w.day.toString().padLeft(2, '0')}/${w.month.toString().padLeft(2, '0')} '
+          '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
+    }
+    final off = DateTime.now().timeZoneOffset;
+    final sign = off.isNegative ? '-' : '+';
+    final tz =
+        'tz$sign${off.inHours.abs().toString().padLeft(2, '0')}:${(off.inMinutes.abs() % 60).toString().padLeft(2, '0')}';
+    return '${items.length} itens (${hm(items.first.at)} → ${hm(items.last.at)}) [$tz]';
+  }
 }
 
 extension<T> on Iterable<T> {

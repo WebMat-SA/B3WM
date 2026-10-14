@@ -40,7 +40,9 @@ namespace B3WM.Shared.Models.Strategies
     {
         /// <summary>avaliacao | execucao</summary>
         public string Kind { get; set; } = "avaliacao";
-        /// <summary>Hora da avaliação (candle: fechamento; bubble/exec: hora do evento).</summary>
+        /// <summary>Data/hora completa da avaliação (canônico p/ timeline X; mesmo offset de Bar.Date).</summary>
+        public DateTime At { get; set; }
+        /// <summary>Hora da avaliação (candle: fechamento; bubble/exec: hora do evento). Display/compat.</summary>
         public string Time { get; set; } = "";
         /// <summary>candle_close | bubble | exec | virada do dia</summary>
         public string Event { get; set; } = "";
@@ -59,8 +61,12 @@ namespace B3WM.Shared.Models.Strategies
     public sealed class PaperTrade
     {
         public string Side { get; set; } = "";
+        /// <summary>Data/hora completa da entrada (canônico). EntryTime mantido p/ display/compat.</summary>
+        public DateTime EntryAt { get; set; }
         public string EntryTime { get; set; } = "";
         public double Entry { get; set; }
+        /// <summary>Data/hora completa da saída (canônico). ExitTime mantido p/ display/compat.</summary>
+        public DateTime ExitAt { get; set; }
         public string ExitTime { get; set; } = "";
         public double Exit { get; set; }
         public double Pts { get; set; }

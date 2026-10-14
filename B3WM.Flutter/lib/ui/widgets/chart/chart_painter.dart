@@ -16,6 +16,11 @@ class ChartPainter extends CustomPainter {
 
   final double xyAspect;
 
+  /// Índice do candle sob o cursor (eixo X). Quando não nulo, esse candle é
+  /// desenhado ligeiramente maior (+25% de largura) mantendo o centro em X,
+  /// com pavio e borda mais destacados.
+  final int? hoverCandleIndex;
+
   static const Color candleUpColor = Color(0xFFFFFFFF);
   static const Color candleDownColor = Color(0xFF000000);
   static const Color candleBorderColor = Color(0xFFFFFFFF);
@@ -27,6 +32,7 @@ class ChartPainter extends CustomPainter {
     this.candleSpacing = 2.0,
     this.yZoom = 1.0,
     this.xyAspect = 1.0,
+    this.hoverCandleIndex,
   });
 
   @override
@@ -145,8 +151,15 @@ class ChartPainter extends CustomPainter {
   void _drawCandles(
       Canvas canvas, Size size, double chartWidth, double chartHeight, double stepX) {
     final bodyWidth = candleWidth * 0.8;
+    // +25% de largura no hover, com teto para não invadir os vizinhos.
+    final hoverBodyWidth = min(bodyWidth * 1.25, stepX * 0.95);
+    final hoverIndex = (hoverCandleIndex != null &&
+            hoverCandleIndex! >= 0 &&
+            hoverCandleIndex! < data.candles.length)
+        ? hoverCandleIndex!
+        : null;
 
-    for (int i = 0; i < data.candles.length; i++) {
+    void drawCandle(int i, {required bool isHover}) {
       final c = data.candles[i];
       final x = _indexToX(i, stepX);
       final yOpen = _priceToY(c.open, chartHeight);
@@ -154,33 +167,61 @@ class ChartPainter extends CustomPainter {
       final yHigh = _priceToY(c.high, chartHeight);
       final yLow = _priceToY(c.low, chartHeight);
 
-      if (x < -candleWidth || x > chartWidth + candleWidth) continue;
+      if (x < -candleWidth || x > chartWidth + candleWidth) return;
 
       final isUp = c.isUp;
       final bodyColor = isUp ? candleUpColor : candleDownColor;
-
-      final wickPaint = Paint()
-        ..color = candleBorderColor
-        ..strokeWidth = 1;
-      canvas.drawLine(Offset(x, yHigh), Offset(x, yLow), wickPaint);
+      final width = isHover ? hoverBodyWidth : bodyWidth;
 
       final bodyTop = min(yOpen, yClose);
       final bodyBottom = max(yOpen, yClose);
       final bodyHeight = max(bodyBottom - bodyTop, 1.0);
+      final bodyCenter = Offset(x, bodyTop + bodyHeight / 2);
+      final bodyRect =
+          Rect.fromCenter(center: bodyCenter, width: width, height: bodyHeight);
+
+      if (isHover) {
+        // Halo iluminado: branco máximo com blur atrás do candle para
+        // "brilhar" além do branco puro (que já é o teto da cor).
+        final haloPaint = Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.85)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4.0
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+        canvas.drawRect(
+          Rect.fromCenter(
+              center: bodyCenter, width: width + 2.0, height: bodyHeight + 2.0),
+          haloPaint,
+        );
+        final wickHaloPaint = Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.85)
+          ..strokeWidth = 4.0
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+        canvas.drawLine(Offset(x, yHigh), Offset(x, yLow), wickHaloPaint);
+      }
+
+      final wickPaint = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..strokeWidth = isHover ? 2.0 : 1;
+      canvas.drawLine(Offset(x, yHigh), Offset(x, yLow), wickPaint);
 
       final bodyPaint = Paint()..color = bodyColor;
-      canvas.drawRect(
-          Rect.fromCenter(center: Offset(x, bodyTop + bodyHeight / 2), width: bodyWidth, height: bodyHeight),
-          bodyPaint);
+      canvas.drawRect(bodyRect, bodyPaint);
 
       final borderPaint = Paint()
-        ..color = candleBorderColor
+        ..color = const Color(0xFFFFFFFF)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.5;
-      canvas.drawRect(
-          Rect.fromCenter(center: Offset(x, bodyTop + bodyHeight / 2), width: bodyWidth, height: bodyHeight),
-          borderPaint);
+        ..strokeWidth = isHover ? 1.5 : 0.5;
+      canvas.drawRect(bodyRect, borderPaint);
     }
+
+    for (int i = 0; i < data.candles.length; i++) {
+      if (i == hoverIndex) continue;
+      drawCandle(i, isHover: false);
+    }
+    // Hover por último para ficar por cima em caso de sobreposição leve.
+    // O centro em X é preservado pelo `Rect.fromCenter`.
+    if (hoverIndex != null) drawCandle(hoverIndex, isHover: true);
   }
 
   void _drawAspectCircle(Canvas canvas, Offset center, double r, Paint paint) {

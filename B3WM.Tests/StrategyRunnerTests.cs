@@ -222,6 +222,43 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public void MergeLogDay_AccumulatesSessionsWithoutDuplicates()
+    {
+        var day = new DateTime(2026, 10, 13);
+        var first = new B3WM.Shared.Models.Strategies.StrategyLogDay
+        {
+            Date = day, Symbol = "WINFUT", Strategy = "JevAnalysis", SnapshotHash = "aaa",
+            Decisions = new()
+            {
+                new() { Kind = "avaliacao", At = new DateTime(2026, 10, 13, 10, 0, 0), Time = "10:00", Event = "bubble", Side = "manter", SnapshotHash = "aaa", PositionBefore = "flat", Action = "manter" },
+            },
+        };
+        var second = new B3WM.Shared.Models.Strategies.StrategyLogDay
+        {
+            Date = day, Symbol = "WINFUT", Strategy = "JevAnalysis", SnapshotHash = "bbb",
+            Decisions = new()
+            {
+                // Duplicada (mesmo At/side/action/snapshot): não entra 2x.
+                new() { Kind = "avaliacao", At = new DateTime(2026, 10, 13, 10, 0, 0), Time = "10:00", Event = "bubble", Side = "manter", SnapshotHash = "aaa", PositionBefore = "flat", Action = "manter" },
+                new() { Kind = "avaliacao", At = new DateTime(2026, 10, 13, 15, 43, 0), Time = "15:43", Event = "bubble", Side = "vender", SnapshotHash = "bbb", PositionBefore = "flat", Action = "manter" },
+            },
+            PaperTrades = new()
+            {
+                new() { Side = "comprar", EntryAt = new DateTime(2026, 10, 13, 15, 44, 0), EntryTime = "15:44", Entry = 100, ExitAt = new DateTime(2026, 10, 13, 15, 46, 0), ExitTime = "15:46", Exit = 110, Pts = 10, ExitReason = "sinal encerrar", EntryConf = 0.7 },
+            },
+        };
+        var merged = StrategyRunner.MergeLogDay(first, second);
+        Assert.Equal(2, merged.Decisions.Count);
+        // Ordenado por At (sessão da manhã antes da tarde).
+        Assert.Equal(new DateTime(2026, 10, 13, 10, 0, 0), merged.Decisions[0].At);
+        Assert.Equal(new DateTime(2026, 10, 13, 15, 43, 0), merged.Decisions[1].At);
+        Assert.Single(merged.PaperTrades);
+        Assert.Equal(10, merged.RealizedPts);
+        // Snapshot do dia segue o da primeira sessão.
+        Assert.Equal("aaa", merged.SnapshotHash);
+    }
+
+    [Fact]
     public void DecisionLog_Serializes()
     {
         var log = new B3WM.Shared.Models.Strategies.StrategyLogDay
@@ -232,8 +269,12 @@ public class StrategyRunnerTests
             SnapshotHash = "abc123",
             Decisions = new()
             {
-                new() { Kind = "avaliacao", Time = "10:04", Event = "candle_close", Side = "comprar", Confidence = 0.85, ShouldTrade = true, SnapshotHash = "abc123", PositionBefore = "flat", Action = "sinal abre comprar (conf 0.85)" },
-                new() { Kind = "execucao", Time = "10:06", Event = "exec", Side = "comprar", SnapshotHash = "abc123", PositionBefore = "flat", Action = "exec abre comprar @189230" },
+                new() { Kind = "avaliacao", At = new DateTime(2026, 10, 6, 10, 4, 0), Time = "10:04", Event = "candle_close", Side = "comprar", Confidence = 0.85, ShouldTrade = true, SnapshotHash = "abc123", PositionBefore = "flat", Action = "sinal abre comprar (conf 0.85)" },
+                new() { Kind = "execucao", At = new DateTime(2026, 10, 6, 10, 6, 0), Time = "10:06", Event = "exec", Side = "comprar", SnapshotHash = "abc123", PositionBefore = "flat", Action = "exec abre comprar @189230" },
+            },
+            PaperTrades = new()
+            {
+                new() { Side = "comprar", EntryAt = new DateTime(2026, 10, 6, 10, 6, 0), EntryTime = "10:06", Entry = 189230, ExitAt = new DateTime(2026, 10, 6, 10, 8, 0), ExitTime = "10:08", Exit = 189300, Pts = 70, ExitReason = "sinal encerrar", EntryConf = 0.85 },
             },
             RealizedPts = 915,
         };
@@ -243,6 +284,12 @@ public class StrategyRunnerTests
         Assert.Equal(2, back!.Decisions.Count);
         Assert.Equal("exec abre comprar @189230", back.Decisions[1].Action);
         Assert.Equal("avaliacao", back.Decisions[0].Kind);
+        // Data completa canônica p/ timeline X.
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 4, 0), back.Decisions[0].At);
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 6, 0), back.Decisions[1].At);
+        Assert.Single(back.PaperTrades);
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 6, 0), back.PaperTrades[0].EntryAt);
+        Assert.Equal(new DateTime(2026, 10, 6, 10, 8, 0), back.PaperTrades[0].ExitAt);
     }
 }
 

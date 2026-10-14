@@ -8,15 +8,15 @@ import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
 import 'measure_ruler.dart';
-import 'strategy_report_overlay.dart';
+import 'strategy_timeline_lane.dart';
 import '../../../services/trading_service.dart';
 import '../../../services/state_service.dart';
 
 class MapFlowChart extends StatefulWidget {
   final ChartData data;
 
-  /// Exibe o overlay do relatório da sessão. Desligado no gráfico diário.
-  final bool showStrategyOverlay;
+  /// Exibe a faixa timeline ⓘ das estratégias. Desligado no gráfico diário.
+  final bool showStrategyTimeline;
 
   /// Botão ← de histórico incremental (issue #18). Ligado só no intraday;
   /// o gráfico diário passa false (default) e não muda.
@@ -27,7 +27,7 @@ class MapFlowChart extends StatefulWidget {
   const MapFlowChart(
       {super.key,
       required this.data,
-      this.showStrategyOverlay = true,
+      this.showStrategyTimeline = true,
       this.showHistoryButton = false,
       this.isHistoryLoading = false,
       this.hasMoreHistory = true,
@@ -40,11 +40,14 @@ class MapFlowChart extends StatefulWidget {
 
 class _MapFlowChartState extends State<MapFlowChart>
     with SingleTickerProviderStateMixin {
+  /// Altura da faixa timeline ⓘ (sobre a base da área de candles).
+  static const double _strategyLaneHeight = 26.0;
   final TransformationController _controller = TransformationController();
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
   double? _hoverY;
   int? _hoverCandleIndex;
+  int? _timelineHoverIndex;
   BubblePoint? _hoveredBubble;
   HistoryDealPoint? _hoveredHistory;
   Offset? _hoverPos;
@@ -217,6 +220,10 @@ class _MapFlowChartState extends State<MapFlowChart>
       _isMeasuring = false;
       _panEnabled = true;
       _clearMeasure();
+      _timelineHoverIndex = null;
+    }
+    if (!widget.showStrategyTimeline && _timelineHoverIndex != null) {
+      _timelineHoverIndex = null;
     }
     // NOTA: sem re-clamp automático quando min/max mudam com o dado ao vivo:
     // mover o `ty` por conta de tick novo desfazia o zoom/pan que o usuário
@@ -562,6 +569,23 @@ class _MapFlowChartState extends State<MapFlowChart>
     return a.isFinite && a > 0 ? a : 1.0;
   }
 
+  /// Hover efetivo do candle: ⓘ da timeline tem prioridade sobre o hover do
+  /// gráfico; sempre validado contra o tamanho atual dos candles.
+  int? _effectiveHoverIndex() {
+    final n = widget.data.candles.length;
+    if (n <= 0) return null;
+    final t = _timelineHoverIndex;
+    if (widget.showStrategyTimeline &&
+        t != null &&
+        t >= 0 &&
+        t < n) {
+      return t;
+    }
+    final h = _hoverCandleIndex;
+    if (h != null && h >= 0 && h < n) return h;
+    return null;
+  }
+
   int _localToCandleIndex(double localX, double stepX) {
     final m = _controller.value;
     final scaleX = m[0];
@@ -886,7 +910,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                     yZoom: _yZoom,
                     controller: _controller,
                     hoverY: _hoverY,
-                    hoverCandleIndex: _hoverCandleIndex,
+                    hoverCandleIndex: _effectiveHoverIndex(),
                     closingTickets: _closingTickets,
                     cancellingTickets: _cancellingTickets,
                     loadingAnimation: _loadingCtrl.value,
@@ -1018,6 +1042,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                             candleSpacing: candleSpacing,
                             yZoom: _yZoom,
                             xyAspect: _chartAspect(),
+                            hoverCandleIndex: _effectiveHoverIndex(),
                           ),
                         ),
                       ),
@@ -1171,11 +1196,31 @@ class _MapFlowChartState extends State<MapFlowChart>
                   ),
                 ),
               ),
-            // Relatório da sessão ativa sobre o gráfico (só com sessão
-            // armada; altura máxima = altura do gráfico, com rolagem).
-            if (widget.showStrategyOverlay)
-              StrategyReportOverlay(
-                maxHeight: candleAreaHeight - 16,
+            // Faixa timeline ⓘ das estratégias (sincronizada com o X,
+            // sobre a faixa inferior da área de candles).
+            if (widget.showStrategyTimeline)
+              Positioned(
+                left: ChartFixedPainter.marginLeft,
+                top: ChartFixedPainter.marginTop +
+                    candleAreaHeight -
+                    _strategyLaneHeight,
+                width: max(
+                    0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+                height: _strategyLaneHeight,
+                child: StrategyTimelineLane(
+                  points: data.strategyPoints,
+                  controller: _controller,
+                  width: max(0.0,
+                      candleAreaWidth - ChartFixedPainter.rightReserved),
+                  stepX: stepX,
+                  onHoverCandle: (idx) {
+                    if (_timelineHoverIndex != idx && mounted) {
+                      setState(() {
+                        _timelineHoverIndex = idx;
+                      });
+                    }
+                  },
+                ),
               ),
           if (_hoveredBubble != null && _hoverPos != null)
             Positioned(
