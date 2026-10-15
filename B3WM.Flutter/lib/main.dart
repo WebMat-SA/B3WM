@@ -157,6 +157,8 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                             'chart_${state.symbol}_${state.timeFrame}'),
                                         data: buildChartData(state),
                                         isDaily: false,
+                                        showStrategyTimeline:
+                                            state.strategyTimelineVisible,
                                         showHistoryButton: true,
                                         isHistoryLoading:
                                             state.isLoadingHistory,

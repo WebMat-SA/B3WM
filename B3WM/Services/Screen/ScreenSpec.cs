@@ -96,6 +96,7 @@ namespace B3WM.Services.Screen
             "knownAgents", "bubbleSoundEnabled", "bubbleSoundVolume",
             "tradingConfigExpanded", "tradingAccountExpanded", "tradingOrdersExpanded",
             "tradingPositionsExpanded", "tradingHistoryExpanded",
+            "strategyTimelineVisible", // display puro da faixa ⓘ (não entra no snapshot)
             "panelFraction",
             "lookbackDays", // multi-day é fase 2; hoje o backend usa janela explícita
         };

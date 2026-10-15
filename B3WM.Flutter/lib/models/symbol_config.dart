@@ -41,6 +41,12 @@ class SymbolConfig {
   /// `daily.xZoom` (diário).
   double? xZoom;
 
+  /// Posição do viewport intraday (translação do `InteractiveViewer` em px).
+  /// `panX`/`panY` + [xZoom] + [yZoom] restauram a tela exata ao reabrir.
+  /// `null` = posição do auto-fit.
+  double? panX;
+  double? panY;
+
   /// Configurações exclusivas do widget de análise diária (issue #12),
   /// persistidas como bloco `daily:{}` no mesmo `Config_$symbol`.
   DailyAnalysisConfig daily;
@@ -80,6 +86,10 @@ class SymbolConfig {
   bool positionVisible;
   bool openOrdersVisible;
 
+  /// Timeline ⓘ das estratégias no gráfico intraday (faixa inteira).
+  /// Display puro: não trava com estratégia armada, não entra no snapshot.
+  bool strategyTimelineVisible;
+
   bool tradingPanelVisible;
   // Com inicializador (= false) de propósito: instâncias antigas em memória
   // (hot reload) recebem o default em vez de null -> evita crash
@@ -111,6 +121,8 @@ class SymbolConfig {
     required this.structureRangeUpd,
     required this.yZoom,
     this.xZoom,
+    this.panX,
+    this.panY,
     required this.daily,
     required this.extremeVisible,
     required this.extremeOpacity,
@@ -134,6 +146,7 @@ class SymbolConfig {
     required this.tradingHistoryVisible,
     required this.positionVisible,
     required this.openOrdersVisible,
+    required this.strategyTimelineVisible,
     required this.tradingPanelVisible,
     this.tradingConfigExpanded = false,
     required this.tradingAccountExpanded,
@@ -185,6 +198,7 @@ class SymbolConfig {
         tradingHistoryVisible = true,
         positionVisible = true,
         openOrdersVisible = true,
+        strategyTimelineVisible = true,
         tradingPanelVisible = true,
         tradingConfigExpanded = false,
         tradingAccountExpanded = false,
@@ -231,6 +245,8 @@ class SymbolConfig {
           : defaults.structureRangeUpd,
       yZoom: legacy.yZoom.clamp(0.3, 10.0),
       xZoom: legacy.xZoom,
+      panX: legacy.panX,
+      panY: legacy.panY,
       daily: DailyAnalysisConfig(
         structureRangeUpd: dailyRange,
         structureVisible: legacy.daily.structureVisible,
@@ -252,6 +268,8 @@ class SymbolConfig {
         panelFraction: legacy.daily.panelFraction,
         yZoom: legacy.daily.yZoom.clamp(0.3, 10.0),
         xZoom: legacy.daily.xZoom,
+        panX: legacy.daily.panX,
+        panY: legacy.daily.panY,
       ),
       extremeVisible: defaults.extremeVisible,
       extremeOpacity: defaults.extremeOpacity,
@@ -275,6 +293,7 @@ class SymbolConfig {
       tradingHistoryVisible: legacy.tradingHistoryVisible,
       positionVisible: legacy.positionVisible,
       openOrdersVisible: legacy.openOrdersVisible,
+      strategyTimelineVisible: legacy.strategyTimelineVisible,
       tradingPanelVisible: legacy.tradingPanelVisible,
       tradingConfigExpanded: legacy.tradingConfigExpanded,
       tradingAccountExpanded: legacy.tradingAccountExpanded,
@@ -313,6 +332,8 @@ class SymbolConfig {
             Defaults.minDistanceUpdateBorder(symbol),
         yZoom: ((json['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
         xZoom: DailyAnalysisConfig.clampXZoom(json['xZoom'] as num?),
+        panX: (json['panX'] as num?)?.toDouble(),
+        panY: (json['panY'] as num?)?.toDouble(),
         daily: DailyAnalysisConfig.fromJson(json, symbol: symbol),
         extremeVisible: json['extremeVisible'] as bool? ?? true,
         extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
@@ -346,6 +367,8 @@ class SymbolConfig {
         tradingHistoryVisible: json['tradingHistoryVisible'] as bool? ?? true,
         positionVisible: json['positionVisible'] as bool? ?? true,
         openOrdersVisible: json['openOrdersVisible'] as bool? ?? true,
+        strategyTimelineVisible:
+            json['strategyTimelineVisible'] as bool? ?? true,
         tradingPanelVisible: json['tradingPanelVisible'] as bool? ?? true,
         tradingConfigExpanded:
             json['tradingConfigExpanded'] as bool? ?? false,
@@ -380,6 +403,8 @@ class SymbolConfig {
         'structureRangeUpd': structureRangeUpd,
         'yZoom': yZoom,
         'xZoom': xZoom,
+        'panX': panX,
+        'panY': panY,
         'daily': daily.toJson(),
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
@@ -404,6 +429,7 @@ class SymbolConfig {
         'tradingHistoryVisible': tradingHistoryVisible,
         'positionVisible': positionVisible,
         'openOrdersVisible': openOrdersVisible,
+        'strategyTimelineVisible': strategyTimelineVisible,
         'tradingPanelVisible': tradingPanelVisible,
         'tradingConfigExpanded': tradingConfigExpanded,
         'tradingAccountExpanded': tradingAccountExpanded,

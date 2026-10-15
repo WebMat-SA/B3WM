@@ -526,7 +526,10 @@ ChartData buildChartData(StateService state) {
   // carregado o ponto é descartado (sem pilha no índice 0).
   final strategyPoints = <StrategyPoint>[];
   final timeline = state.strategyTimelineItems;
-  if (timeline.isNotEmpty && visible.isNotEmpty && state.timeFrame > 0) {
+  if (state.strategyTimelineVisible &&
+      timeline.isNotEmpty &&
+      visible.isNotEmpty &&
+      state.timeFrame > 0) {
     final first = visible.first.date;
     final lastEnd = visible.last.date
         .add(Duration(minutes: state.timeFrame));
@@ -554,7 +557,9 @@ ChartData buildChartData(StateService state) {
     strategyPoints.sort((a, b) => a.candleIndex.compareTo(b.candleIndex));
   }
   // Diagnóstico: só fala quando algum item cai fora do range carregado.
-  if (timeline.isNotEmpty && strategyPoints.length != timeline.length) {
+  if (state.strategyTimelineVisible &&
+      timeline.isNotEmpty &&
+      strategyPoints.length != timeline.length) {
     logD('[timeline] ${timeline.length} itens -> ${strategyPoints.length} pontos (fora do range)');
   }
 

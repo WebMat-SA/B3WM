@@ -50,6 +50,12 @@ class DailyAnalysisConfig {
   /// `SymbolConfig.xZoom` (intraday).
   double? xZoom;
 
+  /// Posição do viewport (translação do `InteractiveViewer` em px).
+  /// `panX`/`panY` + [xZoom] + [yZoom] restauram a tela exata ao reabrir.
+  /// `null` = posição do auto-fit.
+  double? panX;
+  double? panY;
+
   DailyAnalysisConfig({
     required this.structureRangeUpd,
     required this.structureVisible,
@@ -71,6 +77,8 @@ class DailyAnalysisConfig {
     required this.panelFraction,
     required this.yZoom,
     this.xZoom,
+    this.panX,
+    this.panY,
   });
 
   DailyAnalysisConfig.withDefaults(String symbol)
@@ -141,6 +149,8 @@ class DailyAnalysisConfig {
           ((src['panelFraction'] as num?)?.toDouble() ?? 0.5).clamp(0.3, 0.7),
       yZoom: ((src['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
       xZoom: clampXZoom(src['xZoom'] as num?),
+      panX: (src['panX'] as num?)?.toDouble(),
+      panY: (src['panY'] as num?)?.toDouble(),
     );
   }
 
@@ -165,6 +175,8 @@ class DailyAnalysisConfig {
         'panelFraction': panelFraction,
         'yZoom': yZoom,
         'xZoom': xZoom,
+        'panX': panX,
+        'panY': panY,
       };
 
   /// Clamp da escala X absoluta (`0.1..5.0`); `null` (ausente) = auto-fit.

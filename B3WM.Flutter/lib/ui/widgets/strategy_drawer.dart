@@ -107,6 +107,18 @@ class _StrategyDrawerState extends State<StrategyDrawer>
         padding: EdgeInsets.zero,
         children: [
           ExpandableSection(
+            icon: Icons.visibility,
+            title: 'Exibição',
+            defaultExpanded: true,
+            child: Column(
+              children: [
+                ToggleRow('Show on Chart',
+                    state.strategyTimelineVisible,
+                    (v) => state.setStrategyTimelineVisible(v)),
+              ],
+            ),
+          ),
+          ExpandableSection(
             icon: Icons.play_arrow,
             title: 'Rodar estratégia',
             defaultExpanded: true,

@@ -144,6 +144,11 @@ class StateService extends ChangeNotifier {
   bool get positionVisible => _currentConfig.positionVisible;
   bool get openOrdersVisible => _currentConfig.openOrdersVisible;
 
+  /// Timeline ⓘ das estratégias no gráfico intraday (faixa inteira).
+  /// Display puro (paridade com os outros *Visible): nunca trava com
+  /// estratégia armada, persistido por símbolo em `Config_$symbol`.
+  bool get strategyTimelineVisible => _currentConfig.strategyTimelineVisible;
+
   bool get tradingPanelVisible => _currentConfig.tradingPanelVisible;
   bool get tradingConfigExpanded => _currentConfig.tradingConfigExpanded;
   bool get tradingAccountExpanded => _currentConfig.tradingAccountExpanded;
@@ -232,6 +237,15 @@ class StateService extends ChangeNotifier {
   /// `null` = auto-fit.
   double? get dailyXZoom => _currentConfig.daily.xZoom;
 
+  /// Posição do viewport INTRADAY (`panX`/`panY` do `Config_$symbol`).
+  /// `null` = posição do auto-fit.
+  double? get panX => _currentConfig.panX;
+  double? get panY => _currentConfig.panY;
+
+  /// Posição do viewport DIÁRIO (`daily.panX`/`daily.panY`).
+  double? get dailyPanX => _currentConfig.daily.panX;
+  double? get dailyPanY => _currentConfig.daily.panY;
+
   /// Ajuste imediato com persistência (uso programático e reset do gráfico).
   void setXZoom(double? v, {bool isDaily = false}) {
     final clamped =
@@ -245,23 +259,56 @@ class StateService extends ChangeNotifier {
     _saveConfigForSymbol(_symbol);
   }
 
-  /// Preview do zoom X durante o scroll/pinch: atualiza a config em memória
-  /// sem tocar o disco e sem `notifyListeners` (a escala já está aplicada no
-  /// `TransformationController` local). Retorna `true` se o valor mudou.
-  /// O chamador agenda [commitXZoom] com debounce (scroll não tem evento
-  /// de fim) ou imediatamente (fim de gesto do pinch).
-  bool previewXZoom(double? v, {required bool isDaily}) {
-    final clamped = v == null || !v.isFinite || v <= 0
-        ? null
-        : v.clamp(minXZoom, maxXZoom).toDouble();
+  /// Preview do viewport durante scroll/pinch/pan/arrasto-Y: atualiza escala
+  /// e posição em memória sem tocar o disco e sem `notifyListeners` (a matriz
+  /// já está aplicada no `TransformationController` local; notificar aqui
+  /// reconstruiria a árvore inteira a cada evento). Retorna `true` se algo
+  /// mudou. O chamador agenda [commitXZoom] com debounce (scroll não tem
+  /// evento de fim) ou imediatamente (fim de gesto).
+  bool previewViewport({
+    required bool isDaily,
+    required double scale,
+    required double tx,
+    required double ty,
+  }) {
+    if (!scale.isFinite || scale <= 0 || !tx.isFinite || !ty.isFinite) {
+      return false;
+    }
+    final s = scale.clamp(minXZoom, maxXZoom).toDouble();
     if (isDaily) {
-      if (_currentConfig.daily.xZoom == clamped) return false;
-      _currentConfig.daily.xZoom = clamped;
+      final d = _currentConfig.daily;
+      if (d.xZoom == s && d.panX == tx && d.panY == ty) return false;
+      d.xZoom = s;
+      d.panX = tx;
+      d.panY = ty;
       return true;
     }
-    if (_currentConfig.xZoom == clamped) return false;
-    _currentConfig.xZoom = clamped;
+    final c = _currentConfig;
+    if (c.xZoom == s && c.panX == tx && c.panY == ty) return false;
+    c.xZoom = s;
+    c.panX = tx;
+    c.panY = ty;
     return true;
+  }
+
+  /// Reseta a vista do gráfico (botão ⟲ / Espaço) com persistência:
+  /// Y volta a 1.0 e o viewport X/pan volta ao auto-fit (`null`).
+  void resetChartView({required bool isDaily}) {
+    if (isDaily) {
+      final d = _currentConfig.daily;
+      d.yZoom = 1.0;
+      d.xZoom = null;
+      d.panX = null;
+      d.panY = null;
+    } else {
+      final c = _currentConfig;
+      c.yZoom = 1.0;
+      c.xZoom = null;
+      c.panX = null;
+      c.panY = null;
+    }
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
   }
 
   /// Persiste o zoom X atual. Salva o `Config_$symbol` inteiro
@@ -679,6 +726,8 @@ class StateService extends ChangeNotifier {
   void setTradingHistoryVisible(bool v) { _currentConfig.tradingHistoryVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setPositionVisible(bool v) { _currentConfig.positionVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setOpenOrdersVisible(bool v) { _currentConfig.openOrdersVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+
+  void setStrategyTimelineVisible(bool v) { _currentConfig.strategyTimelineVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setTradingPanelVisible(bool v) { _currentConfig.tradingPanelVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setTradingConfigExpanded(bool v) { _currentConfig.tradingConfigExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
@@ -1649,6 +1698,7 @@ class StateService extends ChangeNotifier {
       tradingHistoryVisible: true,
       positionVisible: true,
       openOrdersVisible: true,
+      strategyTimelineVisible: true,
       tradingPanelVisible: true,
       tradingConfigExpanded: false,
       tradingAccountExpanded: false,

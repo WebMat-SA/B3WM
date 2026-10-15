@@ -51,10 +51,13 @@ class _MapFlowChartState extends State<MapFlowChart>
   final TransformationController _controller = TransformationController();
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
-  /// Debounce do commit do zoom X: o scroll do mouse não tem evento de fim,
+  /// Debounce do commit do viewport: o scroll do mouse não tem evento de fim,
   /// então a persistência acontece ~800ms após o último tick (paridade com
   /// `_schedulePivotIntradaySync` do `StateService`).
-  Timer? _xZoomCommitTimer;
+  Timer? _viewportCommitTimer;
+  /// Há captura de viewport ainda não gravada no disco (flush no `dispose`
+  /// para não perder o estado ao fechar o programa durante o debounce).
+  bool _viewportDirty = false;
   double? _hoverY;
   int? _hoverCandleIndex;
   int? _timelineHoverIndex;
@@ -265,6 +268,8 @@ class _MapFlowChartState extends State<MapFlowChart>
             m.setTranslationRaw(tx - delta * s, ty, 0.0);
             _controller.value = m;
           }
+          // Mantém o viewport salvo em sync com o deslocamento.
+          _captureAndScheduleViewportCommit();
           return;
         }
         // Append ao vivo: só acompanha a borda direita (follow) se o usuário
@@ -282,6 +287,8 @@ class _MapFlowChartState extends State<MapFlowChart>
           final m = _controller.value.clone();
           m.setTranslationRaw(newTx, ty, 0.0);
           _controller.value = m;
+          // O follow deslocou a vista: mantém o viewport salvo em sync.
+          _captureAndScheduleViewportCommit();
         }
       }
     }
@@ -289,7 +296,15 @@ class _MapFlowChartState extends State<MapFlowChart>
 
   @override
   void dispose() {
-    _xZoomCommitTimer?.cancel();
+    _viewportCommitTimer?.cancel();
+    if (_viewportDirty && mounted) {
+      // Flush best-effort: não perde o viewport se o app fechar durante
+      // o debounce do scroll.
+      try {
+        // ignore: discarded_futures
+        context.read<StateService>().commitXZoom();
+      } catch (_) {}
+    }
     _dismissTooltip();
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
@@ -325,83 +340,112 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _resetChart() {
-    // Reset persiste: volta o Y para 1.0 e o X para auto-fit no disco,
-    // então reabrir o programa mantém o gráfico resetado.
-    _xZoomCommitTimer?.cancel();
+    // Reset persiste (`StateService.resetChartView`): Y volta a 1.0 e o
+    // viewport X/pan volta ao auto-fit no disco, então reabrir o programa
+    // mantém o gráfico resetado.
+    _viewportCommitTimer?.cancel();
+    _viewportDirty = false;
     setState(() {
       _yZoom = 1.0;
     });
     if (mounted) {
       try {
-        final st = context.read<StateService>();
-        st.setYZoom(1.0, isDaily: widget.isDaily);
-        st.setXZoom(null, isDaily: widget.isDaily);
+        context.read<StateService>().resetChartView(isDaily: widget.isDaily);
       } catch (_) {}
     }
     _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth, _lastCandleAreaHeight);
   }
 
   void _onInteractionEnd() {
-    // Fim de gesto do InteractiveViewer (pinch/pan): persiste o zoom X
-    // se mudou. O scroll do mouse não passa por aqui (é via
-    // `onPointerSignal` → `_applyXZoomAt`), por isso ele salva com debounce
-    // em [_previewAndScheduleXZoomCommit]. Pan puro não altera a escala e
-    // `previewXZoom` retorna false, sem write no disco.
-    if (!mounted) return;
-    try {
-      final st = context.read<StateService>();
-      if (st.previewXZoom(_controller.value[0], isDaily: widget.isDaily)) {
-        _xZoomCommitTimer?.cancel();
+    // Fim de gesto do InteractiveViewer (pinch/pan): persiste o viewport
+    // (escala + posição) se mudou. O scroll do mouse não passa por aqui (é
+    // via `onPointerSignal` → `_applyXZoomAt`), por isso ele salva com
+    // debounce em [_captureAndScheduleViewportCommit].
+    if (_captureViewport()) {
+      _viewportCommitTimer?.cancel();
+      _viewportDirty = false;
+      try {
         // ignore: discarded_futures
-        st.commitXZoom();
-      }
-    } catch (_) {}
+        context.read<StateService>().commitXZoom();
+      } catch (_) {}
+    }
   }
 
-  /// Espelha a escala X vigente na config em memória e agenda o commit com
-  /// debounce (o scroll não tem evento de fim para salvar de uma vez).
-  void _previewAndScheduleXZoomCommit() {
-    if (!mounted) return;
+  /// Lê escala + posição vigentes do controller e espelha na config em
+  /// memória (`StateService.previewViewport`). Retorna `true` se algo mudou.
+  bool _captureViewport() {
+    if (!mounted) return false;
     try {
-      final st = context.read<StateService>();
-      if (!st.previewXZoom(_controller.value[0], isDaily: widget.isDaily)) {
-        return;
-      }
-      _xZoomCommitTimer?.cancel();
-      _xZoomCommitTimer = Timer(const Duration(milliseconds: 800), () {
-        if (!mounted) return;
-        try {
-          // ignore: discarded_futures
-          context.read<StateService>().commitXZoom();
-        } catch (_) {}
-      });
-    } catch (_) {}
+      final m = _controller.value;
+      final t = m.getTranslation();
+      return context.read<StateService>().previewViewport(
+            isDaily: widget.isDaily,
+            scale: m[0],
+            tx: t.x,
+            ty: t.y,
+          );
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// Reaplica o zoom X salvo após o fit inicial (abrir o programa, trocar
-  /// de símbolo) ou após refit por redimensionamento. Sem valor salvo
-  /// (`null` = auto-fit) não faz nada. A escala é clampada ao piso/teto
-  /// vigentes e a vista ancora na borda direita (candles recentes, mesma
-  /// margem de 15% do follow ao vivo).
-  void _restoreSavedXZoom(double candleAreaWidth, double virtualCandleWidth) {
-    double? saved;
+  /// Captura o viewport e agenda o commit com debounce (o scroll não tem
+  /// evento de fim para salvar de uma vez). Marca [_viewportDirty] para o
+  /// flush no `dispose`.
+  void _captureAndScheduleViewportCommit() {
+    if (!_captureViewport()) return;
+    _viewportDirty = true;
+    _viewportCommitTimer?.cancel();
+    _viewportCommitTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      _viewportDirty = false;
+      try {
+        // ignore: discarded_futures
+        context.read<StateService>().commitXZoom();
+      } catch (_) {}
+    });
+  }
+
+  /// Restaura o viewport salvo após o fit (abrir o programa, trocar de
+  /// símbolo) ou após refit por redimensionamento: escala + posição exatas,
+  /// validadas pelo `_clampPan` para a geometria vigente (degradação graciosa
+  /// se janela/dados mudaram). Sem valor salvo (`null` = auto-fit) não faz
+  /// nada; escala salva sem posição (saves antigos) ancora na borda direita.
+  void _restoreSavedViewport(double candleAreaWidth, double virtualCandleWidth) {
+    double? scale, tx, ty;
     try {
       final st = context.read<StateService>();
-      saved = widget.isDaily ? st.dailyXZoom : st.xZoom;
+      if (widget.isDaily) {
+        scale = st.dailyXZoom;
+        tx = st.dailyPanX;
+        ty = st.dailyPanY;
+      } else {
+        scale = st.xZoom;
+        tx = st.panX;
+        ty = st.panY;
+      }
     } catch (_) {
       return;
     }
-    if (saved == null || !saved.isFinite || saved <= 0) return;
+    if (scale == null || !scale.isFinite || scale <= 0) return;
     final viewerW = candleAreaWidth - ChartFixedPainter.rightReserved;
     if (viewerW <= 0 || virtualCandleWidth <= 0) return;
-    final s = saved.clamp(_minAllowedScale, 5.0).toDouble();
-    if (s <= _minAllowedScale) return; // equivale ao fit
-    const rightMarginRatio = 0.15;
+    final s = scale.clamp(_minAllowedScale, 5.0).toDouble();
     final m = Matrix4.copy(_controller.value);
     m[0] = s;
-    m.setTranslationRaw(viewerW - viewerW * rightMarginRatio - virtualCandleWidth * s,
-        m.getTranslation().y, m.getTranslation().z);
+    if (tx != null && ty != null && tx.isFinite && ty.isFinite) {
+      m.setTranslationRaw(tx, ty, m.getTranslation().z);
+    } else if (s > _minAllowedScale) {
+      // Fallback (saves só com escala): borda direita, mesma margem de 15%
+      // do follow ao vivo.
+      const rightMarginRatio = 0.15;
+      m.setTranslationRaw(
+          viewerW - viewerW * rightMarginRatio - virtualCandleWidth * s,
+          m.getTranslation().y,
+          m.getTranslation().z);
+    }
     _controller.value = m;
+    _clampPan();
   }
 
   /// Caminho único do zoom Y (só via arrasto na coluna de labels Y): usa
@@ -466,7 +510,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     mm[0] = newScale;
     mm.setTranslationRaw(newTx, mm.getTranslation().y, mm.getTranslation().z);
     _controller.value = mm;
-    _previewAndScheduleXZoomCommit();
+    _captureAndScheduleViewportCommit();
   }
 
   void _handleScroll(PointerScrollEvent event) {
@@ -483,6 +527,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _onYLabelDragUpdate(DragUpdateDetails d) {
     _applyYZoomAt(exp(-d.delta.dy * 0.005), _lastCandleAreaHeight / 2);
     // Espelha o zoom local na config em memória (sem disco/notify por evento).
+    // O arrasto-Y também desloca `ty`, então captura o viewport junto.
     if (mounted) {
       try {
         context.read<StateService>().previewYZoom(
@@ -490,11 +535,15 @@ class _MapFlowChartState extends State<MapFlowChart>
               isDaily: widget.isDaily,
             );
       } catch (_) {}
+      if (_captureViewport()) _viewportDirty = true;
     }
   }
 
   void _onYLabelDragEnd() {
-    // Persiste o zoom ao fim do gesto (um write por gesto, como panelFraction).
+    // Persiste o zoom + viewport ao fim do gesto (um write por gesto,
+    // como panelFraction — o commit salva o `Config_$symbol` inteiro).
+    _viewportCommitTimer?.cancel();
+    _viewportDirty = false;
     if (mounted) {
       try {
         // ignore: discarded_futures
@@ -981,14 +1030,14 @@ class _MapFlowChartState extends State<MapFlowChart>
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
-            _restoreSavedXZoom(candleAreaWidth, virtualCandleWidth);
+            _restoreSavedViewport(candleAreaWidth, virtualCandleWidth);
           });
         } else if (_initialFitDone && candleAreaWidth != _lastFitAreaWidth) {
           _lastFitAreaWidth = candleAreaWidth;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
-            _restoreSavedXZoom(candleAreaWidth, virtualCandleWidth);
+            _restoreSavedViewport(candleAreaWidth, virtualCandleWidth);
           });
         }
 

@@ -262,7 +262,7 @@ void main() {
       winReloaded.reset();
     });
 
-    test('zoom X persiste por símbolo e reset volta ao auto-fit', () async {
+    test('viewport persiste por símbolo e reset volta ao auto-fit', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();
       await prefs.init();
@@ -270,26 +270,52 @@ void main() {
       final service = _createService(prefs);
       await service.setSymbol('WINFUT');
       expect(service.xZoom, isNull);
+      expect(service.panX, isNull);
+      expect(service.panY, isNull);
       expect(service.dailyXZoom, isNull);
-      expect(service.previewXZoom(2.0, isDaily: false), isTrue);
-      expect(service.previewXZoom(2.0, isDaily: false), isFalse);
-      expect(service.previewXZoom(1.5, isDaily: true), isTrue);
+      expect(
+          service.previewViewport(
+              isDaily: false, scale: 2.0, tx: 100.0, ty: -50.0),
+          isTrue);
+      expect(
+          service.previewViewport(
+              isDaily: false, scale: 2.0, tx: 100.0, ty: -50.0),
+          isFalse);
+      expect(
+          service.previewViewport(
+              isDaily: true, scale: 1.5, tx: 10.0, ty: 20.0),
+          isTrue);
+      // Entrada inválida não altera nada.
+      expect(
+          service.previewViewport(
+              isDaily: false, scale: double.nan, tx: 0, ty: 0),
+          isFalse);
       await service.commitXZoom();
       service.reset();
 
       final reloaded = _createService(prefs);
       await reloaded.setSymbol('WINFUT');
       expect(reloaded.xZoom, 2.0);
+      expect(reloaded.panX, 100.0);
+      expect(reloaded.panY, -50.0);
       expect(reloaded.dailyXZoom, 1.5);
+      expect(reloaded.dailyPanX, 10.0);
+      expect(reloaded.dailyPanY, 20.0);
       // Reset: volta ao auto-fit (null) e persiste.
-      reloaded.setXZoom(null);
-      reloaded.setXZoom(null, isDaily: true);
+      reloaded.resetChartView(isDaily: false);
+      expect(reloaded.xZoom, isNull);
+      expect(reloaded.panX, isNull);
+      expect(reloaded.yZoom, 1.0);
+      expect(reloaded.dailyXZoom, 1.5);
+      reloaded.resetChartView(isDaily: true);
       reloaded.reset();
 
       final resetReloaded = _createService(prefs);
       await resetReloaded.setSymbol('WINFUT');
       expect(resetReloaded.xZoom, isNull);
+      expect(resetReloaded.panX, isNull);
       expect(resetReloaded.dailyXZoom, isNull);
+      expect(resetReloaded.dailyPanX, isNull);
       resetReloaded.reset();
     });
 
