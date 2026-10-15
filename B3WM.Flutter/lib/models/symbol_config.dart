@@ -30,6 +30,17 @@ class SymbolConfig {
   /// e nunca é lido/escrito por este campo.
   double structureRangeUpd;
 
+  /// Zoom Y (esticar/desesticar o eixo de preço) do gráfico intraday.
+  /// Independente do `daily.yZoom` (diário): um nunca toca no outro.
+  /// Faixa `0.3..10.0` (paridade com `StateService.min/maxYZoom`).
+  double yZoom;
+
+  /// Zoom X (eixo do tempo, scroll do mouse/pinch) do gráfico intraday.
+  /// Escala absoluta do `InteractiveViewer` (`m[0]`), faixa `0.1..5.0`.
+  /// `null` = auto-fit (nunca aproximado ou após reset). Independente do
+  /// `daily.xZoom` (diário).
+  double? xZoom;
+
   /// Configurações exclusivas do widget de análise diária (issue #12),
   /// persistidas como bloco `daily:{}` no mesmo `Config_$symbol`.
   DailyAnalysisConfig daily;
@@ -98,6 +109,8 @@ class SymbolConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.structureRangeUpd,
+    required this.yZoom,
+    this.xZoom,
     required this.daily,
     required this.extremeVisible,
     required this.extremeOpacity,
@@ -148,6 +161,7 @@ class SymbolConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
+        yZoom = 1.0,
         daily = DailyAnalysisConfig.withDefaults(symbol),
         extremeVisible = true,
         extremeOpacity = 0.7,
@@ -215,6 +229,8 @@ class SymbolConfig {
               legacy.structureRangeUpd <= structureMax
           ? legacy.structureRangeUpd
           : defaults.structureRangeUpd,
+      yZoom: legacy.yZoom.clamp(0.3, 10.0),
+      xZoom: legacy.xZoom,
       daily: DailyAnalysisConfig(
         structureRangeUpd: dailyRange,
         structureVisible: legacy.daily.structureVisible,
@@ -234,6 +250,8 @@ class SymbolConfig {
         profileAutoByPriceStructure: true,
         panelVisible: legacy.daily.panelVisible,
         panelFraction: legacy.daily.panelFraction,
+        yZoom: legacy.daily.yZoom.clamp(0.3, 10.0),
+        xZoom: legacy.daily.xZoom,
       ),
       extremeVisible: defaults.extremeVisible,
       extremeOpacity: defaults.extremeOpacity,
@@ -293,6 +311,8 @@ class SymbolConfig {
             (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
         structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
             Defaults.minDistanceUpdateBorder(symbol),
+        yZoom: ((json['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
+        xZoom: DailyAnalysisConfig.clampXZoom(json['xZoom'] as num?),
         daily: DailyAnalysisConfig.fromJson(json, symbol: symbol),
         extremeVisible: json['extremeVisible'] as bool? ?? true,
         extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
@@ -358,6 +378,8 @@ class SymbolConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
+        'yZoom': yZoom,
+        'xZoom': xZoom,
         'daily': daily.toJson(),
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,

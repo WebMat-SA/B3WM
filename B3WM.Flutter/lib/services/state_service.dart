@@ -172,14 +172,101 @@ class StateService extends ChangeNotifier {
   /// Unifica o clamp da roda (`MapFlowChart._handleScroll`), dos botões `−/+`
   /// e da API programática [setYZoom]. Faixa `0.3..10.0` = superset dos antigos
   /// `0.9..10.0` (roda) e `0.3..5.0` (setYZoom): nenhuma regressão de alcance.
-  /// Cada `MapFlowChart` (intraday vs 1D) mantém `_yZoom` local; o global só
-  /// sincroniza via `didUpdateWidget` quando `widget.data.yZoom` muda de fora
-  /// (ex. reset global), evitando contaminação 1D <> intraday por `notifyListeners`.
+  /// Persistido por símbolo e separado intraday/diário (`SymbolConfig.yZoom`
+  /// vs `DailyAnalysisConfig.yZoom`): cada `MapFlowChart` mantém `_yZoom`
+  /// local e espelha via `previewYZoom` (arrasto) + `commitYZoom` (fim do
+  /// gesto), evitando contaminação 1D <> intraday por `notifyListeners`.
   static const double minYZoom = 0.3;
   static const double maxYZoom = 10.0;
 
-  double _yZoom = 1.0;
-  double get yZoom => _yZoom;
+  /// Zoom Y INTRADAY persistido por símbolo (`Config_$symbol` → `yZoom`).
+  double get yZoom => _currentConfig.yZoom;
+
+  /// Zoom Y DIÁRIO persistido por símbolo (`Config_$symbol` → `daily.yZoom`).
+  double get dailyYZoom => _currentConfig.daily.yZoom;
+
+  /// Ajuste imediato com persistência (uso programático / compat).
+  /// O arrasto no label Y usa [previewYZoom] + [commitYZoom] para não
+  /// gerar um write no disco por evento de drag.
+  void setYZoom(double v, {bool isDaily = false}) {
+    if (isDaily) {
+      _currentConfig.daily.yZoom = v.clamp(minYZoom, maxYZoom);
+    } else {
+      _currentConfig.yZoom = v.clamp(minYZoom, maxYZoom);
+    }
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  /// Preview durante o arrasto no label Y: atualiza a config em memória
+  /// sem tocar o disco e sem `notifyListeners` (o repaint já acontece via
+  /// `setState` local do `MapFlowChart`; notificar aqui reconstruiria a
+  /// árvore inteira a cada evento de drag). O valor é persistido em
+  /// [commitYZoom] ao fim do gesto.
+  void previewYZoom(double v, {required bool isDaily}) {
+    final clamped = v.clamp(minYZoom, maxYZoom);
+    if (isDaily) {
+      if (_currentConfig.daily.yZoom == clamped) return;
+      _currentConfig.daily.yZoom = clamped;
+    } else {
+      if (_currentConfig.yZoom == clamped) return;
+      _currentConfig.yZoom = clamped;
+    }
+  }
+
+  /// Persiste o zoom Y atual (chamado ao fim do arrasto no label Y).
+  /// Salva o `Config_$symbol` inteiro (cobre intraday + diário).
+  Future<void> commitYZoom() => _saveConfigForSymbol(_symbol);
+
+  /// Limites da escala X absoluta do `InteractiveViewer` (`m[0]`).
+  /// Piso `0.1` = piso do `fitScale` em `MapFlowChart._fitChart`;
+  /// teto `5.0` = teto do pinch/zoom X.
+  static const double minXZoom = 0.1;
+  static const double maxXZoom = 5.0;
+
+  /// Zoom X INTRADAY persistido por símbolo (`Config_$symbol` → `xZoom`).
+  /// `null` = auto-fit.
+  double? get xZoom => _currentConfig.xZoom;
+
+  /// Zoom X DIÁRIO persistido por símbolo (`Config_$symbol` → `daily.xZoom`).
+  /// `null` = auto-fit.
+  double? get dailyXZoom => _currentConfig.daily.xZoom;
+
+  /// Ajuste imediato com persistência (uso programático e reset do gráfico).
+  void setXZoom(double? v, {bool isDaily = false}) {
+    final clamped =
+        v == null ? null : v.clamp(minXZoom, maxXZoom).toDouble();
+    if (isDaily) {
+      _currentConfig.daily.xZoom = clamped;
+    } else {
+      _currentConfig.xZoom = clamped;
+    }
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  /// Preview do zoom X durante o scroll/pinch: atualiza a config em memória
+  /// sem tocar o disco e sem `notifyListeners` (a escala já está aplicada no
+  /// `TransformationController` local). Retorna `true` se o valor mudou.
+  /// O chamador agenda [commitXZoom] com debounce (scroll não tem evento
+  /// de fim) ou imediatamente (fim de gesto do pinch).
+  bool previewXZoom(double? v, {required bool isDaily}) {
+    final clamped = v == null || !v.isFinite || v <= 0
+        ? null
+        : v.clamp(minXZoom, maxXZoom).toDouble();
+    if (isDaily) {
+      if (_currentConfig.daily.xZoom == clamped) return false;
+      _currentConfig.daily.xZoom = clamped;
+      return true;
+    }
+    if (_currentConfig.xZoom == clamped) return false;
+    _currentConfig.xZoom = clamped;
+    return true;
+  }
+
+  /// Persiste o zoom X atual. Salva o `Config_$symbol` inteiro
+  /// (cobre intraday + diário).
+  Future<void> commitXZoom() => _saveConfigForSymbol(_symbol);
 
   bool get isConnected => _signalRService.isConnected;
 
@@ -599,8 +686,6 @@ class StateService extends ChangeNotifier {
   void setTradingOrdersExpanded(bool v) { _currentConfig.tradingOrdersExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setTradingPositionsExpanded(bool v) { _currentConfig.tradingPositionsExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setTradingHistoryExpanded(bool v) { _currentConfig.tradingHistoryExpanded = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-
-  void setYZoom(double v) { _yZoom = v.clamp(minYZoom, maxYZoom); notifyListeners(); }
 
   /// Mantido por compat (backups/JSONs antigos). UI da aba Período removida
   /// (issue #18): o fluxo é sempre intraday + histórico incremental via
@@ -1526,6 +1611,7 @@ class StateService extends ChangeNotifier {
       lookbackDays: 5,
       thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
       structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
+      yZoom: 1.0,
       daily: DailyAnalysisConfig.withDefaults(''),
       structureVisible: p.getBool('StructureVisible') ?? true,
       structureAuxVisible: p.getBool('StructureAuxVisible') ?? true,

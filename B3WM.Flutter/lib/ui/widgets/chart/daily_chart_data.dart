@@ -217,7 +217,7 @@ ChartData buildDailyChartData(StateService state) {
     profileOpacity: state.dailyProfileOpacity,
     colorBuyer: _parseHexColor(state.colorBuyer),
     colorSeller: _parseHexColor(state.colorSeller),
-    yZoom: state.yZoom,
+    yZoom: state.dailyYZoom,
     vwapOpacity: 0,
     vwapColor: const Color(0xFFFF8800),
   );

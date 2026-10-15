@@ -124,6 +124,7 @@ class _DailyPanelState extends State<DailyPanel> {
                                   'daily_${state.symbol}'),
                               data: buildDailyChartData(state),
                               showStrategyTimeline: false,
+                              isDaily: true,
                             ),
                 ),
               ],

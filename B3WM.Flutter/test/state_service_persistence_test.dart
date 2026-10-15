@@ -220,6 +220,79 @@ void main() {
       reloaded.reset();
     });
 
+    test('zoom Y persiste por símbolo e separado intraday/diário', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('WINFUT');
+      expect(service.yZoom, 1.0);
+      expect(service.dailyYZoom, 1.0);
+      service.setYZoom(2.5);
+      service.setYZoom(0.5, isDaily: true);
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('WINFUT');
+      expect(reloaded.yZoom, 2.5);
+      expect(reloaded.dailyYZoom, 0.5);
+      reloaded.reset();
+
+      // Outro símbolo mantém o default; reset persiste 1.0.
+      final wdo = _createService(prefs);
+      await wdo.setSymbol('WDOFUT');
+      expect(wdo.yZoom, 1.0);
+      expect(wdo.dailyYZoom, 1.0);
+      wdo.setYZoom(99);
+      expect(wdo.yZoom, 10.0);
+      wdo.setYZoom(1.0);
+      wdo.reset();
+
+      final wdoReloaded = _createService(prefs);
+      await wdoReloaded.setSymbol('WDOFUT');
+      expect(wdoReloaded.yZoom, 1.0);
+      wdoReloaded.reset();
+
+      // WINFUT preservado.
+      final winReloaded = _createService(prefs);
+      await winReloaded.setSymbol('WINFUT');
+      expect(winReloaded.yZoom, 2.5);
+      expect(winReloaded.dailyYZoom, 0.5);
+      winReloaded.reset();
+    });
+
+    test('zoom X persiste por símbolo e reset volta ao auto-fit', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('WINFUT');
+      expect(service.xZoom, isNull);
+      expect(service.dailyXZoom, isNull);
+      expect(service.previewXZoom(2.0, isDaily: false), isTrue);
+      expect(service.previewXZoom(2.0, isDaily: false), isFalse);
+      expect(service.previewXZoom(1.5, isDaily: true), isTrue);
+      await service.commitXZoom();
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('WINFUT');
+      expect(reloaded.xZoom, 2.0);
+      expect(reloaded.dailyXZoom, 1.5);
+      // Reset: volta ao auto-fit (null) e persiste.
+      reloaded.setXZoom(null);
+      reloaded.setXZoom(null, isDaily: true);
+      reloaded.reset();
+
+      final resetReloaded = _createService(prefs);
+      await resetReloaded.setSymbol('WINFUT');
+      expect(resetReloaded.xZoom, isNull);
+      expect(resetReloaded.dailyXZoom, isNull);
+      resetReloaded.reset();
+    });
+
     test('configurações não vazam entre símbolos', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();

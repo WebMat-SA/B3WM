@@ -156,6 +156,7 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                         key: ValueKey(
                                             'chart_${state.symbol}_${state.timeFrame}'),
                                         data: buildChartData(state),
+                                        isDaily: false,
                                         showHistoryButton: true,
                                         isHistoryLoading:
                                             state.isLoadingHistory,

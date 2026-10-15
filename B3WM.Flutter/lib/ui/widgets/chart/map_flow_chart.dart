@@ -24,6 +24,11 @@ class MapFlowChart extends StatefulWidget {
   final bool isHistoryLoading;
   final bool hasMoreHistory;
   final Future<void> Function()? onLoadHistory;
+
+  /// Identifica a instância diária (1D) vs intraday: o zoom Y é persistido
+  /// por símbolo e separado (`StateService.preview/commitYZoom` com
+  /// `isDaily`), então cada gráfico espelha só o seu campo.
+  final bool isDaily;
   const MapFlowChart(
       {super.key,
       required this.data,
@@ -31,7 +36,8 @@ class MapFlowChart extends StatefulWidget {
       this.showHistoryButton = false,
       this.isHistoryLoading = false,
       this.hasMoreHistory = true,
-      this.onLoadHistory});
+      this.onLoadHistory,
+      this.isDaily = false});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -45,6 +51,10 @@ class _MapFlowChartState extends State<MapFlowChart>
   final TransformationController _controller = TransformationController();
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
+  /// Debounce do commit do zoom X: o scroll do mouse não tem evento de fim,
+  /// então a persistência acontece ~800ms após o último tick (paridade com
+  /// `_schedulePivotIntradaySync` do `StateService`).
+  Timer? _xZoomCommitTimer;
   double? _hoverY;
   int? _hoverCandleIndex;
   int? _timelineHoverIndex;
@@ -279,6 +289,7 @@ class _MapFlowChartState extends State<MapFlowChart>
 
   @override
   void dispose() {
+    _xZoomCommitTimer?.cancel();
     _dismissTooltip();
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
@@ -314,21 +325,92 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _resetChart() {
+    // Reset persiste: volta o Y para 1.0 e o X para auto-fit no disco,
+    // então reabrir o programa mantém o gráfico resetado.
+    _xZoomCommitTimer?.cancel();
     setState(() {
       _yZoom = 1.0;
     });
+    if (mounted) {
+      try {
+        final st = context.read<StateService>();
+        st.setYZoom(1.0, isDaily: widget.isDaily);
+        st.setXZoom(null, isDaily: widget.isDaily);
+      } catch (_) {}
+    }
     _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth, _lastCandleAreaHeight);
   }
 
   void _onInteractionEnd() {
+    // Fim de gesto do InteractiveViewer (pinch/pan): persiste o zoom X
+    // se mudou. O scroll do mouse não passa por aqui (é via
+    // `onPointerSignal` → `_applyXZoomAt`), por isso ele salva com debounce
+    // em [_previewAndScheduleXZoomCommit]. Pan puro não altera a escala e
+    // `previewXZoom` retorna false, sem write no disco.
+    if (!mounted) return;
+    try {
+      final st = context.read<StateService>();
+      if (st.previewXZoom(_controller.value[0], isDaily: widget.isDaily)) {
+        _xZoomCommitTimer?.cancel();
+        // ignore: discarded_futures
+        st.commitXZoom();
+      }
+    } catch (_) {}
+  }
+
+  /// Espelha a escala X vigente na config em memória e agenda o commit com
+  /// debounce (o scroll não tem evento de fim para salvar de uma vez).
+  void _previewAndScheduleXZoomCommit() {
+    if (!mounted) return;
+    try {
+      final st = context.read<StateService>();
+      if (!st.previewXZoom(_controller.value[0], isDaily: widget.isDaily)) {
+        return;
+      }
+      _xZoomCommitTimer?.cancel();
+      _xZoomCommitTimer = Timer(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
+        try {
+          // ignore: discarded_futures
+          context.read<StateService>().commitXZoom();
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  /// Reaplica o zoom X salvo após o fit inicial (abrir o programa, trocar
+  /// de símbolo) ou após refit por redimensionamento. Sem valor salvo
+  /// (`null` = auto-fit) não faz nada. A escala é clampada ao piso/teto
+  /// vigentes e a vista ancora na borda direita (candles recentes, mesma
+  /// margem de 15% do follow ao vivo).
+  void _restoreSavedXZoom(double candleAreaWidth, double virtualCandleWidth) {
+    double? saved;
+    try {
+      final st = context.read<StateService>();
+      saved = widget.isDaily ? st.dailyXZoom : st.xZoom;
+    } catch (_) {
+      return;
+    }
+    if (saved == null || !saved.isFinite || saved <= 0) return;
+    final viewerW = candleAreaWidth - ChartFixedPainter.rightReserved;
+    if (viewerW <= 0 || virtualCandleWidth <= 0) return;
+    final s = saved.clamp(_minAllowedScale, 5.0).toDouble();
+    if (s <= _minAllowedScale) return; // equivale ao fit
+    const rightMarginRatio = 0.15;
+    final m = Matrix4.copy(_controller.value);
+    m[0] = s;
+    m.setTranslationRaw(viewerW - viewerW * rightMarginRatio - virtualCandleWidth * s,
+        m.getTranslation().y, m.getTranslation().z);
+    _controller.value = m;
   }
 
   /// Caminho único do zoom Y (só via arrasto na coluna de labels Y): usa
   /// matemática ancorada, com clamp unificado `StateService.min/maxYZoom`.
-  /// Mantém `_yZoom` local (não chama `setYZoom`/notify) para não contaminar
-  /// a outra instância (1D <> intraday). Só toca `ty` do controller; `tx`,
-  /// `_clampPan` e o follow da borda direita seguem intactos. A roda do mouse
-  /// NÃO mexe no Y (dá zoom no X via `_applyXZoomAt`).
+  /// Mantém `_yZoom` local e espelha em `StateService.previewYZoom` (memória,
+  /// sem disco/notify) para não contaminar a outra instância (1D <> intraday
+  /// usam campos separados via `widget.isDaily`). Só toca `ty` do controller;
+  /// `tx`, `_clampPan` e o follow da borda direita seguem intactos. A roda do
+  /// mouse NÃO mexe no Y (dá zoom no X via `_applyXZoomAt`).
   void _applyYZoomAt(double factor, double localDy) {
     // Durante a medição o zoom por roda/botão é ignorado para não deslocar a
     // referência (o bloqueio de translação em `_onTransformChanged`
@@ -384,6 +466,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     mm[0] = newScale;
     mm.setTranslationRaw(newTx, mm.getTranslation().y, mm.getTranslation().z);
     _controller.value = mm;
+    _previewAndScheduleXZoomCommit();
   }
 
   void _handleScroll(PointerScrollEvent event) {
@@ -399,6 +482,25 @@ class _MapFlowChartState extends State<MapFlowChart>
   /// `k=0.005` ≈ 140px para dobrar/metade — fino o bastante para ajuste preciso.
   void _onYLabelDragUpdate(DragUpdateDetails d) {
     _applyYZoomAt(exp(-d.delta.dy * 0.005), _lastCandleAreaHeight / 2);
+    // Espelha o zoom local na config em memória (sem disco/notify por evento).
+    if (mounted) {
+      try {
+        context.read<StateService>().previewYZoom(
+              _yZoom,
+              isDaily: widget.isDaily,
+            );
+      } catch (_) {}
+    }
+  }
+
+  void _onYLabelDragEnd() {
+    // Persiste o zoom ao fim do gesto (um write por gesto, como panelFraction).
+    if (mounted) {
+      try {
+        // ignore: discarded_futures
+        context.read<StateService>().commitYZoom();
+      } catch (_) {}
+    }
   }
 
   void _centerLastCandleY() {
@@ -879,12 +981,14 @@ class _MapFlowChartState extends State<MapFlowChart>
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
+            _restoreSavedXZoom(candleAreaWidth, virtualCandleWidth);
           });
         } else if (_initialFitDone && candleAreaWidth != _lastFitAreaWidth) {
           _lastFitAreaWidth = candleAreaWidth;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
+            _restoreSavedXZoom(candleAreaWidth, virtualCandleWidth);
           });
         }
 
@@ -1067,6 +1171,8 @@ class _MapFlowChartState extends State<MapFlowChart>
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onVerticalDragUpdate: _onYLabelDragUpdate,
+                  onVerticalDragEnd: (_) => _onYLabelDragEnd(),
+                  onVerticalDragCancel: _onYLabelDragEnd,
                   child: const SizedBox.expand(),
                 ),
               ),

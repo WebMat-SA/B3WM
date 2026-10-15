@@ -39,6 +39,17 @@ class DailyAnalysisConfig {
   bool panelVisible;
   double panelFraction;
 
+  /// Zoom Y (esticar/desesticar o eixo de preço) do gráfico diário.
+  /// Independente do `SymbolConfig.yZoom` (intraday): um nunca toca no
+  /// outro. Faixa `0.3..10.0` (paridade com `StateService.min/maxYZoom`).
+  double yZoom;
+
+  /// Zoom X (eixo do tempo, scroll do mouse/pinch) do gráfico diário.
+  /// Escala absoluta do `InteractiveViewer` (`m[0]`), faixa `0.1..5.0`.
+  /// `null` = auto-fit (nunca aproximado ou após reset). Independente do
+  /// `SymbolConfig.xZoom` (intraday).
+  double? xZoom;
+
   DailyAnalysisConfig({
     required this.structureRangeUpd,
     required this.structureVisible,
@@ -58,6 +69,8 @@ class DailyAnalysisConfig {
     required this.pivotLineCount,
     required this.panelVisible,
     required this.panelFraction,
+    required this.yZoom,
+    this.xZoom,
   });
 
   DailyAnalysisConfig.withDefaults(String symbol)
@@ -78,7 +91,8 @@ class DailyAnalysisConfig {
         pivotOpacity = 0.7,
         pivotLineCount = 2,
         panelVisible = false,
-        panelFraction = 0.5;
+        panelFraction = 0.5,
+        yZoom = 1.0;
 
   /// Lê o bloco `daily` aninhado; quando ausente (configs salvas pela
   /// issue #10), faz fallback para as chaves flat antigas.
@@ -125,6 +139,8 @@ class DailyAnalysisConfig {
       panelVisible: src['panelVisible'] as bool? ?? false,
       panelFraction:
           ((src['panelFraction'] as num?)?.toDouble() ?? 0.5).clamp(0.3, 0.7),
+      yZoom: ((src['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
+      xZoom: clampXZoom(src['xZoom'] as num?),
     );
   }
 
@@ -147,5 +163,11 @@ class DailyAnalysisConfig {
         'pivotLineCount': pivotLineCount,
         'panelVisible': panelVisible,
         'panelFraction': panelFraction,
+        'yZoom': yZoom,
+        'xZoom': xZoom,
       };
+
+  /// Clamp da escala X absoluta (`0.1..5.0`); `null` (ausente) = auto-fit.
+  static double? clampXZoom(num? v) =>
+      v == null ? null : v.toDouble().clamp(0.1, 5.0).toDouble();
 }
