@@ -312,6 +312,211 @@ namespace B3WM.Services.AI
             return double.IsNaN(last) ? null : last;
         }
 
+        /// <summary>
+        /// Mede o tamanho (chars) de cada bloco do state, reutilizando os
+        /// mesmos Append* do <see cref="BuildState"/>. Puro, sem I/O.
+        /// Serve à auditoria (issue #23): mostra qual bloco domina tokens.
+        /// </summary>
+        public static Dictionary<string, int> MeasureBlocks(string symbol, int timeFrame, MarketSnapshot snap)
+        {
+            var header = snap.Get<HeaderView>(SnapshotLayers.Header);
+            var out_ = new Dictionary<string, int>();
+
+            var sbH = new StringBuilder();
+            AppendScreenHeader(sbH, symbol, timeFrame, header);
+            out_["header"] = sbH.Length;
+
+            var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
+            var sbC = new StringBuilder();
+            sbC.AppendLine($"Candles (últimos {candles.Count}, OHLCV):");
+            foreach (var c in candles)
+                sbC.AppendLine($"- {c.Date:HH:mm} O={c.Open} H={c.High} L={c.Low} C={c.Close} V={c.Volume}");
+            out_["candles"] = sbC.Length;
+
+            var sbB = new StringBuilder();
+            if (!snap.Has(SnapshotLayers.Bubbles))
+                sbB.AppendLine("Bolhas: desligadas na tela.");
+            else
+            {
+                var bubbles = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new();
+                var filt = header == null ? "" :
+                    $" (filtro tela: thr base {header.ThresholdBubble}, {header.BubblesVisibleDay} de {header.BubblesTotalDay} no dia)";
+                sbB.AppendLine($"Bolhas — trades agressivos por agente (últimas {bubbles.Count}){filt}:");
+                foreach (var b in bubbles)
+                    sbB.AppendLine($"- {b.Date:HH:mm:ss} agente={b.Agent} lado={b.ActionType} qtd={b.Amount} preco={b.Price}");
+            }
+            out_["bubbles"] = sbB.Length;
+
+            var sbV = new StringBuilder();
+            var volume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.Volume);
+            var levels = volume?.Volumes ?? new List<VolumeLevel>();
+            if (!snap.Has(SnapshotLayers.Volume))
+                sbV.AppendLine("Volume profile: desligado na tela.");
+            else if (levels.Count == 0)
+                sbV.AppendLine("Volume profile: sem dados.");
+            else
+            {
+                var poc = levels.OrderByDescending(l => l.Total).First();
+                var top = levels.OrderByDescending(l => l.Total).Take(5).ToList();
+                var buy = levels.Sum(l => l.BuyVolume);
+                var sell = levels.Sum(l => l.SellVolume);
+                sbV.AppendLine($"Volume profile: POC={poc.Price} total={poc.Total} delta_total={buy - sell} (buy={buy} sell={sell}). Top níveis:");
+                foreach (var l in top)
+                    sbV.AppendLine($"- preco={l.Price} total={l.Total} buy={l.BuyVolume} sell={l.SellVolume} delta={l.Delta}");
+            }
+            out_["volume"] = sbV.Length;
+
+            var sbP = new StringBuilder();
+            AppendPositionBlock(sbP, snap.Get<PositionView>(SnapshotLayers.Position));
+            out_["position"] = sbP.Length;
+
+            var sbEi = new StringBuilder();
+            AppendExtremesBlock(sbEi, "Topos e vales intraday",
+                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra),
+                snap.Has(SnapshotLayers.ExtremesIntra));
+            out_["extremesIntra"] = sbEi.Length;
+
+            var sbEd = new StringBuilder();
+            AppendExtremesBlock(sbEd, "Topos e vales diários",
+                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily),
+                snap.Has(SnapshotLayers.ExtremesDaily),
+                snap.Get<DateWindow>(SnapshotLayers.DailyWindow));
+            out_["extremesDaily"] = sbEd.Length;
+
+            var sbS = new StringBuilder();
+            AppendStructuresBlock(sbS, snap);
+            out_["structures"] = sbS.Length;
+
+            var sbPi = new StringBuilder();
+            AppendPivotBlock(sbPi, "Pivot intraday",
+                snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra),
+                snap.Has(SnapshotLayers.PivotIntra));
+            out_["pivotIntra"] = sbPi.Length;
+
+            var sbPd = new StringBuilder();
+            AppendPivotBlock(sbPd, "Pivot diário",
+                snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily),
+                snap.Has(SnapshotLayers.PivotDaily));
+            out_["pivotDaily"] = sbPd.Length;
+
+            var sbW = new StringBuilder();
+            AppendVwapLine(sbW, snap);
+            out_["vwap"] = sbW.Length;
+
+            return out_;
+        }
+
+        /// <summary>
+        /// Monta o registro de auditoria de UMA chamada (o que chegou,
+        /// o que filtrou, pergunta, chamada, resposta). Puro, sem I/O e sem
+        /// chave — a gravação em Data/JEV vive no JevAuditStore.
+        /// </summary>
+        public static JevAuditRecord BuildAudit(
+            string auditId,
+            DateTime at,
+            DateTime triggerAt,
+            string triggerType,
+            string symbol,
+            int timeFrame,
+            DateTime displayDate,
+            string origin,
+            string model,
+            string snapshotHash,
+            double threshold,
+            int lookbackCandles,
+            int lookbackBubbles,
+            MarketSnapshot snap,
+            string state,
+            string questionsJson,
+            int httpStatus,
+            long latencyMs,
+            int attempts,
+            string bodyRaw,
+            JevAnalysisResult parsed)
+        {
+            var header = snap.Get<HeaderView>(SnapshotLayers.Header);
+            var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
+            var bubbles = snap.Has(SnapshotLayers.Bubbles)
+                ? snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new()
+                : new();
+            var volume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.Volume);
+            var extIntra = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra);
+            var extDaily = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily);
+            var structs = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures);
+            var pivIntra = snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra);
+            var pivDaily = snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily);
+
+            var layersOn = new List<string>();
+            foreach (var key in new[]
+                { SnapshotLayers.Header, SnapshotLayers.Candles, SnapshotLayers.Bubbles,
+                  SnapshotLayers.Volume, SnapshotLayers.Structures, SnapshotLayers.ExtremesIntra,
+                  SnapshotLayers.ExtremesDaily, SnapshotLayers.PivotIntra, SnapshotLayers.PivotDaily,
+                  SnapshotLayers.Vwap, SnapshotLayers.Position })
+                if (snap.Has(key)) layersOn.Add(key);
+
+            var blocks = MeasureBlocks(symbol, timeFrame, snap);
+            return new JevAuditRecord
+            {
+                Id = auditId,
+                At = at,
+                TriggerAt = triggerAt,
+                TriggerType = triggerType ?? "",
+                Symbol = symbol,
+                TimeFrame = timeFrame,
+                DisplayDate = displayDate.Date,
+                Origin = origin,
+                Model = model,
+                SnapshotHash = snapshotHash ?? "",
+                Threshold = threshold,
+                Input = new JevAuditInput
+                {
+                    CandlesReceived = candles.Count,
+                    BubblesPoolTotal = header?.BubblesTotalDay ?? bubbles.Count,
+                    BubblesAfterScreenFilter = header?.BubblesVisibleDay ?? bubbles.Count,
+                    ThresholdBubble = header?.ThresholdBubble ?? 0,
+                    LookbackCandles = lookbackCandles,
+                    LookbackBubbles = lookbackBubbles,
+                    LayersOn = layersOn,
+                },
+                Filtered = new JevAuditFiltered
+                {
+                    CandlesSent = candles.Count,
+                    BubblesSent = snap.Has(SnapshotLayers.Bubbles) ? bubbles.Count : 0,
+                    VolumeLevels = volume?.Volumes.Count ?? 0,
+                    ExtremesIntraCount = extIntra?.Extremes.Count ?? 0,
+                    ExtremesDailyCount = extDaily?.Extremes.Count ?? 0,
+                    StructuresCount = structs?.Count ?? 0,
+                    PivotIntraLevels = pivIntra?.Levels.Count ?? 0,
+                    PivotDailyLevels = pivDaily?.Levels.Count ?? 0,
+                    HasVwap = snap.Num(SnapshotLayers.Vwap) is not null,
+                    StateChars = state.Length,
+                    StateBlocks = blocks,
+                },
+                QuestionState = state,
+                QuestionQuestionsJson = string.IsNullOrWhiteSpace(questionsJson) ? "{}" : questionsJson,
+                Call = new JevAuditCall
+                {
+                    HttpStatus = httpStatus,
+                    LatencyMs = latencyMs,
+                    Attempts = attempts,
+                },
+                Answer = new JevAuditAnswer
+                {
+                    BodyRaw = bodyRaw ?? "",
+                    Direcao = parsed.Direcao,
+                    DirecaoConfidence = parsed.DirecaoConfidence,
+                    DirecaoProbabilities = new Dictionary<string, double>(parsed.DirecaoProbabilities),
+                    ForcaTendencia = parsed.ForcaTendencia,
+                    ForcaConfidence = parsed.ForcaConfidence,
+                    ConfiancaOperavel = parsed.ConfiancaOperavel,
+                    EncerrarPosicao = parsed.EncerrarPosicao,
+                    ShouldTrade = parsed.ShouldTrade,
+                    InputTokens = parsed.InputTokens,
+                    OutputTokens = parsed.OutputTokens,
+                },
+            };
+        }
+
         public static object BuildQuestions() => new Dictionary<string, object>
         {
             ["direcao"] = new

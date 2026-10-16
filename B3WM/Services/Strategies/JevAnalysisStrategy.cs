@@ -15,14 +15,17 @@ namespace B3WM.Services.Strategies
     {
         private readonly JevService _jev;
         private readonly ScreenStateBuilder _builder;
+        private readonly JevAuditStore _audit;
 
         public JevAnalysisStrategy(
             ILogger<JevAnalysisStrategy> logger,
             JevService jev,
-            ScreenStateBuilder builder) : base(logger)
+            ScreenStateBuilder builder,
+            JevAuditStore audit) : base(logger)
         {
             _jev = jev;
             _builder = builder;
+            _audit = audit;
         }
 
         public override string Name => "JevAnalysis";
@@ -72,9 +75,34 @@ namespace B3WM.Services.Strategies
             ctx.Snapshot = snap;
 
             var state = JevPrompt.BuildState(ctx.Symbol, tf, snap);
-            var resp = await _jev.AskAsync(state, JevPrompt.BuildQuestions(), ct);
+            var questions = JevPrompt.BuildQuestions();
+            var resp = await _jev.AskAsync(state, questions, ct);
             var res = JevPrompt.ParseDecision(ctx.Symbol, resp.Model, resp.Body,
                 resp.InputTokens, resp.OutputTokens, Threshold, state);
+            // Auditoria best-effort: 1 arquivo por chamada em Data/JEV.
+            // Nunca derruba a decisão (falha vira "" + warning no store).
+            string auditFile = "";
+            try
+            {
+                var header = snap.Get<HeaderView>(SnapshotLayers.Header);
+                var record = JevPrompt.BuildAudit(
+                    B3WM.Shared.Models.AI.JevAuditFiles.NewId(),
+                    DateTime.Now, ev.At, ev.GetType().Name,
+                    ctx.Symbol, tf,
+                    header?.DisplayDate ?? DateTime.Today,
+                    "strategy", resp.Model, ctx.SnapshotHash ?? "",
+                    Threshold, LookbackCandles, LookbackBubbles,
+                    snap, state,
+                    JsonSerializer.Serialize(questions),
+                    resp.HttpStatus, resp.LatencyMs, resp.Attempts,
+                    resp.Body, res);
+                auditFile = await _audit.TryWriteAsync(record, ct);
+                res.AuditFile = auditFile;
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "[jev-audit] falha ao montar auditoria {Symbol}", ctx.Symbol);
+            }
             return new StrategyDecision
             {
                 Side = res.Direcao,
@@ -83,6 +111,7 @@ namespace B3WM.Services.Strategies
                 ShouldTrade = res.ShouldTrade,
                 Reason = $"jev {res.Model} in={res.InputTokens} out={res.OutputTokens}",
                 StateChars = res.StatePreview.Length,
+                AuditFile = auditFile,
             };
         }
     }

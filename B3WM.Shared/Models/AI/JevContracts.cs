@@ -63,6 +63,8 @@ namespace B3WM.Shared.Models.AI
         public int OutputTokens { get; set; }
         public DateTime AnalyzedAt { get; set; } = DateTime.UtcNow;
         public string StatePreview { get; set; } = string.Empty;
+        /// <summary>Arquivo da auditoria em Data/JEV ("" quando não gravado).</summary>
+        public string AuditFile { get; set; } = string.Empty;
     }
 
     /// <summary>

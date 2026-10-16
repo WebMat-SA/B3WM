@@ -54,6 +54,8 @@ namespace B3WM.Services.Strategies
         public bool ShouldTrade { get; set; }
         public string Reason { get; set; } = "";
         public int StateChars { get; set; }
+        /// <summary>Arquivo da auditoria Jev em Data/JEV ("" quando não há).</summary>
+        public string AuditFile { get; set; } = "";
     }
 
     /// <summary>Parâmetro declarativo de strategy (renderizado na aba).</summary>

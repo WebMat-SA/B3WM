@@ -340,6 +340,7 @@ namespace B3WM.Services.Strategies
                 SnapshotHash = s.SnapshotHash,
                 PositionBefore = posBefore,
                 Action = action,
+                AuditFile = decision.AuditFile ?? "",
             };
             lock (_lock)
             {

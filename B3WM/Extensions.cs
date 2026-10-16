@@ -17,6 +17,7 @@ namespace B3WM
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
             services.AddScoped<JevService>(); // consumidor Jev/TypeSafe (issue #16, debug-only)
+            services.AddScoped<JevAuditStore>(); // auditoria 1 arquivo/chamada em Data/JEV (issue #23)
             services.AddScoped<ScreenStateBuilder>(); // estado WYSIWYG p/ strategies
             services.AddScoped<IMarketData, MarketData>(); // dados p/ strategies
             // Strategies que rodam no backend (uma linha por strategy nova):

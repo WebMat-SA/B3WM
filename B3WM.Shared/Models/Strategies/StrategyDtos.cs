@@ -56,6 +56,8 @@ namespace B3WM.Shared.Models.Strategies
         public string PositionBefore { get; set; } = "flat";
         /// <summary>O que resultou: manter | sinal abre X | sinal fecha | exec abre X @P | fecha @P (+N pts) | zera fim do dia</summary>
         public string Action { get; set; } = "";
+        /// <summary>Arquivo da auditoria Jev em Data/JEV ("" quando não há).</summary>
+        public string AuditFile { get; set; } = "";
     }
 
     public sealed class PaperTrade

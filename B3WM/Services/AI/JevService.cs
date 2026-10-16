@@ -51,6 +51,10 @@ namespace B3WM.Services.AI
             public int InputTokens { get; set; }
             public int OutputTokens { get; set; }
             public int StateChars { get; set; }
+            /// <summary>Auditoria (issue #23): tentativas, latência e status.</summary>
+            public int Attempts { get; set; } = 1;
+            public long LatencyMs { get; set; }
+            public int HttpStatus { get; set; } = 200;
         }
 
         /// <summary>
@@ -76,9 +80,12 @@ namespace B3WM.Services.AI
 
             var client = _httpFactory.CreateClient("Jev");
             const int maxAttempts = 4; // 1 + 3 retries em 429/529
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var attemptsUsed = 1;
             HttpResponseMessage? resp = null;
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
+                attemptsUsed = attempt;
                 using var req = new HttpRequestMessage(HttpMethod.Post, "v1/systemone");
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
                 req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -114,6 +121,7 @@ namespace B3WM.Services.AI
                     throw new HttpRequestException($"Jev HTTP {(int)resp.StatusCode}: {Truncate(body, 500)}");
 
                 var (model, inTok, outTok) = ReadUsage(body);
+                sw.Stop();
                 _logger.LogInformation("[jev] model={Model} in={In} out={Out} stateChars={Chars}",
                     model, inTok, outTok, state.Length);
                 return new JevResponse
@@ -123,6 +131,9 @@ namespace B3WM.Services.AI
                     InputTokens = inTok,
                     OutputTokens = outTok,
                     StateChars = state.Length,
+                    Attempts = attemptsUsed,
+                    LatencyMs = sw.ElapsedMilliseconds,
+                    HttpStatus = (int)resp.StatusCode,
                 };
             }
         }
