@@ -35,10 +35,16 @@ public class JevAuditTests
         {
             new() { Date = day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, Open = 100, High = 102, Low = 99, Close = 101, Volume = 10 },
         };
-        snap.Layers[SnapshotLayers.Bubbles] = new List<BubbleStorageItem>
+        var pool = new List<BubbleStorageItem>
         {
             new() { Agent = 122, Amount = 500, Price = 101.5, Date = day.AddHours(10).AddMinutes(1), ActionType = Ticks2.ActionType.Buy, Symbol = "WINFUT" },
+            new() { Agent = 122, Amount = 100, Price = 101.0, Date = day.AddHours(10).AddMinutes(2), ActionType = Ticks2.ActionType.Sale, Symbol = "WINFUT" },
         };
+        snap.Layers[SnapshotLayers.Bubbles] = new List<BubbleStorageItem> { pool[0] };
+        // Auditoria: pool cru (2) + pós-filtro de tela (1) + spec cru.
+        snap.Raw["bubblesPool"] = pool;
+        snap.Raw["bubblesFiltered"] = new List<BubbleStorageItem> { pool[0] };
+        snap.Raw["spec"] = System.Text.Json.JsonSerializer.SerializeToElement(new { thresholdBubble = 475 });
         snap.Layers[SnapshotLayers.Volume] = new VolumeLevelStorageItem
         {
             Symbol = "WINFUT", Date = day,
@@ -48,6 +54,15 @@ public class JevAuditTests
         {
             Symbol = "WINFUT", Date = day,
             Extremes = new() { new() { Type = ExtremeType.Top, Position = 103, Value = 1000, Prominence = 500, Confidence = 0.9 } },
+        };
+        snap.Layers[SnapshotLayers.Position] = new PositionView
+        {
+            Side = "comprar", Entry = 100, EntryTime = day.AddHours(10),
+            UnrealizedPts = 1.5, Candles = 1,
+        };
+        snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
+        {
+            new() { Date = day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },
         };
         snap.Layers[SnapshotLayers.Vwap] = (double)100.0;
         return snap;
@@ -102,6 +117,24 @@ public class JevAuditTests
         // Pergunta montada integral (sem corte de 6000).
         Assert.Equal(state, r.QuestionState);
         Assert.Contains("direcao", r.QuestionQuestionsJson);
+        // Inputs detalhados: JSONs reais de tudo que chegou.
+        Assert.NotNull(r.Input.Candles);
+        var candlesJson = r.Input.Candles!.Value.EnumerateArray().ToList();
+        Assert.Single(candlesJson);
+        Assert.Equal(101, candlesJson[0].GetProperty("Close").GetDouble());
+        Assert.NotNull(r.Input.BubblesPool);
+        Assert.Equal(2, r.Input.BubblesPool!.Value.GetArrayLength());
+        Assert.Equal(1, r.Input.BubblesFiltered!.Value.GetArrayLength());
+        Assert.Equal(1, r.Input.BubblesSent!.Value.GetArrayLength());
+        Assert.NotNull(r.Input.Volume);
+        Assert.Equal(1, r.Input.Volume!.Value.GetProperty("Volumes").GetArrayLength());
+        Assert.NotNull(r.Input.ExtremesIntra);
+        Assert.NotNull(r.Input.Structures);
+        Assert.NotNull(r.Input.Header);
+        Assert.NotNull(r.Input.Position);
+        Assert.NotNull(r.Input.ScreenSpec);
+        Assert.Equal(475, r.Input.ScreenSpec!.Value.GetProperty("thresholdBubble").GetInt32());
+        Assert.Equal(100.0, r.Input.Vwap);
         // Chamada + resposta.
         Assert.Equal(200, r.Call.HttpStatus);
         Assert.Equal(321, r.Call.LatencyMs);

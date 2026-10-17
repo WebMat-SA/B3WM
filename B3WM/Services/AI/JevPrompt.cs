@@ -406,6 +406,29 @@ namespace B3WM.Services.AI
             return out_;
         }
 
+        /// <summary>Serializa um valor da auditoria em JSON; null/undefined → null.</summary>
+        private static JsonElement? Je(object? v)
+        {
+            if (v is null) return null;
+            if (v is JsonElement je) return je.ValueKind == JsonValueKind.Undefined ? null : je;
+            return JsonSerializer.SerializeToElement(v);
+        }
+
+        /// <summary>Lê um dado cru de apoio (snap.Raw) ou null.</summary>
+        private static object? Raw(MarketSnapshot snap, string key) =>
+            snap.Raw.TryGetValue(key, out var v) ? v : null;
+
+        /// <summary>
+        /// Projeta candles para a auditoria: só os campos que o state/JEV
+        /// consome (OHLCV + VWAP). Evita o <c>VolumeLevel</c> por barra, que
+        /// não é usado no prompt e inflaria o arquivo (~2 MB por chamada).
+        /// </summary>
+        public static JsonElement ProjectCandles(IEnumerable<BarStorageItem> candles) =>
+            JsonSerializer.SerializeToElement(candles.Select(c => new
+            {
+                c.Date, c.Symbol, c.TimeFrame, c.Open, c.High, c.Low, c.Close, c.Volume, c.VwapPrice,
+            }).ToList());
+
         /// <summary>
         /// Monta o registro de auditoria de UMA chamada (o que chegou,
         /// o que filtrou, pergunta, chamada, resposta). Puro, sem I/O e sem
@@ -477,6 +500,21 @@ namespace B3WM.Services.AI
                     LookbackCandles = lookbackCandles,
                     LookbackBubbles = lookbackBubbles,
                     LayersOn = layersOn,
+                    // JSONs reais de tudo que chegou para tratar/filtrar/ordenar.
+                    ScreenSpec = Je(Raw(snap, "spec")),
+                    Header = Je(header),
+                    Candles = ProjectCandles(candles),
+                    BubblesPool = Je(Raw(snap, "bubblesPool")),
+                    BubblesFiltered = Je(Raw(snap, "bubblesFiltered")),
+                    BubblesSent = Je(snap.Has(SnapshotLayers.Bubbles) ? bubbles : null),
+                    Volume = Je(volume),
+                    ExtremesIntra = Je(extIntra),
+                    ExtremesDaily = Je(extDaily),
+                    Structures = Je(structs),
+                    PivotIntra = Je(pivIntra),
+                    PivotDaily = Je(pivDaily),
+                    Vwap = snap.Num(SnapshotLayers.Vwap),
+                    Position = Je(snap.Get<PositionView>(SnapshotLayers.Position)),
                 },
                 Filtered = new JevAuditFiltered
                 {

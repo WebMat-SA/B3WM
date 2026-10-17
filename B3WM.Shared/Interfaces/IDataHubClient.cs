@@ -14,7 +14,10 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveOnCloseBar(BarStorageItem data);
         Task ReceiveOnBubble(BubbleStorageItem data);
         Task ReceiveOnStructure(StructureStorageItem data);
+        [Obsolete("Compat: use ReceiveVwapUpdate. Mantido para clientes antigos.")]
         Task ReceiveOnForecast(AdjustmentForecastItem data);
+        Task ReceiveVwapUpdate(VwapHistoryPoint data);
+        Task ReceiveVwapHistory(List<VwapHistoryPoint> data);
         Task ReceiveThrottlingData(ThrottlingData data);
         Task ReceiveOnSignal(SignalEvent data);
         Task ReceiveOnExtreme(ExtremeStorageItem data);

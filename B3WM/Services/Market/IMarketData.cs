@@ -24,5 +24,7 @@ namespace B3WM.Services.Market
         Task<ExtremeStorageItem?> DailyExtremesAsync(string symbol, DateTime from, DateTime to, double noise, double prom, CancellationToken ct = default);
         Task<PivotStorageItem?> IntradayPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default);
         Task<PivotStorageItem?> DailyPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default);
+        Task<double?> VwapAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
+        Task<List<VwapHistoryPoint>> VwapHistoryAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
     }
 }

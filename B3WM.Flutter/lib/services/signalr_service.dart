@@ -7,6 +7,7 @@ import '../models/structure_storage_item.dart';
 import '../models/signal_event.dart';
 import '../models/throttling_data.dart';
 import '../models/extreme_storage_item.dart';
+import '../models/vwap_history_point.dart';
 import 'api_service.dart';
 import '../app_log.dart';
 
@@ -37,6 +38,8 @@ class SignalRService {
   void Function(ExtremeStorageItem)? onExtreme;
   void Function(List<BarStorageItem>)? onMissedBars;
   void Function(List<BubbleStorageItem>)? onMissedBubbles;
+  void Function(VwapHistoryPoint)? onVwapUpdate;
+  void Function(List<VwapHistoryPoint>)? onVwapHistory;
 
   SignalRService({required String hubUrl, required ApiService apiService})
       : _hubUrl = hubUrl,
@@ -87,6 +90,8 @@ class SignalRService {
       _hubConnection!.on('ReceiveThrottlingData', (List<dynamic>? args) => _handleThrottlingData(args));
       _hubConnection!.on('ReceiveOnSignal', (List<dynamic>? args) => _handleSignal(args));
       _hubConnection!.on('ReceiveOnExtreme', (List<dynamic>? args) => _handleExtreme(args));
+      _hubConnection!.on('ReceiveVwapUpdate', (List<dynamic>? args) => _handleVwapUpdate(args));
+      _hubConnection!.on('ReceiveVwapHistory', (List<dynamic>? args) => _handleVwapHistory(args));
 
       await _hubConnection!.start();
 
@@ -157,6 +162,33 @@ class SignalRService {
     }
     if (currentVolume != null) {
       onVolumeUpdate?.call(currentVolume);
+    }
+    // VWAP fonte única do servidor (throttling 4x/s): atualiza ponto do minuto.
+    if (data.vwap != null) {
+      onVwapUpdate?.call(data.vwap!);
+    }
+  }
+
+  void _handleVwapUpdate(List<dynamic>? args) {
+    if (args == null || args.isEmpty) return;
+    try {
+      final json = args[0] as Map<String, dynamic>;
+      final point = VwapHistoryPoint.fromJson(json);
+      onVwapUpdate?.call(point);
+    } catch (e) {
+      logD('Failed to parse VwapUpdate: $e');
+    }
+  }
+
+  void _handleVwapHistory(List<dynamic>? args) {
+    if (args == null || args.isEmpty) return;
+    try {
+      final list = (args[0] as List)
+          .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
+          .toList();
+      onVwapHistory?.call(list);
+    } catch (e) {
+      logD('Failed to parse VwapHistory: $e');
     }
   }
 

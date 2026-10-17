@@ -1,19 +1,19 @@
 {
   "version": "2.0.0",
   "tasks": [
-    {
-      "label": "dotnet-build-B3WM",
-      "type": "shell",
-      "command": "dotnet build B3WM/B3WM.csproj -c Debug",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "group": "build",
-      "presentation": {
-        "reveal": "silent"
-      },
-      "problemMatcher": "$msCompile"
-    },
+    // {
+    //   "label": "dotnet-build-B3WM",
+    //   "type": "shell",
+    //   "command": "dotnet build B3WM/B3WM.csproj -c Debug",
+    //   "options": {
+    //     "cwd": "${workspaceFolder}"
+    //   },
+    //   "group": "build",
+    //   "presentation": {
+    //     "reveal": "silent"
+    //   },
+    //   "problemMatcher": "$msCompile"
+    // },
     {
       "label": "python-service",
       "type": "shell",

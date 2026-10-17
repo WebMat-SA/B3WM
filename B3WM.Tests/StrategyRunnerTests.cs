@@ -222,6 +222,87 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public void MergeLogDay_EmptyIncomingPreservesExisting()
+    {
+        // STOP vazio (sessão nova sem decisões) não pode apagar o dia:
+        // PersistLogAsync faz merge — existente com dados + vazio = preserva.
+        var day = new DateTime(2026, 10, 16);
+        var existing = new B3WM.Shared.Models.Strategies.StrategyLogDay
+        {
+            Date = day, Symbol = "WINFUT", Strategy = "JevAnalysis", SnapshotHash = "manha",
+            Decisions = new()
+            {
+                new() { Kind = "avaliacao", At = new DateTime(2026, 10, 16, 11, 28, 24), Time = "11:28", Event = "bubble", Side = "manter", SnapshotHash = "manha", PositionBefore = "flat", Action = "manter" },
+            },
+        };
+        var emptyStop = new B3WM.Shared.Models.Strategies.StrategyLogDay
+        {
+            Date = day, Symbol = "WINFUT", Strategy = "JevAnalysis", SnapshotHash = "tarde",
+        };
+        var merged = StrategyRunner.MergeLogDay(existing, emptyStop);
+        Assert.Single(merged.Decisions);
+        Assert.Equal("manha", merged.SnapshotHash);
+    }
+
+    private sealed class TempKeeper : B3WM.Services.DataKeeperBase
+    {
+        private readonly string _root;
+        public TempKeeper(string root) => _root = root;
+        protected override string RootDirectory => _root;
+    }
+
+    [Fact]
+    public async Task FlushCadaDecisao_PersisteNaPrimeiraAvaliacao()
+    {
+        // Regressão do pico de energia 2026-10-16: 8 JEVs em RAM (<10) foram
+        // perdidos porque só persistia a cada 10. Agora a 1ª já vai a disco.
+        var tmp = Path.Combine(Path.GetTempPath(), "b3wm-flush-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<B3WM.Services.DataKeeperBase>(new TempKeeper(tmp));
+            services.AddSingleton<IStrategy>(new StubStrategy());
+            using var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+            var runner = new StrategyRunner(
+                scopeFactory,
+                Enumerable.Empty<B3WM.Services.Core.OrchestratorService>(),
+                new Mock<ILogger<StrategyRunner>>().Object);
+
+            runner.Arm("Stub", "WINFUT", 2, "{}", Filter(), "flushash");
+            var t0 = DateTime.Today.AddHours(11).AddMinutes(28);
+            await runner.PublishAsync(new BubbleAppeared
+            {
+                Symbol = "WINFUT", At = t0,
+                Item = Bubble(122, 500, 209770, t0),
+            }, "bubble");
+
+            var path = Path.Combine(tmp, $"WINFUT_Strategy_Stub_{DateTime.Today:yyyy-MM-dd}.json");
+            Assert.True(File.Exists(path));
+            var json = await File.ReadAllTextAsync(path);
+            var log = System.Text.Json.JsonSerializer.Deserialize<B3WM.Shared.Models.Strategies.StrategyLogDay>(json);
+            Assert.NotNull(log);
+            Assert.Single(log!.Decisions);
+
+            // 2ª bubble em bucket diferente acumula (merge, sem duplicar).
+            var t1 = t0.AddMinutes(2);
+            await runner.PublishAsync(new BubbleAppeared
+            {
+                Symbol = "WINFUT", At = t1,
+                Item = Bubble(122, 500, 209800, t1),
+            }, "bubble");
+            json = await File.ReadAllTextAsync(path);
+            log = System.Text.Json.JsonSerializer.Deserialize<B3WM.Shared.Models.Strategies.StrategyLogDay>(json);
+            Assert.NotNull(log);
+            Assert.Equal(2, log!.Decisions.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(tmp, true); } catch { }
+        }
+    }
+    [Fact]
     public void MergeLogDay_AccumulatesSessionsWithoutDuplicates()
     {
         var day = new DateTime(2026, 10, 13);
@@ -302,7 +383,7 @@ public class OrchestratorTriggerTests
         Enumerable.Empty<B3WM.Services.Core.BubbleService>(),
         Enumerable.Empty<B3WM.Services.Core.VolumeService>(),
         Enumerable.Empty<B3WM.Services.Core.StructureService>(),
-        Enumerable.Empty<B3WM.Services.Core.AdjustmentForecastService>(),
+        Enumerable.Empty<B3WM.Services.Core.VwapService>(),
         new Mock<ILogger<B3WM.Services.Core.OrchestratorService>>().Object);
 
     [Fact]

@@ -48,6 +48,14 @@ namespace B3WM.Services.Screen
     {
         public Dictionary<string, object?> Layers { get; } = new();
 
+        /// <summary>
+        /// Dados crus de apoio que NÃO viram camada do state (ex.: pool
+        /// completo de bolhas do dia antes do filtro de tela + lista
+        /// pós-filtro, e o spec cru). Usado pela auditoria Jev para registrar
+        /// o que "chegou" antes de filtrar/ordenar. Não participa do state.
+        /// </summary>
+        public Dictionary<string, object?> Raw { get; } = new();
+
         public bool Has(string key) => Layers.TryGetValue(key, out var v) && v != null;
 
         public T? Get<T>(string key) where T : class =>

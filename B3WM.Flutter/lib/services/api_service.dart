@@ -7,6 +7,7 @@ import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
 import '../models/extreme_storage_item.dart';
 import '../models/pivot_storage_item.dart';
+import '../models/vwap_history_point.dart';
 import '../app_config.dart';
 
 class ApiService {
@@ -181,6 +182,49 @@ class ApiService {
     final list = jsonDecode(response.body) as List? ?? [];
     return list
         .map((e) => BubbleStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Histórico VWAP por minuto (fonte única do servidor).
+  Future<List<VwapHistoryPoint>> getVwapHistory(
+      String symbol, DateTime date) async {
+    final dateStr = _formatDate(date);
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetVwapHistory/$symbol/$dateStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<VwapHistoryPoint>> getVwapRange(
+      String symbol, DateTime startDate, DateTime endDate) async {
+    final startStr = _formatDate(startDate);
+    final endStr = _formatDate(endDate);
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/GetVwapRange/$symbol/$startStr/$endStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<VwapHistoryPoint>> getLiveVwapSince(
+      String symbol, DateTime since) async {
+    final sinceStr = since.toIso8601String();
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/GetLiveVwapSince/$symbol?since=$sinceStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

@@ -5,7 +5,6 @@ import '../../../services/strategy_service.dart' show b3Wall;
 import '../../../models/ticks2.dart';
 import '../../../models/trade_models.dart';
 import '../../../models/extreme_storage_item.dart';
-import '../../../models/symbol_config.dart' show DateRangeMode;
 
 class CandlePoint {
   final DateTime date;
@@ -303,13 +302,6 @@ ChartData buildChartData(StateService state) {
       : bars.length;
   final visible = bars;
 
-  // For intraday mode, use the display date as the single VWAP reference day
-  final DateTime? vwapReferenceDay = state.dateRangeMode == DateRangeMode.intraday
-      ? (state.displayDate != null
-          ? DateTime(state.displayDate!.year, state.displayDate!.month, state.displayDate!.day)
-          : null)
-      : null;
-
   final candles = visible.map((b) => CandlePoint(
     date: b.date,
     open: b.open,
@@ -563,37 +555,36 @@ ChartData buildChartData(StateService state) {
     logD('[timeline] ${timeline.length} itens -> ${strategyPoints.length} pontos (fora do range)');
   }
 
-  // Compute intraday cumulative VWAP (updates per candle)
+  // VWAP fonte única do servidor (VwapService: typical HLC/3 dos 1MIN).
+  // Sem cálculo local: para cada candle visível usa o último ponto do
+  // servidor com minute <= candle.date (funciona para qualquer TF: 1/2/5MIN…).
   final vwapPoints = <VwapPoint>[];
-  if (state.vwapVisible && visible.isNotEmpty) {
-    final Map<DateTime, List<int>> dayCandleIndices = {};
+  if (state.vwapVisible && state.vwapHistory.isNotEmpty && visible.isNotEmpty) {
+    final server = state.vwapHistory;
+    var si = 0;
+    var lastIdx = -1;
     for (int i = 0; i < visible.length; i++) {
       final bar = visible[i];
-      final dayKey = DateTime(bar.date.year, bar.date.month, bar.date.day);
-      // In intraday mode, only use the reference day for VWAP
-      if (vwapReferenceDay != null && dayKey != vwapReferenceDay) continue;
-      dayCandleIndices.putIfAbsent(dayKey, () => []).add(i);
-    }
-    for (final entry in dayCandleIndices.entries) {
-      final indices = entry.value;
-      double totalVolume = 0;
-      double totalTypicalPriceVolume = 0;
-      for (int i = 0; i < indices.length; i++) {
-        final globalIdx = indices[i];
-        final bar = visible[globalIdx];
-        final typicalPrice = (bar.high + bar.low + bar.close) / 3;
-        totalVolume += bar.volume.toDouble();
-        totalTypicalPriceVolume += typicalPrice * bar.volume.toDouble();
-        if (totalVolume > 0) {
-          final vwapPrice = totalTypicalPriceVolume / totalVolume;
-          vwapPoints.add(VwapPoint(
-            price: vwapPrice,
-            date: bar.date,
-            startCandleIndex: globalIdx,
-            endCandleIndex: globalIdx,
-          ));
-        }
+      while (si < server.length && !server[si].minute.isAfter(bar.date)) {
+        lastIdx = si;
+        si++;
       }
+      if (lastIdx < 0) continue;
+      final p = server[lastIdx];
+      // Evita vazar ponto de outro dia quando o range cruza dias.
+      if (p.minute.day != bar.date.day ||
+          p.minute.month != bar.date.month ||
+          p.minute.year != bar.date.year) {
+        continue;
+      }
+      // O filtro de datas (rangeStart/rangeEnd) é SÓ do volume profile:
+      // a VWAP aparece sempre cheia (dia todo), sem corte pela janela.
+      vwapPoints.add(VwapPoint(
+        price: p.vwap,
+        date: bar.date,
+        startCandleIndex: i,
+        endCandleIndex: i,
+      ));
     }
   }
 

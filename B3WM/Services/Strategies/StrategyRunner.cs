@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -61,6 +62,8 @@ namespace B3WM.Services.Strategies
         private readonly ILogger<StrategyRunner> _logger;
         private readonly Dictionary<string, StrategySession> _sessions = new();
         private readonly object _lock = new();
+        /// <summary>Serializa persistências do mesmo arquivo do dia (evita lost-update entre sessões).</summary>
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _persistLocks = new();
 
         public StrategyRunner(
             IServiceScopeFactory scopes,
@@ -163,7 +166,10 @@ namespace B3WM.Services.Strategies
                 if (s.Position != null && bar.Date.Date > s.Position.EntryTime.Date)
                     ClosePaper(s, bar.Open, bar.Date, "virada do dia");
             foreach (var s in SessionsOf(bar.Symbol))
-                if (s.Decisions.Count % 10 == 0 && s.Decisions.Count > s.PersistedDecisions)
+                // Flush de safety-net: cobre execuções (exec abre/fecha) e virada
+                // do dia que adicionam Decisions fora do FireAsync. Com flush a
+                // cada decisão, aqui só persiste se houver algo novo.
+                if (s.Decisions.Count > s.PersistedDecisions)
                 {
                     s.PersistedDecisions = s.Decisions.Count;
                     await PersistLogAsync(ToLogDay(s));
@@ -358,11 +364,10 @@ namespace B3WM.Services.Strategies
             }
             _logger.LogInformation("[strategy:{Name}:{Id}] {Summary} ({Why})",
                 s.Strategy, s.Id, Summarize(item), why);
-            if (s.Decisions.Count % 10 == 0)
-            {
-                s.PersistedDecisions = s.Decisions.Count;
-                await PersistLogAsync(ToLogDay(s));
-            }
+            // Flush a cada decisão: sobrevive a pico de energia / kill sem STOP.
+            // Custo ~ms (JSON pequeno do dia) frente à latência do Jev.
+            s.PersistedDecisions = s.Decisions.Count;
+            await PersistLogAsync(ToLogDay(s));
         }
 
         /// <summary>
@@ -512,14 +517,19 @@ namespace B3WM.Services.Strategies
 
         private async Task PersistLogAsync(StrategyLogDay log)
         {
+            var path = $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json";
+            var gate = _persistLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
             try
             {
                 using var scope = _scopes.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
-                var path = $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json";
                 // O arquivo do dia ACUMULA todas as sessões: um novo PLAY/STOP
                 // faz merge com o que já está em disco em vez de sobrescrever
                 // (antes, a sessão anterior do mesmo dia era perdida).
+                // Flush a cada decisão: Read+Merge+Write por chamada, atômico
+                // via .tmp+Move no DataKeeperBase; gate por arquivo evita
+                // lost-update entre sessões concorrentes do mesmo dia.
                 var existing = await keeper.ReadDataAsync<StrategyLogDay>(path);
                 if (existing.Decisions.Count > 0 || existing.PaperTrades.Count > 0)
                     log = MergeLogDay(existing, log);
@@ -528,6 +538,10 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy-runner] falha ao persistir log");
+            }
+            finally
+            {
+                gate.Release();
             }
         }
 

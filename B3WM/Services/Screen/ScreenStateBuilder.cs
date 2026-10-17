@@ -44,6 +44,10 @@ namespace B3WM.Services.Screen
         public async Task<MarketSnapshot> BuildAsync(ScreenStateRequest req, CancellationToken ct = default)
         {
             var spec = req.Spec;
+            // Dados crus de apoio para a auditoria (não viram layer do state).
+            var snapRaw = new Dictionary<string, object?>();
+            if (spec.ValueKind != JsonValueKind.Undefined)
+                snapRaw["spec"] = spec.Clone();
             var daily = ScreenSpec.Daily(spec);
             var tf = Defaults.TimeFrames.Contains(req.TimeFrame) ? req.TimeFrame : 5;
             var tfs = req.VisibleTimeFrames.Where(t => t > 0).Distinct().ToList();
@@ -59,9 +63,13 @@ namespace B3WM.Services.Screen
             {
                 var pool = await _market.BubblesAsync(req.Symbol, req.DisplayDate, ct);
                 totalDay = pool.Count;
-                bubbles = JevPrompt.ApplyBubbleFilter(pool, spec, thrBase)
-                    .OrderBy(b => b.Date).TakeLast(req.LookbackBubbles).ToList();
-                visibleDay = JevPrompt.ApplyBubbleFilter(pool, spec, thrBase).Count;
+                var filtered = JevPrompt.ApplyBubbleFilter(pool, spec, thrBase).OrderBy(b => b.Date).ToList();
+                bubbles = filtered.TakeLast(req.LookbackBubbles).ToList();
+                visibleDay = filtered.Count;
+                // Auditoria: o que chegou (pool cru) e o que passou no filtro
+                // de tela (antes do corte de lookback). Não entra no state.
+                snapRaw["bubblesPool"] = pool;
+                snapRaw["bubblesFiltered"] = filtered;
             }
 
             VolumeLevelStorageItem? volume = null;
@@ -82,6 +90,7 @@ namespace B3WM.Services.Screen
 
             var lastPrice = candles.Count > 0 ? candles[^1].Close : (double?)null;
             var snap = new MarketSnapshot();
+            foreach (var kv in snapRaw) snap.Raw[kv.Key] = kv.Value;
             snap.Layers[SnapshotLayers.Candles] = candles;
             snap.Layers[SnapshotLayers.Bubbles] = bubbles;
             snap.Layers[SnapshotLayers.Volume] = volume;
@@ -131,8 +140,13 @@ namespace B3WM.Services.Screen
                     req.DisplayDate, ct);
 
             if (ScreenSpec.Bool(spec, "vwapVisible", true) && lastPrice != null)
-                snap.Layers[SnapshotLayers.Vwap] =
-                    JevPrompt.ComputeVwap(candles, req.DisplayDate);
+            {
+                // Fonte única: VwapService via IMarketData. Fallback para cálculo por
+                // candle só se o serviço ainda não tem ponto (ex: dia sem 1MIN fechado).
+                var vwap = await _market.VwapAsync(req.Symbol, req.DisplayDate, ct);
+                snap.Layers[SnapshotLayers.Vwap] = vwap
+                    ?? JevPrompt.ComputeVwap(candles, req.DisplayDate);
+            }
 
             if (req.IncludeDaily)
             {

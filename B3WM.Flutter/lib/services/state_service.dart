@@ -20,6 +20,7 @@ import 'audio_service.dart';
 import '../models/trade_models.dart';
 import '../models/extreme_storage_item.dart';
 import '../models/pivot_storage_item.dart';
+import '../models/vwap_history_point.dart';
 import '../models/defaults.dart';
 import '../app_log.dart';
 
@@ -99,6 +100,11 @@ class StateService extends ChangeNotifier {
 
   List<HistoryDeal> _history = [];
   List<HistoryDeal> get history => _history;
+
+  /// VWAP fonte única do servidor (histórico por minuto). O gráfico desenha
+  /// apenas estes pontos — sem cálculo local.
+  List<VwapHistoryPoint> _vwapHistory = [];
+  List<VwapHistoryPoint> get vwapHistory => _vwapHistory;
 
   // --- Per-symbol configs ---
   final Map<String, SymbolConfig> _configs = {};
@@ -1804,6 +1810,33 @@ class StateService extends ChangeNotifier {
     _signalRService.onMissedBars = _handleMissedBars;
     _signalRService.onMissedBubbles = _handleMissedBubbles;
     _signalRService.onExtreme = _handleExtreme;
+    _signalRService.onVwapUpdate = _handleVwapUpdate;
+    _signalRService.onVwapHistory = _handleVwapHistory;
+  }
+
+  void _handleVwapUpdate(VwapHistoryPoint point) {
+    if (point.symbol.isNotEmpty && point.symbol != _symbol) return;
+    final idx = _vwapHistory.indexWhere((p) => p.minute == point.minute);
+    if (idx >= 0) {
+      _vwapHistory[idx] = point;
+    } else {
+      _vwapHistory.add(point);
+      _vwapHistory.sort((a, b) => a.minute.compareTo(b.minute));
+    }
+    notifyListeners();
+  }
+
+  void _handleVwapHistory(List<VwapHistoryPoint> points) {
+    final filtered = points.where((p) =>
+        p.symbol.isEmpty || p.symbol == _symbol).toList();
+    if (filtered.isEmpty) return;
+    final map = {for (final p in _vwapHistory) p.minute: p};
+    for (final p in filtered) {
+      map[p.minute] = p;
+    }
+    _vwapHistory = map.values.toList()
+      ..sort((a, b) => a.minute.compareTo(b.minute));
+    notifyListeners();
   }
 
   Future<void> setSymbol(String value) async {
@@ -1826,6 +1859,7 @@ class StateService extends ChangeNotifier {
     _dailyProfileTo = null;
     _dailyPivot = null;
     _structures1440History = [];
+    _vwapHistory = [];
     _displayDate = null;
     _lastExtremeFrom = null;
     _lastExtremeTo = null;
@@ -1980,6 +2014,13 @@ class StateService extends ChangeNotifier {
       } catch (e) {
         logD('[loadData] Pivot load error: $e');
       }
+      // VWAP fonte única do servidor (histórico por minuto do dia).
+      try {
+        _vwapHistory = await _apiService.getVwapHistory(_symbol, effectiveDate);
+        logD('[loadData] Vwap points: ${_vwapHistory.length}');
+      } catch (e) {
+        logD('[loadData] Vwap load error: $e');
+      }
       notifyListeners();
 
     } catch (e) {
@@ -2049,6 +2090,14 @@ class StateService extends ChangeNotifier {
       _dateRangeEnd = _bars.length;
       _volumeFilterActive = false;
       _filteredVolumeLevels = null;
+      // VWAP fonte única do servidor (range multi-day).
+      try {
+        _vwapHistory =
+            await _apiService.getVwapRange(_symbol, startDate, endDate);
+        logD('[loadData] Multi-day vwap points: ${_vwapHistory.length}');
+      } catch (e) {
+        logD('[loadData] Multi-day vwap load error: $e');
+      }
       notifyListeners();
 
     } catch (e) {
@@ -2263,6 +2312,19 @@ class StateService extends ChangeNotifier {
     _bubbles = [..._bubbles, ...freshBubbles]
       ..sort((a, b) => a.date.compareTo(b.date));
     _structures = [..._structures, ...freshStructures];
+    // VWAP do range prependido (fonte única do servidor).
+    try {
+      final vwap = await _apiService.getVwapRange(
+          _symbol, batchStart, batchEnd);
+      final keys = {for (final p in _vwapHistory) p.minute};
+      final fresh = vwap.where((p) => !keys.contains(p.minute)).toList();
+      if (fresh.isNotEmpty) {
+        _vwapHistory = [..._vwapHistory, ...fresh]
+          ..sort((a, b) => a.minute.compareTo(b.minute));
+      }
+    } catch (e) {
+      logD('[history] vwap prepend error: $e');
+    }
 
     var knownChanged = false;
     for (final b in freshBubbles) {

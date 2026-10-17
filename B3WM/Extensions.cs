@@ -73,7 +73,7 @@ namespace B3WM
             services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
             services.AddSingleton(sp => new ExtremeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<ExtremeService>>()));
-            services.AddSingleton(sp => new AdjustmentForecastService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<AdjustmentForecastService>>()));
+            services.AddSingleton(sp => new VwapService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VwapService>>()));
 
             services.AddSingleton<OrchestratorService>(sp =>
                 new OrchestratorService(
@@ -83,7 +83,7 @@ namespace B3WM
                     sp.GetServices<BubbleService>(),
                     sp.GetServices<VolumeService>(),
                     sp.GetServices<StructureService>(),
-                    sp.GetServices<AdjustmentForecastService>(),
+                    sp.GetServices<VwapService>(),
                     sp.GetRequiredService<ILogger<OrchestratorService>>())
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(symbol));

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace B3WM.Shared.Models.AI
 {
     /// <summary>
@@ -33,9 +35,14 @@ namespace B3WM.Shared.Models.AI
         public JevAuditAnswer Answer { get; set; } = new();
     }
 
-    /// <summary>O que CHEGOU (antes/depois do filtro de tela).</summary>
+    /// <summary>
+    /// O que CHEGOU (antes/depois do filtro de tela). Contagens para visão
+    /// rápida + os JSONs REAIS de cada entrada (dados crus que o pipeline
+    /// trata/filtra/ordena antes de montar o state). Tudo inline no arquivo.
+    /// </summary>
     public sealed class JevAuditInput
     {
+        // Contagens (resumo).
         public int CandlesReceived { get; set; }
         public int BubblesPoolTotal { get; set; }
         public int BubblesAfterScreenFilter { get; set; }
@@ -43,6 +50,31 @@ namespace B3WM.Shared.Models.AI
         public int LookbackCandles { get; set; }
         public int LookbackBubbles { get; set; }
         public List<string> LayersOn { get; set; } = new();
+
+        // Dados reais (JSON completo de cada entrada).
+        /// <summary>Spec cru da tela (SymbolConfig) que comanda os filtros.</summary>
+        public JsonElement? ScreenSpec { get; set; }
+        /// <summary>Cabeçalho/enquadramento da tela.</summary>
+        public JsonElement? Header { get; set; }
+        /// <summary>Candles que chegaram (OHLCV, últimos N).</summary>
+        public JsonElement? Candles { get; set; }
+        /// <summary>Pool completo de bolhas do dia, ANTES do filtro de tela.</summary>
+        public JsonElement? BubblesPool { get; set; }
+        /// <summary>Bolhas após o filtro de tela (antes do corte de lookback).</summary>
+        public JsonElement? BubblesFiltered { get; set; }
+        /// <summary>Bolhas efetivamente enviadas no state (após lookback).</summary>
+        public JsonElement? BubblesSent { get; set; }
+        /// <summary>Volume profile completo (todos os níveis).</summary>
+        public JsonElement? Volume { get; set; }
+        public JsonElement? ExtremesIntra { get; set; }
+        public JsonElement? ExtremesDaily { get; set; }
+        public JsonElement? Structures { get; set; }
+        public JsonElement? PivotIntra { get; set; }
+        public JsonElement? PivotDaily { get; set; }
+        /// <summary>VWAP do dia de referência.</summary>
+        public double? Vwap { get; set; }
+        /// <summary>Posição aberta (null = flat).</summary>
+        public JsonElement? Position { get; set; }
     }
 
     /// <summary>O que foi EFETIVAMENTE ENVIADO no state.</summary>

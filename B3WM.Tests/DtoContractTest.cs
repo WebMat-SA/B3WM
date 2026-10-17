@@ -77,7 +77,10 @@ public class DtoContractTest
     {
         AssertDartCoveredByCSharp(
             new[] { "B3WM.Flutter/lib/models/bar_storage_item.dart" },
-            new[] { typeof(B3WM.Shared.Models.BarStorageItem), typeof(B3WM.Shared.Entity.VolumeLevel) });
+            new[] { typeof(B3WM.Shared.Models.BarStorageItem), typeof(B3WM.Shared.Entity.VolumeLevel) },
+            // Leitura legada intencional: fromJson aceita forecastPrice (nome
+            // anterior ao rename VwapPrice) para transição; só vwapPrice é emitido.
+            ignoreDart: new[] { "forecastPrice" });
     }
 
     [Fact]

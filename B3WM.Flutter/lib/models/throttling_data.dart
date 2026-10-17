@@ -1,16 +1,19 @@
 import 'bar_storage_item.dart';
 import 'volume_level_storage_item.dart';
 import 'adjustment_forecast_item.dart';
+import 'vwap_history_point.dart';
 
 class ThrottlingData {
   final List<BarStorageItem> candle;
   final VolumeLevelStorageItem? volume;
   final AdjustmentForecastItem? forecast;
+  final VwapHistoryPoint? vwap;
 
   ThrottlingData({
     required this.candle,
     this.volume,
     this.forecast,
+    this.vwap,
   });
 
   factory ThrottlingData.fromJson(Map<String, dynamic> json) {
@@ -24,6 +27,9 @@ class ThrottlingData {
           : null,
       forecast: json['forecast'] != null
           ? AdjustmentForecastItem.fromJson(json['forecast'] as Map<String, dynamic>)
+          : null,
+      vwap: json['vwap'] != null
+          ? VwapHistoryPoint.fromJson(json['vwap'] as Map<String, dynamic>)
           : null,
     );
   }

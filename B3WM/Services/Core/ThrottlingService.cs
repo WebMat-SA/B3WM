@@ -28,7 +28,7 @@ namespace B3WM.Services.Core
 
             var candleServices = _serviceProvider.GetServices<CandleService>().Where(c => c.Symbol == Symbol);
             var volumeService = _serviceProvider.GetServices<VolumeService>().Where(v => v.Symbol == Symbol).FirstOrDefault();
-            var forecastService = _serviceProvider.GetServices<AdjustmentForecastService>().Where(f => f.Symbol == Symbol).FirstOrDefault();
+            var vwapSvc = _serviceProvider.GetServices<VwapService>().Where(f => f.Symbol == Symbol).FirstOrDefault();
 
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
@@ -41,11 +41,21 @@ namespace B3WM.Services.Core
                         listCandleTimeFrame.Add(candleService.GetSnapshot());
                     }
 
+                    var vwapSnap = vwapSvc?.GetSnapshot();
                     ThrottlingData data = new ThrottlingData()
                     {
                         Candle = listCandleTimeFrame,
                         Volume = volumeService?.GetSnapshot(),
-                        Forecast = forecastService?.GetSnapshot()
+                        Forecast = vwapSnap == null ? null : new AdjustmentForecastItem
+                        {
+                            Vwap = vwapSnap.Vwap,
+                            Time = vwapSnap.Minute,
+                            Symbol = vwapSnap.Symbol,
+                            SumPv = vwapSnap.SumPv,
+                            SumV = vwapSnap.SumV,
+                            Day = vwapSnap.Day
+                        },
+                        Vwap = vwapSnap
                     };
 
                     // Perform throttling logic here
