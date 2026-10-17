@@ -161,20 +161,6 @@ public class JevPromptTests
     }
 
     [Fact]
-    public void ComputeVwap_MatchesChartFormula()
-    {
-        var bars = new List<BarStorageItem>
-        {
-            Bar(new DateTime(2026, 10, 2, 10, 0, 0), 0, 102, 98, 100, 10),
-            Bar(new DateTime(2026, 10, 2, 10, 5, 0), 0, 104, 100, 103, 30),
-            Bar(new DateTime(2026, 10, 1, 10, 0, 0), 0, 200, 200, 200, 999), // outro dia: fora
-        };
-        var expected = (100.0 * 10 + (104.0 + 100.0 + 103.0) / 3 * 30) / 40;
-        Assert.Equal(expected, JevPrompt.ComputeVwap(bars, new DateTime(2026, 10, 2))!.Value, precision: 6);
-        Assert.Null(JevPrompt.ComputeVwap(new List<BarStorageItem>(), new DateTime(2026, 10, 2)));
-    }
-
-    [Fact]
     public void BuildQuestions_HasFourQuesitos()
     {
         var q = (System.Collections.Generic.Dictionary<string, object>)JevPrompt.BuildQuestions();

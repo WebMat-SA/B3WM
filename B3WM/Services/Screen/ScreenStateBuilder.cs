@@ -141,11 +141,11 @@ namespace B3WM.Services.Screen
 
             if (ScreenSpec.Bool(spec, "vwapVisible", true) && lastPrice != null)
             {
-                // Fonte única: VwapService via IMarketData. Fallback para cálculo por
-                // candle só se o serviço ainda não tem ponto (ex: dia sem 1MIN fechado).
-                var vwap = await _market.VwapAsync(req.Symbol, req.DisplayDate, ct);
-                snap.Layers[SnapshotLayers.Vwap] = vwap
-                    ?? JevPrompt.ComputeVwap(candles, req.DisplayDate);
+                // Fonte única: VwapService via IMarketData. Sem ponto (ex: dia sem
+                // 1MIN fechado) a camada fica null → state mostra "VWAP: off ou
+                // sem dados" (sem fallback por candle, que divergia do gráfico).
+                snap.Layers[SnapshotLayers.Vwap] =
+                    await _market.VwapAsync(req.Symbol, req.DisplayDate, ct);
             }
 
             if (req.IncludeDaily)

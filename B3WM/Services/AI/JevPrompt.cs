@@ -294,25 +294,6 @@ namespace B3WM.Services.AI
         }
 
         /// <summary>
-        /// VWAP cumulativa do dia de referência (typical HLC/3 ponderado por
-        /// volume), igual ao cálculo do gráfico (chart_data.dart). Retorna o
-        /// último valor ou null sem barras com volume.
-        /// </summary>
-        public static double? ComputeVwap(IEnumerable<BarStorageItem> candles, DateTime referenceDay)
-        {
-            var day = referenceDay.Date;
-            double totalVol = 0, totalPv = 0, last = double.NaN;
-            foreach (var c in candles.Where(c => c.Date.Date == day).OrderBy(c => c.Date))
-            {
-                if (c.Volume <= 0) continue;
-                totalVol += c.Volume;
-                totalPv += (c.High + c.Low + c.Close) / 3 * c.Volume;
-                if (totalVol > 0) last = totalPv / totalVol;
-            }
-            return double.IsNaN(last) ? null : last;
-        }
-
-        /// <summary>
         /// Mede o tamanho (chars) de cada bloco do state, reutilizando os
         /// mesmos Append* do <see cref="BuildState"/>. Puro, sem I/O.
         /// Serve à auditoria (issue #23): mostra qual bloco domina tokens.
