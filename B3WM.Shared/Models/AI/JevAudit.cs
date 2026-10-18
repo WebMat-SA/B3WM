@@ -23,7 +23,6 @@ namespace B3WM.Shared.Models.AI
         public string Origin { get; set; } = "";
         public string Model { get; set; } = "";
         public string SnapshotHash { get; set; } = "";
-        public double Threshold { get; set; }
 
         public JevAuditInput Input { get; set; } = new();
         public JevAuditFiltered Filtered { get; set; } = new();
@@ -109,14 +108,17 @@ namespace B3WM.Shared.Models.AI
     public sealed class JevAuditAnswer
     {
         public string BodyRaw { get; set; } = "";
+        /// <summary>Viés pelo sinal do net ponderado: comprar | vender | manter.</summary>
         public string Direcao { get; set; } = "manter";
+        /// <summary>Confiança do viés = |net| (0..1).</summary>
         public double DirecaoConfidence { get; set; }
-        public Dictionary<string, double> DirecaoProbabilities { get; set; } = new();
-        public double ForcaTendencia { get; set; }
-        public double ForcaConfidence { get; set; }
+        /// <summary>Confiança de operabilidade = média ponderada (0..1).</summary>
         public double ConfiancaOperavel { get; set; }
-        public double EncerrarPosicao { get; set; }
-        public bool ShouldTrade { get; set; }
+        /// <summary>Confiança por indicador/criteria (id → 0..1).</summary>
+        public Dictionary<string, double> Criteria { get; set; } = new();
+        public double Proximidade { get; set; }
+        public double ProximidadeTicks { get; set; }
+        public string ProximidadeRef { get; set; } = "";
         public int InputTokens { get; set; }
         public int OutputTokens { get; set; }
     }

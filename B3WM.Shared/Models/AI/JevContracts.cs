@@ -12,7 +12,6 @@ namespace B3WM.Shared.Models.AI
         public int TimeFrame { get; set; } = 5;
         public int LookbackCandles { get; set; } = 60;
         public int LookbackBubbles { get; set; } = 30;
-        public double Threshold { get; set; } = 0.7;
 
         /// <summary>Dia exibido na tela (default: hoje). Se != hoje, só arquivos (sem live).</summary>
         public DateTime? DisplayDate { get; set; }
@@ -39,53 +38,41 @@ namespace B3WM.Shared.Models.AI
     }
 
     /// <summary>
-    /// Resultado estruturado da Jev + gate local. Só logado (debug), nunca
-    /// executa ordem (envio real comentado no runner).
+    /// Resultado estruturado da Jev — INFORMATIVO (Composite scoring). Não
+    /// decide operar/não-operar: mostra a confiança de cada criteria, um viés
+    /// e confianças agregadas. A decisão de operar é manual.
     /// </summary>
     public sealed class JevAnalysisResult
     {
         public string Symbol { get; set; } = string.Empty;
         public string Model { get; set; } = "jev-latest";
+
+        /// <summary>Viés pelo sinal do net ponderado: comprar | vender | manter.</summary>
         public string Direcao { get; set; } = "manter";
+
+        /// <summary>Confiança do viés = |net| (0..1). Informativa.</summary>
         public double DirecaoConfidence { get; set; }
-        public Dictionary<string, double> DirecaoProbabilities { get; set; } = new();
-        public double ForcaTendencia { get; set; }
-        public double ForcaConfidence { get; set; }
+
+        /// <summary>Confiança de operabilidade = média ponderada (0..1).</summary>
         public double ConfiancaOperavel { get; set; }
-        public bool ShouldTrade { get; set; }
-        /// <summary>
-        /// Resposta ao quesito encerrar_posicao (noul 0..1): a IA recomenda
-        /// encerrar a posição atual. Só faz sentido com posição aberta.
-        /// </summary>
-        public double EncerrarPosicao { get; set; }
-        public double Threshold { get; set; }
+
+        /// <summary>Confiança por indicador/criteria (id → 0..1).</summary>
+        public Dictionary<string, double> Criteria { get; set; } = new();
+
+        /// <summary>Proximidade técnica ao gatilho (0 = longe, 1 = colado). Informativa.</summary>
+        public double Proximidade { get; set; }
+
+        /// <summary>Distância crua até a referência mais próxima, em ticks.</summary>
+        public double ProximidadeTicks { get; set; }
+
+        /// <summary>Nome da referência mais próxima (ex.: pivo_diario, vwap).</summary>
+        public string ProximidadeRef { get; set; } = string.Empty;
+
         public int InputTokens { get; set; }
         public int OutputTokens { get; set; }
         public DateTime AnalyzedAt { get; set; } = DateTime.UtcNow;
         public string StatePreview { get; set; } = string.Empty;
         /// <summary>Arquivo da auditoria em Data/JEV ("" quando não gravado).</summary>
         public string AuditFile { get; set; } = string.Empty;
-    }
-
-    /// <summary>
-    /// Regra confidence-gated routing: só sinaliza trade quando a Jev escolhe
-    /// comprar/vender com confiança acima do threshold E o contexto é
-    /// operável. Função pura para teste unitário.
-    /// </summary>
-    public static class JevDecision
-    {
-        public static bool ApplyGate(string direcao, double direcaoConfidence, double operavel, double threshold)
-        {
-            if (string.IsNullOrWhiteSpace(direcao))
-                return false;
-            var d = direcao.Trim().ToLowerInvariant();
-            if (d != "comprar" && d != "vender")
-                return false;
-            if (direcaoConfidence < threshold)
-                return false;
-            if (operavel <= 0.5)
-                return false;
-            return true;
-        }
     }
 }

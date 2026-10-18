@@ -62,6 +62,8 @@ namespace B3WM.Shared.Models.Strategies
         public double Confidence { get; set; }
         public double Encerrar { get; set; }
         public bool ShouldTrade { get; set; }
+        /// <summary>Confiança por criteria (JEV — informativo). Vazio no resto.</summary>
+        public Dictionary<string, double> Criteria { get; set; } = new();
         public string Reason { get; set; } = "";
         public int StateChars { get; set; }
         public string SnapshotHash { get; set; } = "";

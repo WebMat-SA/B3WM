@@ -17,17 +17,20 @@ namespace B3WM.Controllers
         private readonly JevService _jev;
         private readonly ScreenStateBuilder _builder;
         private readonly JevAuditStore _audit;
+        private readonly B3WM.Services.DataKeeperBase _keeper;
         private readonly ILogger<AiController> _logger;
 
         public AiController(
             JevService jev,
             ScreenStateBuilder builder,
             JevAuditStore audit,
+            B3WM.Services.DataKeeperBase keeper,
             ILogger<AiController> logger)
         {
             _jev = jev;
             _builder = builder;
             _audit = audit;
+            _keeper = keeper;
             _logger = logger;
         }
 
@@ -46,7 +49,6 @@ namespace B3WM.Controllers
             req.TimeFrame = req.TimeFrame <= 0 ? 5 : req.TimeFrame;
             req.LookbackCandles = Math.Clamp(req.LookbackCandles, 5, 200);
             req.LookbackBubbles = Math.Clamp(req.LookbackBubbles, 0, 200);
-            req.Threshold = Math.Clamp(req.Threshold, 0, 1);
 
             if (!_jev.HasKey)
                 return StatusCode(503, "JevKey ausente no servidor. Configure via 'dotnet user-secrets set JevKey <sua-chave>'.");
@@ -78,9 +80,10 @@ namespace B3WM.Controllers
                 var state = JevPrompt.BuildStateJson(req.Symbol, req.TimeFrame, snap);
                 var stateJson = System.Text.Json.JsonSerializer.Serialize(state);
                 var questions = JevPrompt.BuildQuestions();
+                var weights = await JevWeights.LoadAsync(_keeper);
                 var resp = await _jev.AskAsync(state, questions, ct);
                 var result = JevPrompt.ParseDecision(req.Symbol, resp.Model, resp.Body,
-                    resp.InputTokens, resp.OutputTokens, req.Threshold, stateJson);
+                    resp.InputTokens, resp.OutputTokens, stateJson, weights);
                 // Auditoria best-effort: 1 arquivo por chamada em Data/JEV.
                 try
                 {
@@ -89,7 +92,7 @@ namespace B3WM.Controllers
                         DateTime.Now, DateTime.Now, "debug",
                         req.Symbol, req.TimeFrame, displayDate,
                         "debug", resp.Model, "",
-                        req.Threshold, req.LookbackCandles, req.LookbackBubbles,
+                        req.LookbackCandles, req.LookbackBubbles,
                         snap, stateJson,
                         System.Text.Json.JsonSerializer.Serialize(questions),
                         resp.HttpStatus, resp.LatencyMs, resp.Attempts,
@@ -101,9 +104,8 @@ namespace B3WM.Controllers
                     _logger.LogWarning(ex, "[jev-audit] falha ao montar auditoria {Symbol}", req.Symbol);
                 }
                 _logger.LogInformation(
-                    "[jev-debug] {Symbol} dia={Day} direcao={D} conf={C:F2} shouldTrade={T} (só log, sem ordem)",
-                    result.Symbol, displayDate.ToString("yyyy-MM-dd"),
-                    result.Direcao, result.DirecaoConfidence, result.ShouldTrade);
+                    "[jev-debug] {Symbol} dia={Day} {Summary} (só log, sem ordem)",
+                    result.Symbol, displayDate.ToString("yyyy-MM-dd"), JevPrompt.FormatCriteria(result));
                 return Ok(result);
             }
             catch (InvalidOperationException ex)

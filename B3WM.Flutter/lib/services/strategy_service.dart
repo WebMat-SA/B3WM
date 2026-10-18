@@ -35,6 +35,8 @@ class StrategyDecisionItem {
   final double confidence;
   final double encerrar;
   final bool shouldTrade;
+  /// Confiança por criteria (JEV — informativo). Vazio no resto.
+  final Map<String, double> criteria;
   final String reason;
   final int stateChars;
   final String snapshotHash;
@@ -50,6 +52,7 @@ class StrategyDecisionItem {
     required this.confidence,
     required this.encerrar,
     required this.shouldTrade,
+    this.criteria = const {},
     required this.reason,
     required this.stateChars,
     required this.snapshotHash,
@@ -67,6 +70,8 @@ class StrategyDecisionItem {
         confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
         encerrar: (json['encerrar'] as num?)?.toDouble() ?? 0,
         shouldTrade: json['shouldTrade'] as bool? ?? false,
+        criteria: ((json['criteria'] as Map?) ?? const {}).map(
+            (k, v) => MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)),
         reason: json['reason'] as String? ?? '',
         stateChars: (json['stateChars'] as num?)?.toInt() ?? 0,
         snapshotHash: json['snapshotHash'] as String? ?? '',

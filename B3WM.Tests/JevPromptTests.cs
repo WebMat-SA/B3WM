@@ -198,48 +198,72 @@ public class JevPromptTests
     }
 
     [Fact]
-    public void BuildQuestions_HasThreeQuesitos_NoEncerrar()
+    public void BuildQuestions_HasIndicators_NoEncerrar()
     {
-        var q = (System.Collections.Generic.Dictionary<string, object>)JevPrompt.BuildQuestions();
-        Assert.True(q.ContainsKey("direcao"));
-        Assert.True(q.ContainsKey("forca_tendencia"));
-        Assert.True(q.ContainsKey("confianca_operavel"));
+        var q = JevPrompt.BuildQuestions();
+        // 8 de direção + 5 de operabilidade.
+        Assert.Equal(13, q.Count);
+        foreach (var id in JevPrompt.DirectionIndicators)
+            Assert.True(q.ContainsKey(id), $"indicador de direção ausente: {id}");
+        foreach (var id in JevPrompt.OperabilityIndicators)
+            Assert.True(q.ContainsKey(id), $"indicador de operabilidade ausente: {id}");
+        // Não existe mais pergunta de direção/gate/encerrar.
+        Assert.False(q.ContainsKey("direcao"));
+        Assert.False(q.ContainsKey("confianca_operavel"));
         Assert.False(q.ContainsKey("encerrar_posicao"));
     }
 
     private const string AnswersComprar = """
         {"model":"jev-1.13.0","answers":{
-        "direcao":{"type":"choice","choice":"comprar","confidence":0.85,"probabilities":{"comprar":0.8,"vender":0.05,"manter":0.15}},
-        "forca_tendencia":{"type":"score","score":1.0,"confidence":0.7},
-        "confianca_operavel":{"type":"noul","noul":0.9}},
+        "candles_alta":{"type":"noul","noul":0.90},
+        "acima_vwap":{"type":"noul","noul":0.80},
+        "estrutura_alta":{"type":"noul","noul":0.70},
+        "acima_poc":{"type":"noul","noul":0.60},
+        "delta_positivo":{"type":"noul","noul":0.65},
+        "bolhas_compra":{"type":"noul","noul":0.55},
+        "defende_suporte":{"type":"noul","noul":0.75},
+        "diario_alta":{"type":"noul","noul":0.85},
+        "sem_chop":{"type":"noul","noul":0.70},
+        "amplitude_suficiente":{"type":"noul","noul":0.80},
+        "sem_compressao_topovale":{"type":"noul","noul":0.60},
+        "referencia_clara":{"type":"noul","noul":0.90},
+        "sem_conflito_intra_diario":{"type":"noul","noul":0.75}},
         "usage":{"input_tokens":100,"output_tokens":10}}
         """;
 
+    private const string StateJson = """
+        {"intraday":{"candles":[{"close":100.0}],"vwap":[{"vwap":99.0}],
+        "pivots":[],"structures":[],"tops_valleys":[]},"daily":{}}
+        """;
+
     [Fact]
-    public void ParseDecision_MapsGateAndTokens()
+    public void ParseDecision_AggregatesCriteriaAndProximity()
     {
-        var r = JevPrompt.ParseDecision("WINFUT", "jev-1.13.0", AnswersComprar, 100, 10, 0.7, "state-json");
+        var r = JevPrompt.ParseDecision("WINFUT", "jev-1.13.0", AnswersComprar, 100, 10, StateJson);
+
+        // Viés de alta (todos os indicadores acima de 0.5) — informativo, sem gate.
         Assert.Equal("comprar", r.Direcao);
-        Assert.Equal(0.85, r.DirecaoConfidence);
-        Assert.Equal(0.8, r.DirecaoProbabilities["comprar"]);
-        Assert.Equal(1.0, r.ForcaTendencia);
-        Assert.Equal(0.9, r.ConfiancaOperavel);
-        Assert.Equal(0, r.EncerrarPosicao);
-        Assert.True(r.ShouldTrade);
+        Assert.True(r.DirecaoConfidence > 0);
+        Assert.True(r.ConfiancaOperavel > 0);
+        Assert.Equal(13, r.Criteria.Count);
+        Assert.Equal(0.90, r.Criteria["candles_alta"]);
         Assert.Equal(100, r.InputTokens);
         Assert.Equal(10, r.OutputTokens);
 
-        // Gate barra manter e confiança baixa (mesmo corpo, threshold alto).
-        var r2 = JevPrompt.ParseDecision("WINFUT", "m", AnswersComprar, 0, 0, 0.95, "s");
-        Assert.False(r2.ShouldTrade);
+        // Proximidade: preço 100, VWAP 99, tick WINFUT 5 → 1 tick da vwap.
+        Assert.Equal("vwap", r.ProximidadeRef);
+        Assert.True(r.Proximidade > 0.9);
+
+        // Sem ShouldTrade/Encerrar/Threshold no resultado (removidos).
     }
 
     [Fact]
     public void ParseDecision_MissingFields_DefaultManter()
     {
-        var r = JevPrompt.ParseDecision("WINFUT", "m", """{"answers":{}}""", 0, 0, 0.7, "s");
+        var r = JevPrompt.ParseDecision("WINFUT", "m", """{"answers":{}}""", 0, 0, "{}");
         Assert.Equal("manter", r.Direcao);
-        Assert.False(r.ShouldTrade);
-        Assert.Equal(0, r.EncerrarPosicao);
+        Assert.Equal(0, r.DirecaoConfidence);
+        Assert.Empty(r.Criteria);
+        Assert.Equal(0, r.Proximidade);
     }
 }

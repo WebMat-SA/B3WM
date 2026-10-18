@@ -72,10 +72,10 @@ public class JevAuditTests
     {
         Symbol = "WINFUT", Model = "jev-1.13.0", Direcao = "comprar",
         DirecaoConfidence = 0.85,
-        DirecaoProbabilities = new() { ["comprar"] = 0.8 },
-        ForcaTendencia = 1.0, ForcaConfidence = 0.7,
-        ConfiancaOperavel = 0.9, ShouldTrade = true, EncerrarPosicao = 0.1,
-        Threshold = 0.7, InputTokens = 100, OutputTokens = 10,
+        ConfiancaOperavel = 0.9,
+        Criteria = new() { ["candles_alta"] = 0.8, ["sem_chop"] = 0.7 },
+        Proximidade = 0.6, ProximidadeTicks = 12, ProximidadeRef = "vwap",
+        InputTokens = 100, OutputTokens = 10,
     };
 
     [Fact]
@@ -103,7 +103,7 @@ public class JevAuditTests
         var r = JevPrompt.BuildAudit("a3f9c1d2",
             new DateTime(2026, 10, 16, 10, 4, 31, 120), new DateTime(2026, 10, 16, 10, 4, 0),
             "BubbleAppeared", "WINFUT", 2, new DateTime(2026, 10, 16),
-            "strategy", "jev-1.13.0", "snap123", 0.7, 60, 30,
+            "strategy", "jev-1.13.0", "snap123", 60, 30,
             snap, state, q, 200, 321, 1, """{"answers":{}}""", Parsed());
 
         Assert.Equal("WINFUT", r.Symbol);
@@ -118,7 +118,7 @@ public class JevAuditTests
         Assert.Equal(state.Length, r.Filtered.StateChars);
         // Pergunta montada integral (sem corte de 6000).
         Assert.Equal(state, r.QuestionState);
-        Assert.Contains("direcao", r.QuestionQuestionsJson);
+        Assert.Contains("candles_alta", r.QuestionQuestionsJson);
         // Inputs detalhados: JSONs reais de tudo que chegou.
         Assert.NotNull(r.Input.Candles);
         var candlesJson = r.Input.Candles!.Value.EnumerateArray().ToList();

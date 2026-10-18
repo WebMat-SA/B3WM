@@ -341,6 +341,7 @@ namespace B3WM.Services.Strategies
                 Confidence = decision.Confidence,
                 Encerrar = decision.Encerrar,
                 ShouldTrade = decision.ShouldTrade,
+                Criteria = decision.Criteria,
                 Reason = decision.Reason,
                 StateChars = decision.StateChars,
                 SnapshotHash = s.SnapshotHash,
