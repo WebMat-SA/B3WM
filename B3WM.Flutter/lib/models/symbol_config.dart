@@ -10,7 +10,6 @@ class SymbolConfig {
   int lookbackDays;
 
   bool bubbleVisible;
-  double bubbleSize;
   double bubbleOpacity;
   double bubbleSizeMin;
   double bubbleSizeMax;
@@ -105,7 +104,6 @@ class SymbolConfig {
     required this.dateRangeMode,
     required this.lookbackDays,
     required this.bubbleVisible,
-    required this.bubbleSize,
     required this.bubbleOpacity,
     required this.bubbleSizeMin,
     required this.bubbleSizeMax,
@@ -160,7 +158,6 @@ class SymbolConfig {
         dateRangeMode = DateRangeMode.intraday,
         lookbackDays = 5,
         bubbleVisible = true,
-        bubbleSize = 1.0,
         bubbleOpacity = 0.7,
         bubbleSizeMin = 20,
         bubbleSizeMax = 100,
@@ -206,6 +203,23 @@ class SymbolConfig {
         tradingPositionsExpanded = false,
         tradingHistoryExpanded = false;
 
+  /// Faixa válida (px) dos sliders Min/Max Size das bolhas.
+  static const double bubbleSizePxMin = 5;
+  static const double bubbleSizePxMax = 200;
+
+  /// Sanea o par Min/Max (px) do tamanho das bolhas: clampa para
+  /// [5, 200] e garante `min <= max`. Nunca lança.
+  static List<double> sanitizeBubbleSizes(double minSize, double maxSize) {
+    var lo = minSize.clamp(bubbleSizePxMin, bubbleSizePxMax);
+    var hi = maxSize.clamp(bubbleSizePxMin, bubbleSizePxMax);
+    if (lo > hi) {
+      final tmp = lo;
+      lo = hi;
+      hi = tmp;
+    }
+    return [lo, hi];
+  }
+
   /// Aplica as configs legadas (globais, anteriores à separação por símbolo)
   /// sobre os defaults per-symbol, respeitando os limites válidos de cada
   /// símbolo para campos dependentes dele (thresholdBubble, structureRangeUpd).
@@ -214,6 +228,8 @@ class SymbolConfig {
     final thresholdMin = Defaults.thresholdBubbleSize(symbol);
     final structureMax = Defaults.structureRangeUpdMax(symbol);
     final structureDailyMax = Defaults.structureRangeUpdDailyMax(symbol);
+    final bubbleSizes = sanitizeBubbleSizes(
+        legacy.bubbleSizeMin, legacy.bubbleSizeMax);
     final dailyRange = legacy.daily.structureRangeUpd >= 0 &&
             legacy.daily.structureRangeUpd <= structureDailyMax
         ? legacy.daily.structureRangeUpd
@@ -224,10 +240,9 @@ class SymbolConfig {
       dateRangeMode: legacy.dateRangeMode,
       lookbackDays: legacy.lookbackDays,
       bubbleVisible: legacy.bubbleVisible,
-      bubbleSize: legacy.bubbleSize,
       bubbleOpacity: legacy.bubbleOpacity,
-      bubbleSizeMin: legacy.bubbleSizeMin,
-      bubbleSizeMax: legacy.bubbleSizeMax,
+      bubbleSizeMin: bubbleSizes[0],
+      bubbleSizeMax: bubbleSizes[1],
       thresholdBubble: legacy.thresholdBubble >= thresholdMin
           ? legacy.thresholdBubble
           : defaults.thresholdBubble,
@@ -307,15 +322,17 @@ class SymbolConfig {
     var timeFrame = json['timeFrame'] as int? ?? 2;
     // Migração #12: o timeframe 1D saiu do seletor principal (só intraday).
     if (timeFrame == 1440) timeFrame = 2;
+    final bubbleSizes = sanitizeBubbleSizes(
+        (json['bubbleSizeMin'] as num?)?.toDouble() ?? 20,
+        (json['bubbleSizeMax'] as num?)?.toDouble() ?? 100);
     return SymbolConfig(
         timeFrame: timeFrame,
         dateRangeMode: DateRangeMode.values.byName(json['dateRangeMode'] as String? ?? 'intraday'),
         lookbackDays: json['lookbackDays'] as int? ?? 5,
         bubbleVisible: json['bubbleVisible'] as bool? ?? true,
-        bubbleSize: (json['bubbleSize'] as num?)?.toDouble() ?? 1.0,
         bubbleOpacity: (json['bubbleOpacity'] as num?)?.toDouble() ?? 0.7,
-        bubbleSizeMin: (json['bubbleSizeMin'] as num?)?.toDouble() ?? 20,
-        bubbleSizeMax: (json['bubbleSizeMax'] as num?)?.toDouble() ?? 100,
+        bubbleSizeMin: bubbleSizes[0],
+        bubbleSizeMax: bubbleSizes[1],
         thresholdBubble: json['thresholdBubble'] as int? ??
             Defaults.thresholdBubbleSize(symbol),
         profileVisible: json['profileVisible'] as bool? ?? true,
@@ -387,7 +404,6 @@ class SymbolConfig {
         'dateRangeMode': dateRangeMode.name,
         'lookbackDays': lookbackDays,
         'bubbleVisible': bubbleVisible,
-        'bubbleSize': bubbleSize,
         'bubbleOpacity': bubbleOpacity,
         'bubbleSizeMin': bubbleSizeMin,
         'bubbleSizeMax': bubbleSizeMax,

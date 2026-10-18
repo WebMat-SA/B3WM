@@ -14,6 +14,7 @@ import 'package:b3wm_flutter/services/audio_service.dart';
 import 'package:b3wm_flutter/services/preferences_service.dart';
 import 'package:b3wm_flutter/services/signalr_service.dart';
 import 'package:b3wm_flutter/services/state_service.dart';
+import 'package:b3wm_flutter/ui/widgets/chart/chart_data.dart';
 
 class _NoopSignalRService extends SignalRService {
   _NoopSignalRService({required super.hubUrl, required super.apiService});
@@ -101,6 +102,27 @@ void main() {
       expect(restored.selectedAgents, [1, 2]);
       expect(restored.agentThresholds, {1: 500});
       expect(restored.knownAgents, [1, 2, 3]);
+    });
+
+    test('sanitizeBubbleSizes clampa para [5,200] e ordena min <= max', () {
+      expect(SymbolConfig.sanitizeBubbleSizes(200, 5), [5, 200]);
+      expect(SymbolConfig.sanitizeBubbleSizes(-10, 1000), [5, 200]);
+      expect(SymbolConfig.sanitizeBubbleSizes(20, 100), [20, 100]);
+    });
+
+    test('fromJson sanea Min/Max invertidos ou fora da faixa', () {
+      final cfg = SymbolConfig.fromJson(
+          {'timeFrame': 2, 'bubbleSizeMin': 300, 'bubbleSizeMax': 1},
+          symbol: 'WINFUT');
+      expect(cfg.bubbleSizeMin, 5);
+      expect(cfg.bubbleSizeMax, 200);
+    });
+
+    test('toJson não persiste mais o campo bubbleSize', () {
+      final json = SymbolConfig.withDefaults('WINFUT').toJson();
+      expect(json.containsKey('bubbleSize'), isFalse);
+      expect(json.containsKey('bubbleSizeMin'), isTrue);
+      expect(json.containsKey('bubbleSizeMax'), isTrue);
     });
 
     test('trading data flags round-trip e defaults', () {
@@ -572,6 +594,77 @@ void main() {
         'symbol': 'WINFUT',
       });
       expect(b.actionType, ActionType.sale);
+    });
+  });
+
+  group('Bubble sizing', () {
+    test('setBubbleSizeMin não ultrapassa o Max e vice-versa', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+      final service = _createService(prefs);
+      await service.setSymbol('WINFUT');
+
+      service.setBubbleSizeMax(50);
+      service.setBubbleSizeMin(120);
+      expect(service.bubbleSizeMin, 50);
+      expect(service.bubbleSizeMax, 50);
+
+      service.setBubbleSizeMin(20);
+      service.setBubbleSizeMax(100);
+      service.setBubbleSizeMax(5);
+      expect(service.bubbleSizeMin, 20);
+      expect(service.bubbleSizeMax, 20);
+
+      service.setBubbleSizeMin(5);
+      expect(service.bubbleSizeMin, 5);
+    });
+
+    test('bubbleRadius normaliza o volume entre Min e Max', () {
+      ChartData data({required double lo, required double hi}) => ChartData(
+            candles: const [],
+            redBubbles: const [],
+            blueBubbles: const [],
+            volumeProfile: const [],
+            vwapPoints: const [],
+            minPrice: 0,
+            maxPrice: 1,
+            lastPrice: 0,
+            dates: const [],
+            bubbleSizeMin: 20,
+            bubbleSizeMax: 100,
+            bubbleAmountMin: lo,
+            bubbleAmountMax: hi,
+          );
+
+      final d = data(lo: 500, hi: 1000);
+      expect(d.bubbleRadius(500), closeTo(20, 1e-9));
+      expect(d.bubbleRadius(1000), closeTo(100, 1e-9));
+      // 1000 tem o dobro do volume de 500 → raio claramente maior.
+      expect(d.bubbleRadius(1000), greaterThan(d.bubbleRadius(500)));
+
+      // Único volume → usa o Max (evita divisão por zero).
+      final single = data(lo: 750, hi: 750);
+      expect(single.bubbleRadius(750), 100);
+
+      // Min/Max invertidos não lançam e continuam ordenados.
+      final inverted = ChartData(
+        candles: const [],
+        redBubbles: const [],
+        blueBubbles: const [],
+        volumeProfile: const [],
+        vwapPoints: const [],
+        minPrice: 0,
+        maxPrice: 1,
+        lastPrice: 0,
+        dates: const [],
+        bubbleSizeMin: 100,
+        bubbleSizeMax: 20,
+        bubbleAmountMin: 500,
+        bubbleAmountMax: 1000,
+      );
+      expect(inverted.bubbleRadius(500), 20);
+      expect(inverted.bubbleRadius(1000), 100);
     });
   });
 }

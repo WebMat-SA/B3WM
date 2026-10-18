@@ -89,7 +89,7 @@ namespace B3WM.Services.Screen
 
         public static readonly HashSet<string> Cosmetic = new()
         {
-            "bubbleSize", "bubbleOpacity", "bubbleSizeMin", "bubbleSizeMax",
+            "bubbleOpacity", "bubbleSizeMin", "bubbleSizeMax",
             "profileSizeH", "profileSizeV", "profileOpacity",
             "structureOpacity", "extremeOpacity", "pivotOpacity",
             "vwapOpacity", "vwapColor", "colorBuyer", "colorSeller",

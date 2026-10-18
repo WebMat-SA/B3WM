@@ -116,7 +116,6 @@ class StateService extends ChangeNotifier {
   DateRangeMode get dateRangeMode => _currentConfig.dateRangeMode;
   int get lookbackDays => _currentConfig.lookbackDays;
   bool get bubbleVisible => _currentConfig.bubbleVisible;
-  double get bubbleSize => _currentConfig.bubbleSize;
   double get bubbleOpacity => _currentConfig.bubbleOpacity;
   double get bubbleSizeMin => _currentConfig.bubbleSizeMin;
   double get bubbleSizeMax => _currentConfig.bubbleSizeMax;
@@ -339,10 +338,20 @@ class StateService extends ChangeNotifier {
     await loadData();
   }
   void setBubbleVisible(bool v) { _currentConfig.bubbleVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSize(double v) { _currentConfig.bubbleSize = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
   void setBubbleOpacity(double v) { _currentConfig.bubbleOpacity = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSizeMin(double v) { _currentConfig.bubbleSizeMin = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
-  void setBubbleSizeMax(double v) { _currentConfig.bubbleSizeMax = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
+  /// Ajusta o Min/Max (px) mantendo `min <= max` e dentro de [5, 200].
+  void setBubbleSizeMin(double v) {
+    _currentConfig.bubbleSizeMin =
+        v.clamp(SymbolConfig.bubbleSizePxMin, _currentConfig.bubbleSizeMax);
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+  void setBubbleSizeMax(double v) {
+    _currentConfig.bubbleSizeMax =
+        v.clamp(_currentConfig.bubbleSizeMin, SymbolConfig.bubbleSizePxMax);
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
   void setThresholdBubble(int v) { if (_guardLocked('setThresholdBubble')) return; _currentConfig.thresholdBubble = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
 
   void setProfileVisible(bool v) { _currentConfig.profileVisible = v; notifyListeners(); _saveConfigForSymbol(_symbol); }
@@ -1590,6 +1599,8 @@ class StateService extends ChangeNotifier {
     var legacyTimeFrame = p.getInt('TimeFrame') ?? 2;
     // Migração #12: 1D saiu do seletor principal.
     if (legacyTimeFrame == 1440) legacyTimeFrame = 2;
+    final bubbleSizes = SymbolConfig.sanitizeBubbleSizes(
+        p.getDouble('BubbleSizeMin') ?? 20, p.getDouble('BubbleSizeMax') ?? 100);
     return SymbolConfig(
       timeFrame: legacyTimeFrame,
       dateRangeMode: DateRangeMode.intraday,
@@ -1611,11 +1622,10 @@ class StateService extends ChangeNotifier {
       vwapVisible: true,
       vwapOpacity: 0.5,
       vwapColor: '#FF8800',
-      bubbleSize: p.getDouble('BubbleSize') ?? 1.0,
       bubbleOpacity: p.getDouble('BubbleOpacity') ?? 0.7,
       bubbleVisible: p.getBool('BubbleVisible') ?? true,
-      bubbleSizeMin: p.getDouble('BubbleSizeMin') ?? 20,
-      bubbleSizeMax: p.getDouble('BubbleSizeMax') ?? 100,
+      bubbleSizeMin: bubbleSizes[0],
+      bubbleSizeMax: bubbleSizes[1],
       profileSizeH: p.getDouble('ProfileSizeH') ?? 1.0,
       profileSizeV: p.getDouble('ProfileSizeV') ?? 1.0,
       profileOpacity: p.getDouble('ProfileOpacity') ?? 0.5,

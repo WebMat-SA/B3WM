@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Color;
 import '../../../app_log.dart';
 import '../../../services/state_service.dart';
@@ -225,6 +226,10 @@ class ChartData {
   final double yZoom;
   final double bubbleSizeMin;
   final double bubbleSizeMax;
+  /// Menor e maior volume (original) entre as bolhas visíveis. Usados para
+  /// normalizar o raio em [bubbleSizeMin, bubbleSizeMax].
+  final double bubbleAmountMin;
+  final double bubbleAmountMax;
   final double vwapOpacity;
   final Color vwapColor;
   final List<PositionInfo> positions;
@@ -265,6 +270,8 @@ class ChartData {
     this.yZoom = 1.0,
     this.bubbleSizeMin = 20,
     this.bubbleSizeMax = 100,
+    this.bubbleAmountMin = 0,
+    this.bubbleAmountMax = 0,
     this.vwapOpacity = 0.5,
     this.vwapColor = const Color(0xFFFF8800),
     this.positions = const [],
@@ -277,6 +284,23 @@ class ChartData {
   });
 
   double get priceRange => maxPrice - minPrice;
+
+  /// Raio (px, em coords do canvas virtual) da bolha de [amount].
+  ///
+  /// Normaliza `sqrt(amount)` de `[sqrt(bubbleAmountMin), sqrt(bubbleAmountMax)]`
+  /// para `[bubbleSizeMin, bubbleSizeMax]`, de modo que a menor bolha visível
+  /// tende ao Min e a maior ao Max — sem saturar as pontas. Nunca lança: os
+  /// limites são ordenados internamente e o fator é clampado em [0, 1].
+  double bubbleRadius(double amount) {
+    final lo = math.min(bubbleSizeMin, bubbleSizeMax);
+    final hi = math.max(bubbleSizeMin, bubbleSizeMax);
+    if (bubbleAmountMax <= bubbleAmountMin || amount <= 0) return hi;
+    final smin = math.sqrt(bubbleAmountMin);
+    final smax = math.sqrt(bubbleAmountMax);
+    if (smax <= smin) return hi;
+    final t = ((math.sqrt(amount) - smin) / (smax - smin)).clamp(0.0, 1.0);
+    return lo + t * (hi - lo);
+  }
 }
 
 String _formatCandleKey(DateTime dt) {
@@ -344,6 +368,8 @@ ChartData buildChartData(StateService state) {
 
   final redBubbles = <BubblePoint>[];
   final blueBubbles = <BubblePoint>[];
+  var bubbleAmountMin = 0.0;
+  var bubbleAmountMax = 0.0;
   if (state.bubbleVisible) {
     var bubbleSource = state.bubbles;
     if (state.bubbleAmountFilter) {
@@ -359,7 +385,7 @@ ChartData buildChartData(StateService state) {
     for (final b in bubbleSource) {
       final pt = BubblePoint(
         price: b.price,
-        amount: b.amount * state.bubbleSize,
+        amount: b.amount,
         originalAmount: b.amount,
         isBuy: b.actionType == ActionType.buy,
         agentName: Agents.fromValue(b.agent)?.description ?? '',
@@ -370,6 +396,15 @@ ChartData buildChartData(StateService state) {
         blueBubbles.add(pt);
       } else {
         redBubbles.add(pt);
+      }
+    }
+    final all = [...redBubbles, ...blueBubbles];
+    if (all.isNotEmpty) {
+      bubbleAmountMin = all.first.amount;
+      bubbleAmountMax = all.first.amount;
+      for (final b in all) {
+        if (b.amount < bubbleAmountMin) bubbleAmountMin = b.amount;
+        if (b.amount > bubbleAmountMax) bubbleAmountMax = b.amount;
       }
     }
   }
@@ -617,6 +652,8 @@ ChartData buildChartData(StateService state) {
     yZoom: state.yZoom,
     bubbleSizeMin: state.bubbleSizeMin,
     bubbleSizeMax: state.bubbleSizeMax,
+    bubbleAmountMin: bubbleAmountMin,
+    bubbleAmountMax: bubbleAmountMax,
     vwapOpacity: state.vwapOpacity,
     vwapColor: _parseHexColor(state.vwapColor),
     positions: positions,
