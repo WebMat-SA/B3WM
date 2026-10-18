@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using B3WM.Services.Screen;
 using B3WM.Shared.Entity;
@@ -9,10 +8,10 @@ using B3WM.Shared.Models.ExtremeDetection;
 namespace B3WM.Services.AI
 {
     /// <summary>
-    /// Montagem da pergunta e leitura da resposta da Jev (contrato de prompt).
-    /// Pertence à camada de análise (usado pela JevAnalysisStrategy e pelo
-    /// endpoint avulso), NÃO ao transporte: o <see cref="JevService"/> só
-    /// envia HTTP e devolve o JSON cru. Regra: nada aqui faz I/O.
+    /// Montagem do state JSON da Jev (contrato de prompt). Pertence à camada
+    /// de análise (usado pela JevAnalysisStrategy e pelo endpoint avulso),
+    /// NÃO ao transporte: o <see cref="JevService"/> só envia HTTP e devolve
+    /// o JSON cru. Regra: nada aqui faz I/O.
     /// </summary>
     public static class JevPrompt
     {
@@ -63,328 +62,172 @@ namespace B3WM.Services.AI
                 ScreenSpec.Bool(spec, "bubbleAmountFilter", true),
                 ScreenSpec.Bool(spec, "bubbleAgentsFilter", true));
 
+        // ---------------------------------------------------------------------
+        // State JSON (objeto). Camadas já chegam recortadas ao escopo pelo
+        // ScreenStateBuilder; aqui só projetamos para o contrato da Jev.
+        // ---------------------------------------------------------------------
+
         /// <summary>
-        /// Monta o state WYSIWYG a partir do snapshot dinâmico: cada camada
-        /// presente vira bloco; ausente/desligada vira linha informativa.
-        /// Camada nova = nova chave em Layers + bloco aqui (sem bag tipada).
+        /// Projeta o snapshot (já recortado ao escopo) no state JSON da Jev:
+        /// bloco intraday + bloco diário. Sem config de tela, sem posição.
         /// </summary>
-        public static string BuildState(string symbol, int timeFrame, MarketSnapshot snap)
+        public static JevStateDto BuildStateJson(string symbol, int timeFrame, MarketSnapshot snap)
         {
-            var sb = new StringBuilder();
-            var header = snap.Get<HeaderView>(SnapshotLayers.Header);
-            AppendScreenHeader(sb, symbol, timeFrame, header);
             var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
-            sb.AppendLine($"Candles (últimos {candles.Count}, OHLCV):");
-            foreach (var c in candles)
-                sb.AppendLine($"- {c.Date:HH:mm} O={c.Open} H={c.High} L={c.Low} C={c.Close} V={c.Volume}");
-
-            if (!snap.Has(SnapshotLayers.Bubbles))
-            {
-                sb.AppendLine("Bolhas: desligadas na tela.");
-            }
-            else
-            {
-                var bubbles = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new();
-                var filt = header == null ? "" :
-                    $" (filtro tela: thr base {header.ThresholdBubble}, {header.BubblesVisibleDay} de {header.BubblesTotalDay} no dia)";
-                sb.AppendLine($"Bolhas — trades agressivos por agente (últimas {bubbles.Count}){filt}:");
-                foreach (var b in bubbles)
-                    sb.AppendLine($"- {b.Date:HH:mm:ss} agente={b.Agent} lado={b.ActionType} qtd={b.Amount} preco={b.Price}");
-            }
-
+            var bubbles = snap.Has(SnapshotLayers.Bubbles)
+                ? snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new()
+                : new();
             var volume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.Volume);
-            var levels = volume?.Volumes ?? new List<VolumeLevel>();
-            if (!snap.Has(SnapshotLayers.Volume))
-            {
-                sb.AppendLine("Volume profile: desligado na tela.");
-            }
-            else if (levels.Count == 0)
-            {
-                sb.AppendLine("Volume profile: sem dados.");
-            }
-            else
-            {
-                var poc = levels.OrderByDescending(l => l.Total).First();
-                var top = levels.OrderByDescending(l => l.Total).Take(5).ToList();
-                var buy = levels.Sum(l => l.BuyVolume);
-                var sell = levels.Sum(l => l.SellVolume);
-                sb.AppendLine($"Volume profile: POC={poc.Price} total={poc.Total} delta_total={buy - sell} (buy={buy} sell={sell}). Top níveis:");
-                foreach (var l in top)
-                    sb.AppendLine($"- preco={l.Price} total={l.Total} buy={l.BuyVolume} sell={l.SellVolume} delta={l.Delta}");
-            }
+            var pivIntra = snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra);
+            var extIntra = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra);
+            var structs = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures) ?? new();
 
-            AppendPositionBlock(sb, snap.Get<PositionView>(SnapshotLayers.Position));
-            AppendExtremesBlock(sb, "Topos e vales intraday",
-                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra),
-                snap.Has(SnapshotLayers.ExtremesIntra));
-            AppendExtremesBlock(sb, "Topos e vales diários",
-                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily),
-                snap.Has(SnapshotLayers.ExtremesDaily),
-                snap.Get<DateWindow>(SnapshotLayers.DailyWindow));
-            AppendStructuresBlock(sb, snap);
-            AppendPivotBlock(sb, "Pivot intraday",
-                snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra),
-                snap.Has(SnapshotLayers.PivotIntra));
-            AppendPivotBlock(sb, "Pivot diário",
-                snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily),
-                snap.Has(SnapshotLayers.PivotDaily));
-            AppendVwapLine(sb, snap);
-            return sb.ToString();
+            var dailyCandles = snap.Get<List<BarStorageItem>>(SnapshotLayers.DailyCandles) ?? new();
+            var dailyVolume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.DailyVolume);
+            var pivDaily = snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily);
+            var extDaily = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily);
+
+            var intraday = new JevIntradayDto
+            {
+                Scope = Range(snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday), candles),
+                Candles = candles.Select(ToCandle).ToList(),
+                VolumeProfile = ToVolumeProfile(volume),
+                Bubbles = bubbles.OrderBy(b => b.Date).Select(ToBubble).ToList(),
+                Vwap = candles.Where(c => c.VwapPrice.HasValue)
+                    .Select(c => new JevVwapDto { Minute = c.Date.ToString("HH:mm"), Vwap = c.VwapPrice!.Value })
+                    .ToList(),
+                Pivots = ToPivots(pivIntra, candles),
+                TopsValleys = ToExtremes(extIntra),
+                Structures = structs.Where(s => s.TimeFrame != 1440)
+                    .OrderBy(s => s.Date).Select(s => ToStructure(s, withTimeframe: true)).ToList(),
+            };
+
+            var dailyStructs = structs.Where(s => s.TimeFrame == 1440);
+            var daily = new JevDailyDto
+            {
+                Scope = Range(snap.Get<DateWindow>(SnapshotLayers.ScopeDaily), dailyCandles),
+                Candles = dailyCandles.Select(ToCandle).ToList(),
+                VolumeProfile = ToVolumeProfile(dailyVolume),
+                Pivots = ToPivots(pivDaily, dailyCandles),
+                TopsValleys = ToExtremes(extDaily),
+                Structures = dailyStructs.OrderBy(s => s.Date).Select(s => ToStructure(s, withTimeframe: false)).ToList(),
+            };
+
+            return new JevStateDto
+            {
+                Symbol = symbol,
+                StrategyTimeframe = timeFrame,
+                Intraday = intraday,
+                Daily = daily,
+            };
         }
 
-        private static void AppendScreenHeader(StringBuilder sb, string symbol, int timeFrame, HeaderView? header)
+        private static JevRangeDto Range(DateWindow? window, IReadOnlyList<BarStorageItem> fallback) => new()
         {
-            sb.AppendLine($"Ativo: {symbol} Timeframe: {timeFrame}min. Análise de microestrutura para decisão comprar/vender/manter.");
-            if (header == null) return;
-            var tfs = header.VisibleTimeFrames.Count > 0
-                ? string.Join(",", header.VisibleTimeFrames)
-                : timeFrame.ToString();
-            sb.AppendLine($"Tela: dia={header.DisplayDate:yyyy-MM-dd} modo={header.Mode} último_preço={header.LastPrice?.ToString("F1") ?? "?"} " +
-                $" structures_tf=[{tfs}] minDistance={header.MinDistance} thresholdBubble={header.ThresholdBubble}" +
-                $" vwap={(header.VwapVisible ? "on" : "off")} painel1D={(header.PanelOpen ? "aberto" : "fechado")}" +
-                $" trading(hist={(header.TradingHistoryVisible ? "on" : "off")},pos={(header.PositionVisible ? "on" : "off")},ordens={(header.OpenOrdersVisible ? "on" : "off")}).");
-        }
+            From = window?.From ?? (fallback.Count > 0 ? fallback[0].Date : default),
+            To = window?.To ?? (fallback.Count > 0 ? fallback[^1].Date : default),
+        };
 
-        /// <summary>
-        /// Situação da posição aberta (ou flat) para a IA decidir entrada e saída.
-        /// </summary>
-        public static void AppendPositionBlock(StringBuilder sb, PositionView? pos)
+        private static JevCandleDto ToCandle(BarStorageItem c) => new()
         {
-            if (pos == null)
-            {
-                sb.AppendLine("Posição: flat (sem posição aberta).");
-                return;
-            }
-            var side = pos.Side == "comprar" ? "comprado" : "vendido";
-            var sign = pos.UnrealizedPts >= 0 ? "+" : "";
-            sb.AppendLine($"Posição: {side} @{pos.Entry:F0} desde {pos.EntryTime:HH:mm} ({pos.Candles} candles, parcial {sign}{pos.UnrealizedPts:F0} pts). Responda encerrar_posicao=1 se devemos sair agora.");
-        }
+            Date = c.Date, Open = c.Open, High = c.High, Low = c.Low,
+            Close = c.Close, Volume = c.Volume, Vwap = c.VwapPrice,
+        };
 
-        /// <summary>
-        /// Topos/vales confirmados (Top/Valley) mais relevantes por
-        /// prominência; Indeterminate entra só na contagem.
-        /// layerOn=false (desligado na tela) vs item null (sem dados).
-        /// </summary>
-        public static void AppendExtremesBlock(StringBuilder sb, string title,
-            ExtremeStorageItem? item, bool layerOn, DateWindow? window = null)
+        private static JevBubbleDto ToBubble(BubbleStorageItem b) => new()
         {
-            if (!layerOn)
-            {
-                sb.AppendLine($"{title}: desligados na tela.");
-                return;
-            }
-            var extremes = item?.Extremes ?? new List<ExtremePoint>();
-            var tops = extremes.Count(e => e.Type == ExtremeType.Top);
-            var valleys = extremes.Count(e => e.Type == ExtremeType.Valley);
-            var indet = extremes.Count - tops - valleys;
-            if (tops + valleys == 0)
-            {
-                sb.AppendLine($"{title}: sem dados.");
-                return;
-            }
-            var period = item?.PeriodFrom != null || item?.PeriodTo != null
-                ? $" período {item.PeriodFrom:dd/MM}-{item.PeriodTo:dd/MM}"
-                : window != null ? $" período {window.From:dd/MM}-{window.To:dd/MM}" : string.Empty;
-            sb.AppendLine($"{title} ({tops} topos, {valleys} vales, {indet} indet.{period}):");
-            foreach (var e in extremes
-                         .Where(e => e.Type is ExtremeType.Top or ExtremeType.Valley)
-                         .OrderByDescending(e => e.Prominence)
-                         .Take(15))
-            {
-                var kind = e.Type == ExtremeType.Top ? "topo" : "vale";
-                sb.AppendLine($"- {kind} preco={e.Position} vol={e.Value:F0} prom={e.Prominence:F0} conf={e.Confidence:F2}");
-            }
-        }
+            Date = b.Date, Agent = b.Agent,
+            Side = b.ActionType == Ticks2.ActionType.Buy ? "buy" : "sell",
+            Amount = b.Amount, Price = b.Price,
+        };
 
-        /// <summary>
-        /// Bordas de estrutura (Up/Down/Aux) mais próximas do último preço
-        /// por timeframe visível — as que importam visualmente como
-        /// suporte/resistência. Sem preço de referência: últimas por data.
-        /// </summary>
-        public static void AppendStructuresBlock(StringBuilder sb, MarketSnapshot snap, int maxPerTimeFrame = 8)
+        private static JevStructureDto ToStructure(StructureStorageItem s, bool withTimeframe) => new()
         {
-            var header = snap.Get<HeaderView>(SnapshotLayers.Header);
-            if (!snap.Has(SnapshotLayers.Structures))
+            Date = s.Date,
+            Timeframe = withTimeframe ? s.TimeFrame : null,
+            Up = s.UpBorder, Down = s.DownBorder,
+            UpAux = s.UpAuxBorder, DownAux = s.DownAuxBorder,
+        };
+
+        /// <summary>POC + delta total + todos os níveis do escopo (sem teto).</summary>
+        private static JevVolumeProfileDto? ToVolumeProfile(VolumeLevelStorageItem? volume)
+        {
+            var levels = volume?.Volumes;
+            if (levels == null || levels.Count == 0) return null;
+            var poc = levels.OrderByDescending(l => l.Total).First();
+            return new JevVolumeProfileDto
             {
-                sb.AppendLine("Structures: desligadas na tela.");
-                return;
-            }
-            var all = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures) ?? new();
-            if (all.Count == 0)
-            {
-                sb.AppendLine("Structures: sem dados.");
-                return;
-            }
-            var tfs = header?.VisibleTimeFrames is { Count: > 0 } vt
-                ? vt : all.Select(s => s.TimeFrame).Distinct().OrderBy(t => t).ToList();
-            var includeAux = snap.Value(SnapshotLayers.StructureAuxVisibleFlag, true);
-            var lastPrice = header?.LastPrice;
-            var refDay = header?.DisplayDate.Date ?? DateTime.Today;
-            sb.AppendLine($"Structures LTA/LTB (bordas mais próximas do preço, minDistance={header?.MinDistance ?? 0}):");
-            foreach (var tf in tfs)
-            {
-                var rows = FlattenBorders(all.Where(s => s.TimeFrame == tf), includeAux);
-                if (rows.Count == 0)
+                Poc = poc.Price,
+                DeltaTotal = levels.Sum(l => l.BuyVolume) - levels.Sum(l => l.SellVolume),
+                Levels = levels.OrderBy(l => l.Price).Select(l => new JevVolumeLevelDto
                 {
-                    sb.AppendLine($"- tf {tf}: sem dados.");
-                    continue;
-                }
-                IEnumerable<(string Label, double Price, DateTime Date)> picked = lastPrice is double lp
-                    ? rows.OrderBy(r => Math.Abs(r.Price - lp)).Take(Math.Max(1, maxPerTimeFrame))
-                    : rows.OrderByDescending(r => r.Date).Take(Math.Max(1, maxPerTimeFrame));
-                foreach (var r in picked.OrderBy(r => r.Price))
-                {
-                    var side = lastPrice is double lp2
-                        ? (r.Price < lp2 ? "suporte" : "resistencia")
-                        : "nível";
-                    var dist = lastPrice is double lp3
-                        ? $" dist={(r.Price - lp3):F1}" : string.Empty;
-                    // Structures de dias anteriores: mostra o dia (só HH:mm
-                    // quando é o dia exibido), senão a IA confunde com hoje.
-                    var when = r.Date.Date == refDay
-                        ? r.Date.ToString("HH:mm") : r.Date.ToString("dd/MM HH:mm");
-                    sb.AppendLine($"- [tf {tf}] {side} preco={r.Price} ({r.Label} {when}){dist}");
-                }
-            }
-        }
-
-        private static List<(string Label, double Price, DateTime Date)> FlattenBorders(
-            IEnumerable<StructureStorageItem> items, bool includeAux)
-        {
-            var rows = new List<(string, double, DateTime)>();
-            foreach (var s in items)
-            {
-                rows.Add(("Up", s.UpBorder, s.Date));
-                rows.Add(("Down", s.DownBorder, s.Date));
-                if (!includeAux) continue;
-                if (s.UpAuxBorder != 0) rows.Add(("UpAux", s.UpAuxBorder, s.Date));
-                if (s.DownAuxBorder != 0) rows.Add(("DownAux", s.DownAuxBorder, s.Date));
-            }
-            return rows;
-        }
-
-        public static void AppendPivotBlock(StringBuilder sb, string title, PivotStorageItem? pivot, bool layerOn)
-        {
-            if (!layerOn)
-            {
-                sb.AppendLine($"{title}: desligado na tela.");
-                return;
-            }
-            if (pivot == null || pivot.Levels.Count == 0)
-            {
-                sb.AppendLine($"{title}: sem dados.");
-                return;
-            }
-            var lv = string.Join(" ", pivot.Levels.Select(l => $"{l.Key}={l.Value}"));
-            sb.AppendLine($"{title} ({pivot.Source}, sessão {pivot.Date:dd/MM}): {lv} (HLC fonte: H={pivot.High} L={pivot.Low} C={pivot.Close})");
-        }
-
-        public static void AppendVwapLine(StringBuilder sb, MarketSnapshot snap)
-        {
-            var vwap = snap.Num(SnapshotLayers.Vwap);
-            var lp = snap.Get<HeaderView>(SnapshotLayers.Header)?.LastPrice;
-            if (vwap is not double v || lp is not double price || price == 0)
-            {
-                sb.AppendLine("VWAP: off ou sem dados.");
-                return;
-            }
-            var pct = (price - v) / price * 100;
-            var pos = price >= v ? "acima" : "abaixo";
-            sb.AppendLine($"VWAP do dia: vwap={v:F1} preço {pos} ({pct:+0.00;-0.00}%).");
+                    Price = l.Price, Total = l.Total,
+                    Buy = l.BuyVolume, Sell = l.SellVolume, Delta = l.Delta,
+                }).ToList(),
+            };
         }
 
         /// <summary>
-        /// Mede o tamanho (chars) de cada bloco do state, reutilizando os
-        /// mesmos Append* do <see cref="BuildState"/>. Puro, sem I/O.
-        /// Serve à auditoria (issue #23): mostra qual bloco domina tokens.
+        /// Pivôs com `touched_at` = data do 1º candle do escopo cujo
+        /// [low,high] contém o nível (null se nunca tocou).
+        /// </summary>
+        private static List<JevPivotDto> ToPivots(PivotStorageItem? pivot, IReadOnlyList<BarStorageItem> bars)
+        {
+            var out_ = new List<JevPivotDto>();
+            if (pivot == null) return out_;
+            foreach (var lvl in pivot.Levels)
+            {
+                DateTime? touched = null;
+                foreach (var b in bars)
+                {
+                    if (b.Low <= lvl.Value && lvl.Value <= b.High)
+                    {
+                        touched = b.Date;
+                        break;
+                    }
+                }
+                out_.Add(new JevPivotDto
+                {
+                    Source = pivot.Source, Level = lvl.Key, Value = lvl.Value, TouchedAt = touched,
+                });
+            }
+            return out_;
+        }
+
+        private static List<JevExtremeDto> ToExtremes(ExtremeStorageItem? item) =>
+            (item?.Extremes ?? new List<ExtremePoint>())
+                .Where(e => e.Type is ExtremeType.Top or ExtremeType.Valley)
+                .OrderBy(e => e.Position)
+                .Select(e => new JevExtremeDto
+                {
+                    Type = e.Type == ExtremeType.Top ? "topo" : "vale",
+                    Price = e.Position,
+                })
+                .ToList();
+
+        /// <summary>
+        /// Mede o tamanho (chars) de cada bloco do state JSON, para a auditoria
+        /// (issue #23): mostra qual bloco domina tokens. Puro, sem I/O.
         /// </summary>
         public static Dictionary<string, int> MeasureBlocks(string symbol, int timeFrame, MarketSnapshot snap)
         {
-            var header = snap.Get<HeaderView>(SnapshotLayers.Header);
-            var out_ = new Dictionary<string, int>();
-
-            var sbH = new StringBuilder();
-            AppendScreenHeader(sbH, symbol, timeFrame, header);
-            out_["header"] = sbH.Length;
-
-            var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
-            var sbC = new StringBuilder();
-            sbC.AppendLine($"Candles (últimos {candles.Count}, OHLCV):");
-            foreach (var c in candles)
-                sbC.AppendLine($"- {c.Date:HH:mm} O={c.Open} H={c.High} L={c.Low} C={c.Close} V={c.Volume}");
-            out_["candles"] = sbC.Length;
-
-            var sbB = new StringBuilder();
-            if (!snap.Has(SnapshotLayers.Bubbles))
-                sbB.AppendLine("Bolhas: desligadas na tela.");
-            else
+            var state = BuildStateJson(symbol, timeFrame, snap);
+            int Len(object v) => JsonSerializer.Serialize(v).Length;
+            return new Dictionary<string, int>
             {
-                var bubbles = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new();
-                var filt = header == null ? "" :
-                    $" (filtro tela: thr base {header.ThresholdBubble}, {header.BubblesVisibleDay} de {header.BubblesTotalDay} no dia)";
-                sbB.AppendLine($"Bolhas — trades agressivos por agente (últimas {bubbles.Count}){filt}:");
-                foreach (var b in bubbles)
-                    sbB.AppendLine($"- {b.Date:HH:mm:ss} agente={b.Agent} lado={b.ActionType} qtd={b.Amount} preco={b.Price}");
-            }
-            out_["bubbles"] = sbB.Length;
-
-            var sbV = new StringBuilder();
-            var volume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.Volume);
-            var levels = volume?.Volumes ?? new List<VolumeLevel>();
-            if (!snap.Has(SnapshotLayers.Volume))
-                sbV.AppendLine("Volume profile: desligado na tela.");
-            else if (levels.Count == 0)
-                sbV.AppendLine("Volume profile: sem dados.");
-            else
-            {
-                var poc = levels.OrderByDescending(l => l.Total).First();
-                var top = levels.OrderByDescending(l => l.Total).Take(5).ToList();
-                var buy = levels.Sum(l => l.BuyVolume);
-                var sell = levels.Sum(l => l.SellVolume);
-                sbV.AppendLine($"Volume profile: POC={poc.Price} total={poc.Total} delta_total={buy - sell} (buy={buy} sell={sell}). Top níveis:");
-                foreach (var l in top)
-                    sbV.AppendLine($"- preco={l.Price} total={l.Total} buy={l.BuyVolume} sell={l.SellVolume} delta={l.Delta}");
-            }
-            out_["volume"] = sbV.Length;
-
-            var sbP = new StringBuilder();
-            AppendPositionBlock(sbP, snap.Get<PositionView>(SnapshotLayers.Position));
-            out_["position"] = sbP.Length;
-
-            var sbEi = new StringBuilder();
-            AppendExtremesBlock(sbEi, "Topos e vales intraday",
-                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra),
-                snap.Has(SnapshotLayers.ExtremesIntra));
-            out_["extremesIntra"] = sbEi.Length;
-
-            var sbEd = new StringBuilder();
-            AppendExtremesBlock(sbEd, "Topos e vales diários",
-                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily),
-                snap.Has(SnapshotLayers.ExtremesDaily),
-                snap.Get<DateWindow>(SnapshotLayers.DailyWindow));
-            out_["extremesDaily"] = sbEd.Length;
-
-            var sbS = new StringBuilder();
-            AppendStructuresBlock(sbS, snap);
-            out_["structures"] = sbS.Length;
-
-            var sbPi = new StringBuilder();
-            AppendPivotBlock(sbPi, "Pivot intraday",
-                snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra),
-                snap.Has(SnapshotLayers.PivotIntra));
-            out_["pivotIntra"] = sbPi.Length;
-
-            var sbPd = new StringBuilder();
-            AppendPivotBlock(sbPd, "Pivot diário",
-                snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily),
-                snap.Has(SnapshotLayers.PivotDaily));
-            out_["pivotDaily"] = sbPd.Length;
-
-            var sbW = new StringBuilder();
-            AppendVwapLine(sbW, snap);
-            out_["vwap"] = sbW.Length;
-
-            return out_;
+                ["intraday.candles"] = Len(state.Intraday.Candles),
+                ["intraday.bubbles"] = Len(state.Intraday.Bubbles),
+                ["intraday.volume"] = Len(state.Intraday.VolumeProfile),
+                ["intraday.vwap"] = Len(state.Intraday.Vwap),
+                ["intraday.pivots"] = Len(state.Intraday.Pivots),
+                ["intraday.extremes"] = Len(state.Intraday.TopsValleys),
+                ["intraday.structures"] = Len(state.Intraday.Structures),
+                ["daily.candles"] = Len(state.Daily.Candles),
+                ["daily.volume"] = Len(state.Daily.VolumeProfile),
+                ["daily.pivots"] = Len(state.Daily.Pivots),
+                ["daily.extremes"] = Len(state.Daily.TopsValleys),
+                ["daily.structures"] = Len(state.Daily.Structures),
+            };
         }
 
         /// <summary>Serializa um valor da auditoria em JSON; null/undefined → null.</summary>
@@ -414,6 +257,7 @@ namespace B3WM.Services.AI
         /// Monta o registro de auditoria de UMA chamada (o que chegou,
         /// o que filtrou, pergunta, chamada, resposta). Puro, sem I/O e sem
         /// chave — a gravação em Data/JEV vive no JevAuditStore.
+        /// <paramref name="state"/> é o state JSON já serializado.
         /// </summary>
         public static JevAuditRecord BuildAudit(
             string auditId,
@@ -449,13 +293,15 @@ namespace B3WM.Services.AI
             var structs = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures);
             var pivIntra = snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra);
             var pivDaily = snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily);
+            var dailyCandles = snap.Get<List<BarStorageItem>>(SnapshotLayers.DailyCandles) ?? new();
+            var dailyVolume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.DailyVolume);
 
             var layersOn = new List<string>();
             foreach (var key in new[]
-                { SnapshotLayers.Header, SnapshotLayers.Candles, SnapshotLayers.Bubbles,
+                { SnapshotLayers.Candles, SnapshotLayers.Bubbles,
                   SnapshotLayers.Volume, SnapshotLayers.Structures, SnapshotLayers.ExtremesIntra,
                   SnapshotLayers.ExtremesDaily, SnapshotLayers.PivotIntra, SnapshotLayers.PivotDaily,
-                  SnapshotLayers.Vwap, SnapshotLayers.Position })
+                  SnapshotLayers.Vwap, SnapshotLayers.DailyCandles, SnapshotLayers.DailyVolume })
                 if (snap.Has(key)) layersOn.Add(key);
 
             var blocks = MeasureBlocks(symbol, timeFrame, snap);
@@ -495,7 +341,8 @@ namespace B3WM.Services.AI
                     PivotIntra = Je(pivIntra),
                     PivotDaily = Je(pivDaily),
                     Vwap = snap.Num(SnapshotLayers.Vwap),
-                    Position = Je(snap.Get<PositionView>(SnapshotLayers.Position)),
+                    DailyCandles = Je(dailyCandles),
+                    DailyVolume = Je(dailyVolume),
                 },
                 Filtered = new JevAuditFiltered
                 {
@@ -541,7 +388,7 @@ namespace B3WM.Services.AI
             ["direcao"] = new
             {
                 type = "choice",
-                instructions = "Dado o state de candles+bolhas+volume profile+topos/vales+structures+pivots+vwap, qual ação tomar?",
+                instructions = "Dado o state (bloco intraday: candles+volume_profile+bolhas+vwap+pivots+topos/vales+structures; bloco diario: candles+volume_profile+pivots+topos/vales+structures), qual ação tomar?",
                 criteria = new Dictionary<string, string>
                 {
                     ["comprar"] = "Pressão compradora: candles de alta, bolhas de compra, delta positivo, preço acima do POC/VWAP com defesa em vale ou suporte de structure, alvo em topo/resistência ou R1",
@@ -559,11 +406,6 @@ namespace B3WM.Services.AI
             {
                 type = "noul",
                 instructions = "O contexto atual é operável (tendência legível, sem ruído excessivo ou conflito de sinais)?",
-            },
-            ["encerrar_posicao"] = new
-            {
-                type = "noul",
-                instructions = "Com a posição atual descrita no bloco Posição (se flat, responda 0): o contexto exige encerrar a posição agora (reversão, alvo atingido, perda de sustentação)?",
             },
         };
 

@@ -66,18 +66,21 @@ namespace B3WM.Controllers
                 ProfileTo = req.ProfileTo,
                 DailyFrom = req.DailyFrom,
                 DailyTo = req.DailyTo,
-                IncludeDaily = ScreenSpec.Bool(daily, "panelVisible", false),
+                // JEV: escopo resolvido no backend + diário sempre.
+                IncludeDaily = true,
+                ResolveScope = true,
                 LookbackCandles = req.LookbackCandles,
                 LookbackBubbles = req.LookbackBubbles,
             }, ct);
 
             try
             {
-                var state = JevPrompt.BuildState(req.Symbol, req.TimeFrame, snap);
+                var state = JevPrompt.BuildStateJson(req.Symbol, req.TimeFrame, snap);
+                var stateJson = System.Text.Json.JsonSerializer.Serialize(state);
                 var questions = JevPrompt.BuildQuestions();
                 var resp = await _jev.AskAsync(state, questions, ct);
                 var result = JevPrompt.ParseDecision(req.Symbol, resp.Model, resp.Body,
-                    resp.InputTokens, resp.OutputTokens, req.Threshold, state);
+                    resp.InputTokens, resp.OutputTokens, req.Threshold, stateJson);
                 // Auditoria best-effort: 1 arquivo por chamada em Data/JEV.
                 try
                 {
@@ -87,7 +90,7 @@ namespace B3WM.Controllers
                         req.Symbol, req.TimeFrame, displayDate,
                         "debug", resp.Model, "",
                         req.Threshold, req.LookbackCandles, req.LookbackBubbles,
-                        snap, state,
+                        snap, stateJson,
                         System.Text.Json.JsonSerializer.Serialize(questions),
                         resp.HttpStatus, resp.LatencyMs, resp.Attempts,
                         resp.Body, result);

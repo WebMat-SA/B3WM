@@ -96,5 +96,13 @@ namespace B3WM.Services.Screen
         public const string Header = "header";
         public const string StructureAuxVisibleFlag = "structureAuxVisible";
         public const string DailyWindow = "dailyWindow";
+        /// <summary>Escopo [from,to] resolvido do bloco intraday (DateWindow).</summary>
+        public const string ScopeIntraday = "scopeIntraday";
+        /// <summary>Escopo [from,to] resolvido do bloco diário (DateWindow).</summary>
+        public const string ScopeDaily = "scopeDaily";
+        /// <summary>Barras 1440 do escopo diário (List&lt;BarStorageItem&gt;).</summary>
+        public const string DailyCandles = "dailyCandles";
+        /// <summary>Volume profile do escopo diário (VolumeLevelStorageItem).</summary>
+        public const string DailyVolume = "dailyVolume";
     }
 }

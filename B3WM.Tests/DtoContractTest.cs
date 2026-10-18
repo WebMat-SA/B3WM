@@ -112,6 +112,14 @@ public class DtoContractTest
     }
 
     [Fact]
+    public void MarketWindow_DartCovered()
+    {
+        AssertDartCoveredByCSharp(
+            new[] { "B3WM.Flutter/lib/models/market_window.dart" },
+            new[] { typeof(B3WM.Shared.Models.MarketWindow), typeof(B3WM.Shared.Models.StructureWindow) });
+    }
+
+    [Fact]
     public void Extreme_DartCovered()
     {
         AssertDartCoveredByCSharp(

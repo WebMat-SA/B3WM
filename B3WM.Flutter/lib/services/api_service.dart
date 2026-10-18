@@ -8,6 +8,7 @@ import '../models/structure_storage_item.dart';
 import '../models/extreme_storage_item.dart';
 import '../models/pivot_storage_item.dart';
 import '../models/vwap_history_point.dart';
+import '../models/market_window.dart';
 import '../app_config.dart';
 
 class ApiService {
@@ -390,6 +391,43 @@ class ApiService {
     final json = jsonDecode(response.body) as Map<String, dynamic>?;
     if (json == null) return null;
     return PivotStorageItem.fromJson(json);
+  }
+
+  /// Resolve a janela vigente (intraday + diário) do automode por estrutura
+  /// no backend. Fonte única da janela: o app manda as flags auto/manual da
+  /// tela e apenas consome o resultado.
+  Future<MarketWindow?> getMarketWindow({
+    required String symbol,
+    required int timeFrame,
+    bool profileAuto = true,
+    DateTime? profileFrom,
+    DateTime? profileTo,
+    DateTime? rangeFrom,
+    DateTime? rangeTo,
+    bool dailyAuto = true,
+    DateTime? dailyFrom,
+    DateTime? dailyTo,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/Data/GetMarketWindow'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'symbol': symbol,
+        'timeFrame': timeFrame,
+        'profileAuto': profileAuto,
+        'profileFrom': profileFrom?.toIso8601String(),
+        'profileTo': profileTo?.toIso8601String(),
+        'rangeFrom': rangeFrom?.toIso8601String(),
+        'rangeTo': rangeTo?.toIso8601String(),
+        'dailyAuto': dailyAuto,
+        'dailyFrom': dailyFrom?.toIso8601String(),
+        'dailyTo': dailyTo?.toIso8601String(),
+      }),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return MarketWindow.fromJson(json);
   }
 
   void dispose() {

@@ -79,24 +79,26 @@ public class JevAuditTests
     };
 
     [Fact]
-    public void MeasureBlocks_CoversAllLayers_AndSumsNearState()
+    public void MeasureBlocks_CoversAllJsonBlocks()
     {
         var snap = Snap();
         var blocks = JevPrompt.MeasureBlocks("WINFUT", 2, snap);
-        foreach (var k in new[] { "header", "candles", "bubbles", "volume", "position", "extremesIntra", "structures", "vwap" })
+        foreach (var k in new[]
+                 {
+                     "intraday.candles", "intraday.bubbles", "intraday.volume",
+                     "intraday.vwap", "intraday.pivots", "intraday.extremes", "intraday.structures",
+                     "daily.candles", "daily.volume", "daily.pivots", "daily.extremes", "daily.structures",
+                 })
             Assert.True(blocks.ContainsKey(k), $"bloco {k} ausente");
-        var state = JevPrompt.BuildState("WINFUT", 2, snap);
-        var sum = blocks.Values.Sum();
-        // Soma dos blocos ≈ state (mesmos Append*; tolerância p/ quebras de linha do join).
-        Assert.InRange(sum, state.Length - 32, state.Length + 32);
-        Assert.Contains("agente=122", state);
+        var state = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildStateJson("WINFUT", 2, snap));
+        Assert.Contains("\"agent\":122", state);
     }
 
     [Fact]
     public void BuildAudit_MapsChegouFiltrouPerguntaChamadaResposta()
     {
         var snap = Snap();
-        var state = JevPrompt.BuildState("WINFUT", 2, snap);
+        var state = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildStateJson("WINFUT", 2, snap));
         var q = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildQuestions());
         var r = JevPrompt.BuildAudit("a3f9c1d2",
             new DateTime(2026, 10, 16, 10, 4, 31, 120), new DateTime(2026, 10, 16, 10, 4, 0),
@@ -131,7 +133,8 @@ public class JevAuditTests
         Assert.NotNull(r.Input.ExtremesIntra);
         Assert.NotNull(r.Input.Structures);
         Assert.NotNull(r.Input.Header);
-        Assert.NotNull(r.Input.Position);
+        // O state não envia mais posição.
+        Assert.Null(r.Input.Position);
         Assert.NotNull(r.Input.ScreenSpec);
         Assert.Equal(475, r.Input.ScreenSpec!.Value.GetProperty("thresholdBubble").GetInt32());
         Assert.Equal(100.0, r.Input.Vwap);

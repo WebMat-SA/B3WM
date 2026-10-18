@@ -1,5 +1,6 @@
 ﻿using B3WM.Services;
 using B3WM.Services.Core;
+using B3WM.Services.Screen;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
@@ -17,9 +18,10 @@ namespace B3WM.Controllers
         private readonly IEnumerable<BubbleService> _bubbleServices;
         private readonly IEnumerable<ExtremeService> _extremeServices;
         private readonly IEnumerable<VwapService> _vwapServices;
+        private readonly MarketWindowService _marketWindowService;
         private readonly ILogger<DataController> _logger;
 
-        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, IEnumerable<VwapService> vwapServices, ILogger<DataController> logger)
+        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, IEnumerable<VwapService> vwapServices, MarketWindowService marketWindowService, ILogger<DataController> logger)
         {
             this.dataKeeper = dataKeeper;
             this.structureServices = structureServices;
@@ -27,7 +29,20 @@ namespace B3WM.Controllers
             _bubbleServices = bubbleServices;
             _extremeServices = extremeServices;
             _vwapServices = vwapServices;
+            _marketWindowService = marketWindowService;
             _logger = logger;
+        }
+
+        /// <summary>
+        /// Resolve a janela vigente (intraday + diário) do automode por
+        /// estrutura. O app manda símbolo/TF e as flags auto/manual da tela.
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> GetMarketWindow([FromBody] MarketWindowRequest request)
+        {
+            if (request is null || string.IsNullOrEmpty(request.Symbol)) return BadRequest();
+            var window = await _marketWindowService.ResolveAsync(request);
+            return Ok(window);
         }
 
         [HttpGet("{symbol}/{date}")]
@@ -139,12 +154,31 @@ namespace B3WM.Controllers
                 {
                     if (service != null)
                     {
-                        if (timeFrame != 1440 && service._minDistanceUpdateBorder != minDistance)
+                        if (timeFrame != 1440)
+                        {
+                            // Intraday: o arquivo do dia só é criado no fechamento de
+                            // candle; com o servidor iniciado/reiniciado (ou fora de
+                            // sessão) ele fica vazio e a estrutura "some" no gráfico
+                            // intraday (o diário funciona pois lê o histórico 1440 já
+                            // gravado). Força a regeneração a partir dos MESMOS arquivos
+                            // de candle que o GetBar usa, com a distância pedida.
                             await service.SetMinDistance(minDistance);
-                        else
-                            await service.PreLoad();
 
-                        timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                            timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+
+                            // O Regenerate grava tudo no arquivo de HOJE; se o dia
+                            // pedido é anterior, serve a versão em memória filtrada
+                            // pela data (últimos 7 dias).
+                            if (timeframeData == null || timeframeData.Count == 0)
+                                timeframeData = service.DataKeep
+                                    .Where(s => s.Date.Date == date.Date)
+                                    .ToList();
+                        }
+                        else
+                        {
+                            await service.PreLoad();
+                            timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                        }
                     }
                 }
 

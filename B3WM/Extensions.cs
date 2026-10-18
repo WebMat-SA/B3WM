@@ -20,6 +20,12 @@ namespace B3WM
             services.AddScoped<JevAuditStore>(); // auditoria 1 arquivo/chamada em Data/JEV (issue #23)
             services.AddScoped<ScreenStateBuilder>(); // estado WYSIWYG p/ strategies
             services.AddScoped<IMarketData, MarketData>(); // dados p/ strategies
+            // Janela do automode por estrutura: fonte única no backend
+            // (REST GetMarketWindow + push SignalR ReceiveOnMarketWindow).
+            services.AddSingleton<MarketWindowService>();
+            services.AddSingleton<MarketWindowRegistry>();
+            services.AddSingleton<MarketWindowBroadcaster>();
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<MarketWindowBroadcaster>());
             // Strategies que rodam no backend (uma linha por strategy nova):
             services.AddTransient<JevAnalysisStrategy>();
             services.AddTransient<IStrategy, JevAnalysisStrategy>(sp => sp.GetRequiredService<JevAnalysisStrategy>());

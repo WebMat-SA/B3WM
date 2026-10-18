@@ -104,6 +104,14 @@ namespace B3WM.Services.Market
 
 
 
+        public Task<List<BarStorageItem>> DailyCandlesAsync(
+
+            string symbol, DateTime from, DateTime to, CancellationToken ct = default)
+
+            => PivotService.ReadDailyBarsAsync(_keeper, symbol, from, to);
+
+
+
         public async Task<List<BarStorageItem>> ReadCandlesFileAsync(string symbol, int tf, DateTime date, int take)
 
         {

@@ -15,6 +15,8 @@ namespace B3WM.Services.Market
     public interface IMarketData
     {
         Task<List<BarStorageItem>> CandlesAsync(string symbol, int timeFrame, DateTime? date = null, int takeLast = int.MaxValue, CancellationToken ct = default);
+        /// <summary>Barras 1440 (diárias) persistidas no intervalo [from,to] (dias ausentes ignorados).</summary>
+        Task<List<BarStorageItem>> DailyCandlesAsync(string symbol, DateTime from, DateTime to, CancellationToken ct = default);
         Task<List<BubbleStorageItem>> BubblesAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
         Task<VolumeLevelStorageItem?> VolumeAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
         Task<List<VolumeLevel>> VolumeLevelsAsync(string symbol, DateTime date, DateTime? from, DateTime? to, CancellationToken ct = default);

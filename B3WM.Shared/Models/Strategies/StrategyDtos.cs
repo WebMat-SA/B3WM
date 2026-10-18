@@ -14,6 +14,18 @@ namespace B3WM.Shared.Models.Strategies
         /// <summary>Foto da tela (SymbolConfig.toJson do app, com daily).</summary>
         public System.Text.Json.JsonElement? ScreenConfig { get; set; }
         public DateTime? DisplayDate { get; set; }
+
+        // Janela MANUAL do volume profile (slider from/to do drawer). Usada
+        // quando o automode por estrutura está desligado; com o automode ligado
+        // o backend resolve a janela (StructureWindowResolver) e ignora estes
+        // campos. Enviados no arm para o backend ser a fonte única da janela.
+        public DateTime? ProfileFrom { get; set; }
+        public DateTime? ProfileTo { get; set; }
+
+        // Janela MANUAL do gráfico diário (slider from/to do drawer diário),
+        // com o mesmo racional de ProfileFrom/To para o automode 1440.
+        public DateTime? DailyFrom { get; set; }
+        public DateTime? DailyTo { get; set; }
     }
 
     public sealed class StrategySessionState

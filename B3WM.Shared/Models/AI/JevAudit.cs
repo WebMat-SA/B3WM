@@ -73,7 +73,11 @@ namespace B3WM.Shared.Models.AI
         public JsonElement? PivotDaily { get; set; }
         /// <summary>VWAP do dia de referência.</summary>
         public double? Vwap { get; set; }
-        /// <summary>Posição aberta (null = flat).</summary>
+        /// <summary>Barras 1440 do escopo diário (date/open/high/low/close/volume/vwap).</summary>
+        public JsonElement? DailyCandles { get; set; }
+        /// <summary>Volume profile do escopo diário.</summary>
+        public JsonElement? DailyVolume { get; set; }
+        /// <summary>Posição aberta (deprecado: o state não envia mais posição; sempre null).</summary>
         public JsonElement? Position { get; set; }
     }
 

@@ -67,18 +67,20 @@ namespace B3WM.Services.Strategies
                 DisplayDate = DateTime.Today,
                 VisibleTimeFrames = new() { tf },
                 Spec = doc.RootElement.Clone(),
-                IncludeDaily = ScreenSpec.Bool(ScreenSpec.Daily(doc.RootElement), "panelVisible", false),
+                // JEV: escopo resolvido no backend + diário sempre.
+                IncludeDaily = true,
+                ResolveScope = true,
                 LookbackCandles = LookbackCandles,
                 LookbackBubbles = LookbackBubbles,
             }, ct);
-            ApplyPosition(snap, ctx.Position);
             ctx.Snapshot = snap;
 
-            var state = JevPrompt.BuildState(ctx.Symbol, tf, snap);
+            var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
+            var stateJson = JsonSerializer.Serialize(state);
             var questions = JevPrompt.BuildQuestions();
             var resp = await _jev.AskAsync(state, questions, ct);
             var res = JevPrompt.ParseDecision(ctx.Symbol, resp.Model, resp.Body,
-                resp.InputTokens, resp.OutputTokens, Threshold, state);
+                resp.InputTokens, resp.OutputTokens, Threshold, stateJson);
             // Auditoria best-effort: 1 arquivo por chamada em Data/JEV.
             // Nunca derruba a decisão (falha vira "" + warning no store).
             string auditFile = "";
@@ -92,7 +94,7 @@ namespace B3WM.Services.Strategies
                     header?.DisplayDate ?? DateTime.Today,
                     "strategy", resp.Model, ctx.SnapshotHash ?? "",
                     Threshold, LookbackCandles, LookbackBubbles,
-                    snap, state,
+                    snap, stateJson,
                     JsonSerializer.Serialize(questions),
                     resp.HttpStatus, resp.LatencyMs, resp.Attempts,
                     resp.Body, res);

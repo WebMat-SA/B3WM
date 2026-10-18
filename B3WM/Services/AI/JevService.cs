@@ -59,11 +59,14 @@ namespace B3WM.Services.AI
 
         /// <summary>
         /// Envia state + questions tipadas e devolve o corpo cru + usage.
-        /// Lança InvalidOperationException sem chave, TimeoutException em
-        /// timeout e HttpRequestException em HTTP não-2xx (após retries).
+        /// O <paramref name="state"/> vai como OBJETO JSON (não string) para o
+        /// payload — o TypeSafe aceita objeto estruturado; embutir como string
+        /// o escaparia. Lança InvalidOperationException sem chave,
+        /// TimeoutException em timeout e HttpRequestException em HTTP não-2xx
+        /// (após retries).
         /// </summary>
         public async Task<JevResponse> AskAsync(
-            string state,
+            object state,
             object questions,
             CancellationToken ct = default)
         {
@@ -71,6 +74,7 @@ namespace B3WM.Services.AI
             if (string.IsNullOrWhiteSpace(apiKey))
                 throw new InvalidOperationException("JevKey ausente. Configure via 'dotnet user-secrets set JevKey <sua-chave>' ou env TYPESAFE_API_KEY.");
 
+            var stateChars = state is string s ? s.Length : JsonSerializer.Serialize(state).Length;
             var payload = new Dictionary<string, object?>
             {
                 ["state"] = state,
@@ -123,14 +127,14 @@ namespace B3WM.Services.AI
                 var (model, inTok, outTok) = ReadUsage(body);
                 sw.Stop();
                 _logger.LogInformation("[jev] model={Model} in={In} out={Out} stateChars={Chars}",
-                    model, inTok, outTok, state.Length);
+                    model, inTok, outTok, stateChars);
                 return new JevResponse
                 {
                     Model = model,
                     Body = body,
                     InputTokens = inTok,
                     OutputTokens = outTok,
-                    StateChars = state.Length,
+                    StateChars = stateChars,
                     Attempts = attemptsUsed,
                     LatencyMs = sw.ElapsedMilliseconds,
                     HttpStatus = (int)resp.StatusCode,

@@ -21,5 +21,7 @@ namespace B3WM.Shared.Interfaces
         Task ReceiveThrottlingData(ThrottlingData data);
         Task ReceiveOnSignal(SignalEvent data);
         Task ReceiveOnExtreme(ExtremeStorageItem data);
+        /// <summary>Janela vigente (intraday + diário) resolvida no backend.</summary>
+        Task ReceiveOnMarketWindow(MarketWindow data);
     }
 }
