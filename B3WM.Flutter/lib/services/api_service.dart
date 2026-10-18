@@ -7,6 +7,8 @@ import '../models/volume_level_storage_item.dart';
 import '../models/structure_storage_item.dart';
 import '../models/extreme_storage_item.dart';
 import '../models/pivot_storage_item.dart';
+import '../models/vwap_history_point.dart';
+import '../models/market_window.dart';
 import '../app_config.dart';
 
 class ApiService {
@@ -184,6 +186,49 @@ class ApiService {
         .toList();
   }
 
+  /// Histórico VWAP por minuto (fonte única do servidor).
+  Future<List<VwapHistoryPoint>> getVwapHistory(
+      String symbol, DateTime date) async {
+    final dateStr = _formatDate(date);
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetVwapHistory/$symbol/$dateStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<VwapHistoryPoint>> getVwapRange(
+      String symbol, DateTime startDate, DateTime endDate) async {
+    final startStr = _formatDate(startDate);
+    final endStr = _formatDate(endDate);
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/GetVwapRange/$symbol/$startStr/$endStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<VwapHistoryPoint>> getLiveVwapSince(
+      String symbol, DateTime since) async {
+    final sinceStr = since.toIso8601String();
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/GetLiveVwapSince/$symbol?since=$sinceStr'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => VwapHistoryPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<DateTime> findLastDateWithData(String symbol) async {
     for (int i = 1; i <= 30; i++) {
       final date = DateTime.now().subtract(Duration(days: i));
@@ -346,6 +391,43 @@ class ApiService {
     final json = jsonDecode(response.body) as Map<String, dynamic>?;
     if (json == null) return null;
     return PivotStorageItem.fromJson(json);
+  }
+
+  /// Resolve a janela vigente (intraday + diário) do automode por estrutura
+  /// no backend. Fonte única da janela: o app manda as flags auto/manual da
+  /// tela e apenas consome o resultado.
+  Future<MarketWindow?> getMarketWindow({
+    required String symbol,
+    required int timeFrame,
+    bool profileAuto = true,
+    DateTime? profileFrom,
+    DateTime? profileTo,
+    DateTime? rangeFrom,
+    DateTime? rangeTo,
+    bool dailyAuto = true,
+    DateTime? dailyFrom,
+    DateTime? dailyTo,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/Data/GetMarketWindow'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'symbol': symbol,
+        'timeFrame': timeFrame,
+        'profileAuto': profileAuto,
+        'profileFrom': profileFrom?.toIso8601String(),
+        'profileTo': profileTo?.toIso8601String(),
+        'rangeFrom': rangeFrom?.toIso8601String(),
+        'rangeTo': rangeTo?.toIso8601String(),
+        'dailyAuto': dailyAuto,
+        'dailyFrom': dailyFrom?.toIso8601String(),
+        'dailyTo': dailyTo?.toIso8601String(),
+      }),
+    );
+    if (response.statusCode != 200) return null;
+    final json = jsonDecode(response.body) as Map<String, dynamic>?;
+    if (json == null) return null;
+    return MarketWindow.fromJson(json);
   }
 
   void dispose() {

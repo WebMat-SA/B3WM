@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using B3WM.Services.Screen;
 using B3WM.Shared.Entity;
@@ -9,10 +8,10 @@ using B3WM.Shared.Models.ExtremeDetection;
 namespace B3WM.Services.AI
 {
     /// <summary>
-    /// Montagem da pergunta e leitura da resposta da Jev (contrato de prompt).
-    /// Pertence à camada de análise (usado pela JevAnalysisStrategy e pelo
-    /// endpoint avulso), NÃO ao transporte: o <see cref="JevService"/> só
-    /// envia HTTP e devolve o JSON cru. Regra: nada aqui faz I/O.
+    /// Montagem do state JSON da Jev (contrato de prompt). Pertence à camada
+    /// de análise (usado pela JevAnalysisStrategy e pelo endpoint avulso),
+    /// NÃO ao transporte: o <see cref="JevService"/> só envia HTTP e devolve
+    /// o JSON cru. Regra: nada aqui faz I/O.
     /// </summary>
     public static class JevPrompt
     {
@@ -63,362 +62,525 @@ namespace B3WM.Services.AI
                 ScreenSpec.Bool(spec, "bubbleAmountFilter", true),
                 ScreenSpec.Bool(spec, "bubbleAgentsFilter", true));
 
+        // ---------------------------------------------------------------------
+        // State JSON (objeto). Camadas já chegam recortadas ao escopo pelo
+        // ScreenStateBuilder; aqui só projetamos para o contrato da Jev.
+        // ---------------------------------------------------------------------
+
         /// <summary>
-        /// Monta o state WYSIWYG a partir do snapshot dinâmico: cada camada
-        /// presente vira bloco; ausente/desligada vira linha informativa.
-        /// Camada nova = nova chave em Layers + bloco aqui (sem bag tipada).
+        /// Projeta o snapshot (já recortado ao escopo) no state JSON da Jev:
+        /// bloco intraday + bloco diário. Sem config de tela, sem posição.
         /// </summary>
-        public static string BuildState(string symbol, int timeFrame, MarketSnapshot snap)
+        public static JevStateDto BuildStateJson(string symbol, int timeFrame, MarketSnapshot snap)
         {
-            var sb = new StringBuilder();
-            var header = snap.Get<HeaderView>(SnapshotLayers.Header);
-            AppendScreenHeader(sb, symbol, timeFrame, header);
             var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
-            sb.AppendLine($"Candles (últimos {candles.Count}, OHLCV):");
-            foreach (var c in candles)
-                sb.AppendLine($"- {c.Date:HH:mm} O={c.Open} H={c.High} L={c.Low} C={c.Close} V={c.Volume}");
-
-            if (!snap.Has(SnapshotLayers.Bubbles))
-            {
-                sb.AppendLine("Bolhas: desligadas na tela.");
-            }
-            else
-            {
-                var bubbles = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new();
-                var filt = header == null ? "" :
-                    $" (filtro tela: thr base {header.ThresholdBubble}, {header.BubblesVisibleDay} de {header.BubblesTotalDay} no dia)";
-                sb.AppendLine($"Bolhas — trades agressivos por agente (últimas {bubbles.Count}){filt}:");
-                foreach (var b in bubbles)
-                    sb.AppendLine($"- {b.Date:HH:mm:ss} agente={b.Agent} lado={b.ActionType} qtd={b.Amount} preco={b.Price}");
-            }
-
+            var bubbles = snap.Has(SnapshotLayers.Bubbles)
+                ? snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new()
+                : new();
             var volume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.Volume);
-            var levels = volume?.Volumes ?? new List<VolumeLevel>();
-            if (!snap.Has(SnapshotLayers.Volume))
-            {
-                sb.AppendLine("Volume profile: desligado na tela.");
-            }
-            else if (levels.Count == 0)
-            {
-                sb.AppendLine("Volume profile: sem dados.");
-            }
-            else
-            {
-                var poc = levels.OrderByDescending(l => l.Total).First();
-                var top = levels.OrderByDescending(l => l.Total).Take(5).ToList();
-                var buy = levels.Sum(l => l.BuyVolume);
-                var sell = levels.Sum(l => l.SellVolume);
-                sb.AppendLine($"Volume profile: POC={poc.Price} total={poc.Total} delta_total={buy - sell} (buy={buy} sell={sell}). Top níveis:");
-                foreach (var l in top)
-                    sb.AppendLine($"- preco={l.Price} total={l.Total} buy={l.BuyVolume} sell={l.SellVolume} delta={l.Delta}");
-            }
+            var pivIntra = snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra);
+            var extIntra = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra);
+            var structs = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures) ?? new();
 
-            AppendPositionBlock(sb, snap.Get<PositionView>(SnapshotLayers.Position));
-            AppendExtremesBlock(sb, "Topos e vales intraday",
-                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra),
-                snap.Has(SnapshotLayers.ExtremesIntra));
-            AppendExtremesBlock(sb, "Topos e vales diários",
-                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily),
-                snap.Has(SnapshotLayers.ExtremesDaily),
-                snap.Get<DateWindow>(SnapshotLayers.DailyWindow));
-            AppendStructuresBlock(sb, snap);
-            AppendPivotBlock(sb, "Pivot intraday",
-                snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra),
-                snap.Has(SnapshotLayers.PivotIntra));
-            AppendPivotBlock(sb, "Pivot diário",
-                snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily),
-                snap.Has(SnapshotLayers.PivotDaily));
-            AppendVwapLine(sb, snap);
-            return sb.ToString();
+            var dailyCandles = snap.Get<List<BarStorageItem>>(SnapshotLayers.DailyCandles) ?? new();
+            var dailyVolume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.DailyVolume);
+            var pivDaily = snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily);
+            var extDaily = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily);
+
+            var intraday = new JevIntradayDto
+            {
+                Scope = Range(snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday), candles),
+                Candles = candles.Select(ToCandle).ToList(),
+                VolumeProfile = ToVolumeProfile(volume),
+                Bubbles = bubbles.OrderBy(b => b.Date).Select(ToBubble).ToList(),
+                Vwap = candles.Where(c => c.VwapPrice.HasValue)
+                    .Select(c => new JevVwapDto { Minute = c.Date.ToString("HH:mm"), Vwap = c.VwapPrice!.Value })
+                    .ToList(),
+                Pivots = ToPivots(pivIntra, candles),
+                TopsValleys = ToExtremes(extIntra),
+                Structures = structs.Where(s => s.TimeFrame != 1440)
+                    .OrderBy(s => s.Date).Select(s => ToStructure(s, withTimeframe: true)).ToList(),
+            };
+
+            var dailyStructs = structs.Where(s => s.TimeFrame == 1440);
+            var daily = new JevDailyDto
+            {
+                Scope = Range(snap.Get<DateWindow>(SnapshotLayers.ScopeDaily), dailyCandles),
+                Candles = dailyCandles.Select(ToCandle).ToList(),
+                VolumeProfile = ToVolumeProfile(dailyVolume),
+                Pivots = ToPivots(pivDaily, dailyCandles),
+                TopsValleys = ToExtremes(extDaily),
+                Structures = dailyStructs.OrderBy(s => s.Date).Select(s => ToStructure(s, withTimeframe: false)).ToList(),
+            };
+
+            return new JevStateDto
+            {
+                Symbol = symbol,
+                StrategyTimeframe = timeFrame,
+                Intraday = intraday,
+                Daily = daily,
+            };
         }
 
-        private static void AppendScreenHeader(StringBuilder sb, string symbol, int timeFrame, HeaderView? header)
+        private static JevRangeDto Range(DateWindow? window, IReadOnlyList<BarStorageItem> fallback) => new()
         {
-            sb.AppendLine($"Ativo: {symbol} Timeframe: {timeFrame}min. Análise de microestrutura para decisão comprar/vender/manter.");
-            if (header == null) return;
-            var tfs = header.VisibleTimeFrames.Count > 0
-                ? string.Join(",", header.VisibleTimeFrames)
-                : timeFrame.ToString();
-            sb.AppendLine($"Tela: dia={header.DisplayDate:yyyy-MM-dd} modo={header.Mode} último_preço={header.LastPrice?.ToString("F1") ?? "?"} " +
-                $" structures_tf=[{tfs}] minDistance={header.MinDistance} thresholdBubble={header.ThresholdBubble}" +
-                $" vwap={(header.VwapVisible ? "on" : "off")} painel1D={(header.PanelOpen ? "aberto" : "fechado")}" +
-                $" trading(hist={(header.TradingHistoryVisible ? "on" : "off")},pos={(header.PositionVisible ? "on" : "off")},ordens={(header.OpenOrdersVisible ? "on" : "off")}).");
+            From = window?.From ?? (fallback.Count > 0 ? fallback[0].Date : default),
+            To = window?.To ?? (fallback.Count > 0 ? fallback[^1].Date : default),
+        };
+
+        private static JevCandleDto ToCandle(BarStorageItem c) => new()
+        {
+            Date = c.Date, Open = c.Open, High = c.High, Low = c.Low,
+            Close = c.Close, Volume = c.Volume, Vwap = c.VwapPrice,
+        };
+
+        private static JevBubbleDto ToBubble(BubbleStorageItem b) => new()
+        {
+            Date = b.Date, Agent = b.Agent,
+            Side = b.ActionType == Ticks2.ActionType.Buy ? "buy" : "sell",
+            Amount = b.Amount, Price = b.Price,
+        };
+
+        private static JevStructureDto ToStructure(StructureStorageItem s, bool withTimeframe) => new()
+        {
+            Date = s.Date,
+            Timeframe = withTimeframe ? s.TimeFrame : null,
+            Up = s.UpBorder, Down = s.DownBorder,
+            UpAux = s.UpAuxBorder, DownAux = s.DownAuxBorder,
+        };
+
+        /// <summary>POC + delta total + todos os níveis do escopo (sem teto).</summary>
+        private static JevVolumeProfileDto? ToVolumeProfile(VolumeLevelStorageItem? volume)
+        {
+            var levels = volume?.Volumes;
+            if (levels == null || levels.Count == 0) return null;
+            var poc = levels.OrderByDescending(l => l.Total).First();
+            return new JevVolumeProfileDto
+            {
+                Poc = poc.Price,
+                DeltaTotal = levels.Sum(l => l.BuyVolume) - levels.Sum(l => l.SellVolume),
+                Levels = levels.OrderBy(l => l.Price).Select(l => new JevVolumeLevelDto
+                {
+                    Price = l.Price, Total = l.Total,
+                    Buy = l.BuyVolume, Sell = l.SellVolume, Delta = l.Delta,
+                }).ToList(),
+            };
         }
 
         /// <summary>
-        /// Situação da posição aberta (ou flat) para a IA decidir entrada e saída.
+        /// Pivôs com `touched_at` = data do 1º candle do escopo cujo
+        /// [low,high] contém o nível (null se nunca tocou).
         /// </summary>
-        public static void AppendPositionBlock(StringBuilder sb, PositionView? pos)
+        private static List<JevPivotDto> ToPivots(PivotStorageItem? pivot, IReadOnlyList<BarStorageItem> bars)
         {
-            if (pos == null)
+            var out_ = new List<JevPivotDto>();
+            if (pivot == null) return out_;
+            foreach (var lvl in pivot.Levels)
             {
-                sb.AppendLine("Posição: flat (sem posição aberta).");
-                return;
+                DateTime? touched = null;
+                foreach (var b in bars)
+                {
+                    if (b.Low <= lvl.Value && lvl.Value <= b.High)
+                    {
+                        touched = b.Date;
+                        break;
+                    }
+                }
+                out_.Add(new JevPivotDto
+                {
+                    Source = pivot.Source, Level = lvl.Key, Value = lvl.Value, TouchedAt = touched,
+                });
             }
-            var side = pos.Side == "comprar" ? "comprado" : "vendido";
-            var sign = pos.UnrealizedPts >= 0 ? "+" : "";
-            sb.AppendLine($"Posição: {side} @{pos.Entry:F0} desde {pos.EntryTime:HH:mm} ({pos.Candles} candles, parcial {sign}{pos.UnrealizedPts:F0} pts). Responda encerrar_posicao=1 se devemos sair agora.");
+            return out_;
         }
 
-        /// <summary>
-        /// Topos/vales confirmados (Top/Valley) mais relevantes por
-        /// prominência; Indeterminate entra só na contagem.
-        /// layerOn=false (desligado na tela) vs item null (sem dados).
-        /// </summary>
-        public static void AppendExtremesBlock(StringBuilder sb, string title,
-            ExtremeStorageItem? item, bool layerOn, DateWindow? window = null)
-        {
-            if (!layerOn)
-            {
-                sb.AppendLine($"{title}: desligados na tela.");
-                return;
-            }
-            var extremes = item?.Extremes ?? new List<ExtremePoint>();
-            var tops = extremes.Count(e => e.Type == ExtremeType.Top);
-            var valleys = extremes.Count(e => e.Type == ExtremeType.Valley);
-            var indet = extremes.Count - tops - valleys;
-            if (tops + valleys == 0)
-            {
-                sb.AppendLine($"{title}: sem dados.");
-                return;
-            }
-            var period = item?.PeriodFrom != null || item?.PeriodTo != null
-                ? $" período {item.PeriodFrom:dd/MM}-{item.PeriodTo:dd/MM}"
-                : window != null ? $" período {window.From:dd/MM}-{window.To:dd/MM}" : string.Empty;
-            sb.AppendLine($"{title} ({tops} topos, {valleys} vales, {indet} indet.{period}):");
-            foreach (var e in extremes
-                         .Where(e => e.Type is ExtremeType.Top or ExtremeType.Valley)
-                         .OrderByDescending(e => e.Prominence)
-                         .Take(15))
-            {
-                var kind = e.Type == ExtremeType.Top ? "topo" : "vale";
-                sb.AppendLine($"- {kind} preco={e.Position} vol={e.Value:F0} prom={e.Prominence:F0} conf={e.Confidence:F2}");
-            }
-        }
+        private static List<JevExtremeDto> ToExtremes(ExtremeStorageItem? item) =>
+            (item?.Extremes ?? new List<ExtremePoint>())
+                .Where(e => e.Type is ExtremeType.Top or ExtremeType.Valley)
+                .OrderBy(e => e.Position)
+                .Select(e => new JevExtremeDto
+                {
+                    Type = e.Type == ExtremeType.Top ? "topo" : "vale",
+                    Price = e.Position,
+                })
+                .ToList();
 
         /// <summary>
-        /// Bordas de estrutura (Up/Down/Aux) mais próximas do último preço
-        /// por timeframe visível — as que importam visualmente como
-        /// suporte/resistência. Sem preço de referência: últimas por data.
+        /// Mede o tamanho (chars) de cada bloco do state JSON, para a auditoria
+        /// (issue #23): mostra qual bloco domina tokens. Puro, sem I/O.
         /// </summary>
-        public static void AppendStructuresBlock(StringBuilder sb, MarketSnapshot snap, int maxPerTimeFrame = 8)
+        public static Dictionary<string, int> MeasureBlocks(string symbol, int timeFrame, MarketSnapshot snap)
+        {
+            var state = BuildStateJson(symbol, timeFrame, snap);
+            int Len(object v) => JsonSerializer.Serialize(v).Length;
+            return new Dictionary<string, int>
+            {
+                ["intraday.candles"] = Len(state.Intraday.Candles),
+                ["intraday.bubbles"] = Len(state.Intraday.Bubbles),
+                ["intraday.volume"] = Len(state.Intraday.VolumeProfile),
+                ["intraday.vwap"] = Len(state.Intraday.Vwap),
+                ["intraday.pivots"] = Len(state.Intraday.Pivots),
+                ["intraday.extremes"] = Len(state.Intraday.TopsValleys),
+                ["intraday.structures"] = Len(state.Intraday.Structures),
+                ["daily.candles"] = Len(state.Daily.Candles),
+                ["daily.volume"] = Len(state.Daily.VolumeProfile),
+                ["daily.pivots"] = Len(state.Daily.Pivots),
+                ["daily.extremes"] = Len(state.Daily.TopsValleys),
+                ["daily.structures"] = Len(state.Daily.Structures),
+            };
+        }
+
+        /// <summary>Serializa um valor da auditoria em JSON; null/undefined → null.</summary>
+        private static JsonElement? Je(object? v)
+        {
+            if (v is null) return null;
+            if (v is JsonElement je) return je.ValueKind == JsonValueKind.Undefined ? null : je;
+            return JsonSerializer.SerializeToElement(v);
+        }
+
+        /// <summary>Lê um dado cru de apoio (snap.Raw) ou null.</summary>
+        private static object? Raw(MarketSnapshot snap, string key) =>
+            snap.Raw.TryGetValue(key, out var v) ? v : null;
+
+        /// <summary>
+        /// Projeta candles para a auditoria: só os campos que o state/JEV
+        /// consome (OHLCV + VWAP). Evita o <c>VolumeLevel</c> por barra, que
+        /// não é usado no prompt e inflaria o arquivo (~2 MB por chamada).
+        /// </summary>
+        public static JsonElement ProjectCandles(IEnumerable<BarStorageItem> candles) =>
+            JsonSerializer.SerializeToElement(candles.Select(c => new
+            {
+                c.Date, c.Symbol, c.TimeFrame, c.Open, c.High, c.Low, c.Close, c.Volume, c.VwapPrice,
+            }).ToList());
+
+        /// <summary>
+        /// Monta o registro de auditoria de UMA chamada (o que chegou,
+        /// o que filtrou, pergunta, chamada, resposta). Puro, sem I/O e sem
+        /// chave — a gravação em Data/JEV vive no JevAuditStore.
+        /// <paramref name="state"/> é o state JSON já serializado.
+        /// </summary>
+        public static JevAuditRecord BuildAudit(
+            string auditId,
+            DateTime at,
+            DateTime triggerAt,
+            string triggerType,
+            string symbol,
+            int timeFrame,
+            DateTime displayDate,
+            string origin,
+            string model,
+            string snapshotHash,
+            int lookbackCandles,
+            int lookbackBubbles,
+            MarketSnapshot snap,
+            string state,
+            string questionsJson,
+            int httpStatus,
+            long latencyMs,
+            int attempts,
+            string bodyRaw,
+            JevAnalysisResult parsed)
         {
             var header = snap.Get<HeaderView>(SnapshotLayers.Header);
-            if (!snap.Has(SnapshotLayers.Structures))
+            var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
+            var bubbles = snap.Has(SnapshotLayers.Bubbles)
+                ? snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new()
+                : new();
+            var volume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.Volume);
+            var extIntra = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra);
+            var extDaily = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily);
+            var structs = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures);
+            var pivIntra = snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra);
+            var pivDaily = snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily);
+            var dailyCandles = snap.Get<List<BarStorageItem>>(SnapshotLayers.DailyCandles) ?? new();
+            var dailyVolume = snap.Get<VolumeLevelStorageItem>(SnapshotLayers.DailyVolume);
+
+            var layersOn = new List<string>();
+            foreach (var key in new[]
+                { SnapshotLayers.Candles, SnapshotLayers.Bubbles,
+                  SnapshotLayers.Volume, SnapshotLayers.Structures, SnapshotLayers.ExtremesIntra,
+                  SnapshotLayers.ExtremesDaily, SnapshotLayers.PivotIntra, SnapshotLayers.PivotDaily,
+                  SnapshotLayers.Vwap, SnapshotLayers.DailyCandles, SnapshotLayers.DailyVolume })
+                if (snap.Has(key)) layersOn.Add(key);
+
+            var blocks = MeasureBlocks(symbol, timeFrame, snap);
+            return new JevAuditRecord
             {
-                sb.AppendLine("Structures: desligadas na tela.");
-                return;
-            }
-            var all = snap.Get<List<StructureStorageItem>>(SnapshotLayers.Structures) ?? new();
-            if (all.Count == 0)
-            {
-                sb.AppendLine("Structures: sem dados.");
-                return;
-            }
-            var tfs = header?.VisibleTimeFrames is { Count: > 0 } vt
-                ? vt : all.Select(s => s.TimeFrame).Distinct().OrderBy(t => t).ToList();
-            var includeAux = snap.Value(SnapshotLayers.StructureAuxVisibleFlag, true);
-            var lastPrice = header?.LastPrice;
-            var refDay = header?.DisplayDate.Date ?? DateTime.Today;
-            sb.AppendLine($"Structures LTA/LTB (bordas mais próximas do preço, minDistance={header?.MinDistance ?? 0}):");
-            foreach (var tf in tfs)
-            {
-                var rows = FlattenBorders(all.Where(s => s.TimeFrame == tf), includeAux);
-                if (rows.Count == 0)
+                Id = auditId,
+                At = at,
+                TriggerAt = triggerAt,
+                TriggerType = triggerType ?? "",
+                Symbol = symbol,
+                TimeFrame = timeFrame,
+                DisplayDate = displayDate.Date,
+                Origin = origin,
+                Model = model,
+                SnapshotHash = snapshotHash ?? "",
+                Input = new JevAuditInput
                 {
-                    sb.AppendLine($"- tf {tf}: sem dados.");
-                    continue;
-                }
-                IEnumerable<(string Label, double Price, DateTime Date)> picked = lastPrice is double lp
-                    ? rows.OrderBy(r => Math.Abs(r.Price - lp)).Take(Math.Max(1, maxPerTimeFrame))
-                    : rows.OrderByDescending(r => r.Date).Take(Math.Max(1, maxPerTimeFrame));
-                foreach (var r in picked.OrderBy(r => r.Price))
-                {
-                    var side = lastPrice is double lp2
-                        ? (r.Price < lp2 ? "suporte" : "resistencia")
-                        : "nível";
-                    var dist = lastPrice is double lp3
-                        ? $" dist={(r.Price - lp3):F1}" : string.Empty;
-                    // Structures de dias anteriores: mostra o dia (só HH:mm
-                    // quando é o dia exibido), senão a IA confunde com hoje.
-                    var when = r.Date.Date == refDay
-                        ? r.Date.ToString("HH:mm") : r.Date.ToString("dd/MM HH:mm");
-                    sb.AppendLine($"- [tf {tf}] {side} preco={r.Price} ({r.Label} {when}){dist}");
-                }
-            }
-        }
-
-        private static List<(string Label, double Price, DateTime Date)> FlattenBorders(
-            IEnumerable<StructureStorageItem> items, bool includeAux)
-        {
-            var rows = new List<(string, double, DateTime)>();
-            foreach (var s in items)
-            {
-                rows.Add(("Up", s.UpBorder, s.Date));
-                rows.Add(("Down", s.DownBorder, s.Date));
-                if (!includeAux) continue;
-                if (s.UpAuxBorder != 0) rows.Add(("UpAux", s.UpAuxBorder, s.Date));
-                if (s.DownAuxBorder != 0) rows.Add(("DownAux", s.DownAuxBorder, s.Date));
-            }
-            return rows;
-        }
-
-        public static void AppendPivotBlock(StringBuilder sb, string title, PivotStorageItem? pivot, bool layerOn)
-        {
-            if (!layerOn)
-            {
-                sb.AppendLine($"{title}: desligado na tela.");
-                return;
-            }
-            if (pivot == null || pivot.Levels.Count == 0)
-            {
-                sb.AppendLine($"{title}: sem dados.");
-                return;
-            }
-            var lv = string.Join(" ", pivot.Levels.Select(l => $"{l.Key}={l.Value}"));
-            sb.AppendLine($"{title} ({pivot.Source}, sessão {pivot.Date:dd/MM}): {lv} (HLC fonte: H={pivot.High} L={pivot.Low} C={pivot.Close})");
-        }
-
-        public static void AppendVwapLine(StringBuilder sb, MarketSnapshot snap)
-        {
-            var vwap = snap.Num(SnapshotLayers.Vwap);
-            var lp = snap.Get<HeaderView>(SnapshotLayers.Header)?.LastPrice;
-            if (vwap is not double v || lp is not double price || price == 0)
-            {
-                sb.AppendLine("VWAP: off ou sem dados.");
-                return;
-            }
-            var pct = (price - v) / price * 100;
-            var pos = price >= v ? "acima" : "abaixo";
-            sb.AppendLine($"VWAP do dia: vwap={v:F1} preço {pos} ({pct:+0.00;-0.00}%).");
-        }
-
-        /// <summary>
-        /// VWAP cumulativa do dia de referência (typical HLC/3 ponderado por
-        /// volume), igual ao cálculo do gráfico (chart_data.dart). Retorna o
-        /// último valor ou null sem barras com volume.
-        /// </summary>
-        public static double? ComputeVwap(IEnumerable<BarStorageItem> candles, DateTime referenceDay)
-        {
-            var day = referenceDay.Date;
-            double totalVol = 0, totalPv = 0, last = double.NaN;
-            foreach (var c in candles.Where(c => c.Date.Date == day).OrderBy(c => c.Date))
-            {
-                if (c.Volume <= 0) continue;
-                totalVol += c.Volume;
-                totalPv += (c.High + c.Low + c.Close) / 3 * c.Volume;
-                if (totalVol > 0) last = totalPv / totalVol;
-            }
-            return double.IsNaN(last) ? null : last;
-        }
-
-        public static object BuildQuestions() => new Dictionary<string, object>
-        {
-            ["direcao"] = new
-            {
-                type = "choice",
-                instructions = "Dado o state de candles+bolhas+volume profile+topos/vales+structures+pivots+vwap, qual ação tomar?",
-                criteria = new Dictionary<string, string>
-                {
-                    ["comprar"] = "Pressão compradora: candles de alta, bolhas de compra, delta positivo, preço acima do POC/VWAP com defesa em vale ou suporte de structure, alvo em topo/resistência ou R1",
-                    ["vender"] = "Pressão vendedora: candles de baixa, bolhas de venda, delta negativo, preço abaixo do POC/VWAP com defesa em topo ou resistência de structure, alvo em vale/suporte ou S1",
-                    ["manter"] = "Sem edge claro: lateral, preço espremido entre topo/vale próximos, conflito entre candles/bolhas/delta ou baixa confiança",
+                    CandlesReceived = candles.Count,
+                    BubblesPoolTotal = header?.BubblesTotalDay ?? bubbles.Count,
+                    BubblesAfterScreenFilter = header?.BubblesVisibleDay ?? bubbles.Count,
+                    ThresholdBubble = header?.ThresholdBubble ?? 0,
+                    LookbackCandles = lookbackCandles,
+                    LookbackBubbles = lookbackBubbles,
+                    LayersOn = layersOn,
+                    // JSONs reais de tudo que chegou para tratar/filtrar/ordenar.
+                    ScreenSpec = Je(Raw(snap, "spec")),
+                    Header = Je(header),
+                    Candles = ProjectCandles(candles),
+                    BubblesPool = Je(Raw(snap, "bubblesPool")),
+                    BubblesFiltered = Je(Raw(snap, "bubblesFiltered")),
+                    BubblesSent = Je(snap.Has(SnapshotLayers.Bubbles) ? bubbles : null),
+                    Volume = Je(volume),
+                    ExtremesIntra = Je(extIntra),
+                    ExtremesDaily = Je(extDaily),
+                    Structures = Je(structs),
+                    PivotIntra = Je(pivIntra),
+                    PivotDaily = Je(pivDaily),
+                    Vwap = snap.Num(SnapshotLayers.Vwap),
+                    DailyCandles = Je(dailyCandles),
+                    DailyVolume = Je(dailyVolume),
                 },
-            },
-            ["forca_tendencia"] = new
-            {
-                type = "score",
-                instructions = "Força da tendência no contexto atual",
-                criteria = new[] { "fraca/lateral, sem direção", "moderada, direção emergente", "forte/direcional, continuação provável" },
-            },
-            ["confianca_operavel"] = new
-            {
-                type = "noul",
-                instructions = "O contexto atual é operável (tendência legível, sem ruído excessivo ou conflito de sinais)?",
-            },
-            ["encerrar_posicao"] = new
-            {
-                type = "noul",
-                instructions = "Com a posição atual descrita no bloco Posição (se flat, responda 0): o contexto exige encerrar a posição agora (reversão, alvo atingido, perda de sustentação)?",
-            },
+                Filtered = new JevAuditFiltered
+                {
+                    CandlesSent = candles.Count,
+                    BubblesSent = snap.Has(SnapshotLayers.Bubbles) ? bubbles.Count : 0,
+                    VolumeLevels = volume?.Volumes.Count ?? 0,
+                    ExtremesIntraCount = extIntra?.Extremes.Count ?? 0,
+                    ExtremesDailyCount = extDaily?.Extremes.Count ?? 0,
+                    StructuresCount = structs?.Count ?? 0,
+                    PivotIntraLevels = pivIntra?.Levels.Count ?? 0,
+                    PivotDailyLevels = pivDaily?.Levels.Count ?? 0,
+                    HasVwap = snap.Num(SnapshotLayers.Vwap) is not null,
+                    StateChars = state.Length,
+                    StateBlocks = blocks,
+                },
+                QuestionState = state,
+                QuestionQuestionsJson = string.IsNullOrWhiteSpace(questionsJson) ? "{}" : questionsJson,
+                Call = new JevAuditCall
+                {
+                    HttpStatus = httpStatus,
+                    LatencyMs = latencyMs,
+                    Attempts = attempts,
+                },
+                Answer = new JevAuditAnswer
+                {
+                    BodyRaw = bodyRaw ?? "",
+                    Direcao = parsed.Direcao,
+                    DirecaoConfidence = parsed.DirecaoConfidence,
+                    ConfiancaOperavel = parsed.ConfiancaOperavel,
+                    Criteria = new Dictionary<string, double>(parsed.Criteria),
+                    Proximidade = parsed.Proximidade,
+                    ProximidadeTicks = parsed.ProximidadeTicks,
+                    ProximidadeRef = parsed.ProximidadeRef,
+                    InputTokens = parsed.InputTokens,
+                    OutputTokens = parsed.OutputTokens,
+                },
+            };
+        }
+
+        /// <summary>IDs dos indicadores de direção (cada um afirma ALTA).</summary>
+        public static readonly string[] DirectionIndicators =
+        {
+            "candles_alta", "acima_vwap", "estrutura_alta", "acima_poc",
+            "delta_positivo", "bolhas_compra", "defende_suporte", "diario_alta",
+        };
+
+        /// <summary>IDs dos indicadores de operabilidade.</summary>
+        public static readonly string[] OperabilityIndicators =
+        {
+            "sem_chop", "amplitude_suficiente", "sem_compressao_topovale",
+            "referencia_clara", "sem_conflito_intra_diario",
+        };
+
+        private static object Noul(string instructions) => new Dictionary<string, object>
+        {
+            ["type"] = "noul",
+            ["instructions"] = instructions,
         };
 
         /// <summary>
-        /// Interpreta o JSON cru da Jev no resultado estruturado (gate local
-        /// incluído). Puro, sem I/O — testável sem chave.
+        /// Perguntas da Jev (Composite scoring): indicadores `noul` independentes
+        /// que o CÓDIGO combina com pesos. Cada um é uma afirmação técnica e a
+        /// resposta é a confiança (0..1). Sem pergunta de direção/gate.
+        /// </summary>
+        public static Dictionary<string, object> BuildQuestions() => new()
+        {
+            // Direção (afirmação de ALTA).
+            ["candles_alta"] = Noul("Os candles/fundos recentes formam sequência ascendente (fundos e topos mais altos)?"),
+            ["acima_vwap"] = Noul("O preço está acima do VWAP, ou rejeitou o VWAP de baixo para cima?"),
+            ["estrutura_alta"] = Noul("A structure do timeframe está em ascensão (upgrade) e/ou o preço está na metade superior dela?"),
+            ["acima_poc"] = Noul("O preço está acima do POC do volume profile intraday?"),
+            ["delta_positivo"] = Noul("O delta do volume profile intraday é positivo (volume de compra > venda)?"),
+            ["bolhas_compra"] = Noul("Há predomínio recente de bolhas de compra com delta positivo?"),
+            ["defende_suporte"] = Noul("O preço está defendendo um suporte, vale ou borda inferior de structure?"),
+            ["diario_alta"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere alta e confirma o intraday?"),
+            // Operabilidade (qualidade do contexto).
+            ["sem_chop"] = Noul("O preço NÃO está em lateralidade/chop apertado?"),
+            ["amplitude_suficiente"] = Noul("A amplitude recente é suficiente para um gatilho com risco controlado?"),
+            ["sem_compressao_topovale"] = Noul("O preço NÃO está espremido entre um topo e um vale muito próximos?"),
+            ["referencia_clara"] = Noul("Existe uma referência clara e próxima (VWAP, structure ou pivô) para se orientar?"),
+            ["sem_conflito_intra_diario"] = Noul("Intraday e diário NÃO se contradizem na direção?"),
+        };
+
+        /// <summary>
+        /// Interpreta o JSON cru da Jev: lê a confiança de cada indicador,
+        /// agrega (Composite scoring) e calcula a proximidade técnica do
+        /// gatilho. Puro, sem gate de operar/não-operar e sem I/O — testável
+        /// sem chave.
         /// </summary>
         public static JevAnalysisResult ParseDecision(
             string symbol, string model, string answersJson,
-            int inputTokens, int outputTokens, double threshold, string state)
+            int inputTokens, int outputTokens, string state,
+            JevWeights? weights = null)
         {
-            using var doc = JsonDocument.Parse(answersJson,
-                new JsonDocumentOptions { AllowTrailingCommas = true });
-            var root = doc.RootElement;
-            var answers = root.ValueKind == JsonValueKind.Object &&
-                root.TryGetProperty("answers", out var a) && a.ValueKind == JsonValueKind.Object
-                    ? a : (JsonElement?)null;
-            // Tolerância: aceita tanto o envelope {answers:{...}} quanto as
-            // respostas diretas (útil em teste).
-            var node = answers ?? (root.ValueKind == JsonValueKind.Object ? root : (JsonElement?)null);
+            var w = weights ?? JevWeights.Defaults();
+            var indicators = new Dictionary<string, double>();
 
-            var direcao = "manter";
-            var direcaoConf = 0d;
-            var probs = new Dictionary<string, double>();
-            var forca = 0d;
-            var forcaConf = 0d;
-            var operavel = 0d;
-            var encerrar = 0d;
-
-            if (node.HasValue)
+            using (var doc = JsonDocument.Parse(answersJson,
+                new JsonDocumentOptions { AllowTrailingCommas = true }))
             {
-                var n = node.Value;
-                if (n.TryGetProperty("direcao", out var d) && d.ValueKind == JsonValueKind.Object)
+                var root = doc.RootElement;
+                // Tolerância: aceita tanto o envelope {answers:{...}} quanto as
+                // respostas diretas (útil em teste).
+                var answers = root.ValueKind == JsonValueKind.Object &&
+                    root.TryGetProperty("answers", out var a) && a.ValueKind == JsonValueKind.Object
+                        ? a : (JsonElement?)null;
+                var node = answers ?? (root.ValueKind == JsonValueKind.Object ? root : (JsonElement?)null);
+                if (node.HasValue)
                 {
-                    if (d.TryGetProperty("choice", out var ch) && ch.ValueKind == JsonValueKind.String)
-                        direcao = ch.GetString()?.ToLowerInvariant() ?? "manter";
-                    if (d.TryGetProperty("confidence", out var cf) && cf.ValueKind == JsonValueKind.Number)
-                        direcaoConf = cf.GetDouble();
-                    if (d.TryGetProperty("probabilities", out var pr) && pr.ValueKind == JsonValueKind.Object)
-                        foreach (var p in pr.EnumerateObject())
-                            if (p.Value.ValueKind == JsonValueKind.Number)
-                                probs[p.Name.ToLowerInvariant()] = p.Value.GetDouble();
-                }
-                if (n.TryGetProperty("forca_tendencia", out var f) && f.ValueKind == JsonValueKind.Object)
-                {
-                    if (f.TryGetProperty("score", out var s) && s.ValueKind == JsonValueKind.Number)
-                        forca = s.GetDouble();
-                    if (f.TryGetProperty("confidence", out var fc) && fc.ValueKind == JsonValueKind.Number)
-                        forcaConf = fc.GetDouble();
-                }
-                if (n.TryGetProperty("confianca_operavel", out var no) && no.ValueKind == JsonValueKind.Object)
-                {
-                    if (no.TryGetProperty("noul", out var nv) && nv.ValueKind == JsonValueKind.Number)
-                        operavel = nv.GetDouble();
-                }
-                if (n.TryGetProperty("encerrar_posicao", out var e) && e.ValueKind == JsonValueKind.Object)
-                {
-                    if (e.TryGetProperty("noul", out var ev) && ev.ValueKind == JsonValueKind.Number)
-                        encerrar = ev.GetDouble();
+                    var n = node.Value;
+                    foreach (var id in DirectionIndicators.Concat(OperabilityIndicators))
+                    {
+                        if (n.TryGetProperty(id, out var q) && q.ValueKind == JsonValueKind.Object &&
+                            q.TryGetProperty("noul", out var v) && v.ValueKind == JsonValueKind.Number)
+                            indicators[id] = v.GetDouble();
+                    }
                 }
             }
+
+            var scored = JevScoring.Evaluate(indicators, w);
+            var (prox, ticks, pref) = ProximityFromState(state, symbol, w);
 
             return new JevAnalysisResult
             {
                 Symbol = symbol,
                 Model = model,
-                Direcao = direcao,
-                DirecaoConfidence = direcaoConf,
-                DirecaoProbabilities = probs,
-                ForcaTendencia = forca,
-                ForcaConfidence = forcaConf,
-                ConfiancaOperavel = operavel,
-                ShouldTrade = JevDecision.ApplyGate(direcao, direcaoConf, operavel, threshold),
-                EncerrarPosicao = encerrar,
-                Threshold = threshold,
+                Direcao = scored.Direcao,
+                DirecaoConfidence = scored.DirecaoConfidence,
+                ConfiancaOperavel = scored.ConfiancaOperavel,
+                Criteria = scored.Criteria,
+                Proximidade = prox,
+                ProximidadeTicks = ticks,
+                ProximidadeRef = pref,
                 InputTokens = inputTokens,
                 OutputTokens = outputTokens,
                 StatePreview = state.Length <= 6000 ? state : state[..6000] + "…",
             };
+        }
+
+        /// <summary>
+        /// Resumo compacto dos criteria para log/relatório (a decisão de operar
+        /// é manual: aqui só se MOSTRA a confiança de cada indicador).
+        /// </summary>
+        public static string FormatCriteria(JevAnalysisResult r)
+        {
+            static string Pct(double v) => $"{v * 100:F0}%";
+            var dirs = DirectionIndicators.Where(r.Criteria.ContainsKey)
+                .Select(k => $"{k}={Pct(r.Criteria[k])}");
+            var ops = OperabilityIndicators.Where(r.Criteria.ContainsKey)
+                .Select(k => $"{k}={Pct(r.Criteria[k])}");
+            return $"vies={r.Direcao} conf={r.DirecaoConfidence:F2} op={r.ConfiancaOperavel:F2} "
+                 + $"prox={r.Proximidade:F2}({r.ProximidadeRef} {r.ProximidadeTicks:F0}t) | "
+                 + $"dir: {string.Join(" ", dirs)} | op: {string.Join(" ", ops)}";
+        }
+
+        /// <summary>
+        /// Proximidade técnica a partir do state JSON: último candle intraday é
+        /// o preço; referências com peso (pivô diário 2.0 > VWAP 1.5 > borda/
+        /// topos). Puro, sem I/O.
+        /// </summary>
+        public static (double Proximidade, double Ticks, string Reference) ProximityFromState(
+            string stateJson, string symbol, JevWeights? weights = null)
+        {
+            var w = weights ?? JevWeights.Defaults();
+            var refs = new List<(string Name, double Value, double Weight)>();
+            double? last = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(stateJson);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("intraday", out var intra) ||
+                    intra.ValueKind != JsonValueKind.Object)
+                    return (0, 0, "");
+
+                if (intra.TryGetProperty("candles", out var cs) && cs.ValueKind == JsonValueKind.Array &&
+                    cs.GetArrayLength() > 0)
+                {
+                    var c = cs[cs.GetArrayLength() - 1];
+                    if (c.TryGetProperty("close", out var cl) && cl.ValueKind == JsonValueKind.Number)
+                        last = cl.GetDouble();
+                }
+                if (last is null) return (0, 0, "");
+
+                if (intra.TryGetProperty("vwap", out var vw) && vw.ValueKind == JsonValueKind.Array &&
+                    vw.GetArrayLength() > 0)
+                {
+                    var v = vw[vw.GetArrayLength() - 1];
+                    if (v.TryGetProperty("vwap", out var vv) && vv.ValueKind == JsonValueKind.Number)
+                        refs.Add(("vwap", vv.GetDouble(), 1.5));
+                }
+
+                CollectPivots(intra, "pivo_intra", 1.0, refs);
+                CollectStructures(intra, "estrutura_intra", 1.0, refs);
+                CollectExtremes(intra, "extremo_intra", 1.0, refs);
+
+                if (root.TryGetProperty("daily", out var daily) && daily.ValueKind == JsonValueKind.Object)
+                {
+                    CollectPivots(daily, "pivo_diario", 2.0, refs);
+                    CollectStructures(daily, "estrutura_diaria", 1.25, refs);
+                    CollectExtremes(daily, "extremo_diario", 1.25, refs);
+                }
+            }
+            catch
+            {
+                return (0, 0, "");
+            }
+
+            return JevScoring.Proximity(last.Value, refs, Defaults.GetTickSize(symbol), w.ProximityMaxTicks);
+        }
+
+        private static void CollectPivots(JsonElement block, string name, double weight,
+            List<(string Name, double Value, double Weight)> refs)
+        {
+            if (!block.TryGetProperty("pivots", out var pivots) || pivots.ValueKind != JsonValueKind.Array)
+                return;
+            foreach (var p in pivots.EnumerateArray())
+                if (p.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Number)
+                    refs.Add((name, v.GetDouble(), weight));
+        }
+
+        private static void CollectStructures(JsonElement block, string name, double weight,
+            List<(string Name, double Value, double Weight)> refs)
+        {
+            if (!block.TryGetProperty("structures", out var structures) || structures.ValueKind != JsonValueKind.Array)
+                return;
+            foreach (var s in structures.EnumerateArray())
+                foreach (var field in new[] { "up", "down", "up_aux", "down_aux" })
+                    if (s.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number)
+                        refs.Add((name, v.GetDouble(), weight));
+        }
+
+        private static void CollectExtremes(JsonElement block, string name, double weight,
+            List<(string Name, double Value, double Weight)> refs)
+        {
+            if (!block.TryGetProperty("tops_valleys", out var ex) || ex.ValueKind != JsonValueKind.Array)
+                return;
+            foreach (var e in ex.EnumerateArray())
+                if (e.TryGetProperty("price", out var v) && v.ValueKind == JsonValueKind.Number)
+                    refs.Add((name, v.GetDouble(), weight));
         }
     }
 }

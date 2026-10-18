@@ -26,7 +26,8 @@ namespace B3WM.Shared.Models
 
         public virtual List<VolumeLevel>? VolumeLevel { get; set; }
 
-        public virtual double? ForecastPrice { get; set; }
+        /// <summary>VWAP acumulada do dia até o fechamento da barra (fonte: VwapService).</summary>
+        public virtual double? VwapPrice { get; set; }
 
         public override string ToString()
         {

@@ -76,10 +76,15 @@ namespace B3WM.Services
                         WriteIndented = true
                     });
 
-                if (!Directory.Exists(RootDirectory))
+                string fullPath = Path.Combine(RootDirectory, path);
+                // Suporta subpastas (ex.: JEV/): garante o diretório pai,
+                // não só a raiz (antes Data/JEV falhava na escrita).
+                var dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                else if (!Directory.Exists(RootDirectory))
                     Directory.CreateDirectory(RootDirectory);
 
-                string fullPath = Path.Combine(RootDirectory, path);
                 string tmpPath = fullPath + ".tmp";
 
                 //gravacao atomica: escreve em arquivo temporario e move por cima,

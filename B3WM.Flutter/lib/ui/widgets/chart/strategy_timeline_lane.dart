@@ -212,15 +212,31 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
           for (final p in group.items)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                '${_hhmm(p.at)} ${p.side}${p.confidence > 0 ? ' ${p.confidence.toStringAsFixed(2)}' : ''} → ${p.action}',
-                style: TextStyle(
-                  color: strategyPointColor(p),
-                  fontSize: 10,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.bold,
-                  decoration: TextDecoration.none,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${_hhmm(p.at)} ${p.side}${p.confidence > 0 ? ' ${p.confidence.toStringAsFixed(2)}' : ''} → ${p.action}',
+                    style: TextStyle(
+                      color: strategyPointColor(p),
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                  if (p.reason.isNotEmpty)
+                    Text(
+                      p.reason,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 9,
+                        fontFamily: 'monospace',
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                ],
               ),
             ),
         ],

@@ -26,6 +26,8 @@ namespace B3WM.Services.Market
 
         private readonly IEnumerable<StructureService> _structures;
 
+        private readonly IEnumerable<VwapService> _vwap;
+
         private readonly ILogger<MarketData> _logger;
 
 
@@ -42,6 +44,8 @@ namespace B3WM.Services.Market
 
             IEnumerable<StructureService> structures,
 
+            IEnumerable<VwapService> vwap,
+
             ILogger<MarketData> logger)
 
         {
@@ -55,6 +59,8 @@ namespace B3WM.Services.Market
             _extremes = extremes;
 
             _structures = structures;
+
+            _vwap = vwap;
 
             _logger = logger;
 
@@ -95,6 +101,14 @@ namespace B3WM.Services.Market
             return ReadCandlesFileAsync(symbol, tf, (date ?? DateTime.Today).Date, takeLast);
 
         }
+
+
+
+        public Task<List<BarStorageItem>> DailyCandlesAsync(
+
+            string symbol, DateTime from, DateTime to, CancellationToken ct = default)
+
+            => PivotService.ReadDailyBarsAsync(_keeper, symbol, from, to);
 
 
 
@@ -367,6 +381,51 @@ namespace B3WM.Services.Market
         }
 
 
+
+        public Task<double?> VwapAsync(string symbol, DateTime? date = null, CancellationToken ct = default)
+        {
+            // Fonte única: VwapService (typical HLC/3 dos 1MIN). Hoje: vivo; histórico: arquivo do dia.
+            if (IsToday(date))
+            {
+                var snap = _vwap.FirstOrDefault(v => v.Symbol == symbol)?.GetSnapshot();
+                if (snap != null && snap.Vwap > 0)
+                    return Task.FromResult<double?>(snap.Vwap);
+            }
+            return VwapFromFileAsync(symbol, (date ?? DateTime.Today).Date);
+        }
+
+        private async Task<double?> VwapFromFileAsync(string symbol, DateTime date)
+        {
+            try
+            {
+                var path = $"{symbol}_{nameof(VwapService)}_{date:yyyy-MM-dd}.json";
+                var day = await _keeper.ReadDataAsync<List<VwapHistoryPoint>>(path);
+                var last = (day ?? new()).OrderBy(p => p.Minute).LastOrDefault();
+                if (last != null && last.Vwap > 0) return last.Vwap;
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "Falha lendo vwap {Symbol}", symbol); }
+            return null;
+        }
+
+        public async Task<List<VwapHistoryPoint>> VwapHistoryAsync(string symbol, DateTime? date = null, CancellationToken ct = default)
+        {
+            if (IsToday(date))
+            {
+                var live = _vwap.FirstOrDefault(v => v.Symbol == symbol)?.GetHistory();
+                if (live is { Count: > 0 }) return live.OrderBy(p => p.Minute).ToList();
+            }
+            try
+            {
+                var path = $"{symbol}_{nameof(VwapService)}_{(date ?? DateTime.Today):yyyy-MM-dd}.json";
+                var day = await _keeper.ReadDataAsync<List<VwapHistoryPoint>>(path);
+                return (day ?? new()).OrderBy(p => p.Minute).ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Falha lendo histórico vwap {Symbol}", symbol);
+                return new();
+            }
+        }
 
         public async Task<PivotStorageItem?> IntradayPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default)
 

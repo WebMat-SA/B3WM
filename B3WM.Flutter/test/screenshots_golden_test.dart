@@ -372,7 +372,6 @@ final Map<String, Object> _kRealConfig = {
   'b3wm_Config_WINFUT': jsonEncode({
     'timeFrame': 2,
     'bubbleVisible': true,
-    'bubbleSize': 0.15,
     'bubbleOpacity': 0.25,
     'bubbleSizeMin': 5.0,
     'bubbleSizeMax': 200.0,

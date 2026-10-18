@@ -611,8 +611,7 @@ class _MapFlowChartState extends State<MapFlowChart>
       for (final b in bubbles) {
         final bx = b.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
         final by = _toChildY(b.price, candleAreaHeight);
-        var r = sqrt(b.amount) * 1.5;
-        r = r.clamp(data.bubbleSizeMin, data.bubbleSizeMax);
+        final r = data.bubbleRadius(b.amount);
         if (r < 2) continue;
         final dx = childX - bx;
         final dy = childY - by;

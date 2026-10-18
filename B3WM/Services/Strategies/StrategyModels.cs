@@ -52,8 +52,12 @@ namespace B3WM.Services.Strategies
         public double Confidence { get; set; }
         public double Encerrar { get; set; }
         public bool ShouldTrade { get; set; }
+        /// <summary>Confiança por criteria (JEV — informativo). Vazio no resto.</summary>
+        public Dictionary<string, double> Criteria { get; set; } = new();
         public string Reason { get; set; } = "";
         public int StateChars { get; set; }
+        /// <summary>Arquivo da auditoria Jev em Data/JEV ("" quando não há).</summary>
+        public string AuditFile { get; set; } = "";
     }
 
     /// <summary>Parâmetro declarativo de strategy (renderizado na aba).</summary>

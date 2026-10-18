@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Color;
 import '../../../app_log.dart';
 import '../../../services/state_service.dart';
@@ -5,7 +6,6 @@ import '../../../services/strategy_service.dart' show b3Wall;
 import '../../../models/ticks2.dart';
 import '../../../models/trade_models.dart';
 import '../../../models/extreme_storage_item.dart';
-import '../../../models/symbol_config.dart' show DateRangeMode;
 
 class CandlePoint {
   final DateTime date;
@@ -226,6 +226,10 @@ class ChartData {
   final double yZoom;
   final double bubbleSizeMin;
   final double bubbleSizeMax;
+  /// Menor e maior volume (original) entre as bolhas visíveis. Usados para
+  /// normalizar o raio em [bubbleSizeMin, bubbleSizeMax].
+  final double bubbleAmountMin;
+  final double bubbleAmountMax;
   final double vwapOpacity;
   final Color vwapColor;
   final List<PositionInfo> positions;
@@ -266,6 +270,8 @@ class ChartData {
     this.yZoom = 1.0,
     this.bubbleSizeMin = 20,
     this.bubbleSizeMax = 100,
+    this.bubbleAmountMin = 0,
+    this.bubbleAmountMax = 0,
     this.vwapOpacity = 0.5,
     this.vwapColor = const Color(0xFFFF8800),
     this.positions = const [],
@@ -278,6 +284,23 @@ class ChartData {
   });
 
   double get priceRange => maxPrice - minPrice;
+
+  /// Raio (px, em coords do canvas virtual) da bolha de [amount].
+  ///
+  /// Normaliza `sqrt(amount)` de `[sqrt(bubbleAmountMin), sqrt(bubbleAmountMax)]`
+  /// para `[bubbleSizeMin, bubbleSizeMax]`, de modo que a menor bolha visível
+  /// tende ao Min e a maior ao Max — sem saturar as pontas. Nunca lança: os
+  /// limites são ordenados internamente e o fator é clampado em [0, 1].
+  double bubbleRadius(double amount) {
+    final lo = math.min(bubbleSizeMin, bubbleSizeMax);
+    final hi = math.max(bubbleSizeMin, bubbleSizeMax);
+    if (bubbleAmountMax <= bubbleAmountMin || amount <= 0) return hi;
+    final smin = math.sqrt(bubbleAmountMin);
+    final smax = math.sqrt(bubbleAmountMax);
+    if (smax <= smin) return hi;
+    final t = ((math.sqrt(amount) - smin) / (smax - smin)).clamp(0.0, 1.0);
+    return lo + t * (hi - lo);
+  }
 }
 
 String _formatCandleKey(DateTime dt) {
@@ -302,13 +325,6 @@ ChartData buildChartData(StateService state) {
       ? state.dateRangeEnd.clamp(0, bars.length)
       : bars.length;
   final visible = bars;
-
-  // For intraday mode, use the display date as the single VWAP reference day
-  final DateTime? vwapReferenceDay = state.dateRangeMode == DateRangeMode.intraday
-      ? (state.displayDate != null
-          ? DateTime(state.displayDate!.year, state.displayDate!.month, state.displayDate!.day)
-          : null)
-      : null;
 
   final candles = visible.map((b) => CandlePoint(
     date: b.date,
@@ -352,6 +368,8 @@ ChartData buildChartData(StateService state) {
 
   final redBubbles = <BubblePoint>[];
   final blueBubbles = <BubblePoint>[];
+  var bubbleAmountMin = 0.0;
+  var bubbleAmountMax = 0.0;
   if (state.bubbleVisible) {
     var bubbleSource = state.bubbles;
     if (state.bubbleAmountFilter) {
@@ -367,7 +385,7 @@ ChartData buildChartData(StateService state) {
     for (final b in bubbleSource) {
       final pt = BubblePoint(
         price: b.price,
-        amount: b.amount * state.bubbleSize,
+        amount: b.amount,
         originalAmount: b.amount,
         isBuy: b.actionType == ActionType.buy,
         agentName: Agents.fromValue(b.agent)?.description ?? '',
@@ -378,6 +396,15 @@ ChartData buildChartData(StateService state) {
         blueBubbles.add(pt);
       } else {
         redBubbles.add(pt);
+      }
+    }
+    final all = [...redBubbles, ...blueBubbles];
+    if (all.isNotEmpty) {
+      bubbleAmountMin = all.first.amount;
+      bubbleAmountMax = all.first.amount;
+      for (final b in all) {
+        if (b.amount < bubbleAmountMin) bubbleAmountMin = b.amount;
+        if (b.amount > bubbleAmountMax) bubbleAmountMax = b.amount;
       }
     }
   }
@@ -563,37 +590,36 @@ ChartData buildChartData(StateService state) {
     logD('[timeline] ${timeline.length} itens -> ${strategyPoints.length} pontos (fora do range)');
   }
 
-  // Compute intraday cumulative VWAP (updates per candle)
+  // VWAP fonte única do servidor (VwapService: typical HLC/3 dos 1MIN).
+  // Sem cálculo local: para cada candle visível usa o último ponto do
+  // servidor com minute <= candle.date (funciona para qualquer TF: 1/2/5MIN…).
   final vwapPoints = <VwapPoint>[];
-  if (state.vwapVisible && visible.isNotEmpty) {
-    final Map<DateTime, List<int>> dayCandleIndices = {};
+  if (state.vwapVisible && state.vwapHistory.isNotEmpty && visible.isNotEmpty) {
+    final server = state.vwapHistory;
+    var si = 0;
+    var lastIdx = -1;
     for (int i = 0; i < visible.length; i++) {
       final bar = visible[i];
-      final dayKey = DateTime(bar.date.year, bar.date.month, bar.date.day);
-      // In intraday mode, only use the reference day for VWAP
-      if (vwapReferenceDay != null && dayKey != vwapReferenceDay) continue;
-      dayCandleIndices.putIfAbsent(dayKey, () => []).add(i);
-    }
-    for (final entry in dayCandleIndices.entries) {
-      final indices = entry.value;
-      double totalVolume = 0;
-      double totalTypicalPriceVolume = 0;
-      for (int i = 0; i < indices.length; i++) {
-        final globalIdx = indices[i];
-        final bar = visible[globalIdx];
-        final typicalPrice = (bar.high + bar.low + bar.close) / 3;
-        totalVolume += bar.volume.toDouble();
-        totalTypicalPriceVolume += typicalPrice * bar.volume.toDouble();
-        if (totalVolume > 0) {
-          final vwapPrice = totalTypicalPriceVolume / totalVolume;
-          vwapPoints.add(VwapPoint(
-            price: vwapPrice,
-            date: bar.date,
-            startCandleIndex: globalIdx,
-            endCandleIndex: globalIdx,
-          ));
-        }
+      while (si < server.length && !server[si].minute.isAfter(bar.date)) {
+        lastIdx = si;
+        si++;
       }
+      if (lastIdx < 0) continue;
+      final p = server[lastIdx];
+      // Evita vazar ponto de outro dia quando o range cruza dias.
+      if (p.minute.day != bar.date.day ||
+          p.minute.month != bar.date.month ||
+          p.minute.year != bar.date.year) {
+        continue;
+      }
+      // O filtro de datas (rangeStart/rangeEnd) é SÓ do volume profile:
+      // a VWAP aparece sempre cheia (dia todo), sem corte pela janela.
+      vwapPoints.add(VwapPoint(
+        price: p.vwap,
+        date: bar.date,
+        startCandleIndex: i,
+        endCandleIndex: i,
+      ));
     }
   }
 
@@ -626,6 +652,8 @@ ChartData buildChartData(StateService state) {
     yZoom: state.yZoom,
     bubbleSizeMin: state.bubbleSizeMin,
     bubbleSizeMax: state.bubbleSizeMax,
+    bubbleAmountMin: bubbleAmountMin,
+    bubbleAmountMax: bubbleAmountMax,
     vwapOpacity: state.vwapOpacity,
     vwapColor: _parseHexColor(state.vwapColor),
     positions: positions,

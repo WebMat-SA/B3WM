@@ -10,7 +10,7 @@ class BarStorageItem {
   final double close;
   final int volume;
   final List<VolumeLevel>? volumeLevel;
-  final double? forecastPrice;
+  final double? vwapPrice;
 
   BarStorageItem({
     required this.date,
@@ -22,7 +22,7 @@ class BarStorageItem {
     required this.close,
     required this.volume,
     this.volumeLevel,
-    this.forecastPrice,
+    this.vwapPrice,
   });
 
   factory BarStorageItem.fromJson(Map<String, dynamic> json) {
@@ -40,8 +40,9 @@ class BarStorageItem {
               .map((e) => VolumeLevel.fromJson(e as Map<String, dynamic>))
               .toList()
           : null,
-      forecastPrice: json['forecastPrice'] != null
-          ? (json['forecastPrice'] as num).toDouble()
+      // Renomeado de forecastPrice → vwapPrice; aceita ambas as chaves.
+      vwapPrice: (json['vwapPrice'] ?? json['forecastPrice']) != null
+          ? ((json['vwapPrice'] ?? json['forecastPrice']) as num).toDouble()
           : null,
     );
   }
@@ -56,7 +57,7 @@ class BarStorageItem {
         'close': close,
         'volume': volume,
         'volumeLevel': volumeLevel?.map((e) => e.toJson()).toList(),
-        'forecastPrice': forecastPrice,
+        'vwapPrice': vwapPrice,
       };
 
   BarStorageItem copyWith({
@@ -69,7 +70,7 @@ class BarStorageItem {
     double? close,
     int? volume,
     List<VolumeLevel>? volumeLevel,
-    double? Function()? forecastPrice,
+    double? Function()? vwapPrice,
   }) {
     return BarStorageItem(
       date: date ?? this.date,
@@ -81,7 +82,7 @@ class BarStorageItem {
       close: close ?? this.close,
       volume: volume ?? this.volume,
       volumeLevel: volumeLevel ?? this.volumeLevel,
-      forecastPrice: forecastPrice != null ? forecastPrice() : this.forecastPrice,
+      vwapPrice: vwapPrice != null ? vwapPrice() : this.vwapPrice,
     );
   }
 }

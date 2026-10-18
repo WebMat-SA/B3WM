@@ -15,14 +15,20 @@ namespace B3WM.Services.Strategies
     {
         private readonly JevService _jev;
         private readonly ScreenStateBuilder _builder;
+        private readonly JevAuditStore _audit;
+        private readonly B3WM.Services.DataKeeperBase _keeper;
 
         public JevAnalysisStrategy(
             ILogger<JevAnalysisStrategy> logger,
             JevService jev,
-            ScreenStateBuilder builder) : base(logger)
+            ScreenStateBuilder builder,
+            JevAuditStore audit,
+            B3WM.Services.DataKeeperBase keeper) : base(logger)
         {
             _jev = jev;
             _builder = builder;
+            _audit = audit;
+            _keeper = keeper;
         }
 
         public override string Name => "JevAnalysis";
@@ -34,7 +40,8 @@ namespace B3WM.Services.Strategies
             "\n" +
             "- **Gatilho:** primeira bubble visível por candle do TF da sessão (filtro da tela congelado no PLAY; bucket pela hora da bubble).\n" +
             "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
-            "- **Parâmetros fixos no código:** `Threshold=0.7`, `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
+            "- **Parâmetros fixos no código:** `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
+            "- **Saída INFORMATIVA (Composite scoring):** confiança por criteria (8 de direção + 5 de operabilidade), viés e proximidade técnica. **Não** decide operar/não-operar — a decisão é manual; pesos fixos em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
             "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
             "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
             "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
@@ -45,7 +52,6 @@ namespace B3WM.Services.Strategies
             TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
 
         /// <summary>Config 100% no código (nada no tab).</summary>
-        private const double Threshold = 0.7;
         private const int LookbackCandles = 60;
         private const int LookbackBubbles = 30;
 
@@ -64,25 +70,53 @@ namespace B3WM.Services.Strategies
                 DisplayDate = DateTime.Today,
                 VisibleTimeFrames = new() { tf },
                 Spec = doc.RootElement.Clone(),
-                IncludeDaily = ScreenSpec.Bool(ScreenSpec.Daily(doc.RootElement), "panelVisible", false),
+                // JEV: escopo resolvido no backend + diário sempre.
+                IncludeDaily = true,
+                ResolveScope = true,
                 LookbackCandles = LookbackCandles,
                 LookbackBubbles = LookbackBubbles,
             }, ct);
-            ApplyPosition(snap, ctx.Position);
             ctx.Snapshot = snap;
 
-            var state = JevPrompt.BuildState(ctx.Symbol, tf, snap);
-            var resp = await _jev.AskAsync(state, JevPrompt.BuildQuestions(), ct);
+            var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
+            var stateJson = JsonSerializer.Serialize(state);
+            var questions = JevPrompt.BuildQuestions();
+            var weights = await JevWeights.LoadAsync(_keeper);
+            var resp = await _jev.AskAsync(state, questions, ct);
             var res = JevPrompt.ParseDecision(ctx.Symbol, resp.Model, resp.Body,
-                resp.InputTokens, resp.OutputTokens, Threshold, state);
+                resp.InputTokens, resp.OutputTokens, stateJson, weights);
+            // Auditoria best-effort: 1 arquivo por chamada em Data/JEV.
+            // Nunca derruba a decisão (falha vira "" + warning no store).
+            string auditFile = "";
+            try
+            {
+                var header = snap.Get<HeaderView>(SnapshotLayers.Header);
+                var record = JevPrompt.BuildAudit(
+                    B3WM.Shared.Models.AI.JevAuditFiles.NewId(),
+                    DateTime.Now, ev.At, ev.GetType().Name,
+                    ctx.Symbol, tf,
+                    header?.DisplayDate ?? DateTime.Today,
+                    "strategy", resp.Model, ctx.SnapshotHash ?? "",
+                    LookbackCandles, LookbackBubbles,
+                    snap, stateJson,
+                    JsonSerializer.Serialize(questions),
+                    resp.HttpStatus, resp.LatencyMs, resp.Attempts,
+                    resp.Body, res);
+                auditFile = await _audit.TryWriteAsync(record, ct);
+                res.AuditFile = auditFile;
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "[jev-audit] falha ao montar auditoria {Symbol}", ctx.Symbol);
+            }
             return new StrategyDecision
             {
                 Side = res.Direcao,
                 Confidence = res.DirecaoConfidence,
-                Encerrar = res.EncerrarPosicao,
-                ShouldTrade = res.ShouldTrade,
-                Reason = $"jev {res.Model} in={res.InputTokens} out={res.OutputTokens}",
+                Criteria = res.Criteria,
+                Reason = JevPrompt.FormatCriteria(res),
                 StateChars = res.StatePreview.Length,
+                AuditFile = auditFile,
             };
         }
     }

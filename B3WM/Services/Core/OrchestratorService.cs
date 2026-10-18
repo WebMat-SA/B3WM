@@ -12,7 +12,7 @@ namespace B3WM.Services.Core
         private readonly IEnumerable<BubbleService> bubbleService;
         private readonly IEnumerable<VolumeService> volumeService;
         private readonly IEnumerable<StructureService> structureService;
-        private readonly IEnumerable<AdjustmentForecastService> adjustmentForecastService;
+        private readonly IEnumerable<VwapService> vwapService;
         private readonly ILogger<OrchestratorService> _logger;
         public string Symbol { get; }
 
@@ -22,7 +22,7 @@ namespace B3WM.Services.Core
         /// <summary>Repassa as bubbles do símbolo (o broadcast SignalR segue no BubbleService; aqui é só forward in-process p/ consumidores como o StrategyRunner).</summary>
         public event Func<BubbleStorageItem, Task>? OnBubble;
 
-        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<AdjustmentForecastService> adjustmentForecastService, ILogger<OrchestratorService> logger)
+        public OrchestratorService(string Symbol, IHubContext<DataHub, IDataHubClient> hubContext,IEnumerable<CandleService> candleService, IEnumerable<BubbleService> bubbleService, IEnumerable<VolumeService> volumeService, IEnumerable<StructureService> structureService, IEnumerable<VwapService> vwapService, ILogger<OrchestratorService> logger)
         {
             this.Symbol = Symbol;
 
@@ -30,7 +30,7 @@ namespace B3WM.Services.Core
             this.bubbleService = bubbleService.Where(q=>q.Symbol == Symbol);
             this.volumeService = volumeService.Where(q=>q.Symbol == Symbol);
             this.structureService = structureService.Where(q=>q.Symbol == Symbol);
-            this.adjustmentForecastService = adjustmentForecastService.Where(q=>q.Symbol == Symbol);
+            this.vwapService = vwapService.Where(q=>q.Symbol == Symbol);
 
             _logger = logger;
             SubscribeAll(this.candleService, OnCandleUpdate);
@@ -41,10 +41,10 @@ namespace B3WM.Services.Core
         {
 
             // enqueue to all processors using shared helper
+            // VwapService NÃO consome ticks direto: é disparado no fechamento do 1MIN.
             EnqueueAll(candleService, ticks);
             EnqueueAll(bubbleService, ticks);
             EnqueueAll(volumeService, ticks);
-            EnqueueAll(adjustmentForecastService, ticks);
 
             return Task.CompletedTask;
         }
@@ -62,11 +62,26 @@ namespace B3WM.Services.Core
 
                 #endregion
 
-                #region Forecast in Candles
-                var forecastSnapshot = adjustmentForecastService.FirstOrDefault()?.GetSnapshot();
+                #region Vwap in Candles (fonte única: VwapService via 1MIN)
+                // Se a barra fechada é o 1MIN, alimenta a VWAP antes de anexar.
+                if (bar.TimeFrame == 1)
+                {
+                    try
+                    {
+                        var vwapSvc = vwapService.FirstOrDefault();
+                        if (vwapSvc != null)
+                            await vwapSvc.AppendClosedBarAsync(bar);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "OrchestratorService.Vwap append error");
+                    }
+                }
 
-                if (forecastSnapshot != null && forecastSnapshot.Vwap > 0)
-                    bar.ForecastPrice = forecastSnapshot.Vwap;
+                var vwapSnapshot = vwapService.FirstOrDefault()?.GetSnapshot();
+
+                if (vwapSnapshot != null && vwapSnapshot.Vwap > 0)
+                    bar.VwapPrice = vwapSnapshot.Vwap;
 
                 #endregion
 

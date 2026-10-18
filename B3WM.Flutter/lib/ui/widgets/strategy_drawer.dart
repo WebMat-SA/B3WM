@@ -203,7 +203,9 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                                     style:
                                         const TextStyle(fontSize: 13)),
                                 subtitle: Text(
-                                  'pos=${s.position ?? 'flat'} dec=${s.decisions} pts=${s.realizedPts.toStringAsFixed(0)} snap=${s.snapshotHash}\n${s.lastDecision ?? ''}',
+                                  'pos=${s.position ?? 'flat'} dec=${s.decisions} pts=${s.realizedPts.toStringAsFixed(0)} snap=${s.snapshotHash}\n'
+                                  '${s.lastDecision ?? ''}'
+                                  '${s.reportItems.isNotEmpty && s.reportItems.first.reason.isNotEmpty ? '\n${s.reportItems.first.reason}' : ''}',
                                   style: const TextStyle(
                                       fontSize: 11, color: Colors.grey),
                                 ),

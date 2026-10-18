@@ -155,7 +155,7 @@ namespace B3WM.Services.Core
             if (barToEmit != null)
             {
                 // Invocar OnUpdate ANTES do broadcast para que o OrchestratorService
-                // anexe VolumeLevel/ForecastPrice à barra; do contrário o cliente
+                // anexe VolumeLevel/VwapPrice à barra; do contrário o cliente
                 // recebe a barra fechada sem o snapshot de volume ao vivo.
                 if (OnUpdate != null)
                     await OnUpdate.Invoke(barToEmit);
@@ -300,7 +300,7 @@ namespace B3WM.Services.Core
                 Volume = bar.Volume,
                 Symbol = bar.Symbol,
                 TimeFrame = bar.TimeFrame,
-                ForecastPrice = bar.ForecastPrice,
+                VwapPrice = bar.VwapPrice,
                 VolumeLevel = bar.VolumeLevel?.Select(v => new VolumeLevel
                 {
                     Price = v.Price,
@@ -323,7 +323,7 @@ namespace B3WM.Services.Core
                 Volume = volume,
                 Symbol = symbol,
                 TimeFrame = TimeFrame,
-                ForecastPrice = null,
+                VwapPrice = null,
             };
         }
 
