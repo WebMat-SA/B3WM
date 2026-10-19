@@ -50,9 +50,6 @@ namespace B3WM.Controllers
             req.LookbackCandles = Math.Clamp(req.LookbackCandles, 5, 200);
             req.LookbackBubbles = Math.Clamp(req.LookbackBubbles, 0, 200);
 
-            if (!_jev.HasKey)
-                return StatusCode(503, "JevKey ausente no servidor. Configure via 'dotnet user-secrets set JevKey <sua-chave>'.");
-
             var displayDate = (req.DisplayDate?.Date ?? DateTime.Today);
             var specRaw = req.ScreenConfig?.GetRawText() ?? "{}";
             using var specDoc = System.Text.Json.JsonDocument.Parse(specRaw);
@@ -81,28 +78,31 @@ namespace B3WM.Controllers
                 var stateJson = System.Text.Json.JsonSerializer.Serialize(state);
                 var questions = JevPrompt.BuildQuestions();
                 var weights = await JevWeights.LoadAsync(_keeper);
-                var resp = await _jev.AskAsync(state, questions, ct);
-                var result = JevPrompt.ParseDecision(req.Symbol, resp.Model, resp.Body,
-                    resp.InputTokens, resp.OutputTokens, stateJson, weights);
-                // Auditoria best-effort: 1 arquivo por chamada em Data/JEV.
+
+                // Auditoria sempre (inclusive em erro): id gerado antes da chamada.
+                var auditId = JevAuditFiles.NewId();
+                JevService.JevResponse? resp = null;
+                JevAnalysisResult? result = null;
+                Exception? failure = null;
                 try
                 {
-                    var record = JevPrompt.BuildAudit(
-                        JevAuditFiles.NewId(),
-                        DateTime.Now, DateTime.Now, "debug",
-                        req.Symbol, req.TimeFrame, displayDate,
-                        "debug", resp.Model, "",
-                        req.LookbackCandles, req.LookbackBubbles,
-                        snap, stateJson,
-                        System.Text.Json.JsonSerializer.Serialize(questions),
-                        resp.HttpStatus, resp.LatencyMs, resp.Attempts,
-                        resp.Body, result);
-                    result.AuditFile = await _audit.TryWriteAsync(record, ct);
+                    resp = await _jev.AskAsync(state, questions, ct);
+                    result = JevPrompt.ParseDecision(req.Symbol, resp.Model, resp.Body,
+                        resp.InputTokens, resp.OutputTokens, stateJson, weights);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "[jev-audit] falha ao montar auditoria {Symbol}", req.Symbol);
+                    failure = ex;
                 }
+
+                var auditFile = await TryWriteAuditAsync(auditId, snap, stateJson,
+                    questions, req, displayDate, resp, result, failure, ct);
+
+                if (failure != null)
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                        .Capture(failure).Throw();
+
+                result!.AuditFile = auditFile;
                 _logger.LogInformation(
                     "[jev-debug] {Symbol} dia={Day} {Summary} (só log, sem ordem)",
                     result.Symbol, displayDate.ToString("yyyy-MM-dd"), JevPrompt.FormatCriteria(result));
@@ -121,6 +121,56 @@ namespace B3WM.Controllers
             {
                 _logger.LogWarning(ex, "Falha Jev");
                 return StatusCode(502, ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Monta e grava a auditoria (best-effort). Nunca lança: falha de
+        /// auditoria vira warning e não mascara o erro original da chamada.
+        /// </summary>
+        private async Task<string> TryWriteAuditAsync(
+            string auditId,
+            MarketSnapshot snap,
+            string stateJson,
+            object questions,
+            JevAnalyzeRequest req,
+            DateTime displayDate,
+            JevService.JevResponse? resp,
+            JevAnalysisResult? result,
+            Exception? failure,
+            CancellationToken ct)
+        {
+            try
+            {
+                var http = resp?.HttpStatus
+                    ?? (failure as JevHttpException)?.HttpStatus ?? 0;
+                var body = resp?.Body
+                    ?? (failure as JevHttpException)?.Body ?? "";
+                var attempts = resp?.Attempts
+                    ?? (failure as JevHttpException)?.Attempts
+                    ?? (failure as JevTimeoutException)?.Attempts ?? 1;
+                var latency = resp?.LatencyMs
+                    ?? (failure as JevHttpException)?.LatencyMs
+                    ?? (failure as JevTimeoutException)?.LatencyMs ?? 0;
+
+                var record = JevPrompt.BuildAudit(
+                    auditId,
+                    DateTime.Now, DateTime.Now, "debug",
+                    req.Symbol, req.TimeFrame, displayDate,
+                    "debug", resp?.Model ?? _jev.Model, "",
+                    req.LookbackCandles, req.LookbackBubbles,
+                    snap, stateJson,
+                    System.Text.Json.JsonSerializer.Serialize(questions),
+                    http, latency, attempts, body, result,
+                    JevPrompt.ParseErrorType(body), failure?.Message ?? "");
+                var auditFile = await _audit.TryWriteAsync(record, ct);
+                if (result != null) result.AuditFile = auditFile;
+                return auditFile;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[jev-audit] falha ao montar auditoria {Symbol}", req.Symbol);
+                return "";
             }
         }
 

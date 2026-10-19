@@ -99,7 +99,10 @@ namespace B3WM.Services.AI
                 }
                 catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"Timeout chamando Jev (attempt {attempt}/{maxAttempts}).", ex);
+                    sw.Stop();
+                    throw new JevTimeoutException(
+                        $"Timeout chamando Jev (attempt {attempt}/{maxAttempts}).",
+                        attempt, sw.ElapsedMilliseconds, ex);
                 }
 
                 if (resp.StatusCode is (HttpStatusCode)429 or (HttpStatusCode)529)
@@ -122,7 +125,12 @@ namespace B3WM.Services.AI
             {
                 var body = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode)
-                    throw new HttpRequestException($"Jev HTTP {(int)resp.StatusCode}: {Truncate(body, 500)}");
+                {
+                    sw.Stop();
+                    throw new JevHttpException(
+                        (int)resp.StatusCode, body, attemptsUsed, sw.ElapsedMilliseconds,
+                        $"Jev HTTP {(int)resp.StatusCode}: {Truncate(body, 500)}");
+                }
 
                 var (model, inTok, outTok) = ReadUsage(body);
                 sw.Stop();
@@ -175,5 +183,46 @@ namespace B3WM.Services.AI
 
         private static string Truncate(string s, int max) =>
             string.IsNullOrEmpty(s) || s.Length <= max ? s ?? string.Empty : s[..max] + "…";
+    }
+
+    /// <summary>
+    /// HTTP não-2xx da Jev, com status/corpo/tentativas/latência para a
+    /// auditoria. Herda de <see cref="HttpRequestException"/> para preservar
+    /// os catches existentes.
+    /// </summary>
+    public sealed class JevHttpException : HttpRequestException
+    {
+        public int HttpStatus { get; }
+        public string Body { get; }
+        public int Attempts { get; }
+        public long LatencyMs { get; }
+
+        public JevHttpException(
+            int httpStatus, string body, int attempts, long latencyMs, string message)
+            : base(message)
+        {
+            HttpStatus = httpStatus;
+            Body = body ?? "";
+            Attempts = attempts;
+            LatencyMs = latencyMs;
+        }
+    }
+
+    /// <summary>
+    /// Timeout da Jev, com tentativas/latência para a auditoria. Herda de
+    /// <see cref="TimeoutException"/> para preservar os catches existentes.
+    /// </summary>
+    public sealed class JevTimeoutException : TimeoutException
+    {
+        public int Attempts { get; }
+        public long LatencyMs { get; }
+
+        public JevTimeoutException(
+            string message, int attempts, long latencyMs, Exception? inner = null)
+            : base(message, inner)
+        {
+            Attempts = attempts;
+            LatencyMs = latencyMs;
+        }
     }
 }

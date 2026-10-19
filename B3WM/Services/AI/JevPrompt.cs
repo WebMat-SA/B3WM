@@ -279,7 +279,9 @@ namespace B3WM.Services.AI
             long latencyMs,
             int attempts,
             string bodyRaw,
-            JevAnalysisResult parsed)
+            JevAnalysisResult? parsed,
+            string? errorType = null,
+            string? error = null)
         {
             var header = snap.Get<HeaderView>(SnapshotLayers.Header);
             var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
@@ -363,21 +365,53 @@ namespace B3WM.Services.AI
                     HttpStatus = httpStatus,
                     LatencyMs = latencyMs,
                     Attempts = attempts,
+                    ErrorType = errorType ?? "",
+                    Error = error ?? "",
                 },
-                Answer = new JevAuditAnswer
-                {
-                    BodyRaw = bodyRaw ?? "",
-                    Direcao = parsed.Direcao,
-                    DirecaoConfidence = parsed.DirecaoConfidence,
-                    ConfiancaOperavel = parsed.ConfiancaOperavel,
-                    Criteria = new Dictionary<string, double>(parsed.Criteria),
-                    Proximidade = parsed.Proximidade,
-                    ProximidadeTicks = parsed.ProximidadeTicks,
-                    ProximidadeRef = parsed.ProximidadeRef,
-                    InputTokens = parsed.InputTokens,
-                    OutputTokens = parsed.OutputTokens,
-                },
+                // No sucesso mapeia a resposta interpretada; na falha o Answer
+                // fica default (só o corpo cru do erro é preservado).
+                Answer = parsed == null
+                    ? new JevAuditAnswer { BodyRaw = bodyRaw ?? "" }
+                    : new JevAuditAnswer
+                    {
+                        BodyRaw = bodyRaw ?? "",
+                        Direcao = parsed.Direcao,
+                        DirecaoConfidence = parsed.DirecaoConfidence,
+                        ConfiancaOperavel = parsed.ConfiancaOperavel,
+                        Criteria = new Dictionary<string, double>(parsed.Criteria),
+                        Proximidade = parsed.Proximidade,
+                        ProximidadeTicks = parsed.ProximidadeTicks,
+                        ProximidadeRef = parsed.ProximidadeRef,
+                        InputTokens = parsed.InputTokens,
+                        OutputTokens = parsed.OutputTokens,
+                    },
             };
+        }
+
+        /// <summary>
+        /// Extrai <c>detail.error_type</c> do corpo de erro do TypeSafe
+        /// (ex.: max_tokens_exceeded). Corpo vazio/malformado → "". Puro.
+        /// </summary>
+        public static string ParseErrorType(string? body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+                return "";
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                if (root.ValueKind == JsonValueKind.Object &&
+                    root.TryGetProperty("detail", out var detail) &&
+                    detail.ValueKind == JsonValueKind.Object &&
+                    detail.TryGetProperty("error_type", out var et) &&
+                    et.ValueKind == JsonValueKind.String)
+                    return et.GetString() ?? "";
+            }
+            catch
+            {
+                // corpo não-JSON: sem error_type estruturado.
+            }
+            return "";
         }
 
         /// <summary>IDs dos indicadores de direção (cada um afirma ALTA).</summary>

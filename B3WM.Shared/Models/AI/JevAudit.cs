@@ -96,12 +96,16 @@ namespace B3WM.Shared.Models.AI
         public Dictionary<string, int> StateBlocks { get; set; } = new();
     }
 
-    /// <summary>A CHAMADA feita (transporte).</summary>
+    /// <summary>A CHAMADA feita (transporte), inclusive quando falha.</summary>
     public sealed class JevAuditCall
     {
         public int HttpStatus { get; set; }
         public long LatencyMs { get; set; }
         public int Attempts { get; set; }
+        /// <summary>Código do erro do provider (ex.: max_tokens_exceeded); "" se não houve.</summary>
+        public string ErrorType { get; set; } = "";
+        /// <summary>Mensagem da falha (HTTP/timeout/sem chave); "" no sucesso.</summary>
+        public string Error { get; set; } = "";
     }
 
     /// <summary>A RESPOSTA da Jev (crua + interpretada).</summary>

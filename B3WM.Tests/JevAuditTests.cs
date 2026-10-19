@@ -146,6 +146,45 @@ public class JevAuditTests
     }
 
     [Fact]
+    public void BuildAudit_OnHttpError_RecordsErrorAndState()
+    {
+        const string body = """{"detail":{"error_type":"max_tokens_exceeded"}}""";
+        var snap = Snap();
+        var state = System.Text.Json.JsonSerializer.Serialize(
+            JevPrompt.BuildStateJson("WINFUT", 2, snap));
+        var q = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildQuestions());
+        var r = JevPrompt.BuildAudit("err12345",
+            new DateTime(2026, 10, 16, 10, 4, 31, 120), new DateTime(2026, 10, 16, 10, 4, 0),
+            "BubbleAppeared", "WINFUT", 2, new DateTime(2026, 10, 16),
+            "strategy", "jev-1.13.0", "snap123", 60, 30,
+            snap, state, q, 400, 1234, 2, body, null,
+            JevPrompt.ParseErrorType(body), "Jev HTTP 400: max_tokens_exceeded");
+
+        Assert.Equal(400, r.Call.HttpStatus);
+        Assert.Equal(1234, r.Call.LatencyMs);
+        Assert.Equal(2, r.Call.Attempts);
+        Assert.Equal("max_tokens_exceeded", r.Call.ErrorType);
+        Assert.Equal("Jev HTTP 400: max_tokens_exceeded", r.Call.Error);
+        // Corpo cru do erro preservado; resposta interpretada fica default.
+        Assert.Equal(body, r.Answer.BodyRaw);
+        Assert.Equal("manter", r.Answer.Direcao);
+        Assert.Empty(r.Answer.Criteria);
+        // O state que estourou fica registrado para diagnóstico.
+        Assert.Equal(state, r.QuestionState);
+        Assert.Contains("candles_alta", r.QuestionQuestionsJson);
+        Assert.Equal(1, r.Filtered.CandlesSent);
+    }
+
+    [Theory]
+    [InlineData("""{"detail":{"error_type":"max_tokens_exceeded"}}""", "max_tokens_exceeded")]
+    [InlineData("""{"detail":{"error_type":"other"}}""", "other")]
+    [InlineData("""{"answers":{}}""", "")]
+    [InlineData("", "")]
+    [InlineData("not json", "")]
+    public void ParseErrorType_ExtractsOrEmpty(string body, string expected) =>
+        Assert.Equal(expected, JevPrompt.ParseErrorType(body));
+
+    [Fact]
     public void AuditFileName_FormatAndUniqueness()
     {
         var at = new DateTime(2026, 10, 16, 10, 4, 31, 120);
