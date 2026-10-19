@@ -26,10 +26,12 @@ namespace B3WM.Shared.Models.AI
 
         public JevAuditInput Input { get; set; } = new();
         public JevAuditFiltered Filtered { get; set; } = new();
-        /// <summary>Pergunta montada: state completo (sem corte de 6000).</summary>
-        public string QuestionState { get; set; } = "";
-        /// <summary>Questions serializadas (BuildQuestions).</summary>
-        public string QuestionQuestionsJson { get; set; } = "{}";
+        /// <summary>
+        /// Corpo HTTP exato enviado à Jev:
+        /// <c>{"state":{...},"model":"...","questions":{...}}</c>.
+        /// Fonte única do enviado — não duplica state/questions.
+        /// </summary>
+        public string Payload { get; set; } = "";
         public JevAuditCall Call { get; set; } = new();
         public JevAuditAnswer Answer { get; set; } = new();
     }

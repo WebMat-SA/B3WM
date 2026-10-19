@@ -77,6 +77,7 @@ namespace B3WM.Controllers
                 var state = JevPrompt.BuildStateJson(req.Symbol, req.TimeFrame, snap);
                 var stateJson = System.Text.Json.JsonSerializer.Serialize(state);
                 var questions = JevPrompt.BuildQuestions();
+                var request = _jev.BuildRequest(state, questions);
                 var weights = await JevWeights.LoadAsync(_keeper);
 
                 // Auditoria sempre (inclusive em erro): id gerado antes da chamada.
@@ -86,7 +87,7 @@ namespace B3WM.Controllers
                 Exception? failure = null;
                 try
                 {
-                    resp = await _jev.AskAsync(state, questions, ct);
+                    resp = await _jev.AskAsync(request, ct);
                     result = JevPrompt.ParseDecision(req.Symbol, resp.Model, resp.Body,
                         resp.InputTokens, resp.OutputTokens, stateJson, weights);
                 }
@@ -96,7 +97,7 @@ namespace B3WM.Controllers
                 }
 
                 var auditFile = await TryWriteAuditAsync(auditId, snap, stateJson,
-                    questions, req, displayDate, resp, result, failure, ct);
+                    request.Json, req, displayDate, resp, result, failure, ct);
 
                 if (failure != null)
                     System.Runtime.ExceptionServices.ExceptionDispatchInfo
@@ -132,7 +133,7 @@ namespace B3WM.Controllers
             string auditId,
             MarketSnapshot snap,
             string stateJson,
-            object questions,
+            string payload,
             JevAnalyzeRequest req,
             DateTime displayDate,
             JevService.JevResponse? resp,
@@ -160,7 +161,7 @@ namespace B3WM.Controllers
                     "debug", resp?.Model ?? _jev.Model, "",
                     req.LookbackCandles, req.LookbackBubbles,
                     snap, stateJson,
-                    System.Text.Json.JsonSerializer.Serialize(questions),
+                    payload,
                     http, latency, attempts, body, result,
                     JevPrompt.ParseErrorType(body), failure?.Message ?? "");
                 var auditFile = await _audit.TryWriteAsync(record, ct);

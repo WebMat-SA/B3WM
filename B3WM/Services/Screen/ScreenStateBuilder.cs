@@ -4,6 +4,7 @@ using B3WM.Services.Core;
 using B3WM.Services.Market;
 using B3WM.Shared.Models;
 using B3WM.Shared.Models.AI;
+using B3WM.Shared.Models.ExtremeDetection;
 
 namespace B3WM.Services.Screen
 {
@@ -203,7 +204,10 @@ namespace B3WM.Services.Screen
 
             if (ScreenSpec.Bool(spec, "extremeVisible", true))
                 snap.Layers[SnapshotLayers.ExtremesIntra] =
-                    await _market.IntradayExtremesAsync(req.Symbol, ct);
+                    (req.ResolveScope
+                        ? BuildScopedExtremes(req.Symbol, volume, intraScope, spec)
+                        : null)
+                    ?? await _market.IntradayExtremesAsync(req.Symbol, ct);
 
             if (ScreenSpec.Bool(spec, "pivotVisible", true))
                 snap.Layers[SnapshotLayers.PivotIntra] = await _market.IntradayPivotAsync(
@@ -212,8 +216,9 @@ namespace B3WM.Services.Screen
 
             if (ScreenSpec.Bool(spec, "vwapVisible", true) && lastPrice != null)
             {
+                var scopedVwap = candles.LastOrDefault(c => c.VwapPrice.HasValue)?.VwapPrice;
                 snap.Layers[SnapshotLayers.Vwap] =
-                    await _market.VwapAsync(req.Symbol, req.DisplayDate, ct);
+                    scopedVwap ?? await _market.VwapAsync(req.Symbol, req.DisplayDate, ct);
             }
 
             // --- Bloco diário (candles 1440 + volume do escopo) ---
@@ -274,6 +279,45 @@ namespace B3WM.Services.Screen
             }
 
             return snap;
+        }
+
+        /// <summary>
+        /// Topos/vales intraday recalculados sobre o perfil de volume já
+        /// recortado ao escopo (mesmo pipeline do automode). Sem perfil
+        /// visível, devolve null para o chamador usar o snapshot ao vivo.
+        /// </summary>
+        private static ExtremeStorageItem? BuildScopedExtremes(
+            string symbol,
+            VolumeLevelStorageItem? volume,
+            DateWindow? scope,
+            JsonElement spec)
+        {
+            if (volume?.Volumes == null) return null;
+
+            var levels = volume.Volumes.OrderBy(v => v.Price).ToList();
+            var options = new ExtremeDetectorOptions
+            {
+                NoiseSensitivity = ScreenSpec.Num(spec, "extremeNoiseSensitivity",
+                    Defaults.Extreme.NoiseSensitivity),
+                MinimumProminence = ScreenSpec.Num(spec, "extremeMinimumProminence",
+                    Defaults.Extreme.MinimumProminence),
+            };
+            var result = ExtremeDetector.Detect(
+                levels.Select(v => v.Price).ToArray(),
+                levels.Select(v => (double)v.Total).ToArray(),
+                options);
+
+            return new ExtremeStorageItem
+            {
+                Date = DateTime.Now,
+                Symbol = symbol,
+                PeriodFrom = scope?.From,
+                PeriodTo = scope?.To,
+                Config = options,
+                Extremes = result.Extremes,
+                Structures = result.Structures,
+                Statistics = result.Statistics,
+            };
         }
     }
 }

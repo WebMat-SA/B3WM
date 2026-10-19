@@ -85,9 +85,9 @@ public class JevAuditBackfill
         rec.Input.BubblesPool = JsonSerializer.SerializeToElement(
             pool.Where(b => b.Date <= trigger).OrderBy(b => b.Date).ToList());
 
-        // Bolhas enviadas: parseadas do QuestionState (ground-truth do enviado).
+        // Bolhas enviadas: parseadas do state dentro do Payload (ground-truth do enviado).
         rec.Input.BubblesSent = JsonSerializer.SerializeToElement(
-            ParseSentBubbles(rec.QuestionState, sym, date));
+            ParseSentBubbles(ExtractState(rec.Payload), sym, date));
 
         // Volume: perfil do dia (acumulado final — ressalva registrada).
         var vol = await keeper.ReadDataAsync<VolumeLevelStorageItem>(
@@ -232,6 +232,23 @@ public class JevAuditBackfill
     private static readonly Regex BubbleLine = new(
         @"^- (\d{2}):(\d{2}):(\d{2}) agente=(\d+) lado=(\w+) qtd=([\d.,-]+) preco=([\d.,-]+)\r?$",
         RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>Extrai o state (objeto) do payload exato; vazio em auditorias antigas.</summary>
+    private static string ExtractState(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            return doc.RootElement.TryGetProperty("state", out var state)
+                ? state.GetRawText()
+                : "";
+        }
+        catch (JsonException)
+        {
+            return "";
+        }
+    }
 
     private static List<BubbleStorageItem> ParseSentBubbles(string state, string symbol, DateTime date)
     {

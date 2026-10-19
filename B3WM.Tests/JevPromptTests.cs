@@ -169,6 +169,64 @@ public class JevPromptTests
     }
 
     [Fact]
+    public void BuildStateJson_IntradayStructures_OnlyStrategyTfInsideScope()
+    {
+        var snap = Snap();
+        snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
+        {
+            new() { Date = Day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },
+            new() { Date = Day.AddHours(10).AddMinutes(1), Symbol = "WINFUT", TimeFrame = 5, UpBorder = 104, DownBorder = 98 },
+            new() { Date = Day.AddHours(9), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 105, DownBorder = 97 },
+            new() { Date = Day.AddDays(-1), Symbol = "WINFUT", TimeFrame = 1440, UpBorder = 110, DownBorder = 90 },
+        };
+
+        var s = JevPrompt.BuildStateJson("WINFUT", 2, snap);
+
+        var st = Assert.Single(s.Intraday.Structures);
+        Assert.Equal(103, st.Up);
+        Assert.Equal(2, st.Timeframe);
+    }
+
+    [Fact]
+    public void BuildStateJson_IntradayStructures_DeduplicatesByDate()
+    {
+        var snap = Snap();
+        snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
+        {
+            new() { Date = Day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },
+            new() { Date = Day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 104, DownBorder = 98 },
+        };
+
+        var s = JevPrompt.BuildStateJson("WINFUT", 2, snap);
+
+        var st = Assert.Single(s.Intraday.Structures);
+        Assert.Equal(104, st.Up);
+    }
+
+    [Fact]
+    public void BuildStateJson_DailyStructures_Only1440InsideScopeOnePerDay()
+    {
+        var snap = Snap();
+        snap.Layers[SnapshotLayers.ScopeDaily] = new DateWindow
+        {
+            From = Day.AddDays(-2), To = Day,
+        };
+        snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
+        {
+            new() { Date = Day.AddDays(-1), Symbol = "WINFUT", TimeFrame = 1440, UpBorder = 110, DownBorder = 90 },
+            new() { Date = Day.AddDays(-1).AddHours(12), Symbol = "WINFUT", TimeFrame = 1440, UpBorder = 111, DownBorder = 91 },
+            new() { Date = Day.AddDays(-3), Symbol = "WINFUT", TimeFrame = 1440, UpBorder = 120, DownBorder = 80 },
+            new() { Date = Day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },
+        };
+
+        var s = JevPrompt.BuildStateJson("WINFUT", 2, snap);
+
+        var st = Assert.Single(s.Daily.Structures);
+        Assert.Equal(111, st.Up);
+        Assert.Null(st.Timeframe);
+    }
+
+    [Fact]
     public void ApplyBubbleFilter_MatchesAppPredicate()
     {
         BubbleStorageItem B(int agent, int amount) => new()

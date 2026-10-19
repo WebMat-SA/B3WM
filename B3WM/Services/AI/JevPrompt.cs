@@ -87,9 +87,12 @@ namespace B3WM.Services.AI
             var pivDaily = snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily);
             var extDaily = snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily);
 
+            var intraScope = snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday);
+            var dailyScope = snap.Get<DateWindow>(SnapshotLayers.ScopeDaily);
+
             var intraday = new JevIntradayDto
             {
-                Scope = Range(snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday), candles),
+                Scope = Range(intraScope, candles),
                 Candles = candles.Select(ToCandle).ToList(),
                 VolumeProfile = ToVolumeProfile(volume),
                 Bubbles = bubbles.OrderBy(b => b.Date).Select(ToBubble).ToList(),
@@ -98,19 +101,19 @@ namespace B3WM.Services.AI
                     .ToList(),
                 Pivots = ToPivots(pivIntra, candles),
                 TopsValleys = ToExtremes(extIntra),
-                Structures = structs.Where(s => s.TimeFrame != 1440)
-                    .OrderBy(s => s.Date).Select(s => ToStructure(s, withTimeframe: true)).ToList(),
+                Structures = FilterIntradayStructures(structs, timeFrame, intraScope, candles)
+                    .Select(s => ToStructure(s, withTimeframe: true)).ToList(),
             };
 
-            var dailyStructs = structs.Where(s => s.TimeFrame == 1440);
             var daily = new JevDailyDto
             {
-                Scope = Range(snap.Get<DateWindow>(SnapshotLayers.ScopeDaily), dailyCandles),
+                Scope = Range(dailyScope, dailyCandles),
                 Candles = dailyCandles.Select(ToCandle).ToList(),
                 VolumeProfile = ToVolumeProfile(dailyVolume),
                 Pivots = ToPivots(pivDaily, dailyCandles),
                 TopsValleys = ToExtremes(extDaily),
-                Structures = dailyStructs.OrderBy(s => s.Date).Select(s => ToStructure(s, withTimeframe: false)).ToList(),
+                Structures = FilterDailyStructures(structs, dailyScope, dailyCandles)
+                    .Select(s => ToStructure(s, withTimeframe: false)).ToList(),
             };
 
             return new JevStateDto
@@ -127,6 +130,56 @@ namespace B3WM.Services.AI
             From = window?.From ?? (fallback.Count > 0 ? fallback[0].Date : default),
             To = window?.To ?? (fallback.Count > 0 ? fallback[^1].Date : default),
         };
+
+        /// <summary>
+        /// Estruturas intraday do TF da estratégia dentro do escopo do bloco.
+        /// Sem escopo resolvido, usa o range dos candles como fallback.
+        /// Deduplica por data (a última impressão daquela data vence).
+        /// </summary>
+        private static List<StructureStorageItem> FilterIntradayStructures(
+            IReadOnlyList<StructureStorageItem>? structs,
+            int timeFrame,
+            DateWindow? scope,
+            IReadOnlyList<BarStorageItem> candles)
+        {
+            if (structs == null || structs.Count == 0) return new();
+            var from = scope?.From ?? (candles.Count > 0 ? candles[0].Date : DateTime.MinValue);
+            var to = scope?.To ?? (candles.Count > 0 ? candles[^1].Date : DateTime.MaxValue);
+
+            var byDate = new Dictionary<DateTime, StructureStorageItem>();
+            foreach (var s in structs.Where(s =>
+                         s.TimeFrame != 1440 && s.TimeFrame == timeFrame &&
+                         s.Date >= from && s.Date <= to))
+                byDate[s.Date] = s;
+            return byDate.Values.OrderBy(s => s.Date).ToList();
+        }
+
+        /// <summary>
+        /// Estruturas diárias (TF 1440) dentro do escopo diário. Compara por
+        /// dia (não por horário) e mantém uma única estrutura por dia: a
+        /// estrutura diária é a mesma durante todo o dia.
+        /// </summary>
+        private static List<StructureStorageItem> FilterDailyStructures(
+            IReadOnlyList<StructureStorageItem>? structs,
+            DateWindow? scope,
+            IReadOnlyList<BarStorageItem> dailyCandles)
+        {
+            if (structs == null || structs.Count == 0) return new();
+            DateTime? from = scope?.From.Date ??
+                (dailyCandles.Count > 0 ? dailyCandles[0].Date.Date : null);
+            DateTime? to = scope?.To.Date ??
+                (dailyCandles.Count > 0 ? dailyCandles[^1].Date.Date : null);
+
+            var byDay = new Dictionary<DateTime, StructureStorageItem>();
+            foreach (var s in structs.Where(s => s.TimeFrame == 1440))
+            {
+                var day = s.Date.Date;
+                if (from is { } f && day < f) continue;
+                if (to is { } t && day > t) continue;
+                byDay[day] = s;
+            }
+            return byDay.Values.OrderBy(s => s.Date).ToList();
+        }
 
         private static JevCandleDto ToCandle(BarStorageItem c) => new()
         {
@@ -255,9 +308,10 @@ namespace B3WM.Services.AI
 
         /// <summary>
         /// Monta o registro de auditoria de UMA chamada (o que chegou,
-        /// o que filtrou, pergunta, chamada, resposta). Puro, sem I/O e sem
+        /// o que filtrou, payload, chamada, resposta). Puro, sem I/O e sem
         /// chave — a gravação em Data/JEV vive no JevAuditStore.
-        /// <paramref name="state"/> é o state JSON já serializado.
+        /// <paramref name="state"/> é o state JSON já serializado (usado só
+        /// para métricas); <paramref name="payload"/> é o corpo HTTP exato.
         /// </summary>
         public static JevAuditRecord BuildAudit(
             string auditId,
@@ -274,7 +328,7 @@ namespace B3WM.Services.AI
             int lookbackBubbles,
             MarketSnapshot snap,
             string state,
-            string questionsJson,
+            string payload,
             int httpStatus,
             long latencyMs,
             int attempts,
@@ -351,15 +405,18 @@ namespace B3WM.Services.AI
                     VolumeLevels = volume?.Volumes.Count ?? 0,
                     ExtremesIntraCount = extIntra?.Extremes.Count ?? 0,
                     ExtremesDailyCount = extDaily?.Extremes.Count ?? 0,
-                    StructuresCount = structs?.Count ?? 0,
+                    StructuresCount =
+                        FilterIntradayStructures(structs, timeFrame,
+                            snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday), candles).Count +
+                        FilterDailyStructures(structs,
+                            snap.Get<DateWindow>(SnapshotLayers.ScopeDaily), dailyCandles).Count,
                     PivotIntraLevels = pivIntra?.Levels.Count ?? 0,
                     PivotDailyLevels = pivDaily?.Levels.Count ?? 0,
                     HasVwap = snap.Num(SnapshotLayers.Vwap) is not null,
                     StateChars = state.Length,
                     StateBlocks = blocks,
                 },
-                QuestionState = state,
-                QuestionQuestionsJson = string.IsNullOrWhiteSpace(questionsJson) ? "{}" : questionsJson,
+                Payload = payload,
                 Call = new JevAuditCall
                 {
                     HttpStatus = httpStatus,

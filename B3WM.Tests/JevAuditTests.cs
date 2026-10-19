@@ -100,11 +100,12 @@ public class JevAuditTests
         var snap = Snap();
         var state = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildStateJson("WINFUT", 2, snap));
         var q = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildQuestions());
+        var payload = "{\"state\":" + state + ",\"model\":\"jev-1.13.0\",\"questions\":" + q + "}";
         var r = JevPrompt.BuildAudit("a3f9c1d2",
             new DateTime(2026, 10, 16, 10, 4, 31, 120), new DateTime(2026, 10, 16, 10, 4, 0),
             "BubbleAppeared", "WINFUT", 2, new DateTime(2026, 10, 16),
             "strategy", "jev-1.13.0", "snap123", 60, 30,
-            snap, state, q, 200, 321, 1, """{"answers":{}}""", Parsed());
+            snap, state, payload, 200, 321, 1, """{"answers":{}}""", Parsed());
 
         Assert.Equal("WINFUT", r.Symbol);
         Assert.Equal("strategy", r.Origin);
@@ -116,9 +117,11 @@ public class JevAuditTests
         Assert.Equal(1, r.Filtered.CandlesSent);
         Assert.Equal(1, r.Filtered.BubblesSent);
         Assert.Equal(state.Length, r.Filtered.StateChars);
-        // Pergunta montada integral (sem corte de 6000).
-        Assert.Equal(state, r.QuestionState);
-        Assert.Contains("candles_alta", r.QuestionQuestionsJson);
+        // Payload exato enviado: state como objeto + model + questions.
+        Assert.Equal(payload, r.Payload);
+        Assert.StartsWith("{\"state\":{", r.Payload);
+        Assert.Contains("\"questions\":", r.Payload);
+        Assert.Contains("candles_alta", r.Payload);
         // Inputs detalhados: JSONs reais de tudo que chegou.
         Assert.NotNull(r.Input.Candles);
         var candlesJson = r.Input.Candles!.Value.EnumerateArray().ToList();
@@ -146,6 +149,35 @@ public class JevAuditTests
     }
 
     [Fact]
+    public void BuildAudit_FilteredStructuresCount_MatchesState_RawStaysInInput()
+    {
+        var day = new DateTime(2026, 10, 2);
+        var snap = Snap();
+        snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
+        {
+            new() { Date = day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },
+            new() { Date = day.AddHours(9), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 104, DownBorder = 98 },
+            new() { Date = day.AddHours(10), Symbol = "WINFUT", TimeFrame = 5, UpBorder = 105, DownBorder = 97 },
+            new() { Date = day.AddDays(-1), Symbol = "WINFUT", TimeFrame = 1440, UpBorder = 110, DownBorder = 90 },
+        };
+        var state = System.Text.Json.JsonSerializer.Serialize(
+            JevPrompt.BuildStateJson("WINFUT", 2, snap));
+        var q = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildQuestions());
+        var payload = "{\"state\":" + state + ",\"model\":\"jev-1.13.0\",\"questions\":" + q + "}";
+        var r = JevPrompt.BuildAudit("audit123",
+            new DateTime(2026, 10, 16, 10, 4, 31, 120), new DateTime(2026, 10, 16, 10, 4, 0),
+            "BubbleAppeared", "WINFUT", 2, new DateTime(2026, 10, 16),
+            "strategy", "jev-1.13.0", "snap123", 60, 30,
+            snap, state, payload, 200, 100, 1, """{"answers":{}}""", Parsed());
+
+        // Enviado: 1 intraday (TF 2, dentro do escopo) + 1 diário.
+        Assert.Equal(2, r.Filtered.StructuresCount);
+        Assert.Equal(payload, r.Payload);
+        // Input preserva o cru que chegou para diagnóstico.
+        Assert.Equal(4, r.Input.Structures!.Value.GetArrayLength());
+    }
+
+    [Fact]
     public void BuildAudit_OnHttpError_RecordsErrorAndState()
     {
         const string body = """{"detail":{"error_type":"max_tokens_exceeded"}}""";
@@ -153,11 +185,12 @@ public class JevAuditTests
         var state = System.Text.Json.JsonSerializer.Serialize(
             JevPrompt.BuildStateJson("WINFUT", 2, snap));
         var q = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildQuestions());
+        var payload = "{\"state\":" + state + ",\"model\":\"jev-1.13.0\",\"questions\":" + q + "}";
         var r = JevPrompt.BuildAudit("err12345",
             new DateTime(2026, 10, 16, 10, 4, 31, 120), new DateTime(2026, 10, 16, 10, 4, 0),
             "BubbleAppeared", "WINFUT", 2, new DateTime(2026, 10, 16),
             "strategy", "jev-1.13.0", "snap123", 60, 30,
-            snap, state, q, 400, 1234, 2, body, null,
+            snap, state, payload, 400, 1234, 2, body, null,
             JevPrompt.ParseErrorType(body), "Jev HTTP 400: max_tokens_exceeded");
 
         Assert.Equal(400, r.Call.HttpStatus);
@@ -169,9 +202,9 @@ public class JevAuditTests
         Assert.Equal(body, r.Answer.BodyRaw);
         Assert.Equal("manter", r.Answer.Direcao);
         Assert.Empty(r.Answer.Criteria);
-        // O state que estourou fica registrado para diagnóstico.
-        Assert.Equal(state, r.QuestionState);
-        Assert.Contains("candles_alta", r.QuestionQuestionsJson);
+        // O payload que estourou fica registrado integralmente para diagnóstico.
+        Assert.Equal(payload, r.Payload);
+        Assert.Contains("candles_alta", r.Payload);
         Assert.Equal(1, r.Filtered.CandlesSent);
     }
 

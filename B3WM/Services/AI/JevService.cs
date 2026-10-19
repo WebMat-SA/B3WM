@@ -43,6 +43,27 @@ namespace B3WM.Services.AI
 
         public string Model => _config["TypeSafe:Model"] ?? "jev-latest";
 
+        /// <summary>
+        /// Corpo HTTP montado uma única vez. O mesmo texto vai para o
+        /// <see cref="StringContent"/> e para a auditoria (sem duplicação).
+        /// </summary>
+        public sealed record JevRequest(string Json, int StateChars);
+
+        /// <summary>
+        /// Monta o corpo exato da chamada: state como objeto, model e questions.
+        /// </summary>
+        public JevRequest BuildRequest(object state, object questions)
+        {
+            var stateChars = state is string s ? s.Length : JsonSerializer.Serialize(state).Length;
+            var payload = new Dictionary<string, object?>
+            {
+                ["state"] = state,
+                ["model"] = Model,
+                ["questions"] = questions,
+            };
+            return new JevRequest(JsonSerializer.Serialize(payload), stateChars);
+        }
+
         /// <summary>Resposta crua da Jev (interpretação em JevPrompt).</summary>
         public sealed class JevResponse
         {
@@ -58,29 +79,28 @@ namespace B3WM.Services.AI
         }
 
         /// <summary>
-        /// Envia state + questions tipadas e devolve o corpo cru + usage.
-        /// O <paramref name="state"/> vai como OBJETO JSON (não string) para o
-        /// payload — o TypeSafe aceita objeto estruturado; embutir como string
-        /// o escaparia. Lança InvalidOperationException sem chave,
+        /// Monta o corpo e envia. O state vai como OBJETO JSON (não string)
+        /// para o payload — o TypeSafe aceita objeto estruturado; embutir como
+        /// string o escaparia. Lança InvalidOperationException sem chave,
         /// TimeoutException em timeout e HttpRequestException em HTTP não-2xx
-        /// (após retries).
+        /// (após retries). O <see cref="JevRequest.Json"/> é exatamente o texto
+        /// enviado no <see cref="StringContent"/>.
         /// </summary>
-        public async Task<JevResponse> AskAsync(
+        public Task<JevResponse> AskAsync(
             object state,
             object questions,
+            CancellationToken ct = default) =>
+            AskAsync(BuildRequest(state, questions), ct);
+
+        public async Task<JevResponse> AskAsync(
+            JevRequest request,
             CancellationToken ct = default)
         {
             var apiKey = ResolveApiKey();
             if (string.IsNullOrWhiteSpace(apiKey))
                 throw new InvalidOperationException("JevKey ausente. Configure via 'dotnet user-secrets set JevKey <sua-chave>' ou env TYPESAFE_API_KEY.");
 
-            var stateChars = state is string s ? s.Length : JsonSerializer.Serialize(state).Length;
-            var payload = new Dictionary<string, object?>
-            {
-                ["state"] = state,
-                ["model"] = Model,
-                ["questions"] = questions,
-            };
+            var stateChars = request.StateChars;
 
             var client = _httpFactory.CreateClient("Jev");
             const int maxAttempts = 4; // 1 + 3 retries em 429/529
@@ -92,7 +112,7 @@ namespace B3WM.Services.AI
                 attemptsUsed = attempt;
                 using var req = new HttpRequestMessage(HttpMethod.Post, "v1/systemone");
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-                req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                req.Content = new StringContent(request.Json, Encoding.UTF8, "application/json");
                 try
                 {
                     resp = await client.SendAsync(req, ct);

@@ -81,6 +81,7 @@ namespace B3WM.Services.Strategies
             var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
             var stateJson = JsonSerializer.Serialize(state);
             var questions = JevPrompt.BuildQuestions();
+            var request = _jev.BuildRequest(state, questions);
             var weights = await JevWeights.LoadAsync(_keeper);
 
             // Auditoria: 1 arquivo por chamada em Data/JEV, SEMPRE — inclusive
@@ -91,19 +92,19 @@ namespace B3WM.Services.Strategies
             B3WM.Shared.Models.AI.JevAnalysisResult? res = null;
             try
             {
-                resp = await _jev.AskAsync(state, questions, ct);
+                resp = await _jev.AskAsync(request, ct);
                 res = JevPrompt.ParseDecision(ctx.Symbol, resp.Model, resp.Body,
                     resp.InputTokens, resp.OutputTokens, stateJson, weights);
             }
             catch (Exception ex)
             {
-                await TryWriteAuditAsync(auditId, snap, stateJson, questions,
+                await TryWriteAuditAsync(auditId, snap, stateJson, request.Json,
                     ev, ctx, tf, resp, null, ex, ct);
                 throw;
             }
 
             var auditFile = await TryWriteAuditAsync(auditId, snap, stateJson,
-                questions, ev, ctx, tf, resp, res, null, ct);
+                request.Json, ev, ctx, tf, resp, res, null, ct);
             return new StrategyDecision
             {
                 Side = res!.Direcao,
@@ -123,7 +124,7 @@ namespace B3WM.Services.Strategies
             string auditId,
             MarketSnapshot snap,
             string stateJson,
-            object questions,
+            string payload,
             StrategyEvent ev,
             StrategyContext ctx,
             int tf,
@@ -154,7 +155,7 @@ namespace B3WM.Services.Strategies
                     "strategy", resp?.Model ?? _jev.Model, ctx.SnapshotHash ?? "",
                     LookbackCandles, LookbackBubbles,
                     snap, stateJson,
-                    JsonSerializer.Serialize(questions),
+                    payload,
                     http, latency, attempts, body, res,
                     JevPrompt.ParseErrorType(body), failure?.Message ?? "");
                 var auditFile = await _audit.TryWriteAsync(record, ct);
