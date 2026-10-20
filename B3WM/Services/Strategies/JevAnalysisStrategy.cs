@@ -67,7 +67,8 @@ namespace B3WM.Services.Strategies
             {
                 Symbol = ctx.Symbol,
                 TimeFrame = tf,
-                DisplayDate = DateTime.Today,
+                DisplayDate = ev.At.Date,
+                AsOf = ev.At.Date < DateTime.Today ? ev.At : null,
                 VisibleTimeFrames = new() { tf },
                 Spec = doc.RootElement.Clone(),
                 // JEV: escopo resolvido no backend + diário sempre.

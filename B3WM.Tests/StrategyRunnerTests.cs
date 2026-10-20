@@ -1,5 +1,10 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using B3WM.Controllers;
 using B3WM.Services.Strategies;
 using B3WM.Shared.Models;
+using B3WM.Shared.Models.Strategies;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -252,6 +257,68 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public async Task ManualTrigger_BypassesFilterPersistsAndRepeats()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), "b3wm-manual-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<B3WM.Services.DataKeeperBase>(new TempKeeper(tmp));
+            services.AddSingleton<IStrategy>(new StubStrategy());
+            using var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+            var runner = new StrategyRunner(
+                scopeFactory,
+                Enumerable.Empty<B3WM.Services.Core.OrchestratorService>(),
+                new Mock<ILogger<StrategyRunner>>().Object);
+
+            var id = runner.Arm("Stub", "WINFUT", 2, "{}", Filter(), "manualhash");
+            var at = DateTime.Today.AddHours(11).AddMinutes(5);
+            var bubble = Bubble(120, 900, 209770, at); // agente 120 fora do filtro
+
+            Assert.Equal(ManualTriggerStatus.SessionNotFound,
+                await runner.ManualTriggerAsync("nope", bubble));
+
+            var otherSymbol = Bubble(120, 900, 209770, at);
+            otherSymbol.Symbol = "WDOFUT";
+            Assert.Equal(ManualTriggerStatus.SymbolMismatch,
+                await runner.ManualTriggerAsync(id, otherSymbol));
+
+            Assert.True(runner.Pause(id, true));
+            Assert.Equal(ManualTriggerStatus.Paused,
+                await runner.ManualTriggerAsync(id, bubble));
+            Assert.True(runner.Pause(id, false));
+
+            // O filtro reprovaria a bubble no trigger automático; manual dispara.
+            Assert.Equal(ManualTriggerStatus.Fired,
+                await runner.ManualTriggerAsync(id, bubble));
+            var state = Assert.Single(runner.States());
+            Assert.Equal(1, state.Decisions);
+            Assert.Equal("manual", state.ReportItems[0].Event);
+            Assert.False(string.IsNullOrWhiteSpace(state.ReportItems[0].TriggerId));
+
+            // Reenviar a mesma bubble é um novo log (TriggerId único), não dedupe.
+            Assert.Equal(ManualTriggerStatus.Fired,
+                await runner.ManualTriggerAsync(id, bubble));
+            Assert.Equal(2, runner.States()[0].Decisions);
+
+            var path = Path.Combine(tmp, $"WINFUT_Strategy_Stub_{DateTime.Today:yyyy-MM-dd}.json");
+            Assert.True(File.Exists(path));
+            var json = await File.ReadAllTextAsync(path);
+            var log = System.Text.Json.JsonSerializer.Deserialize<B3WM.Shared.Models.Strategies.StrategyLogDay>(json);
+            Assert.NotNull(log);
+            Assert.Equal(2, log!.Decisions.Count);
+            Assert.All(log.Decisions, d => Assert.Equal("manual", d.Event));
+            Assert.Equal(2, log.Decisions.Select(d => d.TriggerId).Distinct().Count());
+        }
+        finally
+        {
+            try { Directory.Delete(tmp, true); } catch { }
+        }
+    }
+
+    [Fact]
     public async Task FlushCadaDecisao_PersisteNaPrimeiraAvaliacao()
     {
         // Regressão do pico de energia 2026-10-16: 8 JEVs em RAM (<10) foram
@@ -337,6 +404,53 @@ public class StrategyRunnerTests
         Assert.Equal(10, merged.RealizedPts);
         // Snapshot do dia segue o da primeira sessão.
         Assert.Equal("aaa", merged.SnapshotHash);
+    }
+
+    [Fact]
+    public async Task ManualTrigger_Response_SerializesStatus_WithReadOnlyPropsIgnored()
+    {
+        // Regressão: o JSON do MVC ignora propriedades read-only e, com
+        // objeto anônimo, a resposta virava "{}" — o app via status null.
+        var tmp = Path.Combine(Path.GetTempPath(), "b3wm-resp-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<B3WM.Services.DataKeeperBase>(new TempKeeper(tmp));
+            services.AddSingleton<IStrategy>(new StubStrategy());
+            using var provider = services.BuildServiceProvider();
+            var runner = new StrategyRunner(
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                Enumerable.Empty<B3WM.Services.Core.OrchestratorService>(),
+                new Mock<ILogger<StrategyRunner>>().Object);
+            var keeper = provider.GetRequiredService<B3WM.Services.DataKeeperBase>();
+            var controller = new StrategyController(
+                new StrategyRegistry(new IStrategy[] { new StubStrategy() }),
+                runner, keeper, new Mock<ILogger<StrategyController>>().Object);
+
+            var id = runner.Arm("Stub", "WINFUT", 2, "{}", Filter(), "manualhash");
+            var at = DateTime.Today.AddHours(11).AddMinutes(5);
+            var result = await controller.ManualTrigger(new StrategyManualTriggerRequest
+            {
+                SessionId = id,
+                Bubble = Bubble(120, 900, 209770, at),
+            });
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            var options = new JsonSerializerOptions
+            {
+                IgnoreReadOnlyProperties = true,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                PropertyNameCaseInsensitive = true,
+            };
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value, options));
+            Assert.Equal("fired", doc.RootElement.GetProperty("status").GetString());
+            Assert.True(doc.RootElement.TryGetProperty("session", out _));
+        }
+        finally
+        {
+            try { Directory.Delete(tmp, true); } catch { }
+        }
     }
 
     [Fact]

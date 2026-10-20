@@ -4,6 +4,7 @@ import '../../../app_log.dart';
 import '../../../services/state_service.dart';
 import '../../../services/strategy_service.dart' show b3Wall;
 import '../../../models/ticks2.dart';
+import '../../../models/bubble_storage_item.dart';
 import '../../../models/trade_models.dart';
 import '../../../models/extreme_storage_item.dart';
 
@@ -33,6 +34,8 @@ class BubblePoint {
   final String agentName;
   final int candleIndex;
   final DateTime date;
+  /// Bubble original da API: usada no trigger manual (agente, símbolo etc.).
+  final BubbleStorageItem source;
 
   BubblePoint({
     required this.price,
@@ -42,6 +45,7 @@ class BubblePoint {
     required this.agentName,
     required this.candleIndex,
     required this.date,
+    required this.source,
   });
 }
 
@@ -114,10 +118,13 @@ class StrategyPoint {
   final int candleIndex;
   final DateTime at;
   final String kind; // avaliacao | execucao
+  final String event; // bubble | candle_close | exec | ...
   final String side;
   final double confidence;
   final double encerrar;
   final String action;
+  /// Confiança por criteria (JEV — informativo). Vazio no resto.
+  final Map<String, double> criteria;
   final String reason;
   final String snapshotHash;
 
@@ -125,10 +132,12 @@ class StrategyPoint {
     required this.candleIndex,
     required this.at,
     required this.kind,
+    required this.event,
     required this.side,
     required this.confidence,
     required this.encerrar,
     required this.action,
+    this.criteria = const {},
     required this.reason,
     required this.snapshotHash,
   });
@@ -391,6 +400,7 @@ ChartData buildChartData(StateService state) {
         agentName: Agents.fromValue(b.agent)?.description ?? '',
         candleIndex: findCandleIndex(b.date),
         date: b.date,
+        source: b,
       );
       if (b.actionType == ActionType.buy) {
         blueBubbles.add(pt);
@@ -573,10 +583,12 @@ ChartData buildChartData(StateService state) {
         candleIndex: findCandleIndex(probe),
         at: t.at,
         kind: t.kind,
+        event: t.event,
         side: t.side,
         confidence: t.confidence,
         encerrar: t.encerrar,
         action: t.action,
+        criteria: t.criteria,
         reason: t.reason,
         snapshotHash: t.snapshotHash,
       ));

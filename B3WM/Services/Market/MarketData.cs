@@ -348,7 +348,8 @@ namespace B3WM.Services.Market
 
         public async Task<ExtremeStorageItem?> DailyExtremesAsync(
 
-            string symbol, DateTime from, DateTime to, double noise, double prom, CancellationToken ct = default)
+            string symbol, DateTime from, DateTime to, double noise, double prom,
+            DateTime? asOf = null, CancellationToken ct = default)
 
         {
 
@@ -362,7 +363,7 @@ namespace B3WM.Services.Market
 
                 var item = await svc.ComputeDailyRange(_keeper, from.Date, to.Date,
 
-                    new ExtremeDetectorOptions { NoiseSensitivity = noise, MinimumProminence = prom });
+                    new ExtremeDetectorOptions { NoiseSensitivity = noise, MinimumProminence = prom }, asOf);
 
                 return item.Extremes.Count > 0 ? item : null;
 

@@ -876,6 +876,15 @@ class StateService extends ChangeNotifier {
     }
   }
 
+  /// Trigger manual da sessão (botão direito na bubble do gráfico).
+  /// Reenvia a consulta e atualiza sessões/timeline ao concluir.
+  Future<String?> triggerStrategyManually(
+      String sessionId, BubbleStorageItem bubble) async {
+    final status = await _strategyService.manualTrigger(sessionId, bubble);
+    if (status != null) await refreshStrategySessions();
+    return status;
+  }
+
   void ensureStrategyPolling() {
     if (_strategyPollTimer != null) return;
     _strategyPollTimer =

@@ -11,6 +11,7 @@ import 'measure_ruler.dart';
 import 'strategy_timeline_lane.dart';
 import '../../../services/trading_service.dart';
 import '../../../services/state_service.dart';
+import '../../../services/strategy_service.dart';
 
 class MapFlowChart extends StatefulWidget {
   final ChartData data;
@@ -94,6 +95,11 @@ class _MapFlowChartState extends State<MapFlowChart>
   Offset? _measureDownLocal;
   Matrix4? _measureBlockMatrix;
   Offset? _pendingTapDownLocal;
+  // Botão direito: clique sem arrasto sobre uma bubble abre o trigger manual
+  // (arrasto continua sendo pan). Guardado no down p/ decidir no up.
+  Offset? _rightDownLocal;
+  BubblePoint? _rightDownBubble;
+  bool _manualTriggerBusy = false;
 
   @override
   void initState() {
@@ -600,35 +606,7 @@ class _MapFlowChartState extends State<MapFlowChart>
 
     final data = widget.data;
 
-    BubblePoint? hit;
-
-    // Mesma razão usada pelo ChartPainter para desenhar bubbles redondos.
-    final aspect = (scaleX.isFinite && scaleX > 0 && scaleY.isFinite && scaleY > 0)
-        ? (scaleY / scaleX)
-        : 1.0;
-
-    void checkBubbles(List<BubblePoint> bubbles) {
-      for (final b in bubbles) {
-        final bx = b.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
-        final by = _toChildY(b.price, candleAreaHeight);
-        final r = data.bubbleRadius(b.amount);
-        if (r < 2) continue;
-        final dx = childX - bx;
-        final dy = childY - by;
-        // Elipse que acompanha o desenho (`xyAspect` do ChartPainter): com
-        // escala uniforme recai no teste circular anterior.
-        final rx = r * aspect;
-        final ex = dx / rx;
-        final ey = dy / r;
-        if (ex * ex + ey * ey <= 1.0) {
-          hit = b;
-          return;
-        }
-      }
-    }
-
-    checkBubbles(data.blueBubbles);
-    if (hit == null) checkBubbles(data.redBubbles);
+    final hit = _bubbleAtChildPoint(childX, childY, stepX, candleAreaHeight, scaleX, scaleY);
 
     HistoryDealPoint? hitHistory;
     if (hit == null && data.historyPoints.isNotEmpty) {
@@ -654,6 +632,160 @@ class _MapFlowChartState extends State<MapFlowChart>
       _hoveredHistory = hitHistory;
       _hoverPos = (hit ?? hitHistory) != null ? event.localPosition : null;
     });
+  }
+
+  /// Hit-test de bubble em coordenadas do child (já sem o transform do pan/zoom).
+  /// Usa a mesma elipse do ChartPainter.
+  BubblePoint? _bubbleAtChildPoint(double childX, double childY, double stepX,
+      double candleAreaHeight, double scaleX, double scaleY) {
+    final data = widget.data;
+    final aspect =
+        (scaleX.isFinite && scaleX > 0 && scaleY.isFinite && scaleY > 0)
+            ? (scaleY / scaleX)
+            : 1.0;
+    BubblePoint? hit;
+
+    void checkBubbles(List<BubblePoint> bubbles) {
+      for (final b in bubbles) {
+        final bx =
+            b.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
+        final by = _toChildY(b.price, candleAreaHeight);
+        final r = data.bubbleRadius(b.amount);
+        if (r < 2) continue;
+        final dx = childX - bx;
+        final dy = childY - by;
+        final rx = r * aspect;
+        final ex = dx / rx;
+        final ey = dy / r;
+        if (ex * ex + ey * ey <= 1.0) {
+          hit = b;
+          return;
+        }
+      }
+    }
+
+    checkBubbles(data.blueBubbles);
+    if (hit == null) checkBubbles(data.redBubbles);
+    return hit;
+  }
+
+  /// Hit-test de bubble a partir da posição local da viewport (hover/clique).
+  BubblePoint? _bubbleAtLocal(
+      Offset local, double stepX, double candleAreaHeight) {
+    if (!_initialFitDone) return null;
+    final m = _controller.value;
+    final scaleX = m[0];
+    final scaleY = m[5];
+    if (!scaleX.isFinite || scaleX <= 0 || !scaleY.isFinite || scaleY <= 0) {
+      return null;
+    }
+    final childX = (local.dx - m.getTranslation().x) / scaleX;
+    final childY = (local.dy - m.getTranslation().y) / scaleY;
+    return _bubbleAtChildPoint(
+        childX, childY, stepX, candleAreaHeight, scaleX, scaleY);
+  }
+
+  String _bubbleTimeLabel(BubblePoint bubble) {
+    final w = b3Wall(bubble.date);
+    return '${w.day.toString().padLeft(2, '0')}/${w.month.toString().padLeft(2, '0')} '
+        '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<StrategySession?> _pickStrategySession(
+      List<StrategySession> sessions) {
+    return showDialog<StrategySession>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Trigger manual da estratégia'),
+        children: sessions
+            .map((s) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(ctx, s),
+                  child: Text('${s.strategy}  ·  sessão ${s.sessionId}'),
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  Future<bool?> _confirmManualTrigger(
+      StrategySession session, BubblePoint bubble) {
+    final price = bubble.price.toStringAsFixed(1);
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Trigger manual da estratégia'),
+        content: Text(
+          'Reenviar a consulta da estratégia "${session.strategy}" para a '
+          'bubble de ${bubble.agentName} em $price às ${_bubbleTimeLabel(bubble)}?\n\n'
+          'A consulta ignora os filtros de gatilho e será registrada no log '
+          'como trigger manual, seguindo o fluxo normal da estratégia.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reenviar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Fluxo do botão direito sobre uma bubble: só age se houver sessão ativa
+  /// (não pausada) do símbolo atual. Com várias, pede qual disparar.
+  Future<void> _maybeManualTrigger(BubblePoint bubble) async {
+    if (_manualTriggerBusy || !mounted) return;
+    final state = context.read<StateService>();
+    final active = state.strategySessions
+        .where((s) => s.symbol == widget.data.symbol && !s.paused)
+        .toList();
+    if (active.isEmpty) return;
+
+    final session =
+        active.length == 1 ? active.first : await _pickStrategySession(active);
+    if (session == null || !mounted) return;
+
+    final confirmed = await _confirmManualTrigger(session, bubble);
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _manualTriggerBusy = true);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Reenviando consulta da estratégia...')),
+          ],
+        ),
+      ),
+    );
+
+    String? status;
+    try {
+      status = await state.triggerStrategyManually(
+          session.sessionId, bubble.source);
+    } finally {
+      navigator.pop();
+      if (mounted) setState(() => _manualTriggerBusy = false);
+    }
+    if (!mounted) return;
+
+    final message = status == null
+        ? 'Falha ao disparar a estratégia manualmente.'
+        : status == 'no_decision'
+            ? 'Consulta manual concluída, mas a estratégia não retornou decisão.'
+            : 'Trigger manual enviado. Log e timeline atualizados.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: status == null ? Colors.red : Colors.green,
+    ));
   }
 
   void _handleTap(PointerEvent event, double candleAreaWidth, double candleAreaHeight) {
@@ -1121,9 +1253,13 @@ class _MapFlowChartState extends State<MapFlowChart>
                         _pendingTapDownLocal = event.localPosition;
                       }
                     } else if (_isRightMouseDown(event)) {
-                      // Botão direito: sempre pan via InteractiveViewer.
-                      // Não mede nem fecha posição.
+                      // Botão direito: arrasto continua pan via InteractiveViewer.
+                      // Guarda a posição/bubble p/ o clique (sem arrasto) virar
+                      // trigger manual no up.
                       _pendingTapDownLocal = null;
+                      _rightDownLocal = event.localPosition;
+                      _rightDownBubble = _bubbleAtLocal(
+                          event.localPosition, stepX, candleAreaHeight);
                     } else {
                       // Touch/stylus: em modo régua o arrasto mede (acesso
                       // mobile ao recurso); fora dele mantém pan + tap para
@@ -1156,6 +1292,18 @@ class _MapFlowChartState extends State<MapFlowChart>
                         _handleTap(event, candleAreaWidth, candleAreaHeight);
                       }
                       if (mounted) setState(() {});
+                    } else if (_rightDownLocal != null &&
+                        event.kind == PointerDeviceKind.mouse) {
+                      // Clique (sem arrasto) com botão direito sobre bubble:
+                      // oferece trigger manual da estratégia em execução.
+                      final local = _rightDownLocal!;
+                      final bubble = _rightDownBubble;
+                      _rightDownLocal = null;
+                      _rightDownBubble = null;
+                      if ((event.localPosition - local).distance < 6.0 &&
+                          bubble != null) {
+                        _maybeManualTrigger(bubble);
+                      }
                     } else if (event.kind == PointerDeviceKind.mouse &&
                         (event.buttons & kSecondaryButton) == 0) {
                       // Soltou o botão esquerdo sem ter medido (ex: clique que
@@ -1168,7 +1316,11 @@ class _MapFlowChartState extends State<MapFlowChart>
                       }
                     }
                   },
-                  onPointerCancel: (_) => _onMeasureCancel(),
+                  onPointerCancel: (_) {
+                    _rightDownLocal = null;
+                    _rightDownBubble = null;
+                    _onMeasureCancel();
+                  },
                   onPointerSignal: (event) {
                     if (event is PointerScrollEvent) {
                       _handleScroll(event);

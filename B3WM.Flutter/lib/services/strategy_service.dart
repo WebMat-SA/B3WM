@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../app_config.dart';
 import '../app_log.dart';
+import '../models/bubble_storage_item.dart';
 
 class StrategyInfo {
   final String name;
@@ -162,6 +163,7 @@ class StrategyTimelineItem {
   final double confidence;
   final double encerrar;
   final String action;
+  final Map<String, double> criteria;
   final String reason;
   final String snapshotHash;
 
@@ -173,6 +175,7 @@ class StrategyTimelineItem {
     required this.confidence,
     required this.encerrar,
     required this.action,
+    this.criteria = const {},
     required this.reason,
     required this.snapshotHash,
   });
@@ -187,6 +190,7 @@ class StrategyTimelineItem {
         confidence: d.confidence,
         encerrar: d.encerrar,
         action: d.action,
+        criteria: d.criteria,
         reason: d.reason,
         snapshotHash: d.snapshotHash,
       );
@@ -365,6 +369,33 @@ class StrategyService {
     } catch (e) {
       logD('[strategy] State error: $e');
       return [];
+    }
+  }
+
+  /// Trigger manual: reenvia a consulta da sessão como se o gatilho da
+  /// strategy tivesse sido preenchido (a bubble clicada no gráfico é o evento).
+  /// Retorna `fired`, `no_decision` ou null em falha.
+  Future<String?> manualTrigger(
+      String sessionId, BubbleStorageItem bubble) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/api/Strategy/ManualTrigger'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'sessionId': sessionId,
+          'bubble': bubble.toJson(),
+        }),
+      );
+      if (response.statusCode != 200) {
+        logD(
+            '[strategy] ManualTrigger HTTP ${response.statusCode}: ${response.body}');
+        return null;
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>?;
+      return body?['status'] as String?;
+    } catch (e) {
+      logD('[strategy] ManualTrigger error: $e');
+      return null;
     }
   }
 

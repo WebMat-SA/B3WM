@@ -23,7 +23,7 @@ namespace B3WM.Services.Market
         Task<List<StructureStorageItem>> StructuresAsync(string symbol, int timeFrame, double minDistance, DateTime? date = null, CancellationToken ct = default);
         Task<List<StructureStorageItem>> DailyStructuresAsync(string symbol, double dailyDistance, DateTime date, int days = 90, CancellationToken ct = default);
         Task<ExtremeStorageItem?> IntradayExtremesAsync(string symbol, CancellationToken ct = default);
-        Task<ExtremeStorageItem?> DailyExtremesAsync(string symbol, DateTime from, DateTime to, double noise, double prom, CancellationToken ct = default);
+        Task<ExtremeStorageItem?> DailyExtremesAsync(string symbol, DateTime from, DateTime to, double noise, double prom, DateTime? asOf = null, CancellationToken ct = default);
         Task<PivotStorageItem?> IntradayPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default);
         Task<PivotStorageItem?> DailyPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default);
         Task<double?> VwapAsync(string symbol, DateTime? date = null, CancellationToken ct = default);

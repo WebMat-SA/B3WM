@@ -1,12 +1,49 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../app_log.dart';
 
 class PreferencesService {
   static const _prefix = 'b3wm_';
   SharedPreferences? _prefs;
 
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
+    try {
+      _prefs = await SharedPreferences.getInstance();
+    } catch (e) {
+      logD('[prefs] erro ao ler preferências: $e');
+      await _quarantineCorruptedStore();
+      try {
+        _prefs = await SharedPreferences.getInstance();
+      } catch (e2) {
+        logD('[prefs] persistência indisponível nesta sessão: $e2');
+        _prefs = null;
+      }
+    }
+  }
+
+  /// Move o arquivo corrompido para fora do caminho para que o
+  /// SharedPreferences possa recriá-lo com os valores padrão.
+  Future<void> _quarantineCorruptedStore() async {
+    if (!Platform.isWindows) return;
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final file = File(
+          '${dir.path}${Platform.pathSeparator}shared_preferences.json');
+      if (!await file.exists()) return;
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .replaceAll('.', '-');
+      final backup = '${file.path}.corrupt-$stamp';
+      await file.rename(backup);
+      logD('[prefs] arquivo corrompido movido para $backup');
+    } catch (e) {
+      logD('[prefs] falha ao mover arquivo corrompido: $e');
+    }
   }
 
   String? getString(String key) => _prefs?.getString('$_prefix$key');

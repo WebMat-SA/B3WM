@@ -674,7 +674,7 @@ namespace B3WM.Controllers
                         errors.Add($"{day:yyyy-MM-dd}: {ex.Message}");
                     }
                 }
-                result.Add(new { symbol = sym, created, skippedExists, skippedNoData, errors });
+                result.Add(new Dictionary<string, object?> { ["symbol"] = sym, ["created"] = created, ["skippedExists"] = skippedExists, ["skippedNoData"] = skippedNoData, ["errors"] = errors });
             }
             return Ok(result);
         }

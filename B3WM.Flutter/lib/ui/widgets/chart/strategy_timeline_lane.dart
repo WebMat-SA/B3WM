@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../services/state_service.dart';
 import '../../../services/strategy_service.dart' show b3Wall;
 import 'chart_data.dart';
+import 'jev_tooltip_data.dart';
 
 /// Cor do ícone ⓘ: a mesma do relatório antigo (comprar azul, vender
 /// vermelho, execução laranja, resto cinza).
@@ -148,16 +149,27 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     if (box == null || !box.hasSize) return;
     final screen = MediaQuery.of(context).size;
     final global = box.localToGlobal(Offset(iconLocalX, 13));
-    const cardW = 250.0;
-    final left =
-        (global.dx + 12).clamp(8.0, (screen.width - cardW - 8).clamp(8.0, double.infinity));
-    // Card acima do ícone (ancorado pela base): 34px acima do ponto.
-    final bottom = (screen.height - global.dy + 34)
-        .clamp(8.0, screen.height - 8);
+    const cardW = 340.0;
+    final maxLeft =
+        (screen.width - cardW - 8).clamp(8.0, double.infinity);
+    final left = (global.dx + 12).clamp(8.0, maxLeft);
+
+    // Abre preferencialmente acima do ícone; se não houver altura, abaixo.
+    const gap = 26.0;
+    final spaceAbove = global.dy - gap - 8;
+    final spaceBelow = screen.height - global.dy - gap - 8;
+    final above = spaceAbove >= spaceBelow || spaceBelow < 120;
+    final maxHeight = (above ? spaceAbove : spaceBelow)
+        .clamp(80.0, screen.height);
+    final top = above ? null : (global.dy + gap).clamp(8.0, screen.height - 8);
+    final bottom =
+        above ? (screen.height - global.dy + gap).clamp(8.0, screen.height - 8) : null;
+
     _hideTip();
     _tipEntry = OverlayEntry(
       builder: (_) => Positioned(
         left: left,
+        top: top,
         bottom: bottom,
         width: cardW,
         // Material transparente: sem ele o texto no Overlay ganha
@@ -165,7 +177,15 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
         child: IgnorePointer(
           child: Material(
             color: Colors.transparent,
-            child: _buildHoverCard(group),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              // Em telas baixas o cartão é cortado com elegância (sem
+              // empurrar o layout do gráfico).
+              child: SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                child: _buildHoverCard(group),
+              ),
+            ),
           ),
         ),
       ),
@@ -187,61 +207,308 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
   /// abre no mouse-over, sem click).
   Widget _buildHoverCard(_LaneGroup group) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 250),
-      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(maxWidth: 340),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: const Color(0xDD2d2d2d),
-        borderRadius: BorderRadius.circular(6),
+        color: const Color(0xF22B2B2B),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white24, width: 0.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black54,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              _ddmmhhmm(group.items.first.at),
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  decoration: TextDecoration.none),
-            ),
-          ),
-          for (final p in group.items)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${_hhmm(p.at)} ${p.side}${p.confidence > 0 ? ' ${p.confidence.toStringAsFixed(2)}' : ''} → ${p.action}',
-                    style: TextStyle(
-                      color: strategyPointColor(p),
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                  if (p.reason.isNotEmpty)
-                    Text(
-                      p.reason,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 9,
-                        fontFamily: 'monospace',
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                ],
+          for (var i = 0; i < group.items.length; i++) ...[
+            if (i > 0)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(height: 1, color: Colors.white12),
               ),
-            ),
+            _buildPointDetails(group.items[i]),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _buildPointDetails(StrategyPoint p) {
+    final data = JevTooltipData.fromPoint(p);
+    final sideColor = strategyPointColor(p);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Text(
+              _ddmmhhmm(p.at),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.none,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: sideColor.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: sideColor.withValues(alpha: 0.7)),
+              ),
+              child: Text(
+                '${p.side.toUpperCase()} ${p.confidence.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: sideColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '${p.kind == 'execucao' ? 'EXECUÇÃO' : 'AVALIAÇÃO'}'
+          ' · ${_eventLabel(p.event)}'
+          '${p.action.isNotEmpty ? ' · ${p.action}' : ''}',
+          style: const TextStyle(
+            color: Colors.white54,
+            fontSize: 9.5,
+            letterSpacing: 0.2,
+            decoration: TextDecoration.none,
+          ),
+        ),
+        if (data.isJev) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _summaryTile(
+                  'VIÉS',
+                  data.direcaoConfidence,
+                  data.vies.isNotEmpty ? data.vies : p.side,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _summaryTile('OPERÁVEL', data.operabilidade, null),
+              ),
+            ],
+          ),
+          if (data.proximidade != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  const Text(
+                    'Proximidade',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 9.5,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${data.proximidade!.toStringAsFixed(2)}'
+                    '${data.proximidadeRef.isEmpty ? '' : ' · ${JevTooltipData.refLabel(data.proximidadeRef)}'}'
+                    '${data.proximidadeTicks == null ? '' : ' · ${data.proximidadeTicks!.toStringAsFixed(0)}t'}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          _indicatorSection('DIREÇÃO', data.direction),
+          _indicatorSection('OPERABILIDADE', data.operability),
+        ] else if (p.reason.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            p.reason,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10.5,
+              height: 1.35,
+              fontFamily: 'monospace',
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _summaryTile(String label, double value, String? caption) {
+    final color = JevTooltipData.valueColor(value);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 8.5,
+              letterSpacing: 0.5,
+              decoration: TextDecoration.none,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${(value * 100).round()}%',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  height: 1,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              if (caption != null)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 5, bottom: 1),
+                    child: Text(
+                      caption,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 9,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          _valueBar(value, color, height: 3),
+        ],
+      ),
+    );
+  }
+
+  Widget _indicatorSection(String title, List<JevIndicator> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$title (${items.length})',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 8.5,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.7,
+              decoration: TextDecoration.none,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final item in items) _indicatorRow(item),
+        ],
+      ),
+    );
+  }
+
+  Widget _indicatorRow(JevIndicator item) {
+    final color = JevTooltipData.valueColor(item.value);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 104,
+            child: Text(
+              item.label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+          Expanded(child: _valueBar(item.value, color, height: 5)),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 30,
+            child: Text(
+              '${(item.value * 100).round()}%',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _valueBar(double value, Color color, {required double height}) {
+    final v = value.clamp(0.0, 1.0);
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: v,
+        heightFactor: 1,
+        child: Container(
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(height / 2),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _eventLabel(String event) {
+    switch (event) {
+      case 'bubble':
+        return 'bolha';
+      case 'candle_close':
+        return 'fechamento';
+      case 'exec':
+        return 'execução';
+      case 'virada':
+        return 'virada do dia';
+      default:
+        return event.isEmpty ? 'evento' : event;
+    }
   }
 
   @override

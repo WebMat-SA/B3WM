@@ -71,7 +71,11 @@ namespace B3WM.Services.AI
         /// Projeta o snapshot (já recortado ao escopo) no state JSON da Jev:
         /// bloco intraday + bloco diário. Sem config de tela, sem posição.
         /// </summary>
-        public static JevStateDto BuildStateJson(string symbol, int timeFrame, MarketSnapshot snap)
+        public static JevStateDto BuildStateJson(
+            string symbol,
+            int timeFrame,
+            MarketSnapshot snap,
+            bool includeVolumeLevels = false)
         {
             var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
             var bubbles = snap.Has(SnapshotLayers.Bubbles)
@@ -94,14 +98,11 @@ namespace B3WM.Services.AI
             {
                 Scope = Range(intraScope, candles),
                 Candles = candles.Select(ToCandle).ToList(),
-                VolumeProfile = ToVolumeProfile(volume),
+                VolumeProfile = ToVolumeProfile(volume, includeVolumeLevels),
                 Bubbles = bubbles.OrderBy(b => b.Date).Select(ToBubble).ToList(),
-                Vwap = candles.Where(c => c.VwapPrice.HasValue)
-                    .Select(c => new JevVwapDto { Minute = c.Date.ToString("HH:mm"), Vwap = c.VwapPrice!.Value })
-                    .ToList(),
                 Pivots = ToPivots(pivIntra, candles),
                 TopsValleys = ToExtremes(extIntra),
-                Structures = FilterIntradayStructures(structs, timeFrame, intraScope, candles)
+                Structures = FilterIntradayStructures(structs, timeFrame, intraScope)
                     .Select(s => ToStructure(s, withTimeframe: true)).ToList(),
             };
 
@@ -109,7 +110,7 @@ namespace B3WM.Services.AI
             {
                 Scope = Range(dailyScope, dailyCandles),
                 Candles = dailyCandles.Select(ToCandle).ToList(),
-                VolumeProfile = ToVolumeProfile(dailyVolume),
+                VolumeProfile = ToVolumeProfile(dailyVolume, includeVolumeLevels),
                 Pivots = ToPivots(pivDaily, dailyCandles),
                 TopsValleys = ToExtremes(extDaily),
                 Structures = FilterDailyStructures(structs, dailyScope, dailyCandles)
@@ -133,23 +134,20 @@ namespace B3WM.Services.AI
 
         /// <summary>
         /// Estruturas intraday do TF da estratégia dentro do escopo do bloco.
-        /// Sem escopo resolvido, usa o range dos candles como fallback.
+        /// Sem escopo resolvido, devolve vazio: nunca cai no histórico global.
         /// Deduplica por data (a última impressão daquela data vence).
         /// </summary>
         private static List<StructureStorageItem> FilterIntradayStructures(
             IReadOnlyList<StructureStorageItem>? structs,
             int timeFrame,
-            DateWindow? scope,
-            IReadOnlyList<BarStorageItem> candles)
+            DateWindow? scope)
         {
-            if (structs == null || structs.Count == 0) return new();
-            var from = scope?.From ?? (candles.Count > 0 ? candles[0].Date : DateTime.MinValue);
-            var to = scope?.To ?? (candles.Count > 0 ? candles[^1].Date : DateTime.MaxValue);
+            if (structs == null || structs.Count == 0 || scope == null) return new();
 
             var byDate = new Dictionary<DateTime, StructureStorageItem>();
             foreach (var s in structs.Where(s =>
                          s.TimeFrame != 1440 && s.TimeFrame == timeFrame &&
-                         s.Date >= from && s.Date <= to))
+                         s.Date >= scope.From && s.Date <= scope.To))
                 byDate[s.Date] = s;
             return byDate.Values.OrderBy(s => s.Date).ToList();
         }
@@ -202,8 +200,13 @@ namespace B3WM.Services.AI
             UpAux = s.UpAuxBorder, DownAux = s.DownAuxBorder,
         };
 
-        /// <summary>POC + delta total + todos os níveis do escopo (sem teto).</summary>
-        private static JevVolumeProfileDto? ToVolumeProfile(VolumeLevelStorageItem? volume)
+        /// <summary>
+        /// POC + delta total + níveis do escopo. Os níveis são opcionais para
+        /// reduzir o payload; POC/delta continuam disponíveis nos critérios.
+        /// </summary>
+        private static JevVolumeProfileDto? ToVolumeProfile(
+            VolumeLevelStorageItem? volume,
+            bool includeLevels)
         {
             var levels = volume?.Volumes;
             if (levels == null || levels.Count == 0) return null;
@@ -212,11 +215,13 @@ namespace B3WM.Services.AI
             {
                 Poc = poc.Price,
                 DeltaTotal = levels.Sum(l => l.BuyVolume) - levels.Sum(l => l.SellVolume),
-                Levels = levels.OrderBy(l => l.Price).Select(l => new JevVolumeLevelDto
-                {
-                    Price = l.Price, Total = l.Total,
-                    Buy = l.BuyVolume, Sell = l.SellVolume, Delta = l.Delta,
-                }).ToList(),
+                Levels = includeLevels
+                    ? levels.OrderBy(l => l.Price).Select(l => new JevVolumeLevelDto
+                    {
+                        Price = l.Price, Total = l.Total,
+                        Buy = l.BuyVolume, Sell = l.SellVolume, Delta = l.Delta,
+                    }).ToList()
+                    : new List<JevVolumeLevelDto>(),
             };
         }
 
@@ -271,7 +276,6 @@ namespace B3WM.Services.AI
                 ["intraday.candles"] = Len(state.Intraday.Candles),
                 ["intraday.bubbles"] = Len(state.Intraday.Bubbles),
                 ["intraday.volume"] = Len(state.Intraday.VolumeProfile),
-                ["intraday.vwap"] = Len(state.Intraday.Vwap),
                 ["intraday.pivots"] = Len(state.Intraday.Pivots),
                 ["intraday.extremes"] = Len(state.Intraday.TopsValleys),
                 ["intraday.structures"] = Len(state.Intraday.Structures),
@@ -407,7 +411,7 @@ namespace B3WM.Services.AI
                     ExtremesDailyCount = extDaily?.Extremes.Count ?? 0,
                     StructuresCount =
                         FilterIntradayStructures(structs, timeFrame,
-                            snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday), candles).Count +
+                            snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday)).Count +
                         FilterDailyStructures(structs,
                             snap.Get<DateWindow>(SnapshotLayers.ScopeDaily), dailyCandles).Count,
                     PivotIntraLevels = pivIntra?.Levels.Count ?? 0,

@@ -119,9 +119,11 @@ public class JevPromptTests
         Assert.NotNull(s.Intraday.VolumeProfile);
         Assert.Equal(101, s.Intraday.VolumeProfile!.Poc);
         Assert.Equal(40, s.Intraday.VolumeProfile.DeltaTotal);
-        Assert.Equal(40, Assert.Single(s.Intraday.VolumeProfile.Levels).Delta);
-        // VWAP série (1 ponto por candle).
-        Assert.Equal(100.5, Assert.Single(s.Intraday.Vwap).Vwap);
+        Assert.Empty(s.Intraday.VolumeProfile.Levels);
+        var volumeJson = JsonSerializer.Serialize(s.Intraday.VolumeProfile);
+        Assert.Contains("\"poc\":101", volumeJson);
+        Assert.Contains("\"delta_total\":40", volumeJson);
+        Assert.Contains("\"levels\":[]", volumeJson);
         // Pivots com toque (candle 99..102 contém 100 e 102).
         Assert.Equal(2, s.Intraday.Pivots.Count);
         Assert.All(s.Intraday.Pivots, p => Assert.NotNull(p.TouchedAt));
@@ -137,12 +139,22 @@ public class JevPromptTests
     }
 
     [Fact]
+    public void BuildStateJson_IncludeVolumeLevels_True_KeepsLevels()
+    {
+        var s = JevPrompt.BuildStateJson("WINFUT", 2, Snap(), includeVolumeLevels: true);
+
+        Assert.NotNull(s.Intraday.VolumeProfile);
+        Assert.Equal(40, Assert.Single(s.Intraday.VolumeProfile!.Levels).Delta);
+    }
+
+    [Fact]
     public void BuildStateJson_DailyBlock_HasNoBubblesNorVwap()
     {
         var s = JevPrompt.BuildStateJson("WINFUT", 2, Snap());
         // Diário: candles + volume + pivots + extremos + structures (sem timeframe).
         Assert.Single(s.Daily.Candles);
         Assert.NotNull(s.Daily.VolumeProfile);
+        Assert.Empty(s.Daily.VolumeProfile!.Levels);
         Assert.Equal("W-1", Assert.Single(s.Daily.Pivots).Source);
         Assert.Single(s.Daily.TopsValleys);
         var st = Assert.Single(s.Daily.Structures);
@@ -185,6 +197,22 @@ public class JevPromptTests
         var st = Assert.Single(s.Intraday.Structures);
         Assert.Equal(103, st.Up);
         Assert.Equal(2, st.Timeframe);
+    }
+
+    [Fact]
+    public void BuildStateJson_IntradayStructures_NoScope_DoesNotFallbackToHistory()
+    {
+        var snap = Snap();
+        snap.Layers.Remove(SnapshotLayers.ScopeIntraday);
+        snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
+        {
+            new() { Date = Day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },
+            new() { Date = Day.AddDays(-5), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 100, DownBorder = 90 },
+        };
+
+        var s = JevPrompt.BuildStateJson("WINFUT", 2, snap);
+
+        Assert.Empty(s.Intraday.Structures);
     }
 
     [Fact]

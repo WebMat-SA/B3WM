@@ -41,6 +41,16 @@ namespace B3WM.Services.Strategies
         public string? LastDecision { get; set; }
     }
 
+    /// <summary>Resultado do trigger manual (botão direito na bubble).</summary>
+    public enum ManualTriggerStatus
+    {
+        Fired,
+        SessionNotFound,
+        Paused,
+        SymbolMismatch,
+        NoDecision,
+    }
+
     /// <summary>
     /// Executa as strategies armadas no backend (funciona com o app fechado).
     /// Fonte dos fatos: OrchestratorService por símbolo (candle enriquecido +
@@ -130,6 +140,39 @@ namespace B3WM.Services.Strategies
             }
             _logger.LogInformation("[strategy-runner] sessão {Id} paused={Paused}", id, paused);
             return true;
+        }
+
+        /// <summary>
+        /// Trigger manual: reenvia a consulta como se o gatilho da strategy
+        /// tivesse sido preenchido. Bypassa `ShouldTrigger`/filtro de bolhas e
+        /// NÃO consome o bucket automático; o restante do fluxo (Evaluate,
+        /// decisão, pending entry/exit, paper e log) é o mesmo do trigger normal.
+        /// Só sessões não pausadas aceitam.
+        /// </summary>
+        public async Task<ManualTriggerStatus> ManualTriggerAsync(
+            string sessionId, BubbleStorageItem bubble)
+        {
+            StrategySession? s;
+            lock (_lock) _sessions.TryGetValue(sessionId, out s);
+            if (s == null) return ManualTriggerStatus.SessionNotFound;
+            if (s.Paused) return ManualTriggerStatus.Paused;
+            if (!string.IsNullOrWhiteSpace(bubble.Symbol) &&
+                !string.Equals(bubble.Symbol, s.Symbol, StringComparison.OrdinalIgnoreCase))
+                return ManualTriggerStatus.SymbolMismatch;
+
+            bubble.Symbol = s.Symbol;
+            var ev = new BubbleAppeared
+            {
+                Symbol = s.Symbol,
+                At = bubble.Date,
+                Item = bubble,
+            };
+            var triggerId = "manual-" + Guid.NewGuid().ToString("N");
+            _logger.LogInformation(
+                "[strategy-runner] MANUAL {Strategy} {Symbol} sessão={Id} bubble={At:O} trigger={Trigger}",
+                s.Strategy, s.Symbol, s.Id, bubble.Date, triggerId);
+            var fired = await FireAsync(s, ev, "manual", triggerId);
+            return fired ? ManualTriggerStatus.Fired : ManualTriggerStatus.NoDecision;
         }
 
         public StrategyLogDay? Stop(string id)
@@ -281,7 +324,8 @@ namespace B3WM.Services.Strategies
                 return _sessions.Values.Where(s => !s.Paused && s.Symbol == symbol).ToList();
         }
 
-        private async Task FireAsync(StrategySession s, StrategyEvent ev, string why)
+        private async Task<bool> FireAsync(
+            StrategySession s, StrategyEvent ev, string why, string? triggerId = null)
         {
             using var scope = _scopes.CreateScope();
             var sp = scope.ServiceProvider;
@@ -295,7 +339,7 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy-runner] sessão {Id} sem strategy", s.Id);
-                return;
+                return false;
             }
 
             var ctx = new StrategyContext
@@ -318,9 +362,9 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy:{Name}:{Id}] erro no Evaluate", s.Strategy, s.Id);
-                return;
+                return false;
             }
-            if (decision == null) return;
+            if (decision == null) return false;
 
             // Threshold de saída do paper engine (política do runner; a
             // strategy só informa Encerrar 0..1).
@@ -348,6 +392,7 @@ namespace B3WM.Services.Strategies
                 PositionBefore = posBefore,
                 Action = action,
                 AuditFile = decision.AuditFile ?? "",
+                TriggerId = triggerId ?? "",
             };
             lock (_lock)
             {
@@ -369,6 +414,7 @@ namespace B3WM.Services.Strategies
             // Custo ~ms (JSON pequeno do dia) frente à latência do Jev.
             s.PersistedDecisions = s.Decisions.Count;
             await PersistLogAsync(ToLogDay(s));
+            return true;
         }
 
         /// <summary>
@@ -572,7 +618,7 @@ namespace B3WM.Services.Strategies
         }
 
         private static string DecisionKey(StrategyDecisionLog d) =>
-            $"{(d.At == default ? d.Time : d.At.ToString("o"))}|{d.Kind}|{d.Side}|{d.Action}|{d.SnapshotHash}";
+            $"{(d.At == default ? d.Time : d.At.ToString("o"))}|{d.Kind}|{d.Side}|{d.Action}|{d.SnapshotHash}|{d.TriggerId}";
 
         private static string TradeKey(PaperTrade t) =>
             $"{(t.EntryAt == default ? t.EntryTime : t.EntryAt.ToString("o"))}|{t.Side}|{t.Entry}|{(t.ExitAt == default ? t.ExitTime : t.ExitAt.ToString("o"))}|{t.Exit}";

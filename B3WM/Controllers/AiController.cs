@@ -38,7 +38,7 @@ namespace B3WM.Controllers
         public IActionResult Status()
         {
             // Nunca vazar o valor da chave — só se existe.
-            return Ok(new { enabled = true, hasKey = _jev.HasKey, model = _jev.Model });
+            return Ok(new Dictionary<string, object?> { ["enabled"] = true, ["hasKey"] = _jev.HasKey, ["model"] = _jev.Model });
         }
 
         [HttpPost]
@@ -191,7 +191,7 @@ namespace B3WM.Controllers
             var out_ = new List<object>();
             foreach (var f in dir.GetFiles($"{sym}_Jev_*.json").Where(f => f.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).OrderBy(f => f.Name))
             {
-                out_.Add(new { file = f.Name, size = f.Length, modified = f.LastWriteTime });
+                out_.Add(new Dictionary<string, object?> { ["file"] = f.Name, ["size"] = f.Length, ["modified"] = f.LastWriteTime });
             }
             return Ok(out_);
         }

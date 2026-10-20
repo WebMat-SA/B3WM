@@ -1,3 +1,5 @@
+using B3WM.Shared.Models;
+
 namespace B3WM.Shared.Models.Strategies
 {
     public sealed class StrategyInfo
@@ -26,6 +28,17 @@ namespace B3WM.Shared.Models.Strategies
         // com o mesmo racional de ProfileFrom/To para o automode 1440.
         public DateTime? DailyFrom { get; set; }
         public DateTime? DailyTo { get; set; }
+    }
+
+    /// <summary>
+    /// Trigger manual disparado pelo botão direito em uma bubble do gráfico:
+    /// reenvia a consulta da strategy como se o gatilho dela tivesse sido
+    /// preenchido, sem passar pelo ShouldTrigger/filtro da sessão.
+    /// </summary>
+    public sealed class StrategyManualTriggerRequest
+    {
+        public string SessionId { get; set; } = "";
+        public BubbleStorageItem? Bubble { get; set; }
     }
 
     public sealed class StrategySessionState
@@ -72,6 +85,12 @@ namespace B3WM.Shared.Models.Strategies
         public string Action { get; set; } = "";
         /// <summary>Arquivo da auditoria Jev em Data/JEV ("" quando não há).</summary>
         public string AuditFile { get; set; } = "";
+        /// <summary>
+        /// Identificador único do trigger manual. Vazio em triggers normais;
+        /// entra na chave de merge para permitir reenviar a mesma bubble várias
+        /// vezes sem o log descartar avaliações idênticas.
+        /// </summary>
+        public string TriggerId { get; set; } = "";
     }
 
     public sealed class PaperTrade

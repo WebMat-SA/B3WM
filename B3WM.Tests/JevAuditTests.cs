@@ -86,7 +86,7 @@ public class JevAuditTests
         foreach (var k in new[]
                  {
                      "intraday.candles", "intraday.bubbles", "intraday.volume",
-                     "intraday.vwap", "intraday.pivots", "intraday.extremes", "intraday.structures",
+                     "intraday.pivots", "intraday.extremes", "intraday.structures",
                      "daily.candles", "daily.volume", "daily.pivots", "daily.extremes", "daily.structures",
                  })
             Assert.True(blocks.ContainsKey(k), $"bloco {k} ausente");
@@ -153,6 +153,14 @@ public class JevAuditTests
     {
         var day = new DateTime(2026, 10, 2);
         var snap = Snap();
+        snap.Layers[SnapshotLayers.ScopeIntraday] = new DateWindow
+        {
+            From = day.AddHours(10), To = day.AddHours(10),
+        };
+        snap.Layers[SnapshotLayers.ScopeDaily] = new DateWindow
+        {
+            From = day.AddDays(-2), To = day,
+        };
         snap.Layers[SnapshotLayers.Structures] = new List<StructureStorageItem>
         {
             new() { Date = day.AddHours(10), Symbol = "WINFUT", TimeFrame = 2, UpBorder = 103, DownBorder = 99 },

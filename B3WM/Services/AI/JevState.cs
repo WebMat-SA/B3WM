@@ -31,7 +31,6 @@ namespace B3WM.Services.AI
         [JsonPropertyName("candles")] public List<JevCandleDto> Candles { get; set; } = new();
         [JsonPropertyName("volume_profile")] public JevVolumeProfileDto? VolumeProfile { get; set; }
         [JsonPropertyName("bubbles")] public List<JevBubbleDto> Bubbles { get; set; } = new();
-        [JsonPropertyName("vwap")] public List<JevVwapDto> Vwap { get; set; } = new();
         [JsonPropertyName("pivots")] public List<JevPivotDto> Pivots { get; set; } = new();
         [JsonPropertyName("tops_valleys")] public List<JevExtremeDto> TopsValleys { get; set; } = new();
         [JsonPropertyName("structures")] public List<JevStructureDto> Structures { get; set; } = new();
@@ -83,12 +82,6 @@ namespace B3WM.Services.AI
         [JsonPropertyName("side")] public string Side { get; set; } = "";
         [JsonPropertyName("amount")] public decimal Amount { get; set; }
         [JsonPropertyName("price")] public double Price { get; set; }
-    }
-
-    public sealed class JevVwapDto
-    {
-        [JsonPropertyName("minute")] public string Minute { get; set; } = "";
-        [JsonPropertyName("vwap")] public double Vwap { get; set; }
     }
 
     public sealed class JevPivotDto
