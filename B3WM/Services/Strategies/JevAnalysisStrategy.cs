@@ -41,7 +41,7 @@ namespace B3WM.Services.Strategies
             "- **Gatilho:** primeira bubble visível por candle do TF da sessão (filtro da tela congelado no PLAY; bucket pela hora da bubble).\n" +
             "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
             "- **Parâmetros fixos no código:** `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
-            "- **Saída INFORMATIVA (Composite scoring):** confiança por criteria (8 de direção + 5 de operabilidade), viés e proximidade técnica. **Não** decide operar/não-operar — a decisão é manual; pesos fixos em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
+            "- **Saída INFORMATIVA (Composite scoring):** 8 dimensões de direção com perguntas espelhadas alta/baixa (16 perguntas) + 5 de operabilidade; viés `comprar|vender|lateral` e proximidade técnica. **Não** decide operar/não-operar — a decisão é manual; pesos/thresholds em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
             "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
             "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
             "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
@@ -112,6 +112,10 @@ namespace B3WM.Services.Strategies
                 Confidence = res.DirecaoConfidence,
                 Criteria = res.Criteria,
                 Reason = JevPrompt.FormatCriteria(res),
+                DirecaoNet = res.DirecaoNet,
+                DirecaoConsenso = res.DirecaoConsenso,
+                DirecaoCobertura = res.DirecaoCobertura,
+                DirecaoMotivo = res.DirecaoMotivo,
                 StateChars = res.StatePreview.Length,
                 AuditFile = auditFile,
             };

@@ -71,7 +71,8 @@ public class JevAuditTests
     private static JevAnalysisResult Parsed() => new()
     {
         Symbol = "WINFUT", Model = "jev-1.13.0", Direcao = "comprar",
-        DirecaoConfidence = 0.85,
+        DirecaoConfidence = 0.85, DirecaoNet = 0.72,
+        DirecaoConsenso = 0.9, DirecaoCobertura = 1.0,
         ConfiancaOperavel = 0.9,
         Criteria = new() { ["candles_alta"] = 0.8, ["sem_chop"] = 0.7 },
         Proximidade = 0.6, ProximidadeTicks = 12, ProximidadeRef = "vwap",
@@ -145,6 +146,8 @@ public class JevAuditTests
         Assert.Equal(200, r.Call.HttpStatus);
         Assert.Equal(321, r.Call.LatencyMs);
         Assert.Equal("comprar", r.Answer.Direcao);
+        Assert.Equal(0.72, r.Answer.DirecaoNet, 6);
+        Assert.Equal(0.9, r.Answer.DirecaoConsenso, 6);
         Assert.Equal(100, r.Answer.InputTokens);
     }
 
@@ -208,7 +211,7 @@ public class JevAuditTests
         Assert.Equal("Jev HTTP 400: max_tokens_exceeded", r.Call.Error);
         // Corpo cru do erro preservado; resposta interpretada fica default.
         Assert.Equal(body, r.Answer.BodyRaw);
-        Assert.Equal("manter", r.Answer.Direcao);
+        Assert.Equal("lateral", r.Answer.Direcao);
         Assert.Empty(r.Answer.Criteria);
         // O payload que estourou fica registrado integralmente para diagnóstico.
         Assert.Equal(payload, r.Payload);

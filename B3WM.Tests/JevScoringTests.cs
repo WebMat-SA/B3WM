@@ -8,49 +8,105 @@ namespace B3WM.Tests;
 /// </summary>
 public class JevScoringTests
 {
-    private static Dictionary<string, double> All(double p) => new()
+    /// <summary>Todas as dimensões com a mesma evidência de alta/baixa.</summary>
+    private static Dictionary<string, double> All(double bull, double bear) => new()
     {
-        ["candles_alta"] = p, ["acima_vwap"] = p, ["estrutura_alta"] = p,
-        ["acima_poc"] = p, ["delta_positivo"] = p, ["bolhas_compra"] = p,
-        ["defende_suporte"] = p, ["diario_alta"] = p,
-        ["sem_chop"] = p, ["amplitude_suficiente"] = p, ["sem_compressao_topovale"] = p,
-        ["referencia_clara"] = p, ["sem_conflito_intra_diario"] = p,
+        ["candles_alta"] = bull, ["candles_baixa"] = bear,
+        ["acima_vwap"] = bull, ["abaixo_vwap"] = bear,
+        ["estrutura_alta"] = bull, ["estrutura_baixa"] = bear,
+        ["acima_poc"] = bull, ["abaixo_poc"] = bear,
+        ["delta_positivo"] = bull, ["delta_negativo"] = bear,
+        ["bolhas_compra"] = bull, ["bolhas_venda"] = bear,
+        ["defende_suporte"] = bull, ["rejeita_resistencia"] = bear,
+        ["diario_alta"] = bull, ["diario_baixa"] = bear,
+        ["sem_chop"] = 0.8, ["amplitude_suficiente"] = 0.8,
+        ["sem_compressao_topovale"] = 0.8, ["referencia_clara"] = 0.8,
+        ["sem_conflito_intra_diario"] = 0.8,
     };
 
     [Fact]
-    public void Evaluate_BullishIndicators_BiasComprar()
+    public void Evaluate_BullishPairs_BiasComprar()
     {
-        var r = JevScoring.Evaluate(All(0.8), JevWeights.Defaults());
+        var r = JevScoring.Evaluate(All(0.8, 0.1), JevWeights.Defaults());
         Assert.Equal("comprar", r.Direcao);
         Assert.True(r.DirecaoConfidence > 0 && r.DirecaoConfidence < 1);
+        Assert.Equal(0.7, r.DirecaoNet, 6);
+        Assert.Equal(1, r.DirecaoConsenso, 6);
+        Assert.Equal(1, r.DirecaoCobertura, 6);
+        Assert.Equal("", r.DirecaoMotivo);
         Assert.True(r.ConfiancaOperavel > 0.5);
-        Assert.Equal(13, r.Criteria.Count);
+        Assert.Equal(21, r.Criteria.Count);
     }
 
     [Fact]
-    public void Evaluate_BearishIndicators_BiasVender()
+    public void Evaluate_BearishPairs_BiasVender()
     {
-        var r = JevScoring.Evaluate(All(0.2), JevWeights.Defaults());
+        var r = JevScoring.Evaluate(All(0.1, 0.8), JevWeights.Defaults());
         Assert.Equal("vender", r.Direcao);
         Assert.True(r.DirecaoConfidence > 0);
+        Assert.Equal(-0.7, r.DirecaoNet, 6);
     }
 
     [Fact]
-    public void Evaluate_NeutralIndicators_BiasManter()
+    public void Evaluate_NeutralPairs_BiasLateral()
     {
-        var r = JevScoring.Evaluate(All(0.5), JevWeights.Defaults());
-        Assert.Equal("manter", r.Direcao);
+        var r = JevScoring.Evaluate(All(0.5, 0.5), JevWeights.Defaults());
+        Assert.Equal("lateral", r.Direcao);
         Assert.Equal(0, r.DirecaoConfidence);
+        Assert.Equal("evidência fraca", r.DirecaoMotivo);
     }
 
     [Fact]
-    public void Evaluate_MissingIndicators_AreSkipped()
+    public void Evaluate_ConflictingPairs_BiasLateral()
     {
-        var r = JevScoring.Evaluate(
-            new Dictionary<string, double> { ["candles_alta"] = 0.9 }, JevWeights.Defaults());
+        var r = JevScoring.Evaluate(All(0.9, 0.9), JevWeights.Defaults());
+        Assert.Equal("lateral", r.Direcao);
+        Assert.Equal(0, r.DirecaoConfidence);
+        Assert.Equal(0, r.DirecaoNet, 6);
+        Assert.Equal("evidência fraca", r.DirecaoMotivo);
+    }
+
+    [Fact]
+    public void Evaluate_WeakNetInsideBand_BiasLateral()
+    {
+        var r = JevScoring.Evaluate(All(0.6, 0.45), JevWeights.Defaults());
+        Assert.Equal("lateral", r.Direcao);
+        Assert.Equal(0.15, r.DirecaoNet, 6);
+        Assert.True(Math.Abs(r.DirecaoNet) < JevWeights.Defaults().NeutralBand);
+        Assert.Contains("evidência fraca", r.DirecaoMotivo);
+    }
+
+    [Fact]
+    public void Evaluate_InsufficientCoverage_BiasLateral()
+    {
+        var crit = new Dictionary<string, double>
+        {
+            ["candles_alta"] = 0.95, ["candles_baixa"] = 0.05,
+        };
+        var r = JevScoring.Evaluate(crit, JevWeights.Defaults());
+        Assert.Equal("lateral", r.Direcao);
+        Assert.True(r.DirecaoCobertura < JevWeights.Defaults().MinDirectionCoverage);
+        Assert.Contains("cobertura baixa", r.DirecaoMotivo);
+    }
+
+    [Fact]
+    public void Evaluate_MissingSideDoesNotCountAsCoverage()
+    {
+        var crit = new Dictionary<string, double>
+        {
+            ["candles_alta"] = 0.95,
+            ["acima_vwap"] = 0.95, ["abaixo_vwap"] = 0.05,
+            ["estrutura_alta"] = 0.95, ["estrutura_baixa"] = 0.05,
+            ["acima_poc"] = 0.95, ["abaixo_poc"] = 0.05,
+            ["delta_positivo"] = 0.95, ["delta_negativo"] = 0.05,
+            ["bolhas_compra"] = 0.95, ["bolhas_venda"] = 0.05,
+            ["defende_suporte"] = 0.95, ["rejeita_resistencia"] = 0.05,
+            ["diario_alta"] = 0.95, ["diario_baixa"] = 0.05,
+        };
+        var r = JevScoring.Evaluate(crit, JevWeights.Defaults());
+        // A dimensão sem o lado de baixa não entra no net nem na cobertura.
         Assert.Equal("comprar", r.Direcao);
-        Assert.Equal(0, r.ConfiancaOperavel); // nenhum indicador de operabilidade
-        Assert.Single(r.Criteria);
+        Assert.True(r.DirecaoCobertura > 0 && r.DirecaoCobertura < 1);
     }
 
     [Fact]
@@ -88,10 +144,10 @@ public class JevScoringTests
     }
 
     [Fact]
-    public void Weights_DefaultsCoverAllIndicators()
+    public void Weights_DefaultsCoverAllDimensions()
     {
         var w = JevWeights.Defaults();
-        Assert.Equal(JevPrompt.DirectionIndicators.Length, w.Direction.Count);
+        Assert.Equal(JevPrompt.DirectionDimensionIds.Length, w.Direction.Count);
         Assert.Equal(JevPrompt.OperabilityIndicators.Length, w.Operability.Count);
     }
 }

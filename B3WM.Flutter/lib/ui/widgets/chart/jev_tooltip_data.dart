@@ -6,9 +6,23 @@ import 'chart_data.dart';
 class JevIndicator {
   final String id;
   final String label;
-  final double value;
 
-  const JevIndicator(this.id, this.label, this.value);
+  /// 0..1 no eixo de direção: 0 = baixa, 0.5 = neutro, 1 = alta.
+  /// Nos indicadores de operabilidade continua sendo a confiança crua.
+  final double value;
+  final double? bull;
+  final double? bear;
+
+  const JevIndicator(this.id, this.label, this.value, {this.bull, this.bear});
+
+  /// Ambos os lados respondidos (log novo, com par espelhado).
+  bool get paired => bull != null && bear != null;
+
+  /// Saldo assinado (-1..1) quando os dois lados existem.
+  double? get net {
+    if (paired) return (bull! - bear!).clamp(-1.0, 1.0);
+    return null;
+  }
 }
 
 /// Dados prontos para o cartão de hover da timeline. `criteria` é a fonte
@@ -21,6 +35,14 @@ class JevTooltipData {
   final double? proximidade;
   final String proximidadeRef;
   final double? proximidadeTicks;
+  /// Net assinado (-1..1): negativo = baixa/venda, positivo = alta/compra.
+  final double? direcaoNet;
+  /// Consenso das dimensões (0..1).
+  final double? direcaoConsenso;
+  /// Cobertura das dimensões (0..1).
+  final double? direcaoCobertura;
+  /// Motivo textual da lateral (vazio quando há compra/venda ou log antigo).
+  final String direcaoMotivo;
   final List<JevIndicator> direction;
   final List<JevIndicator> operability;
   final String rawReason;
@@ -34,21 +56,26 @@ class JevTooltipData {
     this.proximidade,
     this.proximidadeRef = '',
     this.proximidadeTicks,
+    this.direcaoNet,
+    this.direcaoConsenso,
+    this.direcaoCobertura,
+    this.direcaoMotivo = '',
     required this.direction,
     required this.operability,
     required this.rawReason,
   });
 
-  /// Indicadores de direção, na ordem em que a Jev os declara.
-  static const List<(String, String)> directionLabels = [
-    ('candles_alta', 'Candles alta'),
-    ('acima_vwap', 'Acima do VWAP'),
-    ('estrutura_alta', 'Estrutura alta'),
-    ('acima_poc', 'Acima do POC'),
-    ('delta_positivo', 'Delta positivo'),
-    ('bolhas_compra', 'Bolhas compra'),
-    ('defende_suporte', 'Defende suporte'),
-    ('diario_alta', 'Diário alta'),
+  /// Dimensões de direção: id de alta, id de baixa e rótulo curto.
+  /// A UI colapsa cada par em uma linha (valor = net normalizado).
+  static const List<(String, String, String)> directionPairs = [
+    ('candles_alta', 'candles_baixa', 'Candles'),
+    ('acima_vwap', 'abaixo_vwap', 'VWAP'),
+    ('estrutura_alta', 'estrutura_baixa', 'Estrutura'),
+    ('acima_poc', 'abaixo_poc', 'POC'),
+    ('delta_positivo', 'delta_negativo', 'Delta'),
+    ('bolhas_compra', 'bolhas_venda', 'Bolhas'),
+    ('defende_suporte', 'rejeita_resistencia', 'Suporte/Resist.'),
+    ('diario_alta', 'diario_baixa', 'Diário'),
   ];
 
   /// Indicadores de operabilidade, na ordem em que a Jev os declara.
@@ -61,7 +88,8 @@ class JevTooltipData {
   ];
 
   static final Set<String> _knownIds = {
-    for (final (id, _) in directionLabels) id,
+    for (final (bull, _, _) in directionPairs) bull,
+    for (final (_, bear, _) in directionPairs) bear,
     for (final (id, _) in operabilityLabels) id,
   };
 
@@ -79,39 +107,107 @@ class JevTooltipData {
     final parsed = _ReasonSummary.tryParse(p.reason);
     final criteria = p.criteria;
 
-    final direction = _collect(criteria, directionLabels);
+    final direction = _collectDirections(criteria);
     final operability = _collect(criteria, operabilityLabels);
 
     // Sem criteria (log antigo ou strategy não-Jev): aproveita as listas
     // `dir:`/`op:` do próprio reason.
-    final reasonDirection =
-        direction.isEmpty ? _collect(parsed?.direction ?? const {}, directionLabels) : direction;
+    final reasonDirection = direction.isEmpty
+        ? _collectDirections(parsed?.direction ?? const {})
+        : direction;
     final reasonOperability = operability.isEmpty
         ? _collect(parsed?.operabilityValues ?? const {}, operabilityLabels)
         : operability;
 
+    final rawVies = _blank(parsed?.vies) ? p.side : parsed!.vies;
     return JevTooltipData(
-      vies: _blank(parsed?.vies) ? p.side : parsed!.vies,
+      vies: normalizeSide(rawVies),
       direcaoConfidence: parsed?.confidence ?? p.confidence,
       operabilidade: parsed?.operability ?? 0,
       proximidade: parsed?.proximity,
       proximidadeRef: parsed?.proximityRef ?? '',
       proximidadeTicks: parsed?.proximityTicks,
+      direcaoNet: p.direcaoNet ?? parsed?.net,
+      direcaoConsenso: p.direcaoConsenso ?? parsed?.consensus,
+      direcaoCobertura: p.direcaoCobertura ?? parsed?.coverage,
+      direcaoMotivo: _blank(p.direcaoMotivo)
+          ? (parsed?.motive ?? '')
+          : p.direcaoMotivo!.trim(),
       direction: reasonDirection,
       operability: reasonOperability,
       rawReason: p.reason,
     );
   }
 
+  /// Normaliza rótulos antigos (`manter`) para o contrato atual (`lateral`).
+  static String normalizeSide(String side) {
+    final s = side.trim().toLowerCase();
+    return s.isEmpty || s == 'manter' || s == 'neutro' ? 'lateral' : s;
+  }
+
+  /// Rótulo curto e legível para o viés.
+  static String sideLabel(String side) {
+    switch (normalizeSide(side)) {
+      case 'comprar':
+        return 'COMPRA';
+      case 'vender':
+        return 'VENDA';
+      default:
+        return 'LATERAL';
+    }
+  }
+
   /// Rótulo curto da referência de proximidade (ex.: `estrutura_diaria`).
   static String refLabel(String ref) =>
       _refLabels[ref] ?? ref.replaceAll('_', ' ');
 
-  /// Cor por faixa de confiança: baixa (vermelho), média (âmbar), alta (verde).
-  static Color valueColor(double v) {
+  /// Cor de qualidade/operabilidade: baixa (vermelho), média (âmbar), alta (verde).
+  static Color qualityColor(double v) {
     if (v < 0.40) return const Color(0xFFEF5350);
     if (v < 0.65) return const Color(0xFFFFB300);
     return const Color(0xFF66BB6A);
+  }
+
+  /// Compatibilidade: mesma escala de qualidade usada antes.
+  static Color valueColor(double v) => qualityColor(v);
+
+  /// Cor direcional: 0 = venda (vermelho), 0.5 = lateral (cinza),
+  /// 1 = compra (azul). Alinhada aos ícones da timeline.
+  static Color directionColor(double v) {
+    if (v > 0.55) return const Color(0xFF42A5F5);
+    if (v < 0.45) return const Color(0xFFEF5350);
+    return const Color(0xFF9E9E9E);
+  }
+
+  /// Colapsa cada par alta/baixa em um único indicador direcional.
+  /// `value` = net normalizado (0.5 = neutro). Logs antigos, que só tinham
+  /// a pergunta de alta, continuam exibindo a confiança crua.
+  static List<JevIndicator> _collectDirections(Map<String, double> values) {
+    final out = <JevIndicator>[];
+    final seen = <String>{};
+    for (final (bullId, bearId, label) in directionPairs) {
+      final bull = values[bullId];
+      final bear = values[bearId];
+      if (bull != null && bear != null) {
+        final net = (bull - bear).clamp(-1.0, 1.0);
+        out.add(JevIndicator(bullId, label, 0.5 + 0.5 * net,
+            bull: bull, bear: bear));
+        seen
+          ..add(bullId)
+          ..add(bearId);
+      } else if (bull != null) {
+        out.add(JevIndicator(bullId, label, bull));
+        seen.add(bullId);
+      } else if (bear != null) {
+        out.add(JevIndicator(bearId, label, 1 - bear, bear: bear));
+        seen.add(bearId);
+      }
+    }
+    values.forEach((id, v) {
+      if (seen.contains(id) || _knownIds.contains(id)) return;
+      out.add(JevIndicator(id, id.replaceAll('_', ' '), v));
+    });
+    return out;
   }
 
   static List<JevIndicator> _collect(
@@ -145,6 +241,10 @@ class _ReasonSummary {
   final double? proximity;
   final String proximityRef;
   final double? proximityTicks;
+  final double? net;
+  final double? consensus;
+  final double? coverage;
+  final String? motive;
   final Map<String, double> direction;
   final Map<String, double> operabilityValues;
 
@@ -155,6 +255,10 @@ class _ReasonSummary {
     required this.proximity,
     required this.proximityRef,
     required this.proximityTicks,
+    required this.net,
+    required this.consensus,
+    required this.coverage,
+    required this.motive,
     required this.direction,
     required this.operabilityValues,
   });
@@ -162,6 +266,11 @@ class _ReasonSummary {
   static final _viesRe = RegExp(r'vies=(\S+)');
   static final _confRe = RegExp(r'\bconf=([0-9]+(?:\.[0-9]+)?)');
   static final _opRe = RegExp(r'\bop=([0-9]+(?:\.[0-9]+)?)');
+  static final _netRe = RegExp(r'\bnet=(-?[0-9]+(?:\.[0-9]+)?)');
+  static final _consRe = RegExp(r'\bcons=(-?[0-9]+(?:\.[0-9]+)?)');
+  static final _covRe = RegExp(r'\bcov=(-?[0-9]+(?:\.[0-9]+)?)');
+  static final _motivoRe =
+      RegExp(r'\bmotivo=(.*?)(?=\s+(?:op|prox)=|$)');
   static final _proxRe = RegExp(
       r'\bprox=([0-9]+(?:\.[0-9]+)?)\(([^)]*?)\s+([0-9]+(?:\.[0-9]+)?)t\)');
   static final _dirRe = RegExp(r'dir:\s*(.*?)(?:\s*\|\s*op:|$)');
@@ -185,6 +294,10 @@ class _ReasonSummary {
       proximity: double.tryParse(proxMatch?.group(1) ?? ''),
       proximityRef: proxMatch?.group(2)?.trim() ?? '',
       proximityTicks: double.tryParse(proxMatch?.group(3) ?? ''),
+      net: double.tryParse(_netRe.firstMatch(reason)?.group(1) ?? ''),
+      consensus: double.tryParse(_consRe.firstMatch(reason)?.group(1) ?? ''),
+      coverage: double.tryParse(_covRe.firstMatch(reason)?.group(1) ?? ''),
+      motive: _motivoRe.firstMatch(reason)?.group(1)?.trim(),
       direction: _pairs(dirSection),
       operabilityValues: _pairs(opSection),
     );

@@ -15,13 +15,25 @@ namespace B3WM.Services.AI
         /// <summary>Nome do arquivo opcional (relativo à raiz de dados).</summary>
         public const string FileName = "jev_weights.json";
 
-        /// <summary>Indicadores de direção (afirmação de ALTA) e seus pesos.</summary>
+        /// <summary>Dimensões de direção (pares alta/baixa) e seus pesos.</summary>
         [JsonPropertyName("direction")]
         public Dictionary<string, double> Direction { get; set; } = new();
 
         /// <summary>Indicadores de operabilidade e seus pesos.</summary>
         [JsonPropertyName("operability")]
         public Dictionary<string, double> Operability { get; set; } = new();
+
+        /// <summary>Banda neutra: |net| abaixo disto vira lateral.</summary>
+        [JsonPropertyName("neutral_band")]
+        public double NeutralBand { get; set; } = 0.25;
+
+        /// <summary>Cobertura mínima das dimensões para sair da lateral.</summary>
+        [JsonPropertyName("min_direction_coverage")]
+        public double MinDirectionCoverage { get; set; } = 0.75;
+
+        /// <summary>Consenso mínimo entre as dimensões para sair da lateral.</summary>
+        [JsonPropertyName("min_consensus")]
+        public double MinConsensus { get; set; } = 0.50;
 
         /// <summary>Horizonte (candles) para o rótulo do fitter.</summary>
         [JsonPropertyName("label_horizon")]
@@ -57,6 +69,9 @@ namespace B3WM.Services.AI
                 ["referencia_clara"] = 0.75,
                 ["sem_conflito_intra_diario"] = 1.0,
             },
+            NeutralBand = 0.25,
+            MinDirectionCoverage = 0.75,
+            MinConsensus = 0.50,
         };
 
         /// <summary>
@@ -75,6 +90,12 @@ namespace B3WM.Services.AI
                     loaded.Direction = defaults.Direction;
                 if (loaded.Operability.Count == 0)
                     loaded.Operability = defaults.Operability;
+                if (loaded.NeutralBand <= 0 || loaded.NeutralBand >= 1)
+                    loaded.NeutralBand = defaults.NeutralBand;
+                if (loaded.MinDirectionCoverage <= 0 || loaded.MinDirectionCoverage > 1)
+                    loaded.MinDirectionCoverage = defaults.MinDirectionCoverage;
+                if (loaded.MinConsensus <= 0 || loaded.MinConsensus > 1)
+                    loaded.MinConsensus = defaults.MinConsensus;
                 if (loaded.LabelHorizon <= 0)
                     loaded.LabelHorizon = defaults.LabelHorizon;
                 if (loaded.LabelTicks <= 0)

@@ -114,10 +114,18 @@ namespace B3WM.Shared.Models.AI
     public sealed class JevAuditAnswer
     {
         public string BodyRaw { get; set; } = "";
-        /// <summary>Viés pelo sinal do net ponderado: comprar | vender | manter.</summary>
-        public string Direcao { get; set; } = "manter";
-        /// <summary>Confiança do viés = |net| (0..1).</summary>
+        /// <summary>Viés cético: comprar | vender | lateral.</summary>
+        public string Direcao { get; set; } = "lateral";
+        /// <summary>Confiança do viés (0..1), penalizada por conflito/cobertura.</summary>
         public double DirecaoConfidence { get; set; }
+        /// <summary>Net assinado (-1..1): positivo = alta, negativo = baixa.</summary>
+        public double DirecaoNet { get; set; }
+        /// <summary>Consenso entre as dimensões (0..1).</summary>
+        public double DirecaoConsenso { get; set; }
+        /// <summary>Cobertura das dimensões respondidas (0..1).</summary>
+        public double DirecaoCobertura { get; set; }
+        /// <summary>Motivo da lateral (vazio quando há compra/venda).</summary>
+        public string DirecaoMotivo { get; set; } = "";
         /// <summary>Confiança de operabilidade = média ponderada (0..1).</summary>
         public double ConfiancaOperavel { get; set; }
         /// <summary>Confiança por indicador/criteria (id → 0..1).</summary>

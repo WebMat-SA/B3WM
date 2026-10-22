@@ -214,6 +214,12 @@ public class StrategyRunnerTests
         Assert.Null(e2);
         Assert.False(x2);
 
+        var lateral = new StrategyDecision { Side = "lateral", Confidence = 0, ShouldTrade = true };
+        var (a2b, e2b, x2b) = StrategyRunner.DescribeEvaluation(lateral, hasPosition: false, exitThr: 0.5);
+        Assert.Equal("manter", a2b);
+        Assert.Null(e2b);
+        Assert.False(x2b);
+
         var exit = new StrategyDecision { Side = "manter", Encerrar = 0.7 };
         var (a3, e3, x3) = StrategyRunner.DescribeEvaluation(exit, hasPosition: true, exitThr: 0.5);
         Assert.Equal("sinal fecha (encerrar 0.70)", a3);

@@ -14,6 +14,19 @@ Color strategyPointColor(StrategyPoint p) {
       return Colors.lightBlue;
     case 'vender':
       return Colors.redAccent;
+    case 'lateral':
+      return Colors.grey;
+    default:
+      return Colors.grey;
+  }
+}
+
+Color _jevSideColor(String side) {
+  switch (JevTooltipData.normalizeSide(side)) {
+    case 'comprar':
+      return Colors.lightBlue;
+    case 'vender':
+      return Colors.redAccent;
     default:
       return Colors.grey;
   }
@@ -240,7 +253,17 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
 
   Widget _buildPointDetails(StrategyPoint p) {
     final data = JevTooltipData.fromPoint(p);
-    final sideColor = strategyPointColor(p);
+    final sideColor =
+        data.isJev ? _jevSideColor(data.vies) : strategyPointColor(p);
+    final sideLabel = data.isJev
+        ? JevTooltipData.sideLabel(data.vies)
+        : p.side.toUpperCase();
+    final badge = data.isJev
+        ? (sideLabel == 'LATERAL'
+            ? '$sideLabel · sem sinal'
+            : '$sideLabel · confiança '
+                '${(data.direcaoConfidence * 100).round()}%')
+        : '$sideLabel ${p.confidence.toStringAsFixed(2)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -265,7 +288,7 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
                 border: Border.all(color: sideColor.withValues(alpha: 0.7)),
               ),
               child: Text(
-                '${p.side.toUpperCase()} ${p.confidence.toStringAsFixed(2)}',
+                badge,
                 style: TextStyle(
                   color: sideColor,
                   fontSize: 10,
@@ -292,19 +315,18 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(
-                child: _summaryTile(
-                  'VIÉS',
-                  data.direcaoConfidence,
-                  data.vies.isNotEmpty ? data.vies : p.side,
-                ),
-              ),
+              Expanded(child: _biasTile(data, sideColor)),
               const SizedBox(width: 6),
               Expanded(
-                child: _summaryTile('OPERÁVEL', data.operabilidade, null),
+                child: _summaryTile(
+                  'OPERÁVEL',
+                  data.operabilidade,
+                  'qualidade do contexto',
+                ),
               ),
             ],
           ),
+          _skepticStrip(data),
           if (data.proximidade != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -333,8 +355,18 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
                 ],
               ),
             ),
-          _indicatorSection('DIREÇÃO', data.direction),
-          _indicatorSection('OPERABILIDADE', data.operability),
+          _indicatorSection(
+            'DIREÇÃO',
+            data.direction,
+            directional: true,
+            subtitle: 'baixo = venda · centro = lateral · alto = compra\n'
+                '↑/↓ = confiança de alta/baixa · número à direita = saldo',
+          ),
+          _indicatorSection(
+            'OPERABILIDADE',
+            data.operability,
+            subtitle: '0% = contexto ruim · 100% = favorável',
+          ),
         ] else if (p.reason.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
@@ -352,8 +384,74 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     );
   }
 
+  Widget _biasTile(JevTooltipData data, Color color) {
+    final label = JevTooltipData.sideLabel(data.vies);
+    final lateral = label == 'LATERAL';
+    final caption = lateral
+        ? (data.direcaoMotivo.isEmpty ? 'sem sinal' : data.direcaoMotivo)
+        : 'confiança ${(data.direcaoConfidence * 100).round()}%';
+    final net = data.direcaoNet;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'VIÉS',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 8.5,
+              letterSpacing: 0.5,
+              decoration: TextDecoration.none,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  height: 1,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 1),
+                  child: Text(
+                    caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 9,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          _directionBar(net == null ? 0.5 : 0.5 + 0.5 * net,
+              height: 3, color: color),
+        ],
+      ),
+    );
+  }
+
   Widget _summaryTile(String label, double value, String? caption) {
-    final color = JevTooltipData.valueColor(value);
+    final color = JevTooltipData.qualityColor(value);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
@@ -393,6 +491,7 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
                     padding: const EdgeInsets.only(left: 5, bottom: 1),
                     child: Text(
                       caption,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white60,
@@ -411,7 +510,117 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     );
   }
 
-  Widget _indicatorSection(String title, List<JevIndicator> items) {
+  Widget _skepticStrip(JevTooltipData data) {
+    final net = data.direcaoNet;
+    final cons = data.direcaoConsenso;
+    final cov = data.direcaoCobertura;
+    if (net == null && cons == null && cov == null) {
+      return const SizedBox.shrink();
+    }
+    final netColor = net == null
+        ? Colors.white54
+        : JevTooltipData.directionColor(0.5 + 0.5 * net);
+    final netText = net == null
+        ? '—'
+        : '${net >= 0 ? '+' : ''}${net.toStringAsFixed(2)}';
+    final metrics = <String>[
+      if (cons != null) 'CONSENSO ${(cons * 100).round()}%',
+      if (cov != null) 'COBERTURA ${(cov * 100).round()}%',
+    ].join(' · ');
+    final lateral = JevTooltipData.normalizeSide(data.vies) == 'lateral';
+    return Padding(
+      padding: const EdgeInsets.only(top: 7),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'SALDO',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 8.5,
+                    letterSpacing: 0.5,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  netText,
+                  style: TextStyle(
+                    color: netColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    height: 1,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _directionBar(net == null ? 0.5 : 0.5 + 0.5 * net, height: 5),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                const Text(
+                  'VENDA',
+                  style: TextStyle(
+                    color: Color(0xFFEF5350),
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const Spacer(),
+                if (metrics.isNotEmpty)
+                  Text(
+                    metrics,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 8,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                const Spacer(),
+                const Text(
+                  'COMPRA',
+                  style: TextStyle(
+                    color: Color(0xFF42A5F5),
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ],
+            ),
+            if (lateral && data.direcaoMotivo.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  'LATERAL · ${data.direcaoMotivo}',
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 8.5,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _indicatorSection(String title, List<JevIndicator> items,
+      {String? subtitle, bool directional = false}) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 9),
@@ -429,23 +638,65 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
               decoration: TextDecoration.none,
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 1),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 8.5,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
-          for (final item in items) _indicatorRow(item),
+          for (final item in items)
+            _indicatorRow(item, directional: directional),
         ],
       ),
     );
   }
 
-  Widget _indicatorRow(JevIndicator item) {
-    final color = JevTooltipData.valueColor(item.value);
+  Widget _indicatorRow(JevIndicator item, {bool directional = false}) {
+    final paired = directional && item.net != null;
+    final color = directional
+        ? (paired
+            ? JevTooltipData.directionColor(item.value)
+            : (item.bull != null
+                ? const Color(0xFF42A5F5)
+                : item.bear != null
+                    ? const Color(0xFFEF5350)
+                    : Colors.white54))
+        : JevTooltipData.qualityColor(item.value);
+    final label = paired
+        ? '${item.label} ↑${(item.bull! * 100).round()} '
+            '↓${(item.bear! * 100).round()}'
+        : item.bull != null
+            ? '${item.label} ↑${(item.bull! * 100).round()}'
+            : item.bear != null
+                ? '${item.label} ↓${(item.bear! * 100).round()}'
+                : item.label;
+    final right = directional
+        ? paired
+            ? '${item.net! >= 0 ? '+' : ''}${(item.net! * 100).round()}'
+            : item.bull != null
+                ? '↑${(item.bull! * 100).round()}%'
+                : item.bear != null
+                    ? '↓${(item.bear! * 100).round()}%'
+                    : '${(item.value * 100).round()}%'
+        : '${(item.value * 100).round()}%';
+    final barValue = directional && !paired &&
+            (item.bull != null || item.bear != null)
+        ? (item.bull ?? item.bear)!
+        : item.value;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
           SizedBox(
-            width: 104,
+            width: 122,
             child: Text(
-              item.label,
+              label,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white70,
@@ -454,12 +705,16 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
               ),
             ),
           ),
-          Expanded(child: _valueBar(item.value, color, height: 5)),
+          Expanded(
+            child: paired
+                ? _directionBar(item.value, height: 5)
+                : _valueBar(barValue, color, height: 5),
+          ),
           const SizedBox(width: 6),
           SizedBox(
-            width: 30,
+            width: 38,
             child: Text(
-              '${(item.value * 100).round()}%',
+              right,
               textAlign: TextAlign.right,
               style: TextStyle(
                 color: color,
@@ -470,6 +725,54 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _directionBar(double value,
+      {required double height, Color? color}) {
+    final v = value.clamp(0.0, 1.0);
+    final fillColor = color ?? JevTooltipData.directionColor(v);
+    final delta = (v - 0.5).abs();
+    return SizedBox(
+      height: height,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          final fill = w * delta;
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(height / 2),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: w / 2 - 0.5,
+                top: 0,
+                bottom: 0,
+                width: 1,
+                child: Container(color: Colors.white24),
+              ),
+              if (fill > 0.5)
+                Positioned(
+                  left: v >= 0.5 ? w / 2 : w / 2 - fill,
+                  top: 0,
+                  bottom: 0,
+                  width: fill,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: fillColor,
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

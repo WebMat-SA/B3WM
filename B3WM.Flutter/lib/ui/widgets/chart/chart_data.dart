@@ -126,6 +126,14 @@ class StrategyPoint {
   /// Confiança por criteria (JEV — informativo). Vazio no resto.
   final Map<String, double> criteria;
   final String reason;
+  /// Net direcional JEV (-1..1). Nulo em logs antigos/outras strategies.
+  final double? direcaoNet;
+  /// Consenso das dimensões JEV (0..1). Nulo em logs antigos.
+  final double? direcaoConsenso;
+  /// Cobertura das dimensões JEV (0..1). Nulo em logs antigos.
+  final double? direcaoCobertura;
+  /// Motivo da lateral JEV. Nulo/vazio quando há compra/venda.
+  final String? direcaoMotivo;
   final String snapshotHash;
 
   StrategyPoint({
@@ -139,6 +147,10 @@ class StrategyPoint {
     required this.action,
     this.criteria = const {},
     required this.reason,
+    this.direcaoNet,
+    this.direcaoConsenso,
+    this.direcaoCobertura,
+    this.direcaoMotivo,
     required this.snapshotHash,
   });
 }
@@ -590,6 +602,10 @@ ChartData buildChartData(StateService state) {
         action: t.action,
         criteria: t.criteria,
         reason: t.reason,
+        direcaoNet: t.direcaoNet,
+        direcaoConsenso: t.direcaoConsenso,
+        direcaoCobertura: t.direcaoCobertura,
+        direcaoMotivo: t.direcaoMotivo,
         snapshotHash: t.snapshotHash,
       ));
     }

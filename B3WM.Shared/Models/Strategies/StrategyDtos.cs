@@ -78,6 +78,14 @@ namespace B3WM.Shared.Models.Strategies
         /// <summary>Confiança por criteria (JEV — informativo). Vazio no resto.</summary>
         public Dictionary<string, double> Criteria { get; set; } = new();
         public string Reason { get; set; } = "";
+        /// <summary>Net direcional JEV (-1..1): negativo = baixa, positivo = alta.</summary>
+        public double? DirecaoNet { get; set; }
+        /// <summary>Consenso das dimensões JEV (0..1).</summary>
+        public double? DirecaoConsenso { get; set; }
+        /// <summary>Cobertura das dimensões JEV (0..1).</summary>
+        public double? DirecaoCobertura { get; set; }
+        /// <summary>Motivo da lateral JEV (vazio quando há direção).</summary>
+        public string? DirecaoMotivo { get; set; }
         public int StateChars { get; set; }
         public string SnapshotHash { get; set; } = "";
         public string PositionBefore { get; set; } = "flat";

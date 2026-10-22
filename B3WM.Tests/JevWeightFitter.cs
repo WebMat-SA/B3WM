@@ -122,10 +122,13 @@ public static class JevWeightFitter
         var w = baseline ?? JevWeights.Defaults();
         return new JevWeights
         {
-            Direction = Map(JevPrompt.DirectionIndicators,
+            Direction = Map(JevPrompt.DirectionDimensionIds,
                 LogisticRegression.Fit(dirX, dirY), w.Direction),
             Operability = Map(JevPrompt.OperabilityIndicators,
                 LogisticRegression.Fit(opX, opY), w.Operability),
+            NeutralBand = w.NeutralBand,
+            MinDirectionCoverage = w.MinDirectionCoverage,
+            MinConsensus = w.MinConsensus,
             LabelHorizon = w.LabelHorizon,
             LabelTicks = w.LabelTicks,
             ProximityMaxTicks = w.ProximityMaxTicks,
@@ -209,13 +212,13 @@ public class JevWeightFitterTool
                 opY.Add(JevLabels.Moved(candles, entry,
                     baseline.LabelHorizon, baseline.LabelTicks, tick) ? 1 : 0);
             }
-            if (HasAll(crit, JevPrompt.DirectionIndicators))
+            if (HasAnyDirectionSide(crit))
             {
                 var dir = JevLabels.Direction(candles, entry,
                     baseline.LabelHorizon, baseline.LabelTicks, tick);
                 if (dir != 0)
                 {
-                    dirX.Add(Features(crit, JevPrompt.DirectionIndicators));
+                    dirX.Add(DirectionFeatures(crit));
                     dirY.Add(dir > 0 ? 1 : 0);
                 }
             }
@@ -237,6 +240,36 @@ public class JevWeightFitterTool
     {
         foreach (var id in ids) if (!crit.ContainsKey(id)) return false;
         return true;
+    }
+
+    /// <summary>
+    /// Direção exige as 8 dimensões, mas aceita logs antigos que só tinham a
+    /// pergunta de alta (a baixa é derivada como 1 − alta).
+    /// </summary>
+    private static bool HasAnyDirectionSide(IReadOnlyDictionary<string, double> crit)
+    {
+        foreach (var dim in JevPrompt.DirectionDimensions)
+            if (!crit.ContainsKey(dim.BullId) && !crit.ContainsKey(dim.BearId))
+                return false;
+        return true;
+    }
+
+    /// <summary>Features assinadas por dimensão: p_alta − p_baixa (-1..1).</summary>
+    private static double[] DirectionFeatures(IReadOnlyDictionary<string, double> crit)
+    {
+        var dims = JevPrompt.DirectionDimensions;
+        var v = new double[dims.Length];
+        for (int i = 0; i < dims.Length; i++)
+        {
+            var hasBull = crit.TryGetValue(dims[i].BullId, out var bull);
+            var hasBear = crit.TryGetValue(dims[i].BearId, out var bear);
+            v[i] = hasBull && hasBear
+                ? Math.Clamp(bull, 0, 1) - Math.Clamp(bear, 0, 1)
+                : hasBull
+                    ? 2 * Math.Clamp(bull, 0, 1) - 1
+                    : 1 - 2 * Math.Clamp(bear, 0, 1);
+        }
+        return v;
     }
 
     private static double[] Features(IReadOnlyDictionary<string, double> crit, string[] ids)

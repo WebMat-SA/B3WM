@@ -284,13 +284,17 @@ public class JevPromptTests
     }
 
     [Fact]
-    public void BuildQuestions_HasIndicators_NoEncerrar()
+    public void BuildQuestions_HasPairedDirectionIndicators_NoEncerrar()
     {
         var q = JevPrompt.BuildQuestions();
-        // 8 de direção + 5 de operabilidade.
-        Assert.Equal(13, q.Count);
-        foreach (var id in JevPrompt.DirectionIndicators)
-            Assert.True(q.ContainsKey(id), $"indicador de direção ausente: {id}");
+        // 8 dimensões (16 perguntas alta/baixa) + 5 de operabilidade.
+        Assert.Equal(21, q.Count);
+        Assert.Equal(8, JevPrompt.DirectionDimensions.Length);
+        foreach (var dim in JevPrompt.DirectionDimensions)
+        {
+            Assert.True(q.ContainsKey(dim.BullId), $"pergunta de alta ausente: {dim.BullId}");
+            Assert.True(q.ContainsKey(dim.BearId), $"pergunta de baixa ausente: {dim.BearId}");
+        }
         foreach (var id in JevPrompt.OperabilityIndicators)
             Assert.True(q.ContainsKey(id), $"indicador de operabilidade ausente: {id}");
         // Não existe mais pergunta de direção/gate/encerrar.
@@ -302,19 +306,52 @@ public class JevPromptTests
     private const string AnswersComprar = """
         {"model":"jev-1.13.0","answers":{
         "candles_alta":{"type":"noul","noul":0.90},
+        "candles_baixa":{"type":"noul","noul":0.10},
         "acima_vwap":{"type":"noul","noul":0.80},
+        "abaixo_vwap":{"type":"noul","noul":0.15},
         "estrutura_alta":{"type":"noul","noul":0.70},
+        "estrutura_baixa":{"type":"noul","noul":0.20},
         "acima_poc":{"type":"noul","noul":0.60},
+        "abaixo_poc":{"type":"noul","noul":0.25},
         "delta_positivo":{"type":"noul","noul":0.65},
+        "delta_negativo":{"type":"noul","noul":0.20},
         "bolhas_compra":{"type":"noul","noul":0.55},
+        "bolhas_venda":{"type":"noul","noul":0.20},
         "defende_suporte":{"type":"noul","noul":0.75},
+        "rejeita_resistencia":{"type":"noul","noul":0.20},
         "diario_alta":{"type":"noul","noul":0.85},
+        "diario_baixa":{"type":"noul","noul":0.10},
         "sem_chop":{"type":"noul","noul":0.70},
         "amplitude_suficiente":{"type":"noul","noul":0.80},
         "sem_compressao_topovale":{"type":"noul","noul":0.60},
         "referencia_clara":{"type":"noul","noul":0.90},
         "sem_conflito_intra_diario":{"type":"noul","noul":0.75}},
         "usage":{"input_tokens":100,"output_tokens":10}}
+        """;
+
+    private const string AnswersLateral = """
+        {"answers":{
+        "candles_alta":{"type":"noul","noul":0.80},
+        "candles_baixa":{"type":"noul","noul":0.80},
+        "acima_vwap":{"type":"noul","noul":0.80},
+        "abaixo_vwap":{"type":"noul","noul":0.80},
+        "estrutura_alta":{"type":"noul","noul":0.80},
+        "estrutura_baixa":{"type":"noul","noul":0.80},
+        "acima_poc":{"type":"noul","noul":0.80},
+        "abaixo_poc":{"type":"noul","noul":0.80},
+        "delta_positivo":{"type":"noul","noul":0.80},
+        "delta_negativo":{"type":"noul","noul":0.80},
+        "bolhas_compra":{"type":"noul","noul":0.80},
+        "bolhas_venda":{"type":"noul","noul":0.80},
+        "defende_suporte":{"type":"noul","noul":0.80},
+        "rejeita_resistencia":{"type":"noul","noul":0.80},
+        "diario_alta":{"type":"noul","noul":0.80},
+        "diario_baixa":{"type":"noul","noul":0.80},
+        "sem_chop":{"type":"noul","noul":0.50},
+        "amplitude_suficiente":{"type":"noul","noul":0.50},
+        "sem_compressao_topovale":{"type":"noul","noul":0.50},
+        "referencia_clara":{"type":"noul","noul":0.50},
+        "sem_conflito_intra_diario":{"type":"noul","noul":0.50}}}
         """;
 
     private const string StateJson = """
@@ -327,28 +364,41 @@ public class JevPromptTests
     {
         var r = JevPrompt.ParseDecision("WINFUT", "jev-1.13.0", AnswersComprar, 100, 10, StateJson);
 
-        // Viés de alta (todos os indicadores acima de 0.5) — informativo, sem gate.
+        // Evidência de alta com baixa fraca nos dois lados de cada dimensão.
         Assert.Equal("comprar", r.Direcao);
         Assert.True(r.DirecaoConfidence > 0);
         Assert.True(r.ConfiancaOperavel > 0);
-        Assert.Equal(13, r.Criteria.Count);
+        Assert.True(r.DirecaoNet > 0);
+        Assert.Equal(1, r.DirecaoCobertura, 6);
+        Assert.Equal("", r.DirecaoMotivo);
+        Assert.Equal(21, r.Criteria.Count);
         Assert.Equal(0.90, r.Criteria["candles_alta"]);
+        Assert.Equal(0.10, r.Criteria["candles_baixa"]);
         Assert.Equal(100, r.InputTokens);
         Assert.Equal(10, r.OutputTokens);
 
         // Proximidade: preço 100, VWAP 99, tick WINFUT 5 → 1 tick da vwap.
         Assert.Equal("vwap", r.ProximidadeRef);
         Assert.True(r.Proximidade > 0.9);
-
-        // Sem ShouldTrade/Encerrar/Threshold no resultado (removidos).
     }
 
     [Fact]
-    public void ParseDecision_MissingFields_DefaultManter()
+    public void ParseDecision_ConflictingSides_DefaultLateral()
+    {
+        var r = JevPrompt.ParseDecision("WINFUT", "m", AnswersLateral, 0, 0, StateJson);
+        Assert.Equal("lateral", r.Direcao);
+        Assert.Equal(0, r.DirecaoConfidence);
+        Assert.Equal(0, r.DirecaoNet, 6);
+        Assert.Equal("evidência fraca", r.DirecaoMotivo);
+    }
+
+    [Fact]
+    public void ParseDecision_MissingFields_DefaultLateral()
     {
         var r = JevPrompt.ParseDecision("WINFUT", "m", """{"answers":{}}""", 0, 0, "{}");
-        Assert.Equal("manter", r.Direcao);
+        Assert.Equal("lateral", r.Direcao);
         Assert.Equal(0, r.DirecaoConfidence);
+        Assert.Equal("sem dados", r.DirecaoMotivo);
         Assert.Empty(r.Criteria);
         Assert.Equal(0, r.Proximidade);
     }

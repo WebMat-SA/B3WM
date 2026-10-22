@@ -438,6 +438,10 @@ namespace B3WM.Services.AI
                         BodyRaw = bodyRaw ?? "",
                         Direcao = parsed.Direcao,
                         DirecaoConfidence = parsed.DirecaoConfidence,
+                        DirecaoNet = parsed.DirecaoNet,
+                        DirecaoConsenso = parsed.DirecaoConsenso,
+                        DirecaoCobertura = parsed.DirecaoCobertura,
+                        DirecaoMotivo = parsed.DirecaoMotivo,
                         ConfiancaOperavel = parsed.ConfiancaOperavel,
                         Criteria = new Dictionary<string, double>(parsed.Criteria),
                         Proximidade = parsed.Proximidade,
@@ -475,12 +479,30 @@ namespace B3WM.Services.AI
             return "";
         }
 
-        /// <summary>IDs dos indicadores de direção (cada um afirma ALTA).</summary>
-        public static readonly string[] DirectionIndicators =
+        /// <summary>
+        /// Dimensões de direção com perguntas espelhadas (alta/baixa). O id da
+        /// dimensão é o mesmo da pergunta de alta para preservar os pesos já
+        /// gravados em Data/jev_weights.json.
+        /// </summary>
+        public static readonly JevDirectionDimension[] DirectionDimensions =
         {
-            "candles_alta", "acima_vwap", "estrutura_alta", "acima_poc",
-            "delta_positivo", "bolhas_compra", "defende_suporte", "diario_alta",
+            new("candles_alta", "candles_alta", "candles_baixa"),
+            new("acima_vwap", "acima_vwap", "abaixo_vwap"),
+            new("estrutura_alta", "estrutura_alta", "estrutura_baixa"),
+            new("acima_poc", "acima_poc", "abaixo_poc"),
+            new("delta_positivo", "delta_positivo", "delta_negativo"),
+            new("bolhas_compra", "bolhas_compra", "bolhas_venda"),
+            new("defende_suporte", "defende_suporte", "rejeita_resistencia"),
+            new("diario_alta", "diario_alta", "diario_baixa"),
         };
+
+        /// <summary>IDs de direção (8 pares alta/baixa = 16 perguntas cruas).</summary>
+        public static readonly string[] DirectionIndicators =
+            DirectionDimensions.SelectMany(d => new[] { d.BullId, d.BearId }).ToArray();
+
+        /// <summary>IDs das dimensões de direção (usados pelos pesos).</summary>
+        public static readonly string[] DirectionDimensionIds =
+            DirectionDimensions.Select(d => d.Id).ToArray();
 
         /// <summary>IDs dos indicadores de operabilidade.</summary>
         public static readonly string[] OperabilityIndicators =
@@ -489,34 +511,48 @@ namespace B3WM.Services.AI
             "referencia_clara", "sem_conflito_intra_diario",
         };
 
+        private const string NoulScale =
+            " Responda de 0 a 1: 0 = afirmação claramente falsa; " +
+            "0.5 = inconclusiva ou dado insuficiente; 1 = afirmação claramente verdadeira. " +
+            "Não presuma direção; use apenas o state.";
+
         private static object Noul(string instructions) => new Dictionary<string, object>
         {
             ["type"] = "noul",
-            ["instructions"] = instructions,
+            ["instructions"] = instructions + NoulScale,
         };
 
         /// <summary>
         /// Perguntas da Jev (Composite scoring): indicadores `noul` independentes
-        /// que o CÓDIGO combina com pesos. Cada um é uma afirmação técnica e a
-        /// resposta é a confiança (0..1). Sem pergunta de direção/gate.
+        /// que o CÓDIGO combina com pesos. Direção usa pares espelhados
+        /// (alta/baixa) para não induzir o modelo a confirmar só um lado; a
+        /// resposta é a probabilidade da afirmação (0..1).
         /// </summary>
         public static Dictionary<string, object> BuildQuestions() => new()
         {
-            // Direção (afirmação de ALTA).
-            ["candles_alta"] = Noul("Os candles/fundos recentes formam sequência ascendente (fundos e topos mais altos)?"),
+            // Direção: cada dimensão tem uma afirmação de alta e a simétrica de baixa.
+            ["candles_alta"] = Noul("Os candles recentes mostram fundos e topos ascendentes (fundos e topos mais altos)?"),
+            ["candles_baixa"] = Noul("Os candles recentes mostram fundos e topos descendentes (fundos e topos mais baixos)?"),
             ["acima_vwap"] = Noul("O preço está acima do VWAP, ou rejeitou o VWAP de baixo para cima?"),
+            ["abaixo_vwap"] = Noul("O preço está abaixo do VWAP, ou rejeitou o VWAP de cima para baixo?"),
             ["estrutura_alta"] = Noul("A structure do timeframe está em ascensão (upgrade) e/ou o preço está na metade superior dela?"),
+            ["estrutura_baixa"] = Noul("A structure do timeframe está em queda (downgrade) e/ou o preço está na metade inferior dela?"),
             ["acima_poc"] = Noul("O preço está acima do POC do volume profile intraday?"),
+            ["abaixo_poc"] = Noul("O preço está abaixo do POC do volume profile intraday?"),
             ["delta_positivo"] = Noul("O delta do volume profile intraday é positivo (volume de compra > venda)?"),
+            ["delta_negativo"] = Noul("O delta do volume profile intraday é negativo (volume de venda > compra)?"),
             ["bolhas_compra"] = Noul("Há predomínio recente de bolhas de compra com delta positivo?"),
+            ["bolhas_venda"] = Noul("Há predomínio recente de bolhas de venda com delta negativo?"),
             ["defende_suporte"] = Noul("O preço está defendendo um suporte, vale ou borda inferior de structure?"),
+            ["rejeita_resistencia"] = Noul("O preço está sendo rejeitado em uma resistência, topo ou borda superior de structure?"),
             ["diario_alta"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere alta e confirma o intraday?"),
-            // Operabilidade (qualidade do contexto).
-            ["sem_chop"] = Noul("O preço NÃO está em lateralidade/chop apertado?"),
+            ["diario_baixa"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere baixa e confirma o intraday?"),
+            // Operabilidade (qualidade do contexto), redação neutra.
+            ["sem_chop"] = Noul("O contexto mostra tendência definida, sem lateralidade/chop apertado?"),
             ["amplitude_suficiente"] = Noul("A amplitude recente é suficiente para um gatilho com risco controlado?"),
-            ["sem_compressao_topovale"] = Noul("O preço NÃO está espremido entre um topo e um vale muito próximos?"),
+            ["sem_compressao_topovale"] = Noul("O preço tem espaço entre o topo e o vale próximos (não está espremido)?"),
             ["referencia_clara"] = Noul("Existe uma referência clara e próxima (VWAP, structure ou pivô) para se orientar?"),
-            ["sem_conflito_intra_diario"] = Noul("Intraday e diário NÃO se contradizem na direção?"),
+            ["sem_conflito_intra_diario"] = Noul("Intraday e diário apontam para a mesma direção (sem conflito)?"),
         };
 
         /// <summary>
@@ -555,7 +591,7 @@ namespace B3WM.Services.AI
                 }
             }
 
-            var scored = JevScoring.Evaluate(indicators, w);
+            var scored = JevScoring.Evaluate(indicators, w, DirectionDimensions);
             var (prox, ticks, pref) = ProximityFromState(state, symbol, w);
 
             return new JevAnalysisResult
@@ -564,6 +600,10 @@ namespace B3WM.Services.AI
                 Model = model,
                 Direcao = scored.Direcao,
                 DirecaoConfidence = scored.DirecaoConfidence,
+                DirecaoNet = scored.DirecaoNet,
+                DirecaoConsenso = scored.DirecaoConsenso,
+                DirecaoCobertura = scored.DirecaoCobertura,
+                DirecaoMotivo = scored.DirecaoMotivo,
                 ConfiancaOperavel = scored.ConfiancaOperavel,
                 Criteria = scored.Criteria,
                 Proximidade = prox,
@@ -586,7 +626,12 @@ namespace B3WM.Services.AI
                 .Select(k => $"{k}={Pct(r.Criteria[k])}");
             var ops = OperabilityIndicators.Where(r.Criteria.ContainsKey)
                 .Select(k => $"{k}={Pct(r.Criteria[k])}");
-            return $"vies={r.Direcao} conf={r.DirecaoConfidence:F2} op={r.ConfiancaOperavel:F2} "
+            var motivo = string.IsNullOrWhiteSpace(r.DirecaoMotivo)
+                ? ""
+                : $" motivo={r.DirecaoMotivo}";
+            return $"vies={r.Direcao} conf={r.DirecaoConfidence:F2} "
+                 + $"net={r.DirecaoNet:F2} cons={r.DirecaoConsenso:F2} cov={r.DirecaoCobertura:F2}"
+                 + $"{motivo} op={r.ConfiancaOperavel:F2} "
                  + $"prox={r.Proximidade:F2}({r.ProximidadeRef} {r.ProximidadeTicks:F0}t) | "
                  + $"dir: {string.Join(" ", dirs)} | op: {string.Join(" ", ops)}";
         }

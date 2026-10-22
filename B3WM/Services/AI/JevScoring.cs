@@ -1,13 +1,32 @@
 namespace B3WM.Services.AI
 {
+    /// <summary>
+    /// Dimensão de direção com duas perguntas espelhadas (alta e baixa).
+    /// O contraste entre elas evita que o viés de concordância do modelo
+    /// transforme "baixa confiança na alta" em sinal de venda.
+    /// </summary>
+    public sealed record JevDirectionDimension(string Id, string BullId, string BearId);
+
     /// <summary>Resultado da agregação informativa (sem gate de operar/não-operar).</summary>
     public sealed class JevScoringResult
     {
-        /// <summary>Viés: comprar | vender | manter (pelo sinal do net ponderado).</summary>
-        public string Direcao { get; set; } = "manter";
+        /// <summary>Viés: comprar | vender | lateral.</summary>
+        public string Direcao { get; set; } = "lateral";
 
-        /// <summary>Confiança do viés = |net| (0..1) — só informativa.</summary>
+        /// <summary>Confiança do viés (0..1) — já penalizada por conflito/cobertura.</summary>
         public double DirecaoConfidence { get; set; }
+
+        /// <summary>Net assinado (-1..1): positivo = alta, negativo = baixa.</summary>
+        public double DirecaoNet { get; set; }
+
+        /// <summary>Consenso (0..1): 1 = dimensões concordam; 0 = conflito total.</summary>
+        public double DirecaoConsenso { get; set; }
+
+        /// <summary>Cobertura das dimensões (0..1): fração dos pesos com os dois lados respondidos.</summary>
+        public double DirecaoCobertura { get; set; }
+
+        /// <summary>Motivo da lateral (vazio quando há compra/venda).</summary>
+        public string DirecaoMotivo { get; set; } = "";
 
         /// <summary>Confiança de operabilidade = média ponderada (0..1).</summary>
         public double ConfiancaOperavel { get; set; }
@@ -18,30 +37,83 @@ namespace B3WM.Services.AI
 
     /// <summary>
     /// Composite scoring (TypeSafe): combina as respostas `noul` dos
-    /// indicadores com pesos. Puro, sem I/O — testável. Sem thresholds e sem
-    /// decisão de operar: só viés + confianças informativas.
+    /// indicadores com pesos. Puro, sem I/O — testável. Sem decisão de operar:
+    /// produz viés cético (comprar/vender/lateral) + confianças informativas.
     /// </summary>
     public static class JevScoring
     {
         /// <summary>
-        /// Agrega os indicadores (id → p, 0..1). Direção: cada indicador é uma
-        /// afirmação de alta, contribuição = peso·(2p−1); o net normalizado dá
-        /// o viés e a confiança. Operabilidade: média ponderada de p.
+        /// Agrega os indicadores (id → p, 0..1). Direção: cada dimensão tem
+        /// uma pergunta de alta e uma de baixa; a contribuição é
+        /// peso·(p_alta − p_baixa). O net normalizado só vira compra/venda se
+        /// superar a banda neutra, houver cobertura suficiente e consenso
+        /// mínimo; caso contrário, lateral. Operabilidade: média ponderada.
         /// </summary>
         public static JevScoringResult Evaluate(
-            IReadOnlyDictionary<string, double> indicators, JevWeights weights)
+            IReadOnlyDictionary<string, double> indicators,
+            JevWeights weights,
+            IReadOnlyList<JevDirectionDimension>? dimensions = null)
         {
-            double net = 0, dirW = 0;
-            foreach (var (key, weight) in weights.Direction)
+            dimensions ??= JevPrompt.DirectionDimensions;
+
+            double netSum = 0, absSum = 0, coveredW = 0, totalW = 0;
+            foreach (var dim in dimensions)
             {
-                if (weight <= 0 || !indicators.TryGetValue(key, out var p)) continue;
-                net += weight * (2 * p - 1);
-                dirW += weight;
+                if (!weights.Direction.TryGetValue(dim.Id, out var weight) || weight <= 0)
+                    continue;
+                totalW += weight;
+
+                var hasBull = indicators.TryGetValue(dim.BullId, out var bull);
+                var hasBear = indicators.TryGetValue(dim.BearId, out var bear);
+                if (!hasBull || !hasBear)
+                    continue;
+
+                coveredW += weight;
+                var d = Math.Clamp(bull, 0, 1) - Math.Clamp(bear, 0, 1);
+                netSum += weight * d;
+                absSum += weight * Math.Abs(d);
             }
-            var netNorm = dirW > 0 ? net / dirW : 0;
-            var bias = dirW <= 0 || Math.Abs(netNorm) < 1e-9
-                ? "manter"
-                : (netNorm > 0 ? "comprar" : "vender");
+
+            var net = coveredW > 0 ? netSum / coveredW : 0;
+            var coverage = totalW > 0 ? coveredW / totalW : 0;
+            var consensus = absSum > 0 ? Math.Abs(netSum) / absSum : 0;
+            var band = Math.Clamp(weights.NeutralBand, 0, 0.99);
+
+            var lateral = coveredW <= 0
+                || coverage < weights.MinDirectionCoverage
+                || consensus < weights.MinConsensus
+                || Math.Abs(net) < band;
+
+            var bias = lateral
+                ? "lateral"
+                : (net > 0 ? "comprar" : "vender");
+
+            var motive = "";
+            if (lateral)
+            {
+                if (coveredW <= 0)
+                {
+                    motive = "sem dados";
+                }
+                else
+                {
+                    var parts = new List<string>();
+                    if (coverage < weights.MinDirectionCoverage)
+                        parts.Add("cobertura baixa");
+                    if (absSum > 0 && consensus < weights.MinConsensus)
+                        parts.Add("conflito entre dimensões");
+                    if (Math.Abs(net) < band)
+                        parts.Add("evidência fraca");
+                    motive = string.Join(" · ", parts);
+                }
+            }
+
+            var confidence = lateral
+                ? 0
+                : Math.Clamp(
+                    ((Math.Abs(net) - band) / (1 - band))
+                    * consensus * coverage,
+                    0, 1);
 
             double op = 0, opW = 0;
             foreach (var (key, weight) in weights.Operability)
@@ -55,7 +127,11 @@ namespace B3WM.Services.AI
             return new JevScoringResult
             {
                 Direcao = bias,
-                DirecaoConfidence = Math.Clamp(Math.Abs(netNorm), 0, 1),
+                DirecaoConfidence = confidence,
+                DirecaoNet = Math.Clamp(net, -1, 1),
+                DirecaoConsenso = Math.Clamp(consensus, 0, 1),
+                DirecaoCobertura = Math.Clamp(coverage, 0, 1),
+                DirecaoMotivo = motive,
                 ConfiancaOperavel = Math.Clamp(operability, 0, 1),
                 Criteria = new Dictionary<string, double>(indicators),
             };
