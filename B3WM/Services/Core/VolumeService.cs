@@ -85,6 +85,7 @@ namespace B3WM.Services.Core
 
                     foreach (var t in sortedTicks)
                     {
+                        EnsureDay(t.Time);
                         ProcessTick(t);
                     }
 
@@ -168,6 +169,25 @@ namespace B3WM.Services.Core
             );
         }
 
+        private void EnsureDay(DateTime tickTime)
+        {
+            var day = tickTime.Date;
+            if (_currentSnapshot.Date.Date == day)
+                return;
+
+            // Virou o dia: descarta o acumulado do pregão anterior para não
+            // contaminar o novo dia (e não persistir volume stale).
+            _volumes.Clear();
+            _intraDayAdded = false;
+            _currentSnapshot = new VolumeLevelStorageItem
+            {
+                Date = day,
+                Symbol = Symbol,
+                TimeFrame = 0,
+                Volumes = new List<VolumeLevel>()
+            };
+        }
+
         public void Reset()
         {
             _volumes.Clear();
@@ -201,13 +221,25 @@ namespace B3WM.Services.Core
             // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.
             await LoadAsync();
 
-            AddIntradayVolume(DataKeep.Volumes);
+            var today = DateTime.Today;
+            if (DataPersistencePolicy.ShouldPersistVolume(DataKeep, today))
+            {
+                AddIntradayVolume(DataKeep.Volumes);
+                _currentSnapshot.Date = DataKeep.Date;
+                _currentSnapshot.Symbol = DataKeep.Symbol;
+            }
+            // Arquivo de hoje vazio/defasado (feriado, fds ou restart sem
+            // ticks): não reidrata nada e não persiste até chegar tick real.
+            // Não limpa _volumes aqui para não descartar ticks que o
+            // ProcessLoop já tenha começado a acumular em paralelo.
 
             while (await _timer.WaitForNextTickAsync())
             {
                 try
                 {
-                    await SetDataAsync(BuildSnapshot());
+                    var snapshot = BuildSnapshot();
+                    if (DataPersistencePolicy.ShouldPersistVolume(snapshot, DateTime.Today))
+                        await SetDataAsync(snapshot);
                 }
                 catch (Exception ex)
                 {

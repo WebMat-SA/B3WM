@@ -143,13 +143,12 @@ namespace B3WM.Services.Core
 
         private async Task DataKeeperLoop()
         {
-            await LoadFromLastAvailableDay();
-
             while (await _saveTimer.WaitForNextTickAsync())
             {
                 try
                 {
-                    if (_currentForecast != null && _currentForecast.SumV > 0)
+                    var today = DateTime.Today;
+                    if (DataPersistencePolicy.ShouldPersistForecast(_currentForecast, today))
                     {
                         await SetDataAsync(_currentForecast);
                     }

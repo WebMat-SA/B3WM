@@ -15,6 +15,9 @@ namespace B3WM.Tests;
 /// </summary>
 public class ExtremeDetectionTests
 {
+    private const string RealProfileSymbol = "WINFUT";
+    private static readonly DateTime RealProfileDate = new(2026, 8, 12);
+
     private static string RepoRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
 
@@ -172,7 +175,7 @@ public class ExtremeDetectionTests
         var result = ExtremeDetector.Detect(x, y);
 
         string html = BuildReport(x, y, result);
-        string path = DataPath($"ExtremeDetection_{DateTime.Now:yyyy-MM-dd}.html");
+        string path = DataPath($"ExtremeDetection_{RealProfileSymbol}_{RealProfileDate:yyyy-MM-dd}.html");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, html);
 
@@ -294,7 +297,8 @@ public class ExtremeDetectionTests
 
     private static (double[] x, double[] y) LoadRealProfile()
     {
-        string json = File.ReadAllText(DataPath("WINFUT_VolumeService_2026-08-12.json"));
+        string json = File.ReadAllText(
+            DataPath($"{RealProfileSymbol}_VolumeService_{RealProfileDate:yyyy-MM-dd}.json"));
         using var doc = JsonDocument.Parse(json);
         var vols = doc.RootElement.GetProperty("Volumes");
         var x = new List<double>();
@@ -329,7 +333,7 @@ public class ExtremeDetectionTests
         var sb = new StringBuilder();
         sb.AppendLine("<html><head><meta charset='utf-8'><title>Detecção de Topos/Vales Estruturais</title>");
         sb.AppendLine("<style>body{font-family:Arial,sans-serif;margin:24px}h2{color:#333}.leg{font-size:12px}</style></head><body>");
-        sb.AppendLine($"<h2>Detecção de Topos/Vales Estruturais — WINFUT 2026-08-12</h2>");
+        sb.AppendLine($"<h2>Detecção de Topos/Vales Estruturais — {RealProfileSymbol} {RealProfileDate:yyyy-MM-dd}</h2>");
         sb.AppendLine($"<p class='leg'>Pontos: {result.Statistics.PointCount} | Ruído σ: {result.Statistics.NoiseStd:F1} | " +
                       $"Topos: {result.Statistics.TopCount} | Vales: {result.Statistics.ValleyCount} | " +
                       $"Indeterminados: {result.Statistics.IndeterminateCount}</p>");

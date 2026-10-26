@@ -16,15 +16,17 @@ namespace B3WM.Controllers
         private readonly IEnumerable<CandleService> _candleServices;
         private readonly IEnumerable<BubbleService> _bubbleServices;
         private readonly IEnumerable<ExtremeService> _extremeServices;
+        private readonly IEnumerable<VolumeService> _volumeServices;
         private readonly ILogger<DataController> _logger;
 
-        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, ILogger<DataController> logger)
+        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, IEnumerable<VolumeService> volumeServices, ILogger<DataController> logger)
         {
             this.dataKeeper = dataKeeper;
             this.structureServices = structureServices;
             _candleServices = candleServices;
             _bubbleServices = bubbleServices;
             _extremeServices = extremeServices;
+            _volumeServices = volumeServices;
             _logger = logger;
         }
 
@@ -146,6 +148,16 @@ namespace B3WM.Controllers
                     }
                 }
 
+                // Fallback só para o dia atual: evita devolver histórico
+                // antigo como se fosse a sessão de hoje num fds/feriado.
+                if (timeframeData is not { Count: > 0 }
+                    && service?.DataKeep is { Count: > 0 } memData
+                    && DataPersistencePolicy.ShouldUseInMemoryToday(date, DateTime.Today)
+                    && memData.Any(s => DataPersistencePolicy.IsToday(s.Date, DateTime.Today)))
+                {
+                    timeframeData = memData;
+                }
+
                 if (timeframeData != null)
                     data.AddRange(timeframeData);
             }
@@ -158,6 +170,20 @@ namespace B3WM.Controllers
         {
             string path = $"{symbol}_{nameof(VolumeService)}_{date:yyyy-MM-dd}.json";
             var data = await dataKeeper.ReadDataAsync<VolumeLevelStorageItem>(path);
+
+            // Antes da primeira gravação do dia o arquivo ainda não existe;
+            // para o dia atual devolve o snapshot vivo (somente se ele for de
+            // hoje e tiver volume real).
+            if (data?.Volumes is not { Count: > 0 }
+                && DataPersistencePolicy.ShouldUseInMemoryToday(date, DateTime.Today))
+            {
+                var snapshot = _volumeServices
+                    .FirstOrDefault(v => v.Symbol == symbol)?
+                    .GetSnapshot();
+                if (DataPersistencePolicy.ShouldPersistVolume(snapshot, DateTime.Today))
+                    data = snapshot;
+            }
+
             return Ok(data);
         }
 
@@ -329,6 +355,14 @@ namespace B3WM.Controllers
 
             string path = $"{symbol}_{nameof(ExtremeService)}_{target:yyyy-MM-dd}.json";
             var data = await dataKeeper.ReadDataAsync<ExtremeStorageItem>(path);
+
+            if ((data?.Statistics?.PointCount ?? 0) == 0)
+            {
+                var snapshot = service.GetSnapshot();
+                if (DataPersistencePolicy.ShouldPersistExtremes(snapshot, DateTime.Today, true))
+                    data = snapshot;
+            }
+
             return Ok(data);
         }
 

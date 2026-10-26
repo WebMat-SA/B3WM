@@ -127,6 +127,15 @@ namespace B3WM.Services.Core
             lock (_lock) return _current;
         }
 
+        private bool HasFreshLiveProfile()
+        {
+            var volumeService = _serviceProvider.GetServices<VolumeService>()
+                .FirstOrDefault(v => v.Symbol == Symbol);
+            var snapshot = volumeService?.GetSnapshot();
+            return snapshot?.Volumes is { Count: > 0 }
+                && DataPersistencePolicy.IsToday(snapshot.Date, DateTime.Today);
+        }
+
         /// <summary>Altera os parâmetros de detecção e recomputa.</summary>
         public async Task SetConfig(ExtremeDetectorOptions config, bool recomputeLive = true)
         {
@@ -144,6 +153,11 @@ namespace B3WM.Services.Core
         /// </summary>
         public async Task PersistConfig()
         {
+            var today = DateTime.Today;
+            var hasFreshLiveProfile = HasFreshLiveProfile();
+            if (!hasFreshLiveProfile)
+                return;
+
             ExtremeStorageItem snapshot;
             lock (_lock)
             {
@@ -151,14 +165,14 @@ namespace B3WM.Services.Core
                 {
                     _current = new ExtremeStorageItem
                     {
-                        Date = DateTime.Now,
+                        Date = today,
                         Symbol = Symbol,
                         PeriodFrom = PeriodFrom,
                         PeriodTo = PeriodTo,
                         Config = _config,
                         Extremes = [],
                         Structures = [],
-                        Statistics = null
+                        Statistics = new()
                     };
                 }
                 else
@@ -167,6 +181,10 @@ namespace B3WM.Services.Core
                 }
                 snapshot = _current;
             }
+
+            if (!DataPersistencePolicy.ShouldPersistExtremes(snapshot, today, hasFreshLiveProfile))
+                return;
+
             await SetDataAsync(snapshot);
         }
 
@@ -188,6 +206,11 @@ namespace B3WM.Services.Core
         /// </summary>
         public async Task Recompute()
         {
+            var today = DateTime.Today;
+            var hasFreshLiveProfile = HasFreshLiveProfile();
+            if (!hasFreshLiveProfile)
+                return;
+
             List<VolumeLevel> profile;
             lock (_lock)
             {
@@ -201,7 +224,7 @@ namespace B3WM.Services.Core
 
             var snapshot = new ExtremeStorageItem
             {
-                Date = DateTime.Now,
+                Date = today,
                 Symbol = Symbol,
                 PeriodFrom = PeriodFrom,
                 PeriodTo = PeriodTo,
@@ -210,6 +233,11 @@ namespace B3WM.Services.Core
                 Structures = result.Structures,
                 Statistics = result.Statistics
             };
+
+            // Sem perfil real do pregão de hoje (ex.: fds/feriado/restart sem
+            // ticks) não sobrescreve o snapshot nem cria arquivo fantasma.
+            if (!DataPersistencePolicy.ShouldPersistExtremes(snapshot, today, hasFreshLiveProfile))
+                return;
 
             lock (_lock)
             {

@@ -513,6 +513,9 @@ namespace B3WM.Services.Strategies
         {
             try
             {
+                if (!DataPersistencePolicy.ShouldPersistStrategyLog(log))
+                    return;
+
                 using var scope = _scopes.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
                 var path = $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json";
