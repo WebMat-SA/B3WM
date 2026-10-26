@@ -59,63 +59,44 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
                   step: Defaults.extremeMinimumProminenceStep,
                   locked: state.configLocked,
                 ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: state.isDailyExtremeLoading
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2))
-                              : const Icon(Icons.refresh, size: 16),
-                          label: Text(state.isDailyExtremeLoading
-                              ? 'Atualizando...'
-                              : 'Atualizar diário'),
-                          onPressed: state.isDailyExtremeLoading
-                              ? null
-                              : () => state.loadDailyExtremes(),
+                if (dex != null)
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            dex.extremes.isNotEmpty
+                                ? 'Diário: ${dex.topCount} topo(s) / ${dex.valleyCount} vale(s)'
+                                    '${dex.profilePointCount > 0 ? ' • ${dex.profilePointCount} níveis no perfil' : ''}'
+                                : 'Nenhuma detecção carregada.',
+                            style: dex.extremes.isNotEmpty
+                                ? const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.bold)
+                                : const TextStyle(
+                                    fontSize: 11, color: Colors.grey),
+                          ),
                         ),
-                      ),
-                      if (dex != null) ...[
-                        const SizedBox(width: 8),
                         IconButton(
                           tooltip: 'Limpar',
                           icon: const Icon(Icons.clear, size: 18),
                           onPressed: () => state.clearDailyExtremes(),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                if (dex != null && dex.extremes.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
-                    child: Text(
-                      'Diário: ${dex.topCount} topo(s) / ${dex.valleyCount} vale(s)'
-                      '${dex.profilePointCount > 0 ? ' • ${dex.profilePointCount} níveis no perfil' : ''}',
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
                 if (dex != null)
-                  for (final e in dex.extremes)
-                    _DailyExtremeRow(point: e),
+                  for (final e in dex.extremes) _DailyExtremeRow(point: e),
                 if (dex == null)
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     child: Text(
                       state.isDailyExtremeLoading
                           ? 'Carregando níveis diários...'
-                          : 'Toque em Atualizar após mudar Noise/Prominence.',
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.grey),
+                          : 'Nenhuma detecção carregada.',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ),
               ],
@@ -157,8 +138,7 @@ class _DailyExtremeRow extends StatelessWidget {
           const SizedBox(width: 8),
           SizedBox(
             width: 84,
-            child:
-                Text(label, style: TextStyle(fontSize: 12, color: color)),
+            child: Text(label, style: TextStyle(fontSize: 12, color: color)),
           ),
           Expanded(
             child: Text(point.position.toStringAsFixed(1),
