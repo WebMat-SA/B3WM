@@ -46,91 +46,84 @@ class _DailyPanelState extends State<DailyPanel> {
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Color(0xFF3d3d3d))),
       ),
-        child: Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: const Color(0xFF2d2d2d),
-          drawer: DailyDrawer(initialTab: _drawerTab),
-          body: Consumer<StateService>(builder: (context, state, _) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: 40,
-                  // Barra de controles sem título: o rótulo "Análise diária
-                  // (1D)" vive no slider (_DailyDivider/_ExpandDailyBar),
-                  // idêntico aberto/fechado. Fechamento só pelo slider.
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 4),
-                      IconButton(
-                        icon: const Icon(Icons.stacked_line_chart,
-                            size: 20, color: Colors.grey),
-                        onPressed: () => _openTab(0),
-                        tooltip: 'Estrutura 1D',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.align_horizontal_right,
-                            size: 20, color: Colors.grey),
-                        onPressed: () => _openTab(1),
-                        tooltip: 'Volume Profile 1D',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.terrain,
-                            size: 20, color: Colors.grey),
-                        onPressed: () => _openTab(2),
-                        tooltip: 'Topos/Vales 1D',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.drag_handle,
-                            size: 20, color: Colors.grey),
-                        onPressed: () => _openTab(3),
-                        tooltip: 'Pivot Tradicional 1D',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      const Spacer(),
-                      Chip(
-                        label: Text(state.symbol,
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.white)),
-                        backgroundColor: Colors.grey.shade800,
-                        materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                  ),
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: const Color(0xFF2d2d2d),
+        drawer: DailyDrawer(initialTab: _drawerTab),
+        body: Consumer<StateService>(builder: (context, state, _) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 40,
+                // Barra de controles sem título: o rótulo "Análise diária
+                // (1D)" vive no slider (_DailyDivider/_ExpandDailyBar),
+                // idêntico aberto/fechado. Fechamento só pelo slider.
+                child: Row(
+                  children: [
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.stacked_line_chart,
+                          size: 20, color: Colors.grey),
+                      onPressed: () => _openTab(0),
+                      tooltip: 'Estrutura 1D',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.align_horizontal_right,
+                          size: 20, color: Colors.grey),
+                      onPressed: () => _openTab(1),
+                      tooltip: 'Volume Profile 1D',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.terrain,
+                          size: 20, color: Colors.grey),
+                      onPressed: () => _openTab(2),
+                      tooltip: 'Topos/Vales 1D',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.drag_handle,
+                          size: 20, color: Colors.grey),
+                      onPressed: () => _openTab(3),
+                      tooltip: 'Pivot Tradicional 1D',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const Spacer(),
+                    Chip(
+                      label: Text(state.symbol,
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white)),
+                      backgroundColor: Colors.grey.shade800,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                 ),
-                const Divider(
-                    height: 1, color: Color(0xFF3d3d3d)),
-                Expanded(
-                  child: (state.isDailyLoading &&
-                          state.dailyBars.isEmpty)
-                      ? const Center(
-                          child: CircularProgressIndicator())
-                      : state.dailyBars.isEmpty
-                          ? const Center(
-                              child: Text(
-                                  'Sem candles 1D — abra uma aba de configuração e toque em Atualizar',
-                                  style: TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12)))
-                          : MapFlowChart(
-                              key: ValueKey(
-                                  'daily_${state.symbol}'),
-                              data: buildDailyChartData(state),
-                              showStrategyTimeline: false,
-                              isDaily: true,
-                            ),
-                ),
-              ],
-            );
-          }),
-        ),
+              ),
+              const Divider(height: 1, color: Color(0xFF3d3d3d)),
+              Expanded(
+                child: (state.isDailyLoading && state.dailyBars.isEmpty)
+                    ? const Center(child: CircularProgressIndicator())
+                    : state.dailyBars.isEmpty
+                        ? const Center(
+                            child: Text('Sem candles 1D carregados.',
+                                style: TextStyle(
+                                    color: Colors.grey, fontSize: 12)))
+                        : MapFlowChart(
+                            key: ValueKey('daily_${state.symbol}'),
+                            data: buildDailyChartData(state),
+                            showStrategyTimeline: false,
+                            isDaily: true,
+                          ),
+              ),
+            ],
+          );
+        }),
+      ),
     );
   }
 }

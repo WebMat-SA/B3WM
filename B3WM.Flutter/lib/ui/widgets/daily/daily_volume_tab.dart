@@ -41,7 +41,8 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ToggleRow('Auto Mode (por Estrutura)',
+                ToggleRow(
+                    'Auto Mode (por Estrutura)',
                     state.dailyProfileAutoByPriceStructure,
                     (v) => state.setDailyProfileAutoByPriceStructure(v),
                     locked: state.configLocked),
@@ -54,28 +55,6 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
                     (v) => state.setDailyProfileSizeV(v)),
                 SliderRow('Opacity', state.dailyProfileOpacity, 0, 1,
                     (v) => state.setDailyProfileOpacity(v)),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: ElevatedButton.icon(
-                    icon: (state.isDailyProfileLoading ||
-                            state.isDailyExtremeLoading)
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.refresh, size: 16),
-                    label: Text((state.isDailyProfileLoading ||
-                            state.isDailyExtremeLoading)
-                        ? 'Atualizando...'
-                        : 'Atualizar perfil + topos/vales'),
-                    onPressed: (state.isDailyProfileLoading ||
-                            state.isDailyExtremeLoading)
-                        ? null
-                        : () => state.loadDailyProfileAndExtremes(),
-                  ),
-                ),
               ],
             ),
           ),
@@ -86,8 +65,8 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
                 levels.isEmpty
                     ? 'Nenhum nível carregado.'
                     : 'Top concentrações (${levels.length} níveis)',
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold)),
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           ),
           if (state.isDailyProfileLoading && levels.isEmpty)
             const Padding(
@@ -97,8 +76,8 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
           else
             for (final lvl in poc)
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                 child: Row(
                   children: [
                     Container(
@@ -113,13 +92,12 @@ class _DailyVolumeTabState extends State<DailyVolumeTab>
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                          lvl.price.toStringAsFixed(1),
+                      child: Text(lvl.price.toStringAsFixed(1),
                           style: const TextStyle(fontSize: 12)),
                     ),
                     Text('${lvl.total} contr.',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.grey)),
+                        style:
+                            const TextStyle(fontSize: 11, color: Colors.grey)),
                   ],
                 ),
               ),

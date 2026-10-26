@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'package:b3wm_flutter/services/preferences_service.dart';
 import 'package:b3wm_flutter/services/signalr_service.dart';
 import 'package:b3wm_flutter/services/state_service.dart';
 import 'package:b3wm_flutter/services/trading_service.dart';
+import 'package:b3wm_flutter/ui/widgets/chart/daily_chart_data.dart';
 
 class _NoopSignalRService extends SignalRService {
   _NoopSignalRService({required super.hubUrl, required super.apiService});
@@ -25,7 +27,32 @@ class _NoopSignalRService extends SignalRService {
   Future<void> stopConnection() async {}
 }
 
-ApiService _panelApi() => ApiService(
+http.Response _dailyExtremeResponse() => http.Response(
+      jsonEncode({
+        'symbol': 'WINFUT',
+        'date': '2026-08-12T00:00:00.000',
+        'config': {'noiseSensitivity': 3.0, 'minimumProminence': 0.15},
+        'statistics': {'topCount': 1, 'valleyCount': 0, 'pointCount': 1},
+        'extremes': [
+          {
+            'position': 101000.0,
+            'value': 9000.0,
+            'type': 'Top',
+            'prominence': 0.5,
+            'strength': 1.0,
+            'confidence': 1.0,
+            'width': 2.0,
+            'isEdge': false,
+          },
+        ],
+      }),
+      200,
+    );
+
+ApiService _panelApi({
+  Future<http.Response> Function(http.Request)? onExtremeDaily,
+}) =>
+    ApiService(
       baseUrl: 'http://test.local',
       client: MockClient((request) async {
         final path = request.url.path;
@@ -92,33 +119,8 @@ ApiService _panelApi() => ApiService(
               200);
         }
         if (path.contains('GetExtremeDaily')) {
-          return http.Response(
-              jsonEncode({
-                'symbol': 'WINFUT',
-                'date': '2026-08-12T00:00:00.000',
-                'config': {
-                  'noiseSensitivity': 3.0,
-                  'minimumProminence': 0.15
-                },
-                'statistics': {
-                  'topCount': 1,
-                  'valleyCount': 0,
-                  'pointCount': 1
-                },
-                'extremes': [
-                  {
-                    'position': 101000.0,
-                    'value': 9000.0,
-                    'type': 'Top',
-                    'prominence': 0.5,
-                    'strength': 1.0,
-                    'confidence': 1.0,
-                    'width': 2.0,
-                    'isEdge': false,
-                  },
-                ],
-              }),
-              200);
+          if (onExtremeDaily != null) return onExtremeDaily(request);
+          return _dailyExtremeResponse();
         }
         if (path.contains('GetVolume')) return http.Response('null', 200);
         if (path.contains('SetExtremeConfig')) {
@@ -252,6 +254,67 @@ void main() {
     await settle(tester);
     expect(find.byTooltip('Estrutura 1D'), findsNothing);
     expect(find.byTooltip('Mostrar análise diária (1D)'), findsOneWidget);
+    service.reset();
+  });
+
+  testWidgets(
+      'Topos/Vales 1D recarrega após mudar parâmetros durante uma carga',
+      (tester) async {
+    final view =
+        TestWidgetsFlutterBinding.instance.platformDispatcher.implicitView!;
+    view.physicalSize = const Size(1280, 900);
+    view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      view.resetPhysicalSize();
+      view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = PreferencesService();
+    await prefs.init();
+
+    final firstExtremeResponse = Completer<http.Response>();
+    final extremeRequests = <http.Request>[];
+    final api = _panelApi(onExtremeDaily: (request) {
+      extremeRequests.add(request);
+      return extremeRequests.length == 1
+          ? firstExtremeResponse.future
+          : Future.value(_dailyExtremeResponse());
+    });
+    final service = await pumpApp(tester, prefs, api);
+    service.setDailyPanelVisible(true);
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(extremeRequests, hasLength(1));
+    expect(service.isDailyExtremeLoading, isTrue);
+
+    service.setDailyExtremeNoiseSensitivity(4.0);
+    service.setDailyExtremeMinimumProminence(0.25);
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump();
+    expect(extremeRequests, hasLength(1));
+
+    firstExtremeResponse.complete(_dailyExtremeResponse());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+
+    expect(extremeRequests, hasLength(2));
+    expect(
+        extremeRequests.last.url.queryParameters['noiseSensitivity'], '4.000');
+    expect(
+        extremeRequests.last.url.queryParameters['minimumProminence'], '0.250');
+    expect(service.dailyExtremes?.topCount, 1);
+    expect(buildDailyChartData(service).extremes?.topPrices, [101000.0]);
+
+    await tester.tap(find.byTooltip('Topos/Vales 1D'));
+    await tester.pumpAndSettle();
+    expect(find.text('Noise Sensitivity'), findsOneWidget);
+    expect(find.text('Atualizar diário'), findsNothing);
+    expect(find.textContaining('Toque em Atualizar'), findsNothing);
+    expect(
+        find.textContaining('Diário: 1 topo(s) / 0 vale(s)'), findsOneWidget);
     service.reset();
   });
 }
