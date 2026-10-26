@@ -181,6 +181,8 @@ graph TD
     PROFIT -->|COM RTD| EXTRACT
 ```
 
+> **Política de persistência:** o servidor não mantém calendário de feriados da B3. Os serviços só gravam arquivos do dia quando recebem dados reais da sessão (tick/candle de hoje). Snapshots vazios ou carregados de D-1 ficam apenas em memória e não criam arquivo em fins de semana/feriados. Enquanto o primeiro arquivo do dia não existe, endpoints do dia atual podem responder com o snapshot em memória. O `StructureService` faz backfill em memória e só persiste se houver candle de hoje; o `StrategyRunner` não grava log sem decisões ou trades.
+
 ---
 
 ## Como Rodar (fork do zero)

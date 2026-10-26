@@ -573,6 +573,9 @@ namespace B3WM.Services.Strategies
             await gate.WaitAsync();
             try
             {
+                if (!DataPersistencePolicy.ShouldPersistStrategyLog(log))
+                    return;
+
                 using var scope = _scopes.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
                 // O arquivo do dia ACUMULA todas as sessões: um novo PLAY/STOP

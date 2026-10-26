@@ -20,6 +20,7 @@ namespace B3WM.Services.Core
 
         //variaveis de memoria
         StructureStorageItem? _lastStructure { get; set; }
+        private DateTime _preloadedFor;
 
         public StructureStorageItem? GetLastStructure()
             => _lastStructure?.Clone() as StructureStorageItem;
@@ -44,12 +45,16 @@ namespace B3WM.Services.Core
 
         public async Task PreLoad()
         {
+            var today = DateTime.Today;
+            if (_preloadedFor == today)
+                return;
+
             //fazer aqui, carregar dos arquivos do Data, para saber a ultima structure (mesmo sendo do dia anterior)
             var allData = await GetDataAsync();
 
-            DataKeep = allData;
+            DataKeep = allData ?? new List<StructureStorageItem>();
 
-            if (allData != null && allData.Count > 0)
+            if (allData is { Count: > 0 })
             { 
                 var last = allData.OrderByDescending(q => q.Date).FirstOrDefault();
                 if (last != null)
@@ -62,10 +67,10 @@ namespace B3WM.Services.Core
                 //gerar novos paths para dia anteriores (no max 7) para tentar achar a ultima structure, caso nao ache, entao inicia normalmente
                 for(int i = 0; i < 7; i++)
                 {
-                    var date = DateTime.Now.AddDays(-i);
+                    var date = today.AddDays(-i);
                     var path = $"{Symbol}_{nameof(StructureService)}_{TimeFrame}MIN_{_minDistanceUpdateBorder}_{date:yyyy-MM-dd}.json";
                     var data = await GetDataAsync(path);
-                    if (data != null)
+                    if (data is { Count: > 0 })
                     {
                         var last = data.OrderByDescending(q => q.Date).FirstOrDefault();
                         if (last != null)
@@ -77,8 +82,11 @@ namespace B3WM.Services.Core
                 }
 
                 //se o _lastStructure ainda for nulo, vamos gerar a partir dos candles dos ultimos 7 dias
-                await Regenerate();
+                if (_lastStructure == null)
+                    await Regenerate();
             }
+
+            _preloadedFor = today;
         }
 
         public async Task Regenerate(bool broadcastEach = false)
@@ -94,23 +102,38 @@ namespace B3WM.Services.Core
             // thresholds custom (ex. WINFUT 3000) gerem histórico real em vez
             // de ~7 pontos. Intraday mantém 7 dias (comportamento atual).
             var days = TimeFrame == 1440 ? 365 : 7;
+            var today = DateTime.Today;
+            var hasTodayCandles = false;
+            DataKeep ??= new List<StructureStorageItem>();
+
             //buscar todos os candles dos ultimos N dias, gerar a estrutura e salvar
             for (int i = days - 1; i >= 0; i--)
             {
-                var date = DateTime.Now.AddDays(-i);
+                var date = today.AddDays(-i);
                 var candlePath = $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{date:yyyy-MM-dd}.json";
                 var candles = await candleService.GetDataAsync(candlePath);
-                if (candles != null)
+                if (candles is { Count: > 0 })
                 {
+                    if (date.Date == today)
+                        hasTodayCandles = true;
+
                     foreach (var candle in candles)
                     {
-                        if (candle != null) await Calculate(candle, true, broadcastEach);
+                        if (candle != null)
+                            await Calculate(candle, true, broadcastEach, persist: false);
                     }
                 }
             }
+
+            // Backfill é cumulativo na memória; grava uma única vez e somente
+            // quando existe candle do pregão de hoje (não cria arquivo em
+            // fds/feriado/sem ticks).
+            if (hasTodayCandles && DataKeep.Count > 0)
+                await SetDataAsync(DataKeep);
         }
 
-        public async Task<StructureStorageItem> Calculate(BarStorageItem newBar, bool skipPreLoad = false, bool broadcast = true)
+        public async Task<StructureStorageItem> Calculate(
+            BarStorageItem newBar, bool skipPreLoad = false, bool broadcast = true, bool persist = true)
         {
             try
             {
@@ -128,9 +151,11 @@ namespace B3WM.Services.Core
                     if (OnUpdate != null) await OnUpdate.Invoke(result);
                 }
 
+                DataKeep ??= new List<StructureStorageItem>();
                 DataKeep.Add(result.Clone() as StructureStorageItem);
 
-                await SetDataAsync(DataKeep);
+                if (persist && DataPersistencePolicy.ShouldPersistStructure(newBar, DateTime.Today))
+                    await SetDataAsync(DataKeep);
 
                 return result;
             }
