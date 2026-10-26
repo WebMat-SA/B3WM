@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../app_config.dart';
 import '../app_log.dart';
+import '../models/bubble_storage_item.dart';
 
 class StrategyInfo {
   final String name;
@@ -35,7 +36,17 @@ class StrategyDecisionItem {
   final double confidence;
   final double encerrar;
   final bool shouldTrade;
+  /// Confiança por criteria (JEV — informativo). Vazio no resto.
+  final Map<String, double> criteria;
   final String reason;
+  /// Net direcional JEV (-1..1). Nulo em logs antigos/outras strategies.
+  final double? direcaoNet;
+  /// Consenso das dimensões JEV (0..1). Nulo em logs antigos.
+  final double? direcaoConsenso;
+  /// Cobertura das dimensões JEV (0..1). Nulo em logs antigos.
+  final double? direcaoCobertura;
+  /// Motivo da lateral JEV. Nulo/vazio quando há compra/venda.
+  final String? direcaoMotivo;
   final int stateChars;
   final String snapshotHash;
   final String positionBefore;
@@ -50,7 +61,12 @@ class StrategyDecisionItem {
     required this.confidence,
     required this.encerrar,
     required this.shouldTrade,
+    this.criteria = const {},
     required this.reason,
+    this.direcaoNet,
+    this.direcaoConsenso,
+    this.direcaoCobertura,
+    this.direcaoMotivo,
     required this.stateChars,
     required this.snapshotHash,
     required this.positionBefore,
@@ -67,7 +83,17 @@ class StrategyDecisionItem {
         confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
         encerrar: (json['encerrar'] as num?)?.toDouble() ?? 0,
         shouldTrade: json['shouldTrade'] as bool? ?? false,
+        criteria: ((json['criteria'] as Map?) ?? const {}).map(
+            (k, v) => MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)),
         reason: json['reason'] as String? ?? '',
+        direcaoNet: (json['direcaoNet'] as num?)?.toDouble() ??
+            (json['DirecaoNet'] as num?)?.toDouble(),
+        direcaoConsenso: (json['direcaoConsenso'] as num?)?.toDouble() ??
+            (json['DirecaoConsenso'] as num?)?.toDouble(),
+        direcaoCobertura: (json['direcaoCobertura'] as num?)?.toDouble() ??
+            (json['DirecaoCobertura'] as num?)?.toDouble(),
+        direcaoMotivo: json['direcaoMotivo'] as String? ??
+            json['DirecaoMotivo'] as String?,
         stateChars: (json['stateChars'] as num?)?.toInt() ?? 0,
         snapshotHash: json['snapshotHash'] as String? ?? '',
         positionBefore: json['positionBefore'] as String? ?? 'flat',
@@ -157,7 +183,12 @@ class StrategyTimelineItem {
   final double confidence;
   final double encerrar;
   final String action;
+  final Map<String, double> criteria;
   final String reason;
+  final double? direcaoNet;
+  final double? direcaoConsenso;
+  final double? direcaoCobertura;
+  final String? direcaoMotivo;
   final String snapshotHash;
 
   const StrategyTimelineItem({
@@ -168,7 +199,12 @@ class StrategyTimelineItem {
     required this.confidence,
     required this.encerrar,
     required this.action,
+    this.criteria = const {},
     required this.reason,
+    this.direcaoNet,
+    this.direcaoConsenso,
+    this.direcaoCobertura,
+    this.direcaoMotivo,
     required this.snapshotHash,
   });
 
@@ -182,7 +218,12 @@ class StrategyTimelineItem {
         confidence: d.confidence,
         encerrar: d.encerrar,
         action: d.action,
+        criteria: d.criteria,
         reason: d.reason,
+        direcaoNet: d.direcaoNet,
+        direcaoConsenso: d.direcaoConsenso,
+        direcaoCobertura: d.direcaoCobertura,
+        direcaoMotivo: d.direcaoMotivo,
         snapshotHash: d.snapshotHash,
       );
 }
@@ -360,6 +401,33 @@ class StrategyService {
     } catch (e) {
       logD('[strategy] State error: $e');
       return [];
+    }
+  }
+
+  /// Trigger manual: reenvia a consulta da sessão como se o gatilho da
+  /// strategy tivesse sido preenchido (a bubble clicada no gráfico é o evento).
+  /// Retorna `fired`, `no_decision` ou null em falha.
+  Future<String?> manualTrigger(
+      String sessionId, BubbleStorageItem bubble) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/api/Strategy/ManualTrigger'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'sessionId': sessionId,
+          'bubble': bubble.toJson(),
+        }),
+      );
+      if (response.statusCode != 200) {
+        logD(
+            '[strategy] ManualTrigger HTTP ${response.statusCode}: ${response.body}');
+        return null;
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>?;
+      return body?['status'] as String?;
+    } catch (e) {
+      logD('[strategy] ManualTrigger error: $e');
+      return null;
     }
   }
 

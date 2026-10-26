@@ -12,5 +12,6 @@ namespace B3WM.Shared.Models
         public IEnumerable<BarStorageItem> Candle { get; set; }
         public VolumeLevelStorageItem? Volume { get; set; }
         public AdjustmentForecastItem? Forecast { get; set; }
+        public VwapHistoryPoint? Vwap { get; set; }
     }
 }

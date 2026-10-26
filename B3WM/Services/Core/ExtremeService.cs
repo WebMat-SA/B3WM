@@ -414,7 +414,8 @@ namespace B3WM.Services.Core
         /// estado ao vivo (período, snapshot, timers, broadcasts).
         /// </summary>
         public async Task<ExtremeStorageItem> ComputeDailyRange(
-            DataKeeperBase keeper, DateTime from, DateTime to, ExtremeDetectorOptions? options = null)
+            DataKeeperBase keeper, DateTime from, DateTime to,
+            ExtremeDetectorOptions? options = null, DateTime? asOf = null)
         {
             var fromDate = from.Date;
             var toDate = to.Date;
@@ -425,7 +426,7 @@ namespace B3WM.Services.Core
             if ((toDate - fromDate).TotalDays > 365)
                 fromDate = toDate.AddDays(-365);
 
-            var profile = await BuildDailyProfileWithLiveAsync(keeper, fromDate, toDate);
+            var profile = await BuildDailyProfileWithLiveAsync(keeper, fromDate, toDate, asOf);
 
             var prices = profile.Select(v => v.Price).ToArray();
             var totals = profile.Select(v => (double)v.Total).ToArray();
@@ -532,7 +533,7 @@ namespace B3WM.Services.Core
         /// Se o vivo estiver vazio/stale, usa o arquivo de hoje como fallback.
         /// </summary>
         public async Task<List<VolumeLevel>> BuildDailyProfileWithLiveAsync(
-            DataKeeperBase keeper, DateTime fromDate, DateTime toDate)
+            DataKeeperBase keeper, DateTime fromDate, DateTime toDate, DateTime? asOf = null)
         {
             var from = fromDate.Date;
             var to = toDate.Date;
@@ -540,6 +541,15 @@ namespace B3WM.Services.Core
                 (from, to) = (to, from);
             if ((to - from).TotalDays > 365)
                 from = to.AddDays(-365);
+
+            if (asOf is { } cutoff && cutoff.Date >= from && cutoff.Date <= to)
+            {
+                var aggAsOf = cutoff.Date > from
+                    ? await BuildDailyProfileFromFiles(keeper, Symbol, from, cutoff.Date.AddDays(-1))
+                    : new List<VolumeLevel>();
+                var partial = await BuildProfileFromFiles(keeper, Symbol, cutoff.Date, null, cutoff);
+                return MergeProfiles(aggAsOf, partial);
+            }
 
             var today = DateTime.Today;
             var includeLive = to >= today && from <= today;

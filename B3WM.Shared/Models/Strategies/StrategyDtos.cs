@@ -1,3 +1,5 @@
+using B3WM.Shared.Models;
+
 namespace B3WM.Shared.Models.Strategies
 {
     public sealed class StrategyInfo
@@ -14,6 +16,29 @@ namespace B3WM.Shared.Models.Strategies
         /// <summary>Foto da tela (SymbolConfig.toJson do app, com daily).</summary>
         public System.Text.Json.JsonElement? ScreenConfig { get; set; }
         public DateTime? DisplayDate { get; set; }
+
+        // Janela MANUAL do volume profile (slider from/to do drawer). Usada
+        // quando o automode por estrutura está desligado; com o automode ligado
+        // o backend resolve a janela (StructureWindowResolver) e ignora estes
+        // campos. Enviados no arm para o backend ser a fonte única da janela.
+        public DateTime? ProfileFrom { get; set; }
+        public DateTime? ProfileTo { get; set; }
+
+        // Janela MANUAL do gráfico diário (slider from/to do drawer diário),
+        // com o mesmo racional de ProfileFrom/To para o automode 1440.
+        public DateTime? DailyFrom { get; set; }
+        public DateTime? DailyTo { get; set; }
+    }
+
+    /// <summary>
+    /// Trigger manual disparado pelo botão direito em uma bubble do gráfico:
+    /// reenvia a consulta da strategy como se o gatilho dela tivesse sido
+    /// preenchido, sem passar pelo ShouldTrigger/filtro da sessão.
+    /// </summary>
+    public sealed class StrategyManualTriggerRequest
+    {
+        public string SessionId { get; set; } = "";
+        public BubbleStorageItem? Bubble { get; set; }
     }
 
     public sealed class StrategySessionState
@@ -50,12 +75,30 @@ namespace B3WM.Shared.Models.Strategies
         public double Confidence { get; set; }
         public double Encerrar { get; set; }
         public bool ShouldTrade { get; set; }
+        /// <summary>Confiança por criteria (JEV — informativo). Vazio no resto.</summary>
+        public Dictionary<string, double> Criteria { get; set; } = new();
         public string Reason { get; set; } = "";
+        /// <summary>Net direcional JEV (-1..1): negativo = baixa, positivo = alta.</summary>
+        public double? DirecaoNet { get; set; }
+        /// <summary>Consenso das dimensões JEV (0..1).</summary>
+        public double? DirecaoConsenso { get; set; }
+        /// <summary>Cobertura das dimensões JEV (0..1).</summary>
+        public double? DirecaoCobertura { get; set; }
+        /// <summary>Motivo da lateral JEV (vazio quando há direção).</summary>
+        public string? DirecaoMotivo { get; set; }
         public int StateChars { get; set; }
         public string SnapshotHash { get; set; } = "";
         public string PositionBefore { get; set; } = "flat";
         /// <summary>O que resultou: manter | sinal abre X | sinal fecha | exec abre X @P | fecha @P (+N pts) | zera fim do dia</summary>
         public string Action { get; set; } = "";
+        /// <summary>Arquivo da auditoria Jev em Data/JEV ("" quando não há).</summary>
+        public string AuditFile { get; set; } = "";
+        /// <summary>
+        /// Identificador único do trigger manual. Vazio em triggers normais;
+        /// entra na chave de merge para permitir reenviar a mesma bubble várias
+        /// vezes sem o log descartar avaliações idênticas.
+        /// </summary>
+        public string TriggerId { get; set; } = "";
     }
 
     public sealed class PaperTrade

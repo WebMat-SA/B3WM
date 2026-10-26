@@ -47,13 +47,25 @@ namespace B3WM.Services.Strategies
     /// <summary>Decisão de uma strategy (log-only; envio real comentado no runner).</summary>
     public sealed class StrategyDecision
     {
-        /// <summary>comprar | vender | manter | encerrar</summary>
+        /// <summary>comprar | vender | lateral | manter | encerrar</summary>
         public string Side { get; set; } = "manter";
         public double Confidence { get; set; }
         public double Encerrar { get; set; }
         public bool ShouldTrade { get; set; }
+        /// <summary>Confiança por criteria (JEV — informativo). Vazio no resto.</summary>
+        public Dictionary<string, double> Criteria { get; set; } = new();
         public string Reason { get; set; } = "";
+        /// <summary>Net direcional JEV (-1..1): negativo = baixa, positivo = alta.</summary>
+        public double? DirecaoNet { get; set; }
+        /// <summary>Consenso das dimensões JEV (0..1).</summary>
+        public double? DirecaoConsenso { get; set; }
+        /// <summary>Cobertura das dimensões JEV (0..1).</summary>
+        public double? DirecaoCobertura { get; set; }
+        /// <summary>Motivo da lateral JEV (vazio quando há direção).</summary>
+        public string? DirecaoMotivo { get; set; }
         public int StateChars { get; set; }
+        /// <summary>Arquivo da auditoria Jev em Data/JEV ("" quando não há).</summary>
+        public string AuditFile { get; set; } = "";
     }
 
     /// <summary>Parâmetro declarativo de strategy (renderizado na aba).</summary>

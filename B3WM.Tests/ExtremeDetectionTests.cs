@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using B3WM.Services;
 using B3WM.Services.Core;
@@ -15,9 +14,6 @@ namespace B3WM.Tests;
 /// </summary>
 public class ExtremeDetectionTests
 {
-    private const string RealProfileSymbol = "WINFUT";
-    private static readonly DateTime RealProfileDate = new(2026, 8, 12);
-
     private static string RepoRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
 
@@ -166,25 +162,6 @@ public class ExtremeDetectionTests
 
     #endregion
 
-    #region Relatório HTML/SVG
-
-    [Fact]
-    public void Generate_HTML_Report()
-    {
-        var (x, y) = LoadRealProfile();
-        var result = ExtremeDetector.Detect(x, y);
-
-        string html = BuildReport(x, y, result);
-        string path = DataPath($"ExtremeDetection_{RealProfileSymbol}_{RealProfileDate:yyyy-MM-dd}.html");
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, html);
-
-        Assert.True(File.Exists(path));
-        Assert.Contains("<svg", html);
-    }
-
-    #endregion
-
     #region Detecção ciente da data (BuildProfileFromFiles)
 
     /// <summary>
@@ -297,8 +274,7 @@ public class ExtremeDetectionTests
 
     private static (double[] x, double[] y) LoadRealProfile()
     {
-        string json = File.ReadAllText(
-            DataPath($"{RealProfileSymbol}_VolumeService_{RealProfileDate:yyyy-MM-dd}.json"));
+        string json = File.ReadAllText(DataPath("WINFUT_VolumeService_2026-08-12.json"));
         using var doc = JsonDocument.Parse(json);
         var vols = doc.RootElement.GetProperty("Volumes");
         var x = new List<double>();
@@ -317,59 +293,6 @@ public class ExtremeDetectionTests
         for (int i = 1; i < y.Count; i++)
             if (y[i] > y[best]) best = i;
         return best;
-    }
-
-    private static string BuildReport(double[] x, double[] y, ExtremeDetectionResult result)
-    {
-        double minY = y.Min();
-        double maxY = y.Max();
-        double minX = x.Min();
-        double maxX = x.Max();
-
-        int W = 1100, H = 420;
-        double Px(double v) => 60 + (v - minX) / (maxX - minX) * (W - 120);
-        double Py(double v) => H - 40 - (v - minY) / (maxY - minY) * (H - 80);
-
-        var sb = new StringBuilder();
-        sb.AppendLine("<html><head><meta charset='utf-8'><title>Detecção de Topos/Vales Estruturais</title>");
-        sb.AppendLine("<style>body{font-family:Arial,sans-serif;margin:24px}h2{color:#333}.leg{font-size:12px}</style></head><body>");
-        sb.AppendLine($"<h2>Detecção de Topos/Vales Estruturais — {RealProfileSymbol} {RealProfileDate:yyyy-MM-dd}</h2>");
-        sb.AppendLine($"<p class='leg'>Pontos: {result.Statistics.PointCount} | Ruído σ: {result.Statistics.NoiseStd:F1} | " +
-                      $"Topos: {result.Statistics.TopCount} | Vales: {result.Statistics.ValleyCount} | " +
-                      $"Indeterminados: {result.Statistics.IndeterminateCount}</p>");
-        sb.AppendLine($"<svg width='{W}' height='{H}' viewBox='0 0 {W} {H}'>");
-
-        // curva do perfil
-        sb.Append("<polyline points='");
-        for (int i = 0; i < x.Length; i++)
-            sb.Append($"{Px(x[i]):F1},{Py(y[i]):F1} ");
-        sb.AppendLine("' fill='none' stroke='#999' stroke-width='1.5'/>");
-
-        // linhas de topo (vermelho) e vale (verde)
-        foreach (var e in result.Extremes)
-        {
-            string color = e.Type switch
-            {
-                ExtremeType.Top => "#d32f2f",
-                ExtremeType.Valley => "#2e7d32",
-                _ => "#9e9e9e"
-            };
-            sb.AppendLine($"<line x1='50' y1='{Py(e.Position):F1}' x2='{W - 50}' y2='{Py(e.Position):F1}' " +
-                          $"stroke='{color}' stroke-width='1.5' stroke-dasharray='6,4'/>");
-            sb.AppendLine($"<text x='{W - 46}' y='{Py(e.Position) - 4:F1}' font-size='11' fill='{color}'>{e.Position:F0}</text>");
-        }
-
-        sb.AppendLine("</svg>");
-
-        sb.AppendLine("<table border='1' cellspacing='0' cellpadding='4' style='border-collapse:collapse;font-size:13px'>");
-        sb.AppendLine("<tr><th>Tipo</th><th>Preço</th><th>Total</th><th>Prominência</th><th>Força</th><th>Largura</th></tr>");
-        foreach (var e in result.Extremes.OrderBy(e => e.Position))
-        {
-            sb.AppendLine($"<tr><td>{e.Type}</td><td>{e.Position:F0}</td><td>{e.Value:F0}</td>" +
-                          $"<td>{e.Prominence:F0}</td><td>{e.Strength:F3}</td><td>{e.Width:F0}</td></tr>");
-        }
-        sb.AppendLine("</table></body></html>");
-        return sb.ToString();
     }
 
     #endregion

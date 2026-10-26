@@ -48,6 +48,14 @@ namespace B3WM.Services.Screen
     {
         public Dictionary<string, object?> Layers { get; } = new();
 
+        /// <summary>
+        /// Dados crus de apoio que NÃO viram camada do state (ex.: pool
+        /// completo de bolhas do dia antes do filtro de tela + lista
+        /// pós-filtro, e o spec cru). Usado pela auditoria Jev para registrar
+        /// o que "chegou" antes de filtrar/ordenar. Não participa do state.
+        /// </summary>
+        public Dictionary<string, object?> Raw { get; } = new();
+
         public bool Has(string key) => Layers.TryGetValue(key, out var v) && v != null;
 
         public T? Get<T>(string key) where T : class =>
@@ -88,5 +96,13 @@ namespace B3WM.Services.Screen
         public const string Header = "header";
         public const string StructureAuxVisibleFlag = "structureAuxVisible";
         public const string DailyWindow = "dailyWindow";
+        /// <summary>Escopo [from,to] resolvido do bloco intraday (DateWindow).</summary>
+        public const string ScopeIntraday = "scopeIntraday";
+        /// <summary>Escopo [from,to] resolvido do bloco diário (DateWindow).</summary>
+        public const string ScopeDaily = "scopeDaily";
+        /// <summary>Barras 1440 do escopo diário (List&lt;BarStorageItem&gt;).</summary>
+        public const string DailyCandles = "dailyCandles";
+        /// <summary>Volume profile do escopo diário (VolumeLevelStorageItem).</summary>
+        public const string DailyVolume = "dailyVolume";
     }
 }

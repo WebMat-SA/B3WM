@@ -120,6 +120,11 @@ class SliderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Protege contra valores persistidos fora da faixa (Slider lança em
+    // debug se `value` estiver fora de [min, max]).
+    final safeMin = min <= max ? min : max;
+    final safeMax = min <= max ? max : min;
+    final safeValue = value.clamp(safeMin, safeMax);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -161,16 +166,16 @@ class SliderRow extends StatelessWidget {
                       ),
                     ),
             ),
-            Text(value.toStringAsFixed(decimals),
+            Text(safeValue.toStringAsFixed(decimals),
                 style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (trailing != null) trailing!,
           ],
         ),
         Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: ((max - min) / step).round().clamp(1, 1000),
+          value: safeValue,
+          min: safeMin,
+          max: safeMax,
+          divisions: ((safeMax - safeMin) / step).round().clamp(1, 1000),
           onChanged: onChanged,
           onChangeEnd: onChangeEnd,
         ),

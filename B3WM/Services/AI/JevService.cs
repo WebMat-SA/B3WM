@@ -43,6 +43,27 @@ namespace B3WM.Services.AI
 
         public string Model => _config["TypeSafe:Model"] ?? "jev-latest";
 
+        /// <summary>
+        /// Corpo HTTP montado uma única vez. O mesmo texto vai para o
+        /// <see cref="StringContent"/> e para a auditoria (sem duplicação).
+        /// </summary>
+        public sealed record JevRequest(string Json, int StateChars);
+
+        /// <summary>
+        /// Monta o corpo exato da chamada: state como objeto, model e questions.
+        /// </summary>
+        public JevRequest BuildRequest(object state, object questions)
+        {
+            var stateChars = state is string s ? s.Length : JsonSerializer.Serialize(state).Length;
+            var payload = new Dictionary<string, object?>
+            {
+                ["state"] = state,
+                ["model"] = Model,
+                ["questions"] = questions,
+            };
+            return new JevRequest(JsonSerializer.Serialize(payload), stateChars);
+        }
+
         /// <summary>Resposta crua da Jev (interpretação em JevPrompt).</summary>
         public sealed class JevResponse
         {
@@ -51,44 +72,57 @@ namespace B3WM.Services.AI
             public int InputTokens { get; set; }
             public int OutputTokens { get; set; }
             public int StateChars { get; set; }
+            /// <summary>Auditoria (issue #23): tentativas, latência e status.</summary>
+            public int Attempts { get; set; } = 1;
+            public long LatencyMs { get; set; }
+            public int HttpStatus { get; set; } = 200;
         }
 
         /// <summary>
-        /// Envia state + questions tipadas e devolve o corpo cru + usage.
-        /// Lança InvalidOperationException sem chave, TimeoutException em
-        /// timeout e HttpRequestException em HTTP não-2xx (após retries).
+        /// Monta o corpo e envia. O state vai como OBJETO JSON (não string)
+        /// para o payload — o TypeSafe aceita objeto estruturado; embutir como
+        /// string o escaparia. Lança InvalidOperationException sem chave,
+        /// TimeoutException em timeout e HttpRequestException em HTTP não-2xx
+        /// (após retries). O <see cref="JevRequest.Json"/> é exatamente o texto
+        /// enviado no <see cref="StringContent"/>.
         /// </summary>
-        public async Task<JevResponse> AskAsync(
-            string state,
+        public Task<JevResponse> AskAsync(
+            object state,
             object questions,
+            CancellationToken ct = default) =>
+            AskAsync(BuildRequest(state, questions), ct);
+
+        public async Task<JevResponse> AskAsync(
+            JevRequest request,
             CancellationToken ct = default)
         {
             var apiKey = ResolveApiKey();
             if (string.IsNullOrWhiteSpace(apiKey))
                 throw new InvalidOperationException("JevKey ausente. Configure via 'dotnet user-secrets set JevKey <sua-chave>' ou env TYPESAFE_API_KEY.");
 
-            var payload = new Dictionary<string, object?>
-            {
-                ["state"] = state,
-                ["model"] = Model,
-                ["questions"] = questions,
-            };
+            var stateChars = request.StateChars;
 
             var client = _httpFactory.CreateClient("Jev");
             const int maxAttempts = 4; // 1 + 3 retries em 429/529
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var attemptsUsed = 1;
             HttpResponseMessage? resp = null;
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
+                attemptsUsed = attempt;
                 using var req = new HttpRequestMessage(HttpMethod.Post, "v1/systemone");
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-                req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                req.Content = new StringContent(request.Json, Encoding.UTF8, "application/json");
                 try
                 {
                     resp = await client.SendAsync(req, ct);
                 }
                 catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"Timeout chamando Jev (attempt {attempt}/{maxAttempts}).", ex);
+                    sw.Stop();
+                    throw new JevTimeoutException(
+                        $"Timeout chamando Jev (attempt {attempt}/{maxAttempts}).",
+                        attempt, sw.ElapsedMilliseconds, ex);
                 }
 
                 if (resp.StatusCode is (HttpStatusCode)429 or (HttpStatusCode)529)
@@ -111,18 +145,27 @@ namespace B3WM.Services.AI
             {
                 var body = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode)
-                    throw new HttpRequestException($"Jev HTTP {(int)resp.StatusCode}: {Truncate(body, 500)}");
+                {
+                    sw.Stop();
+                    throw new JevHttpException(
+                        (int)resp.StatusCode, body, attemptsUsed, sw.ElapsedMilliseconds,
+                        $"Jev HTTP {(int)resp.StatusCode}: {Truncate(body, 500)}");
+                }
 
                 var (model, inTok, outTok) = ReadUsage(body);
+                sw.Stop();
                 _logger.LogInformation("[jev] model={Model} in={In} out={Out} stateChars={Chars}",
-                    model, inTok, outTok, state.Length);
+                    model, inTok, outTok, stateChars);
                 return new JevResponse
                 {
                     Model = model,
                     Body = body,
                     InputTokens = inTok,
                     OutputTokens = outTok,
-                    StateChars = state.Length,
+                    StateChars = stateChars,
+                    Attempts = attemptsUsed,
+                    LatencyMs = sw.ElapsedMilliseconds,
+                    HttpStatus = (int)resp.StatusCode,
                 };
             }
         }
@@ -160,5 +203,46 @@ namespace B3WM.Services.AI
 
         private static string Truncate(string s, int max) =>
             string.IsNullOrEmpty(s) || s.Length <= max ? s ?? string.Empty : s[..max] + "…";
+    }
+
+    /// <summary>
+    /// HTTP não-2xx da Jev, com status/corpo/tentativas/latência para a
+    /// auditoria. Herda de <see cref="HttpRequestException"/> para preservar
+    /// os catches existentes.
+    /// </summary>
+    public sealed class JevHttpException : HttpRequestException
+    {
+        public int HttpStatus { get; }
+        public string Body { get; }
+        public int Attempts { get; }
+        public long LatencyMs { get; }
+
+        public JevHttpException(
+            int httpStatus, string body, int attempts, long latencyMs, string message)
+            : base(message)
+        {
+            HttpStatus = httpStatus;
+            Body = body ?? "";
+            Attempts = attempts;
+            LatencyMs = latencyMs;
+        }
+    }
+
+    /// <summary>
+    /// Timeout da Jev, com tentativas/latência para a auditoria. Herda de
+    /// <see cref="TimeoutException"/> para preservar os catches existentes.
+    /// </summary>
+    public sealed class JevTimeoutException : TimeoutException
+    {
+        public int Attempts { get; }
+        public long LatencyMs { get; }
+
+        public JevTimeoutException(
+            string message, int attempts, long latencyMs, Exception? inner = null)
+            : base(message, inner)
+        {
+            Attempts = attempts;
+            LatencyMs = latencyMs;
+        }
     }
 }

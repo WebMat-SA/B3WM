@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -40,6 +41,16 @@ namespace B3WM.Services.Strategies
         public string? LastDecision { get; set; }
     }
 
+    /// <summary>Resultado do trigger manual (botão direito na bubble).</summary>
+    public enum ManualTriggerStatus
+    {
+        Fired,
+        SessionNotFound,
+        Paused,
+        SymbolMismatch,
+        NoDecision,
+    }
+
     /// <summary>
     /// Executa as strategies armadas no backend (funciona com o app fechado).
     /// Fonte dos fatos: OrchestratorService por símbolo (candle enriquecido +
@@ -61,6 +72,8 @@ namespace B3WM.Services.Strategies
         private readonly ILogger<StrategyRunner> _logger;
         private readonly Dictionary<string, StrategySession> _sessions = new();
         private readonly object _lock = new();
+        /// <summary>Serializa persistências do mesmo arquivo do dia (evita lost-update entre sessões).</summary>
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _persistLocks = new();
 
         public StrategyRunner(
             IServiceScopeFactory scopes,
@@ -129,6 +142,39 @@ namespace B3WM.Services.Strategies
             return true;
         }
 
+        /// <summary>
+        /// Trigger manual: reenvia a consulta como se o gatilho da strategy
+        /// tivesse sido preenchido. Bypassa `ShouldTrigger`/filtro de bolhas e
+        /// NÃO consome o bucket automático; o restante do fluxo (Evaluate,
+        /// decisão, pending entry/exit, paper e log) é o mesmo do trigger normal.
+        /// Só sessões não pausadas aceitam.
+        /// </summary>
+        public async Task<ManualTriggerStatus> ManualTriggerAsync(
+            string sessionId, BubbleStorageItem bubble)
+        {
+            StrategySession? s;
+            lock (_lock) _sessions.TryGetValue(sessionId, out s);
+            if (s == null) return ManualTriggerStatus.SessionNotFound;
+            if (s.Paused) return ManualTriggerStatus.Paused;
+            if (!string.IsNullOrWhiteSpace(bubble.Symbol) &&
+                !string.Equals(bubble.Symbol, s.Symbol, StringComparison.OrdinalIgnoreCase))
+                return ManualTriggerStatus.SymbolMismatch;
+
+            bubble.Symbol = s.Symbol;
+            var ev = new BubbleAppeared
+            {
+                Symbol = s.Symbol,
+                At = bubble.Date,
+                Item = bubble,
+            };
+            var triggerId = "manual-" + Guid.NewGuid().ToString("N");
+            _logger.LogInformation(
+                "[strategy-runner] MANUAL {Strategy} {Symbol} sessão={Id} bubble={At:O} trigger={Trigger}",
+                s.Strategy, s.Symbol, s.Id, bubble.Date, triggerId);
+            var fired = await FireAsync(s, ev, "manual", triggerId);
+            return fired ? ManualTriggerStatus.Fired : ManualTriggerStatus.NoDecision;
+        }
+
         public StrategyLogDay? Stop(string id)
         {
             StrategySession? s;
@@ -163,7 +209,10 @@ namespace B3WM.Services.Strategies
                 if (s.Position != null && bar.Date.Date > s.Position.EntryTime.Date)
                     ClosePaper(s, bar.Open, bar.Date, "virada do dia");
             foreach (var s in SessionsOf(bar.Symbol))
-                if (s.Decisions.Count % 10 == 0 && s.Decisions.Count > s.PersistedDecisions)
+                // Flush de safety-net: cobre execuções (exec abre/fecha) e virada
+                // do dia que adicionam Decisions fora do FireAsync. Com flush a
+                // cada decisão, aqui só persiste se houver algo novo.
+                if (s.Decisions.Count > s.PersistedDecisions)
                 {
                     s.PersistedDecisions = s.Decisions.Count;
                     await PersistLogAsync(ToLogDay(s));
@@ -275,7 +324,8 @@ namespace B3WM.Services.Strategies
                 return _sessions.Values.Where(s => !s.Paused && s.Symbol == symbol).ToList();
         }
 
-        private async Task FireAsync(StrategySession s, StrategyEvent ev, string why)
+        private async Task<bool> FireAsync(
+            StrategySession s, StrategyEvent ev, string why, string? triggerId = null)
         {
             using var scope = _scopes.CreateScope();
             var sp = scope.ServiceProvider;
@@ -289,7 +339,7 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy-runner] sessão {Id} sem strategy", s.Id);
-                return;
+                return false;
             }
 
             var ctx = new StrategyContext
@@ -312,9 +362,9 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy:{Name}:{Id}] erro no Evaluate", s.Strategy, s.Id);
-                return;
+                return false;
             }
-            if (decision == null) return;
+            if (decision == null) return false;
 
             // Threshold de saída do paper engine (política do runner; a
             // strategy só informa Encerrar 0..1).
@@ -335,11 +385,18 @@ namespace B3WM.Services.Strategies
                 Confidence = decision.Confidence,
                 Encerrar = decision.Encerrar,
                 ShouldTrade = decision.ShouldTrade,
+                Criteria = decision.Criteria,
                 Reason = decision.Reason,
+                DirecaoNet = decision.DirecaoNet,
+                DirecaoConsenso = decision.DirecaoConsenso,
+                DirecaoCobertura = decision.DirecaoCobertura,
+                DirecaoMotivo = decision.DirecaoMotivo,
                 StateChars = decision.StateChars,
                 SnapshotHash = s.SnapshotHash,
                 PositionBefore = posBefore,
                 Action = action,
+                AuditFile = decision.AuditFile ?? "",
+                TriggerId = triggerId ?? "",
             };
             lock (_lock)
             {
@@ -357,11 +414,11 @@ namespace B3WM.Services.Strategies
             }
             _logger.LogInformation("[strategy:{Name}:{Id}] {Summary} ({Why})",
                 s.Strategy, s.Id, Summarize(item), why);
-            if (s.Decisions.Count % 10 == 0)
-            {
-                s.PersistedDecisions = s.Decisions.Count;
-                await PersistLogAsync(ToLogDay(s));
-            }
+            // Flush a cada decisão: sobrevive a pico de energia / kill sem STOP.
+            // Custo ~ms (JSON pequeno do dia) frente à latência do Jev.
+            s.PersistedDecisions = s.Decisions.Count;
+            await PersistLogAsync(ToLogDay(s));
+            return true;
         }
 
         /// <summary>
@@ -511,6 +568,9 @@ namespace B3WM.Services.Strategies
 
         private async Task PersistLogAsync(StrategyLogDay log)
         {
+            var path = $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json";
+            var gate = _persistLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
             try
             {
                 if (!DataPersistencePolicy.ShouldPersistStrategyLog(log))
@@ -518,10 +578,12 @@ namespace B3WM.Services.Strategies
 
                 using var scope = _scopes.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
-                var path = $"{log.Symbol}_Strategy_{log.Strategy}_{log.Date:yyyy-MM-dd}.json";
                 // O arquivo do dia ACUMULA todas as sessões: um novo PLAY/STOP
                 // faz merge com o que já está em disco em vez de sobrescrever
                 // (antes, a sessão anterior do mesmo dia era perdida).
+                // Flush a cada decisão: Read+Merge+Write por chamada, atômico
+                // via .tmp+Move no DataKeeperBase; gate por arquivo evita
+                // lost-update entre sessões concorrentes do mesmo dia.
                 var existing = await keeper.ReadDataAsync<StrategyLogDay>(path);
                 if (existing.Decisions.Count > 0 || existing.PaperTrades.Count > 0)
                     log = MergeLogDay(existing, log);
@@ -530,6 +592,10 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy-runner] falha ao persistir log");
+            }
+            finally
+            {
+                gate.Release();
             }
         }
 
@@ -559,7 +625,7 @@ namespace B3WM.Services.Strategies
         }
 
         private static string DecisionKey(StrategyDecisionLog d) =>
-            $"{(d.At == default ? d.Time : d.At.ToString("o"))}|{d.Kind}|{d.Side}|{d.Action}|{d.SnapshotHash}";
+            $"{(d.At == default ? d.Time : d.At.ToString("o"))}|{d.Kind}|{d.Side}|{d.Action}|{d.SnapshotHash}|{d.TriggerId}";
 
         private static string TradeKey(PaperTrade t) =>
             $"{(t.EntryAt == default ? t.EntryTime : t.EntryAt.ToString("o"))}|{t.Side}|{t.Entry}|{(t.ExitAt == default ? t.ExitTime : t.ExitAt.ToString("o"))}|{t.Exit}";

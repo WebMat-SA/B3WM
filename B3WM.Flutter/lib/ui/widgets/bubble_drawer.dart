@@ -176,8 +176,6 @@ class _BubbleDrawerState extends State<BubbleDrawer>
               decimals: 0,
               step: 25,
               locked: state.configLocked),
-          SliderRow('Size', state.bubbleSize, 0, 1,
-              (v) => state.setBubbleSize(v)),
           SliderRow('Min Size (px)', state.bubbleSizeMin, 5, 200,
               (v) => state.setBubbleSizeMin(v), decimals: 0, step: 1),
           SliderRow('Max Size (px)', state.bubbleSizeMax, 5, 200,

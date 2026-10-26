@@ -1,5 +1,6 @@
 ﻿using B3WM.Services;
 using B3WM.Services.Core;
+using B3WM.Services.Screen;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
@@ -17,9 +18,11 @@ namespace B3WM.Controllers
         private readonly IEnumerable<BubbleService> _bubbleServices;
         private readonly IEnumerable<ExtremeService> _extremeServices;
         private readonly IEnumerable<VolumeService> _volumeServices;
+        private readonly IEnumerable<VwapService> _vwapServices;
+        private readonly MarketWindowService _marketWindowService;
         private readonly ILogger<DataController> _logger;
 
-        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, IEnumerable<VolumeService> volumeServices, ILogger<DataController> logger)
+        public DataController(DataKeeperBase dataKeeper, IEnumerable<StructureService> structureServices, IEnumerable<CandleService> candleServices, IEnumerable<BubbleService> bubbleServices, IEnumerable<ExtremeService> extremeServices, IEnumerable<VolumeService> volumeServices, IEnumerable<VwapService> vwapServices, MarketWindowService marketWindowService, ILogger<DataController> logger)
         {
             this.dataKeeper = dataKeeper;
             this.structureServices = structureServices;
@@ -27,7 +30,21 @@ namespace B3WM.Controllers
             _bubbleServices = bubbleServices;
             _extremeServices = extremeServices;
             _volumeServices = volumeServices;
+            _vwapServices = vwapServices;
+            _marketWindowService = marketWindowService;
             _logger = logger;
+        }
+
+        /// <summary>
+        /// Resolve a janela vigente (intraday + diário) do automode por
+        /// estrutura. O app manda símbolo/TF e as flags auto/manual da tela.
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> GetMarketWindow([FromBody] MarketWindowRequest request)
+        {
+            if (request is null || string.IsNullOrEmpty(request.Symbol)) return BadRequest();
+            var window = await _marketWindowService.ResolveAsync(request);
+            return Ok(window);
         }
 
         [HttpGet("{symbol}/{date}")]
@@ -139,12 +156,31 @@ namespace B3WM.Controllers
                 {
                     if (service != null)
                     {
-                        if (timeFrame != 1440 && service._minDistanceUpdateBorder != minDistance)
+                        if (timeFrame != 1440)
+                        {
+                            // Intraday: o arquivo do dia só é criado no fechamento de
+                            // candle; com o servidor iniciado/reiniciado (ou fora de
+                            // sessão) ele fica vazio e a estrutura "some" no gráfico
+                            // intraday (o diário funciona pois lê o histórico 1440 já
+                            // gravado). Força a regeneração a partir dos MESMOS arquivos
+                            // de candle que o GetBar usa, com a distância pedida.
                             await service.SetMinDistance(minDistance);
-                        else
-                            await service.PreLoad();
 
-                        timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                            timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+
+                            // O Regenerate grava tudo no arquivo de HOJE; se o dia
+                            // pedido é anterior, serve a versão em memória filtrada
+                            // pela data (últimos 7 dias).
+                            if (timeframeData == null || timeframeData.Count == 0)
+                                timeframeData = service.DataKeep
+                                    .Where(s => s.Date.Date == date.Date)
+                                    .ToList();
+                        }
+                        else
+                        {
+                            await service.PreLoad();
+                            timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                        }
                     }
                 }
 
@@ -499,6 +535,68 @@ namespace B3WM.Controllers
             });
         }
 
+        [HttpGet("{symbol}/{date}")]
+        public async Task<IActionResult> GetVwapHistory(string symbol, DateTime date)
+        {
+            // Hoje: prefere snapshot vivo (inclui minuto corrente); senão arquivo do dia.
+            var live = _vwapServices.FirstOrDefault(v => v.Symbol == symbol)?.GetHistory();
+            if (live is { Count: > 0 } && date.Date == DateTime.Today)
+                return Ok(live.Where(p => p.Minute.Date == date.Date).OrderBy(p => p.Minute).ToList());
+
+            string path = $"{symbol}_{nameof(VwapService)}_{date:yyyy-MM-dd}.json";
+            var data = await dataKeeper.ReadDataAsync<List<VwapHistoryPoint>>(path);
+            return Ok((data ?? new()).OrderBy(p => p.Minute).ToList());
+        }
+
+        [HttpGet("{symbol}/{startDate}/{endDate}")]
+        public async Task<IActionResult> GetVwapRange(string symbol, DateTime startDate, DateTime endDate)
+        {
+            if (endDate < startDate)
+                (startDate, endDate) = (endDate, startDate);
+            var days = (int)Math.Min((endDate.Date - startDate.Date).TotalDays, 365);
+            var all = new List<VwapHistoryPoint>();
+            for (var d = 0; d <= days; d++)
+            {
+                var date = startDate.Date.AddDays(d);
+                if (date == DateTime.Today)
+                {
+                    var live = _vwapServices.FirstOrDefault(v => v.Symbol == symbol)?.GetHistory();
+                    if (live is { Count: > 0 })
+                        all.AddRange(live);
+                    else
+                    {
+                        var path = $"{symbol}_{nameof(VwapService)}_{date:yyyy-MM-dd}.json";
+                        try
+                        {
+                            var day = await dataKeeper.ReadDataAsync<List<VwapHistoryPoint>>(path);
+                            if (day != null) all.AddRange(day);
+                        }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Falha lendo vwap do dia {Path}", path); }
+                    }
+                }
+                else
+                {
+                    var path = $"{symbol}_{nameof(VwapService)}_{date:yyyy-MM-dd}.json";
+                    try
+                    {
+                        var day = await dataKeeper.ReadDataAsync<List<VwapHistoryPoint>>(path);
+                        if (day != null) all.AddRange(day);
+                    }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Falha lendo vwap do dia {Path}", path); }
+                }
+            }
+            return Ok(all.OrderBy(p => p.Minute).ToList());
+        }
+
+        [HttpGet("{symbol}")]
+        public IActionResult GetLiveVwapSince(string symbol, [FromQuery] DateTime since)
+        {
+            var svc = _vwapServices.FirstOrDefault(v => v.Symbol == symbol);
+            if (svc == null) return Ok(new List<VwapHistoryPoint>());
+            var points = svc.GetHistory().Where(p => p.Minute > since).OrderBy(p => p.Minute).ToList();
+            return Ok(points);
+        }
+
         [HttpGet("{symbol}")]
         public async Task<IActionResult> SetExtremePeriodAsync(string symbol,
             [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] DateTime? date = null)
@@ -543,6 +641,76 @@ namespace B3WM.Controllers
             }, recomputeLive: false);
             await service.PersistConfig();
             return Ok(await service.ComputeForDate(dataKeeper, target, from, to));
+        }
+
+        /// <summary>
+        /// Recompõe os arquivos {SYM}_VwapService_{dia}.json ausentes a partir
+        /// dos candles 1MIN persistidos (cálculo puro, sem tocar no estado vivo
+        /// do VwapService — o dia atual é sempre pulado). POST api/Data/BackfillVwap
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> BackfillVwap(
+            [FromQuery] string? symbol = null,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null,
+            [FromQuery] bool force = false)
+        {
+            var symbols = string.IsNullOrWhiteSpace(symbol)
+                ? new[] { B3WM.Shared.Models.Defaults.Symbols.WINFUT, B3WM.Shared.Models.Defaults.Symbols.WDOFUT }
+                : new[] { symbol.ToUpperInvariant() };
+            var end = (to?.Date ?? DateTime.Today.AddDays(-1)).Date;
+            var start = (from?.Date ?? end.AddDays(-30)).Date;
+            if (end < start) (start, end) = (end, start);
+            if ((end - start).TotalDays > 366)
+                return BadRequest("Intervalo máximo: 366 dias.");
+
+            var result = new List<object>();
+            foreach (var sym in symbols)
+            {
+                int created = 0, skippedExists = 0, skippedNoData = 0;
+                var errors = new List<string>();
+                for (var day = start; day <= end; day = day.AddDays(1))
+                {
+                    // Dia atual pertence ao serviço vivo (AppendClosedBarAsync).
+                    if (day == DateTime.Today) continue;
+                    try
+                    {
+                        var candlePath = $"{sym}_{nameof(CandleService)}_1MIN_{day:yyyy-MM-dd}.json";
+                        var bars = await dataKeeper.ReadDataAsync<List<BarStorageItem>>(candlePath);
+                        if (bars is not { Count: > 0 })
+                        {
+                            skippedNoData++;
+                            continue;
+                        }
+                        if (!force)
+                        {
+                            var vwapPath = $"{sym}_{nameof(VwapService)}_{day:yyyy-MM-dd}.json";
+                            var existing = await dataKeeper.ReadDataAsync<List<VwapHistoryPoint>>(vwapPath);
+                            if (existing is { Count: > 0 })
+                            {
+                                skippedExists++;
+                                continue;
+                            }
+                        }
+                        var history = VwapService.BuildHistory(sym, bars, day);
+                        if (history.Count == 0)
+                        {
+                            skippedNoData++;
+                            continue;
+                        }
+                        await dataKeeper.WriteDataAsync(
+                            $"{sym}_{nameof(VwapService)}_{day:yyyy-MM-dd}.json", history);
+                        created++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Falha no backfill vwap {Symbol} {Day}", sym, day.ToString("yyyy-MM-dd"));
+                        errors.Add($"{day:yyyy-MM-dd}: {ex.Message}");
+                    }
+                }
+                result.Add(new Dictionary<string, object?> { ["symbol"] = sym, ["created"] = created, ["skippedExists"] = skippedExists, ["skippedNoData"] = skippedNoData, ["errors"] = errors });
+            }
+            return Ok(result);
         }
     }
 }

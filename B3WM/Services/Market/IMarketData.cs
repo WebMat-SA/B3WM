@@ -15,14 +15,18 @@ namespace B3WM.Services.Market
     public interface IMarketData
     {
         Task<List<BarStorageItem>> CandlesAsync(string symbol, int timeFrame, DateTime? date = null, int takeLast = int.MaxValue, CancellationToken ct = default);
+        /// <summary>Barras 1440 (diárias) persistidas no intervalo [from,to] (dias ausentes ignorados).</summary>
+        Task<List<BarStorageItem>> DailyCandlesAsync(string symbol, DateTime from, DateTime to, CancellationToken ct = default);
         Task<List<BubbleStorageItem>> BubblesAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
         Task<VolumeLevelStorageItem?> VolumeAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
         Task<List<VolumeLevel>> VolumeLevelsAsync(string symbol, DateTime date, DateTime? from, DateTime? to, CancellationToken ct = default);
         Task<List<StructureStorageItem>> StructuresAsync(string symbol, int timeFrame, double minDistance, DateTime? date = null, CancellationToken ct = default);
         Task<List<StructureStorageItem>> DailyStructuresAsync(string symbol, double dailyDistance, DateTime date, int days = 90, CancellationToken ct = default);
         Task<ExtremeStorageItem?> IntradayExtremesAsync(string symbol, CancellationToken ct = default);
-        Task<ExtremeStorageItem?> DailyExtremesAsync(string symbol, DateTime from, DateTime to, double noise, double prom, CancellationToken ct = default);
+        Task<ExtremeStorageItem?> DailyExtremesAsync(string symbol, DateTime from, DateTime to, double noise, double prom, DateTime? asOf = null, CancellationToken ct = default);
         Task<PivotStorageItem?> IntradayPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default);
         Task<PivotStorageItem?> DailyPivotAsync(string symbol, int lineCount, DateTime? date = null, CancellationToken ct = default);
+        Task<double?> VwapAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
+        Task<List<VwapHistoryPoint>> VwapHistoryAsync(string symbol, DateTime? date = null, CancellationToken ct = default);
     }
 }

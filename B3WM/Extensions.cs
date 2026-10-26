@@ -17,8 +17,15 @@ namespace B3WM
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
             services.AddScoped<JevService>(); // consumidor Jev/TypeSafe (issue #16, debug-only)
+            services.AddScoped<JevAuditStore>(); // auditoria 1 arquivo/chamada em Data/JEV (issue #23)
             services.AddScoped<ScreenStateBuilder>(); // estado WYSIWYG p/ strategies
             services.AddScoped<IMarketData, MarketData>(); // dados p/ strategies
+            // Janela do automode por estrutura: fonte única no backend
+            // (REST GetMarketWindow + push SignalR ReceiveOnMarketWindow).
+            services.AddSingleton<MarketWindowService>();
+            services.AddSingleton<MarketWindowRegistry>();
+            services.AddSingleton<MarketWindowBroadcaster>();
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<MarketWindowBroadcaster>());
             // Strategies que rodam no backend (uma linha por strategy nova):
             services.AddTransient<JevAnalysisStrategy>();
             services.AddTransient<IStrategy, JevAnalysisStrategy>(sp => sp.GetRequiredService<JevAnalysisStrategy>());
@@ -72,7 +79,7 @@ namespace B3WM
             services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
             services.AddSingleton(sp => new ExtremeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<ExtremeService>>()));
-            services.AddSingleton(sp => new AdjustmentForecastService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<AdjustmentForecastService>>()));
+            services.AddSingleton(sp => new VwapService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VwapService>>()));
 
             services.AddSingleton<OrchestratorService>(sp =>
                 new OrchestratorService(
@@ -82,7 +89,7 @@ namespace B3WM
                     sp.GetServices<BubbleService>(),
                     sp.GetServices<VolumeService>(),
                     sp.GetServices<StructureService>(),
-                    sp.GetServices<AdjustmentForecastService>(),
+                    sp.GetServices<VwapService>(),
                     sp.GetRequiredService<ILogger<OrchestratorService>>())
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(symbol));

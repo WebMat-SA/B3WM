@@ -66,7 +66,38 @@ namespace B3WM.Controllers
             if (tf == 1440) tf = 2;
             var id = _runner.Arm(strategy.Name, req.Symbol.ToUpperInvariant(),
                 tf, rawJson, filter, hash);
-            return Ok(new { sessionId = id, snapshotHash = hash });
+            return Ok(new Dictionary<string, object?> { ["sessionId"] = id, ["snapshotHash"] = hash });
+        }
+
+        /// <summary>
+        /// Trigger manual pelo botão direito em uma bubble no gráfico:
+        /// reenvia a consulta como se o gatilho da strategy tivesse sido
+        /// preenchido, sem passar pelo filtro/bucket automático.
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> ManualTrigger(
+            [FromBody] StrategyManualTriggerRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(req.SessionId))
+                return BadRequest("SessionId é obrigatório.");
+            var bubble = req.Bubble;
+            if (bubble == null)
+                return BadRequest("Bubble é obrigatória.");
+            if (bubble.Date == default)
+                return BadRequest("Bubble.Date é obrigatório.");
+
+            var status = await _runner.ManualTriggerAsync(req.SessionId, bubble);
+            var state = _runner.States()
+                .FirstOrDefault(s => s.SessionId == req.SessionId);
+            return status switch
+            {
+                ManualTriggerStatus.Fired => Ok(new Dictionary<string, object?> { ["status"] = "fired", ["session"] = state }),
+                ManualTriggerStatus.NoDecision => Ok(new Dictionary<string, object?> { ["status"] = "no_decision", ["session"] = state }),
+                ManualTriggerStatus.SessionNotFound => NotFound("Sessão não encontrada."),
+                ManualTriggerStatus.Paused => Conflict("Sessão pausada; retome para disparar manualmente."),
+                ManualTriggerStatus.SymbolMismatch => BadRequest("Bubble de outro símbolo."),
+                _ => StatusCode(500),
+            };
         }
 
         private static System.Text.Json.JsonElement ScreenSpecOf(System.Text.Json.JsonElement? spec) =>
@@ -95,7 +126,7 @@ namespace B3WM.Controllers
         public IActionResult Pause([FromQuery] string sessionId, [FromQuery] bool paused = true)
         {
             return _runner.Pause(sessionId, paused)
-                ? Ok(new { sessionId, paused })
+                ? Ok(new Dictionary<string, object?> { ["sessionId"] = sessionId, ["paused"] = paused })
                 : NotFound("Sessão não encontrada.");
         }
 

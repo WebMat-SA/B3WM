@@ -241,8 +241,7 @@ class ChartPainter extends CustomPainter {
     for (final b in data.redBubbles) {
       final x = _indexToX(b.candleIndex.clamp(0, data.candles.length - 1), stepX);
       final y = _priceToY(b.price, chartHeight);
-      var r = sqrt(b.amount) * 1.5;
-      r = r.clamp(data.bubbleSizeMin, data.bubbleSizeMax);
+      final r = data.bubbleRadius(b.amount);
       if (r < 2) continue;
       final fillPaint = Paint()
         ..color = data.colorSeller.withOpacity(data.bubbleOpacity)
@@ -259,8 +258,7 @@ class ChartPainter extends CustomPainter {
     for (final b in data.blueBubbles) {
       final x = _indexToX(b.candleIndex.clamp(0, data.candles.length - 1), stepX);
       final y = _priceToY(b.price, chartHeight);
-      var r = sqrt(b.amount) * 1.5;
-      r = r.clamp(data.bubbleSizeMin, data.bubbleSizeMax);
+      final r = data.bubbleRadius(b.amount);
       if (r < 2) continue;
       final fillPaint = Paint()
         ..color = data.colorBuyer.withOpacity(data.bubbleOpacity)
