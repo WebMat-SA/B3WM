@@ -341,6 +341,35 @@ void main() {
       resetReloaded.reset();
     });
 
+    test('viewport persiste escalas de fit abaixo de 0.1', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('WINFUT');
+      service.previewViewport(
+        isDaily: false,
+        scale: 0.005,
+        tx: 10.0,
+        ty: 0.0,
+      );
+      service.previewViewport(
+        isDaily: true,
+        scale: 0.003,
+        tx: 20.0,
+        ty: 0.0,
+      );
+      await service.commitXZoom();
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('WINFUT');
+      expect(reloaded.xZoom, 0.005);
+      expect(reloaded.dailyXZoom, 0.003);
+      reloaded.reset();
+    });
+
     test('configurações não vazam entre símbolos', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();

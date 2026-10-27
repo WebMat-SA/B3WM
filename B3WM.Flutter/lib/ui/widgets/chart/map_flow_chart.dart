@@ -69,6 +69,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   double _lastCandleAreaWidth = 0;
   double _lastVirtualCandleWidth = 0;
   double _lastFitAreaWidth = 0;
+  double _lastFitAreaHeight = 0;
   double _lastCandleAreaHeight = 0;
   Matrix4? _gestureStartMatrix;
   double _gestureStartScale = 1;
@@ -186,8 +187,8 @@ class _MapFlowChartState extends State<MapFlowChart>
           // Cobertura: topo da banda no máximo `tol` abaixo do topo e base no
           // mínimo `tol` acima da base — nenhum vazio aparece.
           const tol = 8.0;
-          minY = viewerH - tol - yBot * sy;
-          maxY = tol - yTop * sy;
+          minY = tol - yBot * sy;
+          maxY = viewerH - tol - yTop * sy;
         } else {
           // Contenção: banda menor que a tela fica dentro, com respiro que
           // converge para `tol` na fronteira (bandH == viewerH) para não dar
@@ -249,18 +250,22 @@ class _MapFlowChartState extends State<MapFlowChart>
     // setou (label/scroll). O clamp do Y segue valendo em todo gesto
     // (pan/zoom/pinch) via `_onTransformChanged`, então continua impossível
     // perder o preço arrastando.
-    if (widget.data.candles.length > oldWidget.data.candles.length && _initialFitDone) {
+    if (widget.data.candles.length > oldWidget.data.candles.length &&
+        _initialFitDone) {
       final areaW = _lastCandleAreaWidth;
       if (areaW > 0) {
         final viewerW = areaW - ChartFixedPainter.rightReserved;
         if (viewerW <= 0) return;
         const stepX = 6.0 + 2.0;
-        final vw = (widget.data.candles.length * stepX).clamp(200, 50000).toDouble();
-        final oldVw = (oldWidget.data.candles.length * stepX).clamp(200, 50000).toDouble();
-        final t = _controller.value.getTranslation();
+        final vw = max(200.0, widget.data.candles.length * stepX);
+        final oldVw = max(200.0, oldWidget.data.candles.length * stepX);
+        _lastVirtualCandleWidth = vw;
+        _minAllowedScale = _fitScale(areaW, vw);
+        final currentMatrix = _controller.value;
+        final t = currentMatrix.getTranslation();
         final tx = t.x;
         final ty = t.y;
-        final s = _controller.value[0];
+        final sx = currentMatrix[0];
         // Prepend (histórico ←): os candles antigos deslocam `delta` para a
         // direita no child; recua o tx pelo mesmo valor para manter na tela
         // exatamente o que já estava visível ("sem perder o que já está").
@@ -268,12 +273,14 @@ class _MapFlowChartState extends State<MapFlowChart>
             oldWidget.data.candles.isNotEmpty &&
             widget.data.candles.first.date
                 .isBefore(oldWidget.data.candles.first.date)) {
-          final delta = vw - oldVw;
-          if (delta > 0) {
-            final m = _controller.value.clone();
-            m.setTranslationRaw(tx - delta * s, ty, 0.0);
-            _controller.value = m;
-          }
+          final firstExistingCandle = widget.data.candles.indexWhere(
+              (candle) => candle.date == oldWidget.data.candles.first.date);
+          final delta = firstExistingCandle > 0
+              ? firstExistingCandle * stepX
+              : vw - oldVw;
+          final m = currentMatrix.clone();
+          m.setTranslationRaw(delta > 0 ? tx - delta * sx : tx, ty, 0.0);
+          _controller.value = m;
           // Mantém o viewport salvo em sync com o deslocamento.
           _captureAndScheduleViewportCommit();
           return;
@@ -282,14 +289,14 @@ class _MapFlowChartState extends State<MapFlowChart>
         // já estava nela; se ele navegou para a esquerda (histórico com zoom
         // in), preserva o tx para o candle direito não "colar" e puxar a
         // navegação de volta.
-        final oldRightOffset = viewerW - (tx + oldVw * s);
+        final oldRightOffset = viewerW - (tx + oldVw * sx);
         const defaultRightMargin = 0.15;
         final minRightMargin = viewerW * defaultRightMargin;
         const followTolerance = 8.0;
         if (oldRightOffset > minRightMargin + followTolerance) return;
-        final rightOffset = viewerW - (tx + vw * s);
+        final rightOffset = viewerW - (tx + vw * sx);
         if (rightOffset < minRightMargin) {
-          final newTx = viewerW - minRightMargin - vw * s;
+          final newTx = viewerW - minRightMargin - vw * sx;
           final m = _controller.value.clone();
           m.setTranslationRaw(newTx, ty, 0.0);
           _controller.value = m;
@@ -326,22 +333,28 @@ class _MapFlowChartState extends State<MapFlowChart>
     _hoverY = null;
   }
 
-  void _fitChart(double areaWidth, double virtualWidth, double areaHeight) {
+  double _fitScale(double areaWidth, double virtualWidth) {
     final viewerW = areaWidth - ChartFixedPainter.rightReserved;
-    if (viewerW <= 0) return;
+    if (viewerW <= 0 || virtualWidth <= 0) return _minAllowedScale;
     final leftMargin = viewerW * 0.10;
     final rightMargin = viewerW * 0.15;
     final fitWidth = viewerW - leftMargin - rightMargin;
-    final fitScale = max(0.1, min(1.0, fitWidth / virtualWidth));
+    return max(StateService.minXZoom, min(1.0, fitWidth / virtualWidth));
+  }
+
+  void _fitChart(double areaWidth, double virtualWidth) {
+    final viewerW = areaWidth - ChartFixedPainter.rightReserved;
+    if (viewerW <= 0) return;
+    final fitScale = _fitScale(areaWidth, virtualWidth);
     _minAllowedScale = fitScale;
-    final scale = fitScale;
 
     final m = Matrix4.identity();
-    final tx = (viewerW - virtualWidth * scale) / 2;
-    final ty = max(0.0, (areaHeight - areaHeight * scale) / 2);
-    m.setTranslationRaw(tx, ty, 0.0);
-    m[0] = scale;
-    m[5] = scale;
+    final tx = (viewerW - virtualWidth * fitScale) / 2;
+    // Candle density determines the horizontal fit, not the vertical scale.
+    // Y has its own price-based zoom and must keep the full chart height.
+    m.setTranslationRaw(tx, 0.0, 0.0);
+    m[0] = fitScale;
+    m[5] = 1.0;
     _controller.value = m;
   }
 
@@ -359,7 +372,7 @@ class _MapFlowChartState extends State<MapFlowChart>
         context.read<StateService>().resetChartView(isDaily: widget.isDaily);
       } catch (_) {}
     }
-    _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth, _lastCandleAreaHeight);
+    _fitChart(_lastCandleAreaWidth, _lastVirtualCandleWidth);
   }
 
   void _onInteractionEnd() {
@@ -1137,7 +1150,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     const candleSpacing = 2.0;
     const stepX = candleWidth + candleSpacing;
     final virtualCandleWidth =
-        (data.candles.length * stepX).clamp(200, 50000).toDouble();
+        max(200.0, data.candles.length * stepX);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1158,17 +1171,27 @@ class _MapFlowChartState extends State<MapFlowChart>
 
         if (!_initialFitDone && data.candles.isNotEmpty) {
           _initialFitDone = true;
+          _lastFitAreaWidth = candleAreaWidth;
+          _lastFitAreaHeight = candleAreaHeight;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
+            _fitChart(candleAreaWidth, virtualCandleWidth);
             _restoreSavedViewport(candleAreaWidth, virtualCandleWidth);
           });
         } else if (_initialFitDone && candleAreaWidth != _lastFitAreaWidth) {
           _lastFitAreaWidth = candleAreaWidth;
+          _lastFitAreaHeight = candleAreaHeight;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _fitChart(candleAreaWidth, virtualCandleWidth, candleAreaHeight);
+            _fitChart(candleAreaWidth, virtualCandleWidth);
             _restoreSavedViewport(candleAreaWidth, virtualCandleWidth);
+          });
+        } else if (_initialFitDone &&
+            candleAreaHeight != _lastFitAreaHeight) {
+          _lastFitAreaHeight = candleAreaHeight;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _clampPan();
           });
         }
 
