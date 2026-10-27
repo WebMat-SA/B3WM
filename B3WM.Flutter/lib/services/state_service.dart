@@ -231,9 +231,10 @@ class StateService extends ChangeNotifier {
   Future<void> commitYZoom() => _saveConfigForSymbol(_symbol);
 
   /// Limites da escala X absoluta do `InteractiveViewer` (`m[0]`).
-  /// Piso `0.1` = piso do `fitScale` em `MapFlowChart._fitChart`;
+  /// Piso `0.001` mantém o limite abaixo do menor fit possível do canvas
+  /// virtual, sem impedir que históricos densos caibam na viewport;
   /// teto `5.0` = teto do pinch/zoom X.
-  static const double minXZoom = 0.1;
+  static const double minXZoom = 0.001;
   static const double maxXZoom = 5.0;
 
   /// Zoom X INTRADAY persistido por símbolo (`Config_$symbol` → `xZoom`).

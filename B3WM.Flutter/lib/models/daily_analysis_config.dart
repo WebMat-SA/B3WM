@@ -45,7 +45,7 @@ class DailyAnalysisConfig {
   double yZoom;
 
   /// Zoom X (eixo do tempo, scroll do mouse/pinch) do gráfico diário.
-  /// Escala absoluta do `InteractiveViewer` (`m[0]`), faixa `0.1..5.0`.
+  /// Escala absoluta do `InteractiveViewer` (`m[0]`), faixa `0.001..5.0`.
   /// `null` = auto-fit (nunca aproximado ou após reset). Independente do
   /// `SymbolConfig.xZoom` (intraday).
   double? xZoom;
@@ -179,7 +179,7 @@ class DailyAnalysisConfig {
         'panY': panY,
       };
 
-  /// Clamp da escala X absoluta (`0.1..5.0`); `null` (ausente) = auto-fit.
+  /// Clamp da escala X absoluta (`0.001..5.0`); `null` (ausente) = auto-fit.
   static double? clampXZoom(num? v) =>
-      v == null ? null : v.toDouble().clamp(0.1, 5.0).toDouble();
+      v == null ? null : v.toDouble().clamp(0.001, 5.0).toDouble();
 }
