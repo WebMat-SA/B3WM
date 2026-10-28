@@ -76,10 +76,10 @@ O drawer lateral organiza as ferramentas de análise em abas (ícones na AppBar 
   <p><em>Pivot Tradicional estilo Profit no intraday (fonte HLC de D-1, 2–5 pares de níveis). Sem dados de D-1, a aba mostra os controles e a mensagem de sessão sem pivot.</em></p>
 </div>
 
-Outras abas sem screenshot dedicado: **VWAP Diário**, **Backup (exportar/importar)** e **Estratégias**. O histórico intraday é incremental pelo botão `←` inferior-esquerdo do gráfico (dia anterior / semana anterior seg–sex / mês anterior).
+Outras abas sem screenshot dedicado: **VWAP Diário** e **Backup (exportar/importar)**. A aba **Estratégias** depende das strategies registradas no backend e por isso não tem golden dedicado. O histórico intraday é incremental pelo botão `←` inferior-esquerdo do gráfico (dia anterior / semana anterior seg–sex / mês anterior).
 
 #### ▶️ Estratégias (rodar no backend)
-A 8ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava tudo até PAUSE/STOP — a execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
+A 8ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava a configuração **apenas do símbolo atual** até PAUSE/STOP. Assim, `WINFUT` e `WDOFUT` podem rodar estratégias em paralelo; no mesmo símbolo, cada sessão é identificada por strategy + timeframe e a UI impede duplicar exatamente a mesma combinação. A execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
 
 ### Análise diária (painel inferior 1D)
 
@@ -107,6 +107,8 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 ### Estratégias (rodar no backend)
 - Contrato `IStrategy`: `Name`/`Description`/`DetailsMd` (MD obrigatório, renderizado na aba) + `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` 1ª bubble visível por bucket do TF)
 - `JevAnalysis`: pergunta à Jev o que fazer com o contexto da tela (foto dos filtros enviada no PLAY)
+- Lock de configuração por símbolo: `WINFUT` e `WDOFUT` podem rodar estratégias simultaneamente; PAUSE/STOP libera somente o símbolo correspondente
+- Sessões identificadas por strategy + símbolo + timeframe; dentro do mesmo símbolo, a UI bloqueia apenas a combinação exata já ativa
 - Paper trades com relatório diário em JSON; envio real ao MT5 implementado mas comentado (`LiveTradingEnabled=false`)
 - Receita de strategy nova em `B3WM/Services/Strategies/README.md`
 

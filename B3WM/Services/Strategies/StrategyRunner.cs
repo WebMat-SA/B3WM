@@ -100,6 +100,7 @@ namespace B3WM.Services.Strategies
                     SessionId = s.Id,
                     Strategy = s.Strategy,
                     Symbol = s.Symbol,
+                    TriggerTimeFrame = s.TriggerTimeFrame,
                     Paused = s.Paused,
                     SnapshotHash = s.SnapshotHash,
                     Position = s.Position == null ? "flat"

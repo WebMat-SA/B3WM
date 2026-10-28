@@ -1005,27 +1005,63 @@ class StateService extends ChangeNotifier {
   /// mesmo schema do export da aba Backup.
   Map<String, dynamic> get currentScreenConfig => _currentConfig.toJson();
 
-  /// Trava de filtros com estratégia armada (rodar estratégias, issue #22):
-  /// enquanto houver sessão no backend, só os setters funcionais/de filtro
+  /// Trava de filtros com estratégia armada (rodar estratégias, issues #22/#38):
+  /// o lock acompanha o escopo da config mutável — hoje o `SymbolConfig` é por
+  /// símbolo, então sessões de WINFUT não travam a tela de WDOFUT. Enquanto
+  /// houver sessão ativa NO SÍMBOLO ATUAL, só os setters funcionais/de filtro
   /// recusam mudanças (PLAY congela a foto; para alterar: PAUSE/STOP, edita,
   /// PLAY de novo). Travam: threshold/agents/filtros de bubble, auto-mode e
   /// janela de volume, range de estrutura, noise/prominence, lineCount de
-  /// pivot, dateRange/lookback e o dropdown de estratégia.
+  /// pivot e dateRange/lookback.
   /// Nunca travam (só display local, sem cadeado): visibilidade (*Visible),
   /// opacidade (*Opacity), tamanho visual (*Size), cores, layout/expansão
   /// (panelFraction, trading*Expanded), som (setBubbleSound*), navegação de
   /// símbolo (setSymbol), opacidade do overlay e olho por sessão.
-  bool _strategiesArmed = false;
-  bool get strategiesArmed => _strategiesArmed;
-  bool get configLocked => _strategiesArmed;
-  void setStrategiesArmed(bool v) {
-    _strategiesArmed = v;
-    notifyListeners();
-  }
+  ///
+  /// O lock é derivado de [_strategySessions] (fonte única), nunca de um
+  /// booleano paralelo: pausar/parar destrava o símbolo automaticamente.
+  Set<String> get lockedSymbols => _strategySessions
+      .where((s) => !s.paused && s.symbol.isNotEmpty)
+      .map((s) => s.symbol.toUpperCase())
+      .toSet();
+
+  bool isSymbolLocked(String symbol) =>
+      symbol.isNotEmpty && lockedSymbols.contains(symbol.toUpperCase());
+
+  /// Lock da tela atual (config é por símbolo; strategy/TF não a dividem).
+  bool get configLocked => isSymbolLocked(_symbol);
+
+  /// Indicador global de execução (não usar para travar config: a config é
+  /// por símbolo — use [configLocked]).
+  bool get strategiesArmed => lockedSymbols.isNotEmpty;
+
+  /// Identidade das sessões ativas, independente do lock de config.
+  /// Permite o mesmo símbolo em TFs/strategies diferentes no futuro e serve
+  /// para bloquear apenas PLAY duplicado exato.
+  Set<({String strategy, String symbol, int timeFrame})>
+      get activeSessionKeys => _strategySessions
+          .where((s) => !s.paused)
+          .map((s) => (
+                strategy: s.strategy,
+                symbol: s.symbol.toUpperCase(),
+                timeFrame: s.triggerTimeFrame,
+              ))
+          .toSet();
+
+  bool hasActiveSession({
+    required String strategy,
+    required String symbol,
+    required int timeFrame,
+  }) =>
+      activeSessionKeys.contains((
+        strategy: strategy,
+        symbol: symbol.toUpperCase(),
+        timeFrame: timeFrame,
+      ));
 
   bool _guardLocked(String what) {
-    if (!_strategiesArmed) return false;
-    logD('[lock] $what bloqueado: pause a estratégia para alterar');
+    if (!configLocked) return false;
+    logD('[lock] $what bloqueado em $_symbol: pause a estratégia para alterar');
     return true;
   }
 
@@ -1040,10 +1076,7 @@ class StateService extends ChangeNotifier {
 
   Future<void> refreshStrategySessions() async {
     try {
-      final sessions = await _strategyService.state();
-      _strategySessions = sessions;
-      final armed = sessions.any((s) => !s.paused);
-      if (strategiesArmed != armed) setStrategiesArmed(armed);
+      _strategySessions = await _strategyService.state();
       // Histórico dos dias na tela (não bloqueia o refresh).
       // ignore: discarded_futures
       ensureStrategyHistoryFor(_loadedBarDays);

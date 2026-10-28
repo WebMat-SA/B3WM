@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 /// Mensagem padrão do cadeado de lock da estratégia (issue #22, problema 6).
 const String kLockedTooltipMessage =
-    'Bloqueado pela execução da estratégia rodando. PAUSE/STOP para alterar.';
+    'Bloqueado pela execução da estratégia neste símbolo. '
+    'PAUSE/STOP para alterar.';
 
 /// Badge reutilizável de lock (cadeado warning + tooltip + semantics).
 /// Visível só quando [locked] == true; quando false ocupa zero espaço
