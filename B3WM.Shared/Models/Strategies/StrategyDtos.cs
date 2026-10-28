@@ -46,6 +46,8 @@ namespace B3WM.Shared.Models.Strategies
         public string SessionId { get; set; } = "";
         public string Strategy { get; set; } = "";
         public string Symbol { get; set; } = "";
+        /// <summary>TF da tela no PLAY (identidade da sessão, independente do lock de config).</summary>
+        public int TriggerTimeFrame { get; set; } = 2;
         public bool Paused { get; set; }
         public string SnapshotHash { get; set; } = "";
         public string? Position { get; set; }

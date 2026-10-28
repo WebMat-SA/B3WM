@@ -105,6 +105,7 @@ class StrategySession {
   final String sessionId;
   final String strategy;
   final String symbol;
+  final int triggerTimeFrame;
   final bool paused;
   final String snapshotHash;
   final String? position;
@@ -117,6 +118,7 @@ class StrategySession {
     required this.sessionId,
     required this.strategy,
     required this.symbol,
+    this.triggerTimeFrame = 2,
     required this.paused,
     required this.snapshotHash,
     required this.position,
@@ -131,6 +133,7 @@ class StrategySession {
         sessionId: json['sessionId'] as String? ?? '',
         strategy: json['strategy'] as String? ?? '',
         symbol: json['symbol'] as String? ?? '',
+        triggerTimeFrame: (json['triggerTimeFrame'] as num?)?.toInt() ?? 2,
         paused: json['paused'] as bool? ?? false,
         snapshotHash: json['snapshotHash'] as String? ?? '',
         position: json['position'] as String?,

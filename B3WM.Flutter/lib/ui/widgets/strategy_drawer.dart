@@ -103,6 +103,15 @@ class _StrategyDrawerState extends State<StrategyDrawer>
     return Consumer<StateService>(builder: (context, state, _) {
       final info =
           _strategies.where((s) => s.name == _selected).firstOrNull;
+      // PLAY é deduplicado por sessão (strategy + símbolo + TF), não pelo
+      // lock de config: outra strategy no mesmo símbolo continua armável.
+      final duplicateSession = _selected != null &&
+          state.symbol.isNotEmpty &&
+          state.hasActiveSession(
+            strategy: _selected!,
+            symbol: state.symbol,
+            timeFrame: state.timeFrame,
+          );
       final listView = ListView(
         padding: EdgeInsets.zero,
         children: [
@@ -141,11 +150,9 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                       .map((s) => DropdownMenuItem(
                           value: s.name, child: Text(s.name)))
                       .toList(),
-                  onChanged: state.configLocked
-                      ? null
-                      : (v) {
-                          setState(() => _selected = v);
-                        },
+                  onChanged: (v) {
+                    setState(() => _selected = v);
+                  },
                 ),
                 if (info != null) ...[
                   Text(info.description,
@@ -161,7 +168,7 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                   style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
-                if (!state.configLocked)
+                if (!duplicateSession)
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -171,9 +178,19 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                     ),
                   )
                 else
-                  const Text(
-                    'Sessão em andamento — PAUSE/STOP nas sessões abaixo para armar outra.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  Text(
+                    'Já existe sessão ativa de $_selected em '
+                    '${state.symbol} ${state.timeFrame}min.',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                if (state.configLocked)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Configurações de ${state.symbol} congeladas pela '
+                      'sessão ativa — PAUSE/STOP para editar.',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
                   ),
                 const Padding(
                   padding: EdgeInsets.only(top: 4),
