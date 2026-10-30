@@ -434,6 +434,32 @@ namespace B3WM.Services.AI
         }
 
         /// <summary>
+        /// Une as bolhas do cluster de níveis na camada do snapshot. Chamado
+        /// tanto pela strategy quanto pelo endpoint avulso para manter o state
+        /// idêntico nos dois caminhos. Mutação explícita no snapshot.
+        /// </summary>
+        public static void EnsureLevelCluster(MarketSnapshot snap, DateTime asOf)
+        {
+            var extra = SelectLevelClusterBubbles(snap, asOf);
+            if (extra.Count == 0) return;
+            var current = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new();
+            snap.Layers[SnapshotLayers.Bubbles] = MergeBubbles(current, extra);
+        }
+
+        /// <summary>
+        /// Une listas de bolhas sem duplicar (mesma bolha = data, preço,
+        /// agente, amount e ação) e ordena por data. Puro e testável.
+        /// </summary>
+        public static List<BubbleStorageItem> MergeBubbles(
+            IEnumerable<BubbleStorageItem> current,
+            IEnumerable<BubbleStorageItem> extra) =>
+            current.Concat(extra)
+                .GroupBy(b => (b.Date, b.Price, b.Agent, b.Amount, b.ActionType))
+                .Select(g => g.First())
+                .OrderBy(b => b.Date)
+                .ToList();
+
+        /// <summary>
         /// Bolhas do pool bruto dentro do raio dos níveis relevantes (mesmo
         /// abaixo do threshold da tela). Usado pela strategy antes do state.
         /// Puro, sem I/O; devolve vazio se o pool não estiver no snapshot.
@@ -782,7 +808,7 @@ namespace B3WM.Services.AI
             ["bolhas_venda"] = Noul("Há predomínio recente de bolhas de venda com delta negativo?"),
             ["defende_suporte"] = Noul("O preço está defendendo um suporte, vale ou borda inferior de structure?"),
             ["rejeita_resistencia"] = Noul("O preço está sendo rejeitado em uma resistência, topo ou borda superior de structure?"),
-            ["reversao_suporte"] = Noul("O preço está em S1/S2/S3 ou vale, com reclaim e cluster de bolhas compradoras/absorção nesse nível? Bolhas em pivô/vale são comumente reversão de compra; bolha de venda dentro do suporte pode ser armadilha."),
+            ["reversao_suporte"] = Noul("O preço está em S1/S2/S3 ou vale, com reclaim e cluster de bolhas compradoras/absorção nesse nível?"),
             ["reversao_resistencia"] = Noul("O preço está em R1/R2/R3 ou topo, com rejeição e cluster de bolhas vendedoras nesse nível? Bolhas no topo podem indicar reversão de venda."),
             ["exaustao_queda"] = Noul("Após queda estendida, o delta negativo perde força (divergência) e/ou há absorção compradora no vale?"),
             ["exaustao_alta"] = Noul("Após alta estendida, o delta positivo perde força (divergência) e/ou há absorção vendedora no topo?"),

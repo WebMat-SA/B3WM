@@ -175,9 +175,10 @@ public class JevPromptTests
             Symbol = "WINFUT", Date = Day,
             Extremes = new() { new() { Type = ExtremeType.Valley, Position = 98.9, Value = 1000, Prominence = 500, Confidence = 0.9 } },
         };
-        snap.Layers[SnapshotLayers.Bubbles] = new List<BubbleStorageItem> { triggerBubble, clusterBubble };
+        snap.Layers[SnapshotLayers.Bubbles] = new List<BubbleStorageItem> { triggerBubble };
         snap.Raw["bubblesPool"] = new List<BubbleStorageItem> { clusterBubble, triggerBubble };
         snap.Raw["triggerBubbleKeys"] = new HashSet<string> { JevPrompt.BubbleKey(triggerBubble) };
+        JevPrompt.EnsureLevelCluster(snap, at.AddMinutes(2));
 
         var state = JevPrompt.BuildStateJson("WINFUT", 2, snap);
         Assert.Equal("S2", state.Intraday.NearestPivot?.Level);

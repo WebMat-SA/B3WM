@@ -94,7 +94,7 @@ namespace B3WM.Services.Strategies
             // entrem no state, mesmo abaixo do threshold da tela ou fora do
             // recorte do último candle fechado usado pelo builder.
             MergeTriggerBubbles(snap, ev);
-            MergeLevelClusterBubbles(snap, at);
+            JevPrompt.EnsureLevelCluster(snap, at);
             snap.Raw["triggerBubbleKeys"] = TriggerKeysFor(ev);
 
             var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
@@ -159,19 +159,6 @@ namespace B3WM.Services.Strategies
             snap.Layers[SnapshotLayers.Bubbles] = MergeBubbles(current, extra);
         }
 
-        /// <summary>
-        /// Inclui no state as bolhas do pool bruto que estão dentro do raio
-        /// dos pivôs/vale/topo relevantes, mesmo abaixo do threshold da tela.
-        /// </summary>
-        private static void MergeLevelClusterBubbles(MarketSnapshot snap, DateTime asOf)
-        {
-            var extra = JevPrompt.SelectLevelClusterBubbles(snap, asOf);
-            if (extra.Count == 0) return;
-            var current = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles)
-                ?? new List<BubbleStorageItem>();
-            snap.Layers[SnapshotLayers.Bubbles] = MergeBubbles(current, extra);
-        }
-
         /// <summary>Chaves das bolhas que pertencem ao gatilho avaliado.</summary>
         private static HashSet<string> TriggerKeysFor(StrategyEvent ev) => ev switch
         {
@@ -187,11 +174,7 @@ namespace B3WM.Services.Strategies
         public static List<BubbleStorageItem> MergeBubbles(
             IEnumerable<BubbleStorageItem> current,
             IEnumerable<BubbleStorageItem> extra) =>
-            current.Concat(extra)
-                .GroupBy(b => (b.Date, b.Price, b.Agent, b.Amount, b.ActionType))
-                .Select(g => g.First())
-                .OrderBy(b => b.Date)
-                .ToList();
+            JevPrompt.MergeBubbles(current, extra);
 
         /// <summary>
         /// Monta e grava a auditoria (best-effort). Nunca lança: falha de

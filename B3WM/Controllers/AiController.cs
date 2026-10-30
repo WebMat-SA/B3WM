@@ -1,5 +1,6 @@
 using B3WM.Services.AI;
 using B3WM.Services.Screen;
+using B3WM.Shared.Models;
 using B3WM.Shared.Models.AI;
 using Microsoft.AspNetCore.Mvc;
 
@@ -74,6 +75,13 @@ namespace B3WM.Controllers
 
             try
             {
+                // Mesmo contexto de níveis/cluster da strategy (paridade state).
+                var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
+                var asOf = candles.Count > 0
+                    ? candles[^1].Date.AddMinutes(req.TimeFrame)
+                    : displayDate.Date.AddDays(1);
+                JevPrompt.EnsureLevelCluster(snap, asOf);
+
                 var state = JevPrompt.BuildStateJson(req.Symbol, req.TimeFrame, snap);
                 var stateJson = System.Text.Json.JsonSerializer.Serialize(state);
                 var questions = JevPrompt.BuildQuestions();
