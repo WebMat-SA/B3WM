@@ -34,6 +34,12 @@ namespace B3WM.Services.AI
         [JsonPropertyName("pivots")] public List<JevPivotDto> Pivots { get; set; } = new();
         [JsonPropertyName("tops_valleys")] public List<JevExtremeDto> TopsValleys { get; set; } = new();
         [JsonPropertyName("structures")] public List<JevStructureDto> Structures { get; set; } = new();
+        /// <summary>Pivô mais próximo do último preço (não altera ProximidadeRef).</summary>
+        [JsonPropertyName("nearest_pivot")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public JevNearestPivotDto? NearestPivot { get; set; }
+        /// <summary>Níveis próximos/tocados com resumo de bolhas ao redor.</summary>
+        [JsonPropertyName("level_context")] public List<JevLevelContextDto> LevelContext { get; set; } = new();
     }
 
     /// <summary>Bloco diário: sem bolhas e sem VWAP (o gráfico 1D não os exibe).</summary>
@@ -77,11 +83,53 @@ namespace B3WM.Services.AI
     public sealed class JevBubbleDto
     {
         [JsonPropertyName("date")] public DateTime Date { get; set; }
-        [JsonPropertyName("agent")] public int Agent { get; set; }
+        /// <summary>Nome da corretora/agente (não o código numérico).</summary>
+        [JsonPropertyName("agent")] public string Agent { get; set; } = "";
         /// <summary>buy | sell</summary>
         [JsonPropertyName("side")] public string Side { get; set; } = "";
         [JsonPropertyName("amount")] public decimal Amount { get; set; }
         [JsonPropertyName("price")] public double Price { get; set; }
+        /// <summary>Bolha pertence ao candle que disparou a avaliação.</summary>
+        [JsonPropertyName("is_trigger")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool IsTrigger { get; set; }
+    }
+
+    public sealed class JevNearestPivotDto
+    {
+        [JsonPropertyName("source")] public string Source { get; set; } = "";
+        [JsonPropertyName("level")] public string Level { get; set; } = "";
+        [JsonPropertyName("value")] public double Value { get; set; }
+        [JsonPropertyName("distance_ticks")] public double DistanceTicks { get; set; }
+        /// <summary>support | resistance | neutral</summary>
+        [JsonPropertyName("side")] public string Side { get; set; } = "";
+        [JsonPropertyName("touched_at")] public DateTime? TouchedAt { get; set; }
+        [JsonPropertyName("reclaimed")] public bool Reclaimed { get; set; }
+    }
+
+    public sealed class JevBubbleSummaryDto
+    {
+        [JsonPropertyName("count")] public int Count { get; set; }
+        [JsonPropertyName("buy_count")] public int BuyCount { get; set; }
+        [JsonPropertyName("sell_count")] public int SellCount { get; set; }
+        [JsonPropertyName("buy_amount")] public decimal BuyAmount { get; set; }
+        [JsonPropertyName("sell_amount")] public decimal SellAmount { get; set; }
+        [JsonPropertyName("net_amount")] public decimal NetAmount { get; set; }
+    }
+
+    public sealed class JevLevelContextDto
+    {
+        /// <summary>pivot | vale | topo</summary>
+        [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+        [JsonPropertyName("source")] public string Source { get; set; } = "";
+        [JsonPropertyName("level")] public string Level { get; set; } = "";
+        [JsonPropertyName("value")] public double Value { get; set; }
+        /// <summary>support | resistance | neutral</summary>
+        [JsonPropertyName("side")] public string Side { get; set; } = "";
+        [JsonPropertyName("distance_ticks")] public double DistanceTicks { get; set; }
+        [JsonPropertyName("touched_at")] public DateTime? TouchedAt { get; set; }
+        [JsonPropertyName("reclaimed")] public bool Reclaimed { get; set; }
+        [JsonPropertyName("bubbles")] public JevBubbleSummaryDto Bubbles { get; set; } = new();
     }
 
     public sealed class JevPivotDto

@@ -43,7 +43,7 @@ namespace B3WM.Services.Strategies
             "- **Gatilho:** fechamento do candle do TF da sessão com pelo menos uma bolha; a Jev recebe todas as bolhas ocorridas no candle (não dispara na abertura/1ª bolha do candle vigente).\n" +
             "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
             "- **Parâmetros fixos no código:** `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
-            "- **Saída INFORMATIVA (Composite scoring):** 8 dimensões de direção com perguntas espelhadas alta/baixa (16 perguntas) + 5 de operabilidade; viés `comprar|vender|lateral` e proximidade técnica. **Não** decide operar/não-operar — a decisão é manual; pesos/thresholds em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
+            "- **Saída INFORMATIVA (Composite scoring):** 10 dimensões de direção com perguntas espelhadas alta/baixa (20 perguntas) + 5 de operabilidade; viés `comprar|vender|lateral`, proximidade técnica e contexto de níveis (pivô/vale + cluster de bolhas). **Não** decide operar/não-operar — a decisão é manual; pesos/thresholds em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
             "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
             "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
             "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
@@ -94,6 +94,8 @@ namespace B3WM.Services.Strategies
             // entrem no state, mesmo abaixo do threshold da tela ou fora do
             // recorte do último candle fechado usado pelo builder.
             MergeTriggerBubbles(snap, ev);
+            JevPrompt.EnsureLevelCluster(snap, at);
+            snap.Raw["triggerBubbleKeys"] = TriggerKeysFor(ev);
 
             var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
             var stateJson = JsonSerializer.Serialize(state);
@@ -157,6 +159,14 @@ namespace B3WM.Services.Strategies
             snap.Layers[SnapshotLayers.Bubbles] = MergeBubbles(current, extra);
         }
 
+        /// <summary>Chaves das bolhas que pertencem ao gatilho avaliado.</summary>
+        private static HashSet<string> TriggerKeysFor(StrategyEvent ev) => ev switch
+        {
+            CandleClosed c => c.Bubbles.Select(JevPrompt.BubbleKey).ToHashSet(),
+            BubbleAppeared b => new HashSet<string> { JevPrompt.BubbleKey(b.Item) },
+            _ => new HashSet<string>(),
+        };
+
         /// <summary>
         /// Une listas de bolhas sem duplicar (mesma bolha = data, preço,
         /// agente, amount e ação) e ordena por data. Puro e testável.
@@ -164,11 +174,7 @@ namespace B3WM.Services.Strategies
         public static List<BubbleStorageItem> MergeBubbles(
             IEnumerable<BubbleStorageItem> current,
             IEnumerable<BubbleStorageItem> extra) =>
-            current.Concat(extra)
-                .GroupBy(b => (b.Date, b.Price, b.Agent, b.Amount, b.ActionType))
-                .Select(g => g.First())
-                .OrderBy(b => b.Date)
-                .ToList();
+            JevPrompt.MergeBubbles(current, extra);
 
         /// <summary>
         /// Monta e grava a auditoria (best-effort). Nunca lança: falha de

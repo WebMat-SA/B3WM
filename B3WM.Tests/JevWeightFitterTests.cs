@@ -137,15 +137,15 @@ public class JevWeightFitterTests
     [Fact]
     public void ComputeWeights_ProducesNonNegativeWeights()
     {
-        // 8 features de direção, separáveis por x0.
+        // Features de direção atuais, separáveis por x0.
         var dirX = new List<double[]>();
         var dirY = new List<int>();
         for (int i = 0; i < 30; i++)
         {
             double f = i / 29.0;
-            var row = new double[8];
+            var row = new double[JevPrompt.DirectionDimensionIds.Length];
             row[0] = f;
-            for (int j = 1; j < 8; j++) row[j] = 0.5;
+            for (int j = 1; j < row.Length; j++) row[j] = 0.5;
             dirX.Add(row);
             dirY.Add(f > 0.5 ? 1 : 0);
         }

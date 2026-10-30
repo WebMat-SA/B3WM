@@ -114,7 +114,7 @@ public class JevPromptTests
         // Bolhas (side traduzido).
         var b = Assert.Single(s.Intraday.Bubbles);
         Assert.Equal("buy", b.Side);
-        Assert.Equal(122, b.Agent);
+        Assert.Equal("BGC LIQUIDEZ DTVM", b.Agent);
         // Volume profile.
         Assert.NotNull(s.Intraday.VolumeProfile);
         Assert.Equal(101, s.Intraday.VolumeProfile!.Poc);
@@ -136,6 +136,61 @@ public class JevPromptTests
         // Structures intraday trazem o timeframe.
         Assert.Contains(s.Intraday.Structures, x => x.Timeframe == 2);
         Assert.DoesNotContain(s.Intraday.Structures, x => x.Timeframe == 1440);
+    }
+
+    [Fact]
+    public void AgentName_UsesEnumDescription_AndFallsBackForUnknown()
+    {
+        Assert.Equal("BGC LIQUIDEZ DTVM", JevPrompt.AgentName(122));
+        Assert.Equal("GOLDMAN SACHS DO BRASIL CTVM", JevPrompt.AgentName(238));
+        Assert.Equal("AGENTE 999999", JevPrompt.AgentName(999999));
+    }
+
+    [Fact]
+    public void BuildStateJson_AddsNearestPivotLevelContextAndTriggerFlag()
+    {
+        var at = Day.AddHours(10);
+        var triggerBubble = new BubbleStorageItem
+        {
+            Agent = 238, Amount = 475, Price = 99.0, Date = at,
+            ActionType = Ticks2.ActionType.Buy, Symbol = "WINFUT",
+        };
+        var clusterBubble = new BubbleStorageItem
+        {
+            Agent = 8, Amount = 100, Price = 98.9, Date = at.AddSeconds(30),
+            ActionType = Ticks2.ActionType.Sale, Symbol = "WINFUT",
+        };
+        var snap = new MarketSnapshot();
+        snap.Layers[SnapshotLayers.Candles] = new List<BarStorageItem>
+        {
+            new() { Date = at, Symbol = "WINFUT", TimeFrame = 2, Open = 99.5, High = 100, Low = 98.8, Close = 99.2, Volume = 10, VwapPrice = 99.3 },
+        };
+        snap.Layers[SnapshotLayers.PivotIntra] = new PivotStorageItem
+        {
+            Symbol = "WINFUT", Date = Day, Source = "D-1",
+            Levels = new() { new() { Key = "S2", Value = 99.0 }, new() { Key = "S1", Value = 102 } },
+        };
+        snap.Layers[SnapshotLayers.ExtremesIntra] = new ExtremeStorageItem
+        {
+            Symbol = "WINFUT", Date = Day,
+            Extremes = new() { new() { Type = ExtremeType.Valley, Position = 98.9, Value = 1000, Prominence = 500, Confidence = 0.9 } },
+        };
+        snap.Layers[SnapshotLayers.Bubbles] = new List<BubbleStorageItem> { triggerBubble };
+        snap.Raw["bubblesPool"] = new List<BubbleStorageItem> { clusterBubble, triggerBubble };
+        snap.Raw["triggerBubbleKeys"] = new HashSet<string> { JevPrompt.BubbleKey(triggerBubble) };
+        JevPrompt.EnsureLevelCluster(snap, at.AddMinutes(2));
+
+        var state = JevPrompt.BuildStateJson("WINFUT", 2, snap);
+        Assert.Equal("S2", state.Intraday.NearestPivot?.Level);
+        Assert.True(state.Intraday.NearestPivot!.DistanceTicks < 1);
+        Assert.Contains(state.Intraday.LevelContext,
+            l => l.Level == "S2" && l.Bubbles.BuyAmount == 475 && l.Reclaimed);
+        var sent = state.Intraday.Bubbles.Single(b => b.Price == 99.0);
+        Assert.True(sent.IsTrigger);
+        Assert.False(state.Intraday.Bubbles.Single(b => b.Price == 98.9).IsTrigger);
+
+        var cluster = JevPrompt.SelectLevelClusterBubbles(snap, at.AddMinutes(2));
+        Assert.Contains(cluster, b => b.Price == 98.9);
     }
 
     [Fact]
@@ -287,9 +342,9 @@ public class JevPromptTests
     public void BuildQuestions_HasPairedDirectionIndicators_NoEncerrar()
     {
         var q = JevPrompt.BuildQuestions();
-        // 8 dimensões (16 perguntas alta/baixa) + 5 de operabilidade.
-        Assert.Equal(21, q.Count);
-        Assert.Equal(8, JevPrompt.DirectionDimensions.Length);
+        // 10 dimensões (20 perguntas alta/baixa) + 5 de operabilidade.
+        Assert.Equal(25, q.Count);
+        Assert.Equal(10, JevPrompt.DirectionDimensions.Length);
         foreach (var dim in JevPrompt.DirectionDimensions)
         {
             Assert.True(q.ContainsKey(dim.BullId), $"pergunta de alta ausente: {dim.BullId}");
@@ -319,6 +374,10 @@ public class JevPromptTests
         "bolhas_venda":{"type":"noul","noul":0.20},
         "defende_suporte":{"type":"noul","noul":0.75},
         "rejeita_resistencia":{"type":"noul","noul":0.20},
+        "reversao_suporte":{"type":"noul","noul":0.80},
+        "reversao_resistencia":{"type":"noul","noul":0.20},
+        "exaustao_queda":{"type":"noul","noul":0.70},
+        "exaustao_alta":{"type":"noul","noul":0.20},
         "diario_alta":{"type":"noul","noul":0.85},
         "diario_baixa":{"type":"noul","noul":0.10},
         "sem_chop":{"type":"noul","noul":0.70},
@@ -345,6 +404,10 @@ public class JevPromptTests
         "bolhas_venda":{"type":"noul","noul":0.80},
         "defende_suporte":{"type":"noul","noul":0.80},
         "rejeita_resistencia":{"type":"noul","noul":0.80},
+        "reversao_suporte":{"type":"noul","noul":0.80},
+        "reversao_resistencia":{"type":"noul","noul":0.80},
+        "exaustao_queda":{"type":"noul","noul":0.80},
+        "exaustao_alta":{"type":"noul","noul":0.80},
         "diario_alta":{"type":"noul","noul":0.80},
         "diario_baixa":{"type":"noul","noul":0.80},
         "sem_chop":{"type":"noul","noul":0.50},
@@ -370,8 +433,9 @@ public class JevPromptTests
         Assert.True(r.ConfiancaOperavel > 0);
         Assert.True(r.DirecaoNet > 0);
         Assert.Equal(1, r.DirecaoCobertura, 6);
-        Assert.Equal("", r.DirecaoMotivo);
-        Assert.Equal(21, r.Criteria.Count);
+        Assert.False(string.IsNullOrWhiteSpace(r.DirecaoMotivo));
+        Assert.Contains("alta", r.DirecaoMotivo);
+        Assert.Equal(25, r.Criteria.Count);
         Assert.Equal(0.90, r.Criteria["candles_alta"]);
         Assert.Equal(0.10, r.Criteria["candles_baixa"]);
         Assert.Equal(100, r.InputTokens);
