@@ -2,7 +2,7 @@
 
 Cliente **Flutter** (desktop/mobile) do B3WM: gráfico Map Flow em `CustomPainter` com candles, bubbles, volume profile, estruturas, topos/vales, pivot tradicional, VWAP, painel de análise diária (1D) e painel de trading (MT5 via backend).
 
-> Pré-visualização sem dados reais: as imagens em [`../screenshots/`](../screenshots/) são geradas pelos golden tests com dados de exemplo.
+> As imagens em [`../screenshots/`](../screenshots/) são geradas pelos golden tests. Quando `../B3WM/Data/` e as `shared_preferences` estão presentes, eles usam a sessão real (WINFUT, 2026-10-28); no CI/clone limpo, usam o fixture versionado `test/fixtures/readme_session.json`.
 
 ## Pré-requisitos
 
@@ -45,6 +45,8 @@ lib/
     └── daily/                 # painel inferior 1D: structure/volume/extreme/pivot
 test/
 ├── screenshots_golden_test.dart  # gera test/goldens/ (copiar p/ ../screenshots/)
+├── readme_data.dart              # loader híbrido: dados reais + fallback do fixture
+├── fixtures/readme_session.json  # sessão WINFUT 2026-10-28 versionada p/ CI
 ├── pivot_test.dart               # regras do pivot no client
 └── ...                           # widget/unit tests (daily, structure, volume, state, backup)
 assets/
@@ -58,11 +60,13 @@ flutter test                                   # todos os testes
 flutter test test/screenshots_golden_test.dart --update-goldens   # regenera os PNGs
 ```
 
-Depois copie `test/goldens/*.png` para `../screenshots/` (overview, drawer_bubbles, drawer_estrutura, drawer_volume_profile, drawer_extreme, drawer_pivot, trading_panel). O Verifier está desabilitado e não possui golden.
+Depois copie `test/goldens/*.png` para `../screenshots/`. Cobertura: `overview`, `trading_panel`, `drawer_bubbles`, `drawer_estrutura`, `drawer_volume_profile`, `drawer_extreme`, `drawer_pivot`, `drawer_vwap`, `drawer_backup`, `drawer_strategy` e `daily_panel`. O Verifier está desabilitado e não possui golden.
+
+Para forçar os dados reais, defina `B3WM_DATA_DIR` (pasta `Data/`) e opcionalmente `B3WM_PREFS_JSON` (arquivo `shared_preferences.json`). Sem eles, o loader procura `../B3WM/Data` e os caminhos padrão do `shared_preferences` (Windows/WSL/Linux) e, por fim, usa o fixture.
 
 ## Troubleshooting
 
 - **Tela “Selecione um símbolo” travada / sem dados:** backend fora do ar ou `baseUrl` errado — confira `https://localhost:5002` no navegador.
 - **Erro de certificado no Chrome/Android:** refaça `dotnet dev-certs https --trust` e ajuste o `baseUrl` pela tabela acima.
 - **`flutter pub get` falhando:** confira a versão do Flutter (`flutter --version` ≈ 3.44 / Dart 3.12).
-- **Pivot/Extreme vazios nos goldens:** esperado — os fakes não mockam esses endpoints, a screenshot mostra os controles e a mensagem de “sem dados”.
+- **Golden sem dados / erro de fixture:** confira se `test/fixtures/readme_session.json` existe ou se `B3WM_DATA_DIR`/`B3WM_PREFS_JSON` apontam para caminhos válidos.

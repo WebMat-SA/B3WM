@@ -14,6 +14,11 @@ namespace B3WM.Services.Strategies
     public sealed class CandleClosed : StrategyEvent
     {
         public BarStorageItem Bar { get; set; } = null!;
+        /// <summary>
+        /// Todas as bolhas ocorridas dentro do candle fechado (janela
+        /// [Bar.Date, Bar.Date + TimeFrame)). Vazio = candle sem bolha.
+        /// </summary>
+        public List<BubbleStorageItem> Bubbles { get; set; } = new();
     }
 
     public sealed class BubbleAppeared : StrategyEvent

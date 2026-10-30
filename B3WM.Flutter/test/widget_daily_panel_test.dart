@@ -9,12 +9,14 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:b3wm_flutter/main.dart';
+import 'package:b3wm_flutter/models/symbol_config.dart';
 import 'package:b3wm_flutter/services/api_service.dart';
 import 'package:b3wm_flutter/services/audio_service.dart';
 import 'package:b3wm_flutter/services/preferences_service.dart';
 import 'package:b3wm_flutter/services/signalr_service.dart';
 import 'package:b3wm_flutter/services/state_service.dart';
 import 'package:b3wm_flutter/services/trading_service.dart';
+import 'package:b3wm_flutter/ui/widgets/chart/chart_data.dart';
 import 'package:b3wm_flutter/ui/widgets/chart/daily_chart_data.dart';
 
 class _NoopSignalRService extends SignalRService {
@@ -306,7 +308,26 @@ void main() {
     expect(
         extremeRequests.last.url.queryParameters['minimumProminence'], '0.250');
     expect(service.dailyExtremes?.topCount, 1);
-    expect(buildDailyChartData(service).extremes?.topPrices, [101000.0]);
+    final dailyData = buildDailyChartData(service);
+    expect(dailyData.extremes?.topPrices, [101000.0]);
+    expect(dailyData.extremes?.topColor, const Color(0xFF43A047));
+    expect(dailyData.extremes?.valleyColor, const Color(0xFFE53935));
+
+    service.setExtremeVisible(false);
+    service.setExtremeIncludeDaily(true);
+    service.setDailyExtremeTopColor('#112233');
+    service.setDailyExtremeValleyColor('#445566');
+    service.setDailyExtremeOpacity(0.35);
+    final intraday = buildChartData(service);
+    expect(intraday.extremeLayers, hasLength(1));
+    expect(intraday.extremeLayers.single.id, 'daily');
+    expect(intraday.extremeLayers.single.topPrices, [101000.0]);
+    expect(intraday.extremeLayers.single.topColor, const Color(0xFF112233));
+    expect(intraday.extremeLayers.single.valleyColor, const Color(0xFF445566));
+    expect(intraday.extremeLayers.single.opacity, 0.35);
+
+    service.setExtremeIncludeDaily(false);
+    expect(buildChartData(service).extremeLayers, isEmpty);
 
     await tester.tap(find.byTooltip('Topos/Vales 1D'));
     await tester.pumpAndSettle();
@@ -316,5 +337,70 @@ void main() {
     expect(
         find.textContaining('Diário: 1 topo(s) / 0 vale(s)'), findsOneWidget);
     service.reset();
+  });
+
+  testWidgets('Range manual do Volume 1D sobrevive ao reabrir o painel',
+      (tester) async {
+    final initial = SymbolConfig.withDefaults('WINFUT')
+      ..daily.profileAutoByPriceStructure = false;
+    SharedPreferences.setMockInitialValues({
+      'b3wm_Config_WINFUT': jsonEncode(initial.toJson()),
+    });
+    final prefs = PreferencesService();
+    await prefs.init();
+
+    final api = _panelApi();
+    final service = StateService(
+      apiService: api,
+      signalRService: _NoopSignalRService(
+          hubUrl: 'http://test.local/hub', apiService: api),
+      preferencesService: prefs,
+      audioService: AudioService(),
+    );
+    await service.setSymbol('WINFUT');
+    // Deixa o sync de extremos agendado (800ms) disparar e sair da fila.
+    await tester.pump(const Duration(seconds: 1));
+    await service.loadDailyAll();
+
+    // Primeira carga no modo manual (sem janela salva): full histórico.
+    expect(service.dailyBars, hasLength(2));
+    expect(service.dailyRangeStart, 0);
+    expect(service.dailyRangeEnd, 2);
+
+    // Usuário seleciona só o primeiro dia no slider.
+    await service.applyDailyVolumeFilterAndSyncExtremes(0, 1);
+    expect(service.dailyRangeStart, 0);
+    expect(service.dailyRangeEnd, 1);
+    expect(service.dailyProfileFrom, DateTime(2026, 8, 10));
+    expect(service.dailyProfileTo, DateTime(2026, 8, 10));
+
+    // Fechar/reabrir o splitter recarrega o histórico 1440: a janela
+    // manual deve ser reancorada por data, não resetada para o full.
+    await service.loadDailyAll();
+    expect(service.dailyRangeStart, 0);
+    expect(service.dailyRangeEnd, 1);
+    expect(service.dailyProfileFrom, DateTime(2026, 8, 10));
+    expect(service.dailyProfileTo, DateTime(2026, 8, 10));
+    final data = buildDailyChartData(service);
+    expect(data.rangeStart, 0);
+    expect(data.rangeEnd, 1);
+    service.reset();
+
+    // Reiniciar o app: a janela persistida por data é reaplicada.
+    final reloaded = StateService(
+      apiService: api,
+      signalRService: _NoopSignalRService(
+          hubUrl: 'http://test.local/hub', apiService: api),
+      preferencesService: prefs,
+      audioService: AudioService(),
+    );
+    await reloaded.setSymbol('WINFUT');
+    await tester.pump(const Duration(seconds: 1));
+    await reloaded.loadDailyAll();
+    expect(reloaded.dailyRangeStart, 0);
+    expect(reloaded.dailyRangeEnd, 1);
+    expect(reloaded.dailyProfileFrom, DateTime(2026, 8, 10));
+    expect(reloaded.dailyProfileTo, DateTime(2026, 8, 10));
+    reloaded.reset();
   });
 }

@@ -4,11 +4,13 @@ using System.Text;
 using System.Text.Json;
 using B3WM.Services.AI;
 using B3WM.Services.Core;
+using B3WM.Services.Market;
 using B3WM.Shared.Extensions;
 using B3WM.Shared.Models;
 using B3WM.Shared.Models.AI;
 using B3WM.Shared.Models.ExtremeDetection;
 using B3WM.Shared.Models.Strategies;
+using Microsoft.Extensions.DependencyInjection;
 namespace B3WM.Services.Strategies
 {
     /// <summary>Sessão armada: spec cru da tela + posição paper + relatório.</summary>
@@ -196,11 +198,21 @@ namespace B3WM.Services.Strategies
 
         private async Task OnCandleAsync(BarStorageItem bar)
         {
-            if (SessionsOf(bar.Symbol).Count == 0) return;
+            var sessions = SessionsOf(bar.Symbol);
+            if (sessions.Count == 0) return;
+            // Jev: só avalia no fechamento e recebe TODAS as bolhas do candle.
+            // Carrega a lista autoritativa do dia e recorta a janela do candle;
+            // só faz I/O quando há sessão no TF da barra.
+            var candleBubbles = sessions.Any(s => s.TriggerTimeFrame == bar.TimeFrame)
+                ? await BubblesInCandleAsync(bar)
+                : new List<BubbleStorageItem>();
             // Despacha o evento para todas as sessões do símbolo; cada
             // strategy filtra no ShouldTrigger (candle_close, bubble, etc.).
             await PublishAsync(
-                new CandleClosed { Symbol = bar.Symbol, At = bar.Date, Bar = bar },
+                new CandleClosed
+                {
+                    Symbol = bar.Symbol, At = bar.Date, Bar = bar, Bubbles = candleBubbles,
+                },
                 "candle_close");
             // Execução amarrada ao TF da sessão: pendências e zeragem diária
             // só no open do candle do próprio TF (não no de qualquer TF).
@@ -218,6 +230,38 @@ namespace B3WM.Services.Strategies
                     s.PersistedDecisions = s.Decisions.Count;
                     await PersistLogAsync(ToLogDay(s));
                 }
+        }
+
+        private async Task<List<BubbleStorageItem>> BubblesInCandleAsync(BarStorageItem bar)
+        {
+            try
+            {
+                using var scope = _scopes.CreateScope();
+                var market = scope.ServiceProvider.GetService<IMarketData>();
+                if (market == null) return new();
+                var day = await market.BubblesAsync(bar.Symbol, bar.Date.Date);
+                return BubblesInCandle(day, bar);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[strategy-runner] falha ao carregar bolhas do candle {Symbol} {At:O}",
+                    bar.Symbol, bar.Date);
+                return new();
+            }
+        }
+
+        /// <summary>
+        /// Bolhas do candle fechado: janela [Date, Date+TimeFrame), mesma
+        /// convenção de bucket do gráfico. Puro e testável.
+        /// </summary>
+        public static List<BubbleStorageItem> BubblesInCandle(
+            IEnumerable<BubbleStorageItem> bubbles, BarStorageItem bar)
+        {
+            var tf = bar.TimeFrame <= 0 ? 1 : bar.TimeFrame;
+            var from = bar.Date;
+            var to = from.AddMinutes(tf);
+            return bubbles.Where(b => b.Date >= from && b.Date < to).ToList();
         }
 
         private async Task OnBubbleAsync(BubbleStorageItem bubble)

@@ -38,18 +38,20 @@ ChartData buildDailyChartData(StateService state) {
     }
   }
 
-  double min4(double a, double b, double c, double d) =>
-      a < b ? (a < c ? (a < d ? a : d) : (c < d ? c : d)) : (b < c ? (b < d ? b : d) : (c < d ? c : d));
-  double max4(double a, double b, double c, double d) =>
-      a > b ? (a > c ? (a > d ? a : d) : (c > d ? c : d)) : (b > c ? (b > d ? b : d) : (c > d ? c : d));
+  double min4(double a, double b, double c, double d) => a < b
+      ? (a < c ? (a < d ? a : d) : (c < d ? c : d))
+      : (b < c ? (b < d ? b : d) : (c < d ? c : d));
+  double max4(double a, double b, double c, double d) => a > b
+      ? (a > c ? (a > d ? a : d) : (c > d ? c : d))
+      : (b > c ? (b > d ? b : d) : (c > d ? c : d));
   double minPrice = bars.isEmpty
       ? 0.0
       : bars.fold<double>(
           double.infinity, (p, b) => min4(p, b.low, b.close, b.open));
   double maxPrice = bars.isEmpty
       ? 0.0
-      : bars.fold<double>(double.negativeInfinity,
-          (p, b) => max4(p, b.high, b.close, b.open));
+      : bars.fold<double>(
+          double.negativeInfinity, (p, b) => max4(p, b.high, b.close, b.open));
 
   DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -59,8 +61,7 @@ ChartData buildDailyChartData(StateService state) {
         .where((s) => s.symbol == state.symbol && s.timeFrame == 1440)
         .toList();
     if (hist.isNotEmpty && bars.isNotEmpty) {
-      final sorted = List.of(hist)
-        ..sort((a, b) => a.date.compareTo(b.date));
+      final sorted = List.of(hist)..sort((a, b) => a.date.compareTo(b.date));
       // Normaliza para dia: o hist pode trazer hora (ex. 18:00) enquanto as
       // barras D0 são meia-noite — sem isso o `isAfter` pula o D0.
       final histDays = sorted.map((s) => dayOnly(s.date)).toList();
@@ -71,8 +72,7 @@ ChartData buildDailyChartData(StateService state) {
       final downAux = List<double?>.filled(bars.length, null);
       var h = 0;
       for (var i = 0; i < bars.length; i++) {
-        while (h + 1 < sorted.length &&
-            !histDays[h + 1].isAfter(barDays[i])) {
+        while (h + 1 < sorted.length && !histDays[h + 1].isAfter(barDays[i])) {
           h++;
         }
         // Prefixo anterior ao hist mais antigo: sem referência.
@@ -105,11 +105,12 @@ ChartData buildDailyChartData(StateService state) {
     }
   }
 
-  ExtremeLineData? extremes;
+  final extremeLayers = <ExtremeLineData>[];
   if (state.dailyExtremeVisible) {
     final dex = state.dailyExtremes;
     if (dex != null && dex.extremes.isNotEmpty) {
-      extremes = ExtremeLineData(
+      extremeLayers.add(ExtremeLineData(
+        id: 'daily',
         topPrices: dex.extremes
             .where((e) => e.type == ExtremeType.top)
             .map((e) => e.position)
@@ -118,21 +119,24 @@ ChartData buildDailyChartData(StateService state) {
             .where((e) => e.type == ExtremeType.valley)
             .map((e) => e.position)
             .toList(),
+        topColor: _parseHexColor(state.dailyExtremeTopColor),
+        valleyColor: _parseHexColor(state.dailyExtremeValleyColor),
         visible: true,
         opacity: state.dailyExtremeOpacity,
-      );
+      ));
     }
   }
 
-  PivotLineData? pivots;
+  final pivotLayers = <PivotLineData>[];
   if (state.dailyPivotVisible) {
     final pv = state.dailyPivot;
     if (pv != null && pv.levels.isNotEmpty) {
-      pivots = PivotLineData.fromLevels(
+      pivotLayers.add(PivotLineData.fromLevels(
         [for (final l in pv.levels) (key: l.key, value: l.value)],
+        id: 'daily',
         visible: true,
         opacity: state.dailyPivotOpacity,
-      );
+      ));
     }
   }
 
@@ -185,11 +189,9 @@ ChartData buildDailyChartData(StateService state) {
     rangeStart = s.clamp(0, bars.length);
     rangeEnd = e.clamp(rangeStart, bars.length);
   } else {
-    rangeStart =
-        bars.isEmpty ? 0 : state.dailyRangeStart.clamp(0, bars.length);
-    rangeEnd = bars.isEmpty
-        ? 0
-        : state.dailyRangeEnd.clamp(rangeStart, bars.length);
+    rangeStart = bars.isEmpty ? 0 : state.dailyRangeStart.clamp(0, bars.length);
+    rangeEnd =
+        bars.isEmpty ? 0 : state.dailyRangeEnd.clamp(rangeStart, bars.length);
   }
 
   return ChartData(
@@ -198,8 +200,8 @@ ChartData buildDailyChartData(StateService state) {
     blueBubbles: const [],
     volumeProfile: volumeProfile,
     structures: structures,
-    extremes: extremes,
-    pivots: pivots,
+    extremeLayers: extremeLayers,
+    pivotLayers: pivotLayers,
     vwapPoints: const [],
     minPrice: minPrice,
     maxPrice: maxPrice,

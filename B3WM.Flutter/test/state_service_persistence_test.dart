@@ -104,6 +104,45 @@ void main() {
       expect(restored.knownAgents, [1, 2, 3]);
     });
 
+    test('janela manual do Volume 1D persiste por data', () {
+      final cfg = SymbolConfig.withDefaults('WINFUT')
+        ..daily.profileAutoByPriceStructure = false
+        ..daily.profileManualFrom = DateTime(2026, 8, 10)
+        ..daily.profileManualTo = DateTime(2026, 8, 11);
+      final restored = SymbolConfig.fromJson(cfg.toJson(), symbol: 'WINFUT');
+      expect(restored.daily.profileAutoByPriceStructure, isFalse);
+      expect(restored.daily.profileManualFrom, DateTime(2026, 8, 10));
+      expect(restored.daily.profileManualTo, DateTime(2026, 8, 11));
+
+      // Ausente: sem janela manual (full histórico até o slider mexer).
+      final missing = SymbolConfig.fromJson({'timeFrame': 2}, symbol: 'WINFUT');
+      expect(missing.daily.profileManualFrom, isNull);
+      expect(missing.daily.profileManualTo, isNull);
+    });
+
+    test('topos/vales: cores e overlay diário round-trip', () {
+      final cfg = SymbolConfig.withDefaults('WINFUT')
+        ..extremeTopColor = '#010203'
+        ..extremeValleyColor = '#040506'
+        ..extremeIncludeDaily = true
+        ..daily.extremeTopColor = '#070809'
+        ..daily.extremeValleyColor = '#0A0B0C';
+      final restored = SymbolConfig.fromJson(cfg.toJson(), symbol: 'WINFUT');
+      expect(restored.extremeTopColor, '#010203');
+      expect(restored.extremeValleyColor, '#040506');
+      expect(restored.extremeIncludeDaily, isTrue);
+      expect(restored.daily.extremeTopColor, '#070809');
+      expect(restored.daily.extremeValleyColor, '#0A0B0C');
+
+      final missing = SymbolConfig.fromJson({'timeFrame': 2}, symbol: 'WINFUT');
+      expect(missing.extremeTopColor, Defaults.extremeTopColor);
+      expect(missing.extremeValleyColor, Defaults.extremeValleyColor);
+      expect(missing.extremeIncludeDaily, isFalse);
+      expect(missing.daily.extremeTopColor, Defaults.dailyExtremeTopColor);
+      expect(
+          missing.daily.extremeValleyColor, Defaults.dailyExtremeValleyColor);
+    });
+
     test('sanitizeBubbleSizes clampa para [5,200] e ordena min <= max', () {
       expect(SymbolConfig.sanitizeBubbleSizes(200, 5), [5, 200]);
       expect(SymbolConfig.sanitizeBubbleSizes(-10, 1000), [5, 200]);

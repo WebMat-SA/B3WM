@@ -102,7 +102,8 @@ class ChartFixedPainter extends CustomPainter {
     _drawMarkArea(canvas);
     _drawDaySeparators(canvas);
     canvas.save();
-    canvas.clipRect(Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
+    canvas.clipRect(
+        Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth, chartHeight));
     _drawVolumeProfile(canvas, size);
     _drawExtremeLines(canvas);
     _drawPivotLines(canvas);
@@ -123,7 +124,8 @@ class ChartFixedPainter extends CustomPainter {
 
     final chartPaint = Paint()..color = const Color(0xFF252525);
     canvas.drawRect(
-        Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth - rightLabelMargin, chartHeight),
+        Rect.fromLTWH(marginLeft, marginTop, candleAreaWidth - rightLabelMargin,
+            chartHeight),
         chartPaint);
   }
 
@@ -135,7 +137,8 @@ class ChartFixedPainter extends CustomPainter {
     const lines = 8;
     for (int i = 0; i <= lines; i++) {
       final y = marginTop + (chartHeight / lines) * i;
-      canvas.drawLine(Offset(marginLeft, y), Offset(chartRight - rightLabelMargin, y), paint);
+      canvas.drawLine(Offset(marginLeft, y),
+          Offset(chartRight - rightLabelMargin, y), paint);
     }
   }
 
@@ -153,7 +156,8 @@ class ChartFixedPainter extends CustomPainter {
       final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
 
       final tp = TextPainter(
-        text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
+        text: TextSpan(
+            text: label, style: const TextStyle(color: textColor, fontSize: 9)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(chartRight - tp.width - 4, y - tp.height / 2));
@@ -191,7 +195,8 @@ class ChartFixedPainter extends CustomPainter {
           ? '${fmt.day.toString().padLeft(2, '0')}/${fmt.month.toString().padLeft(2, '0')}'
           : '${fmt.hour.toString().padLeft(2, '0')}:${fmt.minute.toString().padLeft(2, '0')}';
       final tp = TextPainter(
-        text: TextSpan(text: label, style: const TextStyle(color: textColor, fontSize: 9)),
+        text: TextSpan(
+            text: label, style: const TextStyle(color: textColor, fontSize: 9)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(screenX - tp.width / 2, y));
@@ -213,7 +218,10 @@ class ChartFixedPainter extends CustomPainter {
 
     for (final v in data.volumeProfile) {
       final y = _priceToY(v.price);
-      final barHeight = (v.step / data.priceRange) * chartHeight * data.profileSizeV * _scaleY;
+      final barHeight = (v.step / data.priceRange) *
+          chartHeight *
+          data.profileSizeV *
+          _scaleY;
       final barWidth = (v.total / maxVol) * profileW;
 
       final color = v.isPoc
@@ -222,8 +230,8 @@ class ChartFixedPainter extends CustomPainter {
 
       final paint = Paint()..color = color;
       canvas.drawRect(
-          Rect.fromLTWH(
-              profileRight - barWidth, y - barHeight / 2, barWidth, max(barHeight, 1.0)),
+          Rect.fromLTWH(profileRight - barWidth, y - barHeight / 2, barWidth,
+              max(barHeight, 1.0)),
           paint);
 
       final borderPaint = Paint()
@@ -231,8 +239,8 @@ class ChartFixedPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.5;
       canvas.drawRect(
-          Rect.fromLTWH(
-              profileRight - barWidth, y - barHeight / 2, barWidth, max(barHeight, 1.0)),
+          Rect.fromLTWH(profileRight - barWidth, y - barHeight / 2, barWidth,
+              max(barHeight, 1.0)),
           borderPaint);
     }
   }
@@ -246,12 +254,22 @@ class ChartFixedPainter extends CustomPainter {
     final tx = m.getTranslation().x;
 
     final stepX = ChartFixedPainter.candleStep;
-    final x1 = marginLeft + (data.rangeStart.clamp(0, data.candles.length - 1) * stepX + stepX / 2) * scaleX + tx - stepX / 2 * scaleX;
-    final x2 = marginLeft + (data.rangeEnd.clamp(0, data.candles.length - 1) * stepX + stepX / 2) * scaleX + tx + stepX / 2 * scaleX;
+    final x1 = marginLeft +
+        (data.rangeStart.clamp(0, data.candles.length - 1) * stepX +
+                stepX / 2) *
+            scaleX +
+        tx -
+        stepX / 2 * scaleX;
+    final x2 = marginLeft +
+        (data.rangeEnd.clamp(0, data.candles.length - 1) * stepX + stepX / 2) *
+            scaleX +
+        tx +
+        stepX / 2 * scaleX;
 
     final paint = Paint()..color = const Color(0x08c8c8c8);
     canvas.drawRect(
-        Rect.fromLTRB(x1.clamp(marginLeft, chartRight), marginTop, x2.clamp(marginLeft, chartRight), marginTop + chartHeight),
+        Rect.fromLTRB(x1.clamp(marginLeft, chartRight), marginTop,
+            x2.clamp(marginLeft, chartRight), marginTop + chartHeight),
         paint);
   }
 
@@ -271,11 +289,13 @@ class ChartFixedPainter extends CustomPainter {
       final screenX = marginLeft + childX * scaleX + tx;
       if (screenX < marginLeft || screenX > chartRight) continue;
 
-      canvas.drawLine(Offset(screenX, marginTop), Offset(screenX, marginTop + chartHeight), paint);
+      canvas.drawLine(Offset(screenX, marginTop),
+          Offset(screenX, marginTop + chartHeight), paint);
 
       if (idx < data.dates.length) {
         final d = data.dates[idx];
-        final label = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+        final label =
+            '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
         final tp = TextPainter(
           text: TextSpan(
             text: label,
@@ -297,9 +317,12 @@ class ChartFixedPainter extends CustomPainter {
   }
 
   void _drawExtremeLines(Canvas canvas) {
-    final ex = data.extremes;
-    if (ex == null || !ex.visible) return;
+    for (final ex in data.extremeLayers) {
+      if (ex.visible) _drawExtremeGroup(canvas, ex);
+    }
+  }
 
+  void _drawExtremeGroup(Canvas canvas, ExtremeLineData ex) {
     void drawLines(List<double> prices, Color color) {
       final paint = Paint()
         ..color = color.withOpacity(ex.opacity)
@@ -312,17 +335,20 @@ class ChartFixedPainter extends CustomPainter {
       }
     }
 
-    drawLines(ex.topPrices, const Color(0xFF69F0AE));
-    drawLines(ex.valleyPrices, const Color(0xFFFF5252));
+    drawLines(ex.topPrices, ex.topColor);
+    drawLines(ex.valleyPrices, ex.valleyColor);
   }
 
   /// Níveis do Pivot Tradicional (issue #14): linhas horizontais sólidas
   /// (diferente do tracejado de topos/vales) com cores próprias — P cinza,
   /// R ciano, S roxo — e tag com a chave do nível.
   void _drawPivotLines(Canvas canvas) {
-    final pv = data.pivots;
-    if (pv == null || !pv.visible) return;
+    for (final pv in data.pivotLayers) {
+      if (pv.visible) _drawPivotGroup(canvas, pv);
+    }
+  }
 
+  void _drawPivotGroup(Canvas canvas, PivotLineData pv) {
     void drawLevel(String key, double price, Color color) {
       final y = _priceToY(price);
       if (y < marginTop || y > marginTop + chartHeight) return;
@@ -379,7 +405,8 @@ class ChartFixedPainter extends CustomPainter {
         continue;
       }
 
-      final currentDay = DateTime(vwap.date.year, vwap.date.month, vwap.date.day);
+      final currentDay =
+          DateTime(vwap.date.year, vwap.date.month, vwap.date.day);
       if (prevDay != null && currentDay != prevDay) {
         prev = null;
       }
@@ -401,7 +428,8 @@ class ChartFixedPainter extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFFaaaaaa)
       ..strokeWidth = 1;
-    _drawDashedLine(canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
+    _drawDashedLine(
+        canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
 
     final label = data.lastPrice.toStringAsFixed(_decimalPlaces(data.symbol));
     final textPainter = TextPainter(
@@ -416,13 +444,13 @@ class ChartFixedPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    final labelRect = Rect.fromLTWH(
-        chartRight - textPainter.width - 8, y - textPainter.height / 2,
-        textPainter.width + 8, textPainter.height);
+    final labelRect = Rect.fromLTWH(chartRight - textPainter.width - 8,
+        y - textPainter.height / 2, textPainter.width + 8, textPainter.height);
     canvas.drawRRect(
         RRect.fromRectAndRadius(labelRect, const Radius.circular(4)),
         Paint()..color = const Color(0xFFaaaaaa));
-    textPainter.paint(canvas, Offset(chartRight - textPainter.width - 4, y - textPainter.height / 2));
+    textPainter.paint(canvas,
+        Offset(chartRight - textPainter.width - 4, y - textPainter.height / 2));
   }
 
   void _drawHoverXLabel(Canvas canvas, int index) {
@@ -452,8 +480,10 @@ class ChartFixedPainter extends CustomPainter {
     )..layout();
 
     final labelRect = Rect.fromLTWH(
-      screenX - tp.width / 2 - 4, y - tp.height / 2 - 2,
-      tp.width + 8, tp.height + 4,
+      screenX - tp.width / 2 - 4,
+      y - tp.height / 2 - 2,
+      tp.width + 8,
+      tp.height + 4,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(labelRect, const Radius.circular(4)),
@@ -470,7 +500,8 @@ class ChartFixedPainter extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFFaaaaaa)
       ..strokeWidth = 1;
-    _drawDashedLine(canvas, Offset(marginLeft, canvasY), Offset(chartRight, canvasY), paint);
+    _drawDashedLine(canvas, Offset(marginLeft, canvasY),
+        Offset(chartRight, canvasY), paint);
 
     final label = price.toStringAsFixed(_decimalPlaces(data.symbol));
     final textPainter = TextPainter(
@@ -486,12 +517,17 @@ class ChartFixedPainter extends CustomPainter {
     )..layout();
 
     final labelRect = Rect.fromLTWH(
-        chartRight - textPainter.width - 8, canvasY - textPainter.height / 2,
-        textPainter.width + 8, textPainter.height);
+        chartRight - textPainter.width - 8,
+        canvasY - textPainter.height / 2,
+        textPainter.width + 8,
+        textPainter.height);
     canvas.drawRRect(
         RRect.fromRectAndRadius(labelRect, const Radius.circular(4)),
         Paint()..color = const Color(0xFFaaaaaa));
-    textPainter.paint(canvas, Offset(chartRight - textPainter.width - 4, canvasY - textPainter.height / 2));
+    textPainter.paint(
+        canvas,
+        Offset(chartRight - textPainter.width - 4,
+            canvasY - textPainter.height / 2));
   }
 
   void _drawWatermark(Canvas canvas, Size size) {
@@ -511,14 +547,14 @@ class ChartFixedPainter extends CustomPainter {
     )..layout();
     centerTp.paint(
         canvas,
-        Offset(
-            (marginLeft + chartRight) / 2 - centerTp.width / 2,
+        Offset((marginLeft + chartRight) / 2 - centerTp.width / 2,
             marginTop + chartHeight / 2 - centerTp.height / 2));
 
     if (data.remainingSeconds > 0) {
       final min = data.remainingSeconds ~/ 60;
       final sec = data.remainingSeconds % 60;
-      final timeStr = '${min.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+      final timeStr =
+          '${min.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
       final timeTp = TextPainter(
         text: TextSpan(
           text: '🕒 $timeStr',
@@ -532,8 +568,7 @@ class ChartFixedPainter extends CustomPainter {
       )..layout();
       timeTp.paint(
           canvas,
-          Offset(
-              size.width - marginRight - timeTp.width,
+          Offset(size.width - marginRight - timeTp.width,
               marginTop + chartHeight - timeTp.height));
     }
   }
@@ -551,7 +586,8 @@ class ChartFixedPainter extends CustomPainter {
         ..strokeWidth = 2;
       canvas.drawLine(Offset(marginLeft, y), Offset(chartRight, y), paint);
 
-      _drawCloseButton(canvas, y, Colors.red, closingTickets.contains(pos.ticket));
+      _drawCloseButton(
+          canvas, y, Colors.red, closingTickets.contains(pos.ticket));
 
       const btnWithGap = 20.0;
       final label = '${isBuy ? 'B' : 'S'} ${pos.volume.toStringAsFixed(2)}';
@@ -589,9 +625,11 @@ class ChartFixedPainter extends CustomPainter {
       final paint = Paint()
         ..color = color.withOpacity(0.6)
         ..strokeWidth = 1.5;
-      _drawDashedLine(canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
+      _drawDashedLine(
+          canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
 
-      _drawCloseButton(canvas, y, Colors.red, cancellingTickets.contains(order.ticket));
+      _drawCloseButton(
+          canvas, y, Colors.red, cancellingTickets.contains(order.ticket));
 
       const btnWithGap = 20.0;
       final typeLabel = _orderTypeShort(order.type);
@@ -631,8 +669,10 @@ class ChartFixedPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
     const m = 4.0;
-    canvas.drawLine(Offset(r.left + m, r.top + m), Offset(r.right - m, r.bottom - m), xPaint);
-    canvas.drawLine(Offset(r.right - m, r.top + m), Offset(r.left + m, r.bottom - m), xPaint);
+    canvas.drawLine(Offset(r.left + m, r.top + m),
+        Offset(r.right - m, r.bottom - m), xPaint);
+    canvas.drawLine(Offset(r.right - m, r.top + m),
+        Offset(r.left + m, r.bottom - m), xPaint);
   }
 
   void _drawLoadingSpinner(Canvas canvas, double cy) {

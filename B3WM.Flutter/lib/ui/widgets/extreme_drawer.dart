@@ -38,6 +38,8 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
               children: [
                 ToggleRow('Show on Chart', state.extremeVisible,
                     (v) => state.setExtremeVisible(v)),
+                ToggleRow('Incluir Topos/Vales 1D', state.extremeIncludeDaily,
+                    (v) => state.setExtremeIncludeDaily(v)),
                 SliderRow('Opacity', state.extremeOpacity, 0, 1,
                     (v) => state.setExtremeOpacity(v)),
                 SliderRow(
@@ -60,6 +62,7 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
                   step: Defaults.extremeMinimumProminenceStep,
                   locked: state.configLocked,
                 ),
+                _colorsSection(state),
               ],
             ),
           ),
@@ -72,7 +75,11 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
               child: Column(
                 children: [
                   for (final e in ex.extremes)
-                    _ExtremeRow(point: e),
+                    _ExtremeRow(
+                      point: e,
+                      topColor: parseHexColor(state.extremeTopColor),
+                      valleyColor: parseHexColor(state.extremeValleyColor),
+                    ),
                 ],
               ),
             ),
@@ -88,19 +95,38 @@ class _ExtremeDrawerState extends State<ExtremeDrawer>
       return Drawer(width: 360, child: body);
     });
   }
+
+  Widget _colorsSection(StateService state) {
+    return ExpansionTile(
+      leading: const Icon(Icons.palette, size: 20),
+      title: const Text('Colors', style: TextStyle(fontSize: 13)),
+      tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      children: [
+        ColorPickerRow(
+            'Topo', state.extremeTopColor, (c) => state.setExtremeTopColor(c)),
+        const SizedBox(height: 4),
+        ColorPickerRow('Vale', state.extremeValleyColor,
+            (c) => state.setExtremeValleyColor(c)),
+      ],
+    );
+  }
 }
 
 class _ExtremeRow extends StatelessWidget {
   final ExtremePoint point;
-  const _ExtremeRow({required this.point});
+  final Color topColor;
+  final Color valleyColor;
+  const _ExtremeRow(
+      {required this.point, required this.topColor, required this.valleyColor});
 
   @override
   Widget build(BuildContext context) {
     final isTop = point.type == ExtremeType.top;
     final color = isTop
-        ? const Color(0xFF69F0AE)
+        ? topColor
         : point.type == ExtremeType.valley
-            ? const Color(0xFFFF5252)
+            ? valleyColor
             : Colors.grey;
     final label = isTop
         ? 'Topo'
@@ -120,8 +146,7 @@ class _ExtremeRow extends StatelessWidget {
           const SizedBox(width: 8),
           SizedBox(
             width: 84,
-            child: Text(label,
-                style: TextStyle(fontSize: 12, color: color)),
+            child: Text(label, style: TextStyle(fontSize: 12, color: color)),
           ),
           Expanded(
             child: Text(point.position.toStringAsFixed(1),
