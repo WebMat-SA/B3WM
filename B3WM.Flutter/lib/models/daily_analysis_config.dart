@@ -21,11 +21,20 @@ class DailyAnalysisConfig {
   double profileSizeV;
   double profileOpacity;
 
+  /// Janela manual do Volume Profile 1D (modo manual), ancorada por DATA e
+  /// não por índice: os índices de `_dailyBars` deslocam quando o histórico
+  /// é recarregado (últimos 120 dias). Persistida para preservar a seleção
+  /// ao fechar/reabrir o splitter e ao reiniciar o app.
+  DateTime? profileManualFrom;
+  DateTime? profileManualTo;
+
   /// Topos/vales do diário.
   bool extremeVisible;
   double extremeOpacity;
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
+  String extremeTopColor;
+  String extremeValleyColor;
 
   /// Pivot Tradicional do Profit no widget diário (issue #14): fonte HLC da
   /// semana anterior (fiel ao Profit), exibido só no dia atual/último pregão.
@@ -66,10 +75,14 @@ class DailyAnalysisConfig {
     required this.profileSizeH,
     required this.profileSizeV,
     required this.profileOpacity,
+    this.profileManualFrom,
+    this.profileManualTo,
     required this.extremeVisible,
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.extremeTopColor,
+    required this.extremeValleyColor,
     required this.pivotVisible,
     required this.pivotOpacity,
     required this.pivotLineCount,
@@ -95,6 +108,8 @@ class DailyAnalysisConfig {
         extremeOpacity = 0.5,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        extremeTopColor = Defaults.dailyExtremeTopColor,
+        extremeValleyColor = Defaults.dailyExtremeValleyColor,
         pivotVisible = true,
         pivotOpacity = 0.7,
         pivotLineCount = 2,
@@ -110,6 +125,11 @@ class DailyAnalysisConfig {
     final src = nested ?? json;
     double numOr(String key, double fallback) =>
         (src[key] as num?)?.toDouble() ?? fallback;
+    DateTime? dateOr(String key) {
+      final v = src[key];
+      return v is String ? DateTime.tryParse(v) : null;
+    }
+
     return DailyAnalysisConfig(
       structureRangeUpd: (src['structureRangeUpd'] as num?)?.toDouble() ??
           (json['structureRangeUpdDaily'] as num?)?.toDouble() ??
@@ -125,6 +145,8 @@ class DailyAnalysisConfig {
       profileSizeH: numOr('profileSizeH', 1.0),
       profileSizeV: numOr('profileSizeV', 1.0),
       profileOpacity: numOr('profileOpacity', 0.5),
+      profileManualFrom: dateOr('profileManualFrom'),
+      profileManualTo: dateOr('profileManualTo'),
       extremeVisible: src['extremeVisible'] as bool? ??
           json['dailyExtremeVisible'] as bool? ??
           true,
@@ -139,9 +161,14 @@ class DailyAnalysisConfig {
           (src['extremeMinimumProminence'] as num?)?.toDouble() ??
               (json['dailyExtremeMinimumProminence'] as num?)?.toDouble() ??
               Defaults.extremeMinimumProminence,
+      extremeTopColor: src['extremeTopColor'] as String? ??
+          json['dailyExtremeTopColor'] as String? ??
+          Defaults.dailyExtremeTopColor,
+      extremeValleyColor: src['extremeValleyColor'] as String? ??
+          json['dailyExtremeValleyColor'] as String? ??
+          Defaults.dailyExtremeValleyColor,
       pivotVisible: src['pivotVisible'] as bool? ?? true,
-      pivotOpacity:
-          (src['pivotOpacity'] as num?)?.toDouble() ?? 0.7,
+      pivotOpacity: (src['pivotOpacity'] as num?)?.toDouble() ?? 0.7,
       pivotLineCount:
           ((src['pivotLineCount'] as num?)?.toInt() ?? 2).clamp(2, 5),
       panelVisible: src['panelVisible'] as bool? ?? false,
@@ -164,10 +191,14 @@ class DailyAnalysisConfig {
         'profileSizeH': profileSizeH,
         'profileSizeV': profileSizeV,
         'profileOpacity': profileOpacity,
+        'profileManualFrom': profileManualFrom?.toIso8601String(),
+        'profileManualTo': profileManualTo?.toIso8601String(),
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'extremeTopColor': extremeTopColor,
+        'extremeValleyColor': extremeValleyColor,
         'pivotVisible': pivotVisible,
         'pivotOpacity': pivotOpacity,
         'pivotLineCount': pivotLineCount,

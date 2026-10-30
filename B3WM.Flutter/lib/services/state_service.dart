@@ -11,6 +11,7 @@ import '../models/structure_storage_item.dart';
 import '../models/structure_change_item.dart';
 import '../models/symbol_config.dart' show DateRangeMode, SymbolConfig;
 import '../models/daily_analysis_config.dart';
+import '../models/defaults.dart';
 import 'api_service.dart';
 import 'strategy_service.dart';
 import 'signalr_service.dart';
@@ -519,7 +520,10 @@ class StateService extends ChangeNotifier {
       refreshMarketWindow();
       _applyDailyStructureAutoFilter();
     } else {
-      applyDailyVolumeFilterAndSyncExtremes(0, _dailyBars.length);
+      // Mantém a seleção vigente ao desligar o Auto Mode: reancora na janela
+      // auto carregada em vez de jogar para o full histórico. Sem perfil
+      // carregado (from/to nulos), cai no histórico completo.
+      _loadDailyManualRange();
     }
   }
 
@@ -564,7 +568,66 @@ class StateService extends ChangeNotifier {
     final from = dayOnly(bars[_dailyRangeStart].date);
     final lastIdx = (_dailyRangeEnd - 1).clamp(0, bars.length - 1);
     final to = dayOnly(bars[lastIdx].date);
+    // Persiste a janela manual por data: índices deslocam quando o
+    // histórico é recarregado (reabrir o splitter/reiniciar o app).
+    _currentConfig.daily.profileManualFrom = from;
+    _currentConfig.daily.profileManualTo = to;
+    await _saveConfigForSymbol(_symbol);
     await loadDailyProfileAndExtremes(from: from, to: to);
+  }
+
+  /// Modo manual do Volume 1D ao (re)carregar o histórico: reancora a
+  /// janela do usuário por DATA sobre as novas `_dailyBars` em vez de
+  /// resetá-la para o full histórico. Sem janela salva (primeira vez),
+  /// usa o histórico completo. Chamado por `loadDailyAll` e pelo Confirm
+  /// da estrutura diária.
+  Future<void> _loadDailyManualRange() async {
+    final bars = List.of(_dailyBars)..sort((a, b) => a.date.compareTo(b.date));
+    if (bars.isEmpty) {
+      _dailyRangeStart = 0;
+      _dailyRangeEnd = 0;
+      await loadDailyProfileAndExtremes();
+      return;
+    }
+
+    DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final from = _dailyProfileFrom ?? _currentConfig.daily.profileManualFrom;
+    final to = _dailyProfileTo ?? _currentConfig.daily.profileManualTo;
+
+    if (from == null || to == null) {
+      _dailyRangeStart = 0;
+      _dailyRangeEnd = bars.length;
+      await loadDailyProfileAndExtremes();
+      return;
+    }
+
+    final f = dayOnly(from);
+    final t = dayOnly(to);
+    var start = bars.length;
+    for (var i = 0; i < bars.length; i++) {
+      if (!dayOnly(bars[i].date).isBefore(f)) {
+        start = i;
+        break;
+      }
+    }
+    var end = 0;
+    for (var i = 0; i < bars.length; i++) {
+      if (!dayOnly(bars[i].date).isAfter(t)) end = i + 1;
+    }
+    if (start >= end) {
+      // Janela fora do histórico recarregado (ex.: > 120 dias): full.
+      _dailyRangeStart = 0;
+      _dailyRangeEnd = bars.length;
+      await loadDailyProfileAndExtremes();
+      return;
+    }
+
+    _dailyRangeStart = start.clamp(0, bars.length - 1);
+    _dailyRangeEnd = end.clamp(_dailyRangeStart + 1, bars.length);
+    _currentConfig.daily.profileManualFrom = f;
+    _currentConfig.daily.profileManualTo = t;
+    await _saveConfigForSymbol(_symbol);
+    await loadDailyProfileAndExtremes(from: f, to: t);
   }
 
   /// Auto Mode 1D: janela = última perna do 1440 resolvida pelo BACKEND
@@ -653,9 +716,7 @@ class StateService extends ChangeNotifier {
       if (_currentConfig.daily.profileAutoByPriceStructure) {
         await _applyDailyStructureAutoFilter();
       } else {
-        _dailyRangeStart = 0;
-        _dailyRangeEnd = _dailyBars.length;
-        await loadDailyProfileAndExtremes();
+        await _loadDailyManualRange();
       }
       await loadDailyPivot();
     } catch (e) {
@@ -703,6 +764,28 @@ class StateService extends ChangeNotifier {
     _scheduleExtremeConfigSync();
   }
 
+  void setExtremeTopColor(String v) {
+    _currentConfig.extremeTopColor = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  void setExtremeValleyColor(String v) {
+    _currentConfig.extremeValleyColor = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  void setExtremeIncludeDaily(bool v) {
+    _currentConfig.extremeIncludeDaily = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+    if (v && _dailyExtremes == null && _symbol.isNotEmpty) {
+      // ignore: discarded_futures
+      loadDailyExtremes();
+    }
+  }
+
   // --- Análise diária: topos/vales (issue #12, escopados ao widget) ---
   bool get dailyExtremeVisible => _currentConfig.daily.extremeVisible;
   double get dailyExtremeOpacity => _currentConfig.daily.extremeOpacity;
@@ -710,6 +793,20 @@ class StateService extends ChangeNotifier {
       _currentConfig.daily.extremeNoiseSensitivity;
   double get dailyExtremeMinimumProminence =>
       _currentConfig.daily.extremeMinimumProminence;
+  String get dailyExtremeTopColor => _currentConfig.daily.extremeTopColor;
+  String get dailyExtremeValleyColor => _currentConfig.daily.extremeValleyColor;
+
+  void setDailyExtremeTopColor(String v) {
+    _currentConfig.daily.extremeTopColor = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  void setDailyExtremeValleyColor(String v) {
+    _currentConfig.daily.extremeValleyColor = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
 
   void setDailyExtremeVisible(bool v) {
     _currentConfig.daily.extremeVisible = v;
@@ -951,6 +1048,9 @@ class StateService extends ChangeNotifier {
   double get extremeNoiseSensitivity => _currentConfig.extremeNoiseSensitivity;
   double get extremeMinimumProminence =>
       _currentConfig.extremeMinimumProminence;
+  String get extremeTopColor => _currentConfig.extremeTopColor;
+  String get extremeValleyColor => _currentConfig.extremeValleyColor;
+  bool get extremeIncludeDaily => _currentConfig.extremeIncludeDaily;
 
   // --- Pivot Tradicional intraday (issue #14): só visible/opacity/lineCount ---
   bool get pivotVisible => _currentConfig.pivotVisible;
@@ -1533,13 +1633,12 @@ class StateService extends ChangeNotifier {
         logD('[daily] bars error: $e');
       }
       // Sincroniza os índices da sombra com a janela vigente: auto deriva
-      // da última perna do 1440, manual cobre tudo até o slider mexer.
+      // da última perna do 1440; manual reancora a janela do usuário por
+      // data (não reseta para o full histórico ao reabrir o splitter).
       if (_currentConfig.daily.profileAutoByPriceStructure) {
         await _applyDailyStructureAutoFilter();
       } else {
-        _dailyRangeStart = 0;
-        _dailyRangeEnd = _dailyBars.length;
-        await loadDailyProfileAndExtremes();
+        await _loadDailyManualRange();
       }
       // Pivot Tradicional diário (fonte semana anterior, issue #14):
       // independe da janela do perfil — carga própria, mesmo padrão lazy.
@@ -1874,6 +1973,9 @@ class StateService extends ChangeNotifier {
       extremeOpacity: 0.7,
       extremeNoiseSensitivity: 3.0,
       extremeMinimumProminence: 0.15,
+      extremeTopColor: Defaults.extremeTopColor,
+      extremeValleyColor: Defaults.extremeValleyColor,
+      extremeIncludeDaily: false,
       pivotVisible: true,
       pivotOpacity: 0.7,
       pivotLineCount: 2,
@@ -2168,6 +2270,10 @@ class StateService extends ChangeNotifier {
       _startProcessLoop();
       _startWatchdog();
       _scheduleExtremeConfigSync();
+      if (_currentConfig.extremeIncludeDaily && _dailyExtremes == null) {
+        // ignore: discarded_futures
+        loadDailyExtremes();
+      }
       // Análise diária (issue #12) é lazy: só carrega ao abrir o widget
       // (loadDailyAll), sem custo/background no fluxo intraday. Se o painel
       // já estava aberto (troca de símbolo/timeframe), mantém a barra de

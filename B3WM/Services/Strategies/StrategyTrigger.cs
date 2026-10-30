@@ -42,6 +42,13 @@ namespace B3WM.Services.Strategies
         public static bool IsCandleClose(StrategyEvent ev, int timeFrame) =>
             ev is CandleClosed c && c.Bar.TimeFrame == timeFrame;
 
+        /// <summary>
+        /// Candle do TF fechado e com pelo menos uma bolha dentro dele.
+        /// Gatilho da Jev: só avalia no fechamento, nunca na 1ª bolha.
+        /// </summary>
+        public static bool IsCandleCloseWithBubbles(StrategyEvent ev, int timeFrame) =>
+            ev is CandleClosed c && c.Bar.TimeFrame == timeFrame && c.Bubbles.Count > 0;
+
         public static bool IsVisibleBubble(StrategyEvent ev, BubbleFilter? filter)
         {
             if (ev is not BubbleAppeared b)

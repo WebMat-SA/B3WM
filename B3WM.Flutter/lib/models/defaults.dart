@@ -1,5 +1,6 @@
 class Defaults {
   static const String url = 'https://localhost:5002/api/datahub';
+
   /// Seletor principal é só intraday (issue #12): o 1D vive no widget diário.
   static const List<int> timeFrames = [1, 2, 5, 15, 30, 60];
 
@@ -103,6 +104,11 @@ class Defaults {
 
   static const double extremeNoiseSensitivity = 3.0;
   static const double extremeMinimumProminence = 0.15;
+
+  static const String extremeTopColor = '#69F0AE';
+  static const String extremeValleyColor = '#FF5252';
+  static const String dailyExtremeTopColor = '#43A047';
+  static const String dailyExtremeValleyColor = '#E53935';
 
   static const double extremeNoiseSensitivityMin = 1.0;
   static const double extremeNoiseSensitivityMax = 10.0;

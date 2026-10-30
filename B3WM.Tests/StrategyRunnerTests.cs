@@ -89,6 +89,86 @@ public class StrategyRunnerTests
     }
 
     [Fact]
+    public void TriggerChecks_CandleCloseWithBubbles()
+    {
+        var at = new DateTime(2026, 10, 30, 12, 12, 0);
+        var bar = new BarStorageItem { Date = at, Symbol = "WINFUT", TimeFrame = 2 };
+        var bubble = Bubble(8, 347, 169345, at.AddSeconds(1));
+
+        Assert.True(TriggerChecks.IsCandleCloseWithBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { bubble },
+        }, 2));
+        Assert.False(TriggerChecks.IsCandleCloseWithBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar,
+        }, 2));
+        Assert.False(TriggerChecks.IsCandleCloseWithBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at,
+            Bar = new BarStorageItem { Date = at, Symbol = "WINFUT", TimeFrame = 5 },
+            Bubbles = new() { bubble },
+        }, 2));
+        Assert.False(TriggerChecks.IsCandleCloseWithBubbles(
+            new BubbleAppeared { Symbol = "WINFUT", At = at, Item = bubble }, 2));
+    }
+
+    [Fact]
+    public void JevAnalysis_TriggersOnCandleWithBubbles_NotOnFirstBubble()
+    {
+        var strategy = new JevAnalysisStrategy(
+            new Mock<ILogger<JevAnalysisStrategy>>().Object,
+            null!, null!, null!, null!);
+        var at = new DateTime(2026, 10, 30, 12, 12, 0);
+        var bar = new BarStorageItem { Date = at, Symbol = "WINFUT", TimeFrame = 2 };
+        var bubble = Bubble(8, 347, 169345, at.AddSeconds(1));
+        var ctx = new StrategyTriggerContext
+        {
+            Symbol = "WINFUT", TimeFrame = 2, Filter = Filter(),
+        };
+
+        Assert.True(strategy.ShouldTrigger(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { bubble },
+        }, ctx));
+        Assert.False(strategy.ShouldTrigger(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar,
+        }, ctx));
+        Assert.False(strategy.ShouldTrigger(
+            new BubbleAppeared { Symbol = "WINFUT", At = at, Item = bubble }, ctx));
+    }
+
+    [Fact]
+    public void BubblesInCandle_UsesClosedWindow()
+    {
+        var from = new DateTime(2026, 10, 30, 12, 10, 0);
+        var bar = new BarStorageItem { Date = from, Symbol = "WINFUT", TimeFrame = 2 };
+        var before = Bubble(1, 300, 169300, from.AddSeconds(-1));
+        var first = Bubble(1, 300, 169300, from);
+        var last = Bubble(1, 300, 169300, from.AddMinutes(2).AddSeconds(-1));
+        var next = Bubble(1, 300, 169300, from.AddMinutes(2));
+
+        var result = StrategyRunner.BubblesInCandle(
+            new[] { before, first, last, next }, bar);
+
+        Assert.Equal(new[] { first, last }, result);
+    }
+
+    [Fact]
+    public void JevAnalysis_MergeBubbles_KeepsAllCandleBubblesWithoutDuplicates()
+    {
+        var at = new DateTime(2026, 10, 30, 12, 12, 0);
+        var buy = Bubble(238, 475, 169250, at.AddSeconds(-1));
+        var sell = Bubble(8, 347, 169345, at.AddSeconds(1));
+        var current = new[] { buy };
+
+        var merged = JevAnalysisStrategy.MergeBubbles(current, new[] { buy, sell });
+
+        Assert.Equal(new[] { buy, sell }, merged);
+    }
+
+    [Fact]
     public void SessionLifecycle_ArmPauseStop()
     {
         var r = Runner();

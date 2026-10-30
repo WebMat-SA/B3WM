@@ -34,6 +34,7 @@ class BubblePoint {
   final String agentName;
   final int candleIndex;
   final DateTime date;
+
   /// Bubble original da API: usada no trigger manual (agente, símbolo etc.).
   final BubbleStorageItem source;
 
@@ -123,15 +124,20 @@ class StrategyPoint {
   final double confidence;
   final double encerrar;
   final String action;
+
   /// Confiança por criteria (JEV — informativo). Vazio no resto.
   final Map<String, double> criteria;
   final String reason;
+
   /// Net direcional JEV (-1..1). Nulo em logs antigos/outras strategies.
   final double? direcaoNet;
+
   /// Consenso das dimensões JEV (0..1). Nulo em logs antigos.
   final double? direcaoConsenso;
+
   /// Cobertura das dimensões JEV (0..1). Nulo em logs antigos.
   final double? direcaoCobertura;
+
   /// Motivo da lateral JEV. Nulo/vazio quando há compra/venda.
   final String? direcaoMotivo;
   final String snapshotHash;
@@ -156,14 +162,20 @@ class StrategyPoint {
 }
 
 class ExtremeLineData {
+  final String id;
   final List<double> topPrices;
   final List<double> valleyPrices;
+  final Color topColor;
+  final Color valleyColor;
   final bool visible;
   final double opacity;
 
   ExtremeLineData({
+    this.id = '',
     required this.topPrices,
     required this.valleyPrices,
+    required this.topColor,
+    required this.valleyColor,
     required this.visible,
     required this.opacity,
   });
@@ -173,6 +185,7 @@ class ExtremeLineData {
 /// dia atual/último pregão (P, R1..R5, S1..S5). Desenho sólido com cores
 /// próprias para não confundir com o tracejado de topos/vales.
 class PivotLineData {
+  final String id;
   final double pivot;
   final List<double> resistances;
   final List<double> supports;
@@ -180,6 +193,7 @@ class PivotLineData {
   final double opacity;
 
   PivotLineData({
+    this.id = '',
     required this.pivot,
     required this.resistances,
     required this.supports,
@@ -190,6 +204,7 @@ class PivotLineData {
   /// Ordena por chave (P, R1..R5, S1..S5) a partir dos níveis do backend.
   factory PivotLineData.fromLevels(
     List<({String key, double value})> levels, {
+    String id = '',
     required bool visible,
     required double opacity,
   }) {
@@ -208,6 +223,7 @@ class PivotLineData {
     resistances.sort();
     supports.sort();
     return PivotLineData(
+      id: id,
       pivot: pivot,
       resistances: resistances,
       supports: supports,
@@ -223,8 +239,8 @@ class ChartData {
   final List<BubblePoint> blueBubbles;
   final List<VolumeBarData> volumeProfile;
   final StructureLineData? structures;
-  final ExtremeLineData? extremes;
-  final PivotLineData? pivots;
+  final List<ExtremeLineData> extremeLayers;
+  final List<PivotLineData> pivotLayers;
   final List<VwapPoint> vwapPoints;
   final double minPrice;
   final double maxPrice;
@@ -247,6 +263,7 @@ class ChartData {
   final double yZoom;
   final double bubbleSizeMin;
   final double bubbleSizeMax;
+
   /// Menor e maior volume (original) entre as bolhas visíveis. Usados para
   /// normalizar o raio em [bubbleSizeMin, bubbleSizeMax].
   final double bubbleAmountMin;
@@ -267,8 +284,8 @@ class ChartData {
     required this.blueBubbles,
     required this.volumeProfile,
     this.structures,
-    this.extremes,
-    this.pivots,
+    this.extremeLayers = const [],
+    this.pivotLayers = const [],
     required this.vwapPoints,
     required this.minPrice,
     required this.maxPrice,
@@ -303,6 +320,10 @@ class ChartData {
     this.positionVisible = true,
     this.openOrdersVisible = true,
   });
+
+  ExtremeLineData? get extremes =>
+      extremeLayers.isEmpty ? null : extremeLayers.first;
+  PivotLineData? get pivots => pivotLayers.isEmpty ? null : pivotLayers.first;
 
   double get priceRange => maxPrice - minPrice;
 
@@ -347,13 +368,15 @@ ChartData buildChartData(StateService state) {
       : bars.length;
   final visible = bars;
 
-  final candles = visible.map((b) => CandlePoint(
-    date: b.date,
-    open: b.open,
-    high: b.high,
-    low: b.low,
-    close: b.close,
-  )).toList();
+  final candles = visible
+      .map((b) => CandlePoint(
+            date: b.date,
+            open: b.open,
+            high: b.high,
+            low: b.low,
+            close: b.close,
+          ))
+      .toList();
 
   final dates = visible.map((b) => b.date).toList();
   final daySepIndices = <int>[];
@@ -361,14 +384,16 @@ ChartData buildChartData(StateService state) {
     if (dates[i].day != dates[i - 1].day) daySepIndices.add(i);
   }
 
-  double min4(double a, double b, double c, double d) =>
-      a < b ? (a < c ? (a < d ? a : d) : (c < d ? c : d)) : (b < c ? (b < d ? b : d) : (c < d ? c : d));
-  double max4(double a, double b, double c, double d) =>
-      a > b ? (a > c ? (a > d ? a : d) : (c > d ? c : d)) : (b > c ? (b > d ? b : d) : (c > d ? c : d));
-  final minPrice = visible.fold<double>(double.infinity,
-      (p, b) => min4(p, b.low, b.close, b.open));
-  final maxPrice = visible.fold<double>(double.negativeInfinity,
-      (p, b) => max4(p, b.high, b.close, b.open));
+  double min4(double a, double b, double c, double d) => a < b
+      ? (a < c ? (a < d ? a : d) : (c < d ? c : d))
+      : (b < c ? (b < d ? b : d) : (c < d ? c : d));
+  double max4(double a, double b, double c, double d) => a > b
+      ? (a > c ? (a > d ? a : d) : (c > d ? c : d))
+      : (b > c ? (b > d ? b : d) : (c > d ? c : d));
+  final minPrice = visible.fold<double>(
+      double.infinity, (p, b) => min4(p, b.low, b.close, b.open));
+  final maxPrice = visible.fold<double>(
+      double.negativeInfinity, (p, b) => max4(p, b.high, b.close, b.open));
 
   final candleDateLookup = _buildDateLookup(dates);
 
@@ -376,8 +401,11 @@ ChartData buildChartData(StateService state) {
     final totalMinutes = bubbleDate.hour * 60 + bubbleDate.minute;
     final candleStartMin = (totalMinutes ~/ state.timeFrame) * state.timeFrame;
     final candleStartKey = _formatCandleKey(DateTime(
-      bubbleDate.year, bubbleDate.month, bubbleDate.day,
-      candleStartMin ~/ 60, candleStartMin % 60,
+      bubbleDate.year,
+      bubbleDate.month,
+      bubbleDate.day,
+      candleStartMin ~/ 60,
+      candleStartMin % 60,
     ));
     final exact = candleDateLookup[candleStartKey];
     if (exact != null) return exact;
@@ -487,11 +515,12 @@ ChartData buildChartData(StateService state) {
     }
   }
 
-  ExtremeLineData? extremes;
+  final extremeLayers = <ExtremeLineData>[];
   if (state.extremeVisible) {
     final ex = state.extremes;
     if (ex != null && ex.extremes.isNotEmpty) {
-      extremes = ExtremeLineData(
+      extremeLayers.add(ExtremeLineData(
+        id: 'intraday',
         topPrices: ex.extremes
             .where((e) => e.type == ExtremeType.top)
             .map((e) => e.position)
@@ -500,27 +529,51 @@ ChartData buildChartData(StateService state) {
             .where((e) => e.type == ExtremeType.valley)
             .map((e) => e.position)
             .toList(),
+        topColor: _parseHexColor(state.extremeTopColor),
+        valleyColor: _parseHexColor(state.extremeValleyColor),
         visible: true,
         opacity: state.extremeOpacity,
-      );
+      ));
+    }
+  }
+  if (state.extremeIncludeDaily) {
+    final dex = state.dailyExtremes;
+    if (dex != null && dex.extremes.isNotEmpty) {
+      extremeLayers.add(ExtremeLineData(
+        id: 'daily',
+        topPrices: dex.extremes
+            .where((e) => e.type == ExtremeType.top)
+            .map((e) => e.position)
+            .toList(),
+        valleyPrices: dex.extremes
+            .where((e) => e.type == ExtremeType.valley)
+            .map((e) => e.position)
+            .toList(),
+        topColor: _parseHexColor(state.dailyExtremeTopColor),
+        valleyColor: _parseHexColor(state.dailyExtremeValleyColor),
+        visible: true,
+        opacity: state.dailyExtremeOpacity,
+      ));
     }
   }
 
-  PivotLineData? pivots;
+  final pivotLayers = <PivotLineData>[];
   if (state.pivotVisible) {
     final pv = state.pivotIntraday;
     if (pv != null && pv.levels.isNotEmpty) {
-      pivots = PivotLineData.fromLevels(
+      pivotLayers.add(PivotLineData.fromLevels(
         [for (final l in pv.levels) (key: l.key, value: l.value)],
+        id: 'intraday',
         visible: true,
         opacity: state.pivotOpacity,
-      );
+      ));
     }
   }
 
   int calcRemainingSeconds() {
     if (state.currentBar == null || state.timeFrame <= 0) return 0;
-    final totalMinutes = state.currentBar!.date.hour * 60 + state.currentBar!.date.minute;
+    final totalMinutes =
+        state.currentBar!.date.hour * 60 + state.currentBar!.date.minute;
     final candleStartMin = (totalMinutes ~/ state.timeFrame) * state.timeFrame;
     final candleEndMin = candleStartMin + state.timeFrame;
     final now = DateTime.now();
@@ -553,10 +606,14 @@ ChartData buildChartData(StateService state) {
       final dealDate = DateTime.tryParse(deal.time);
       if (dealDate == null) continue;
       final totalMinutes = dealDate.hour * 60 + dealDate.minute;
-      final candleStartMin = (totalMinutes ~/ state.timeFrame) * state.timeFrame;
+      final candleStartMin =
+          (totalMinutes ~/ state.timeFrame) * state.timeFrame;
       final candleStartKey = _formatCandleKey(DateTime(
-        dealDate.year, dealDate.month, dealDate.day,
-        candleStartMin ~/ 60, candleStartMin % 60,
+        dealDate.year,
+        dealDate.month,
+        dealDate.day,
+        candleStartMin ~/ 60,
+        candleStartMin % 60,
       ));
       final idx = candleDateLookup[candleStartKey];
       if (idx == null || idx >= visible.length) continue;
@@ -580,8 +637,7 @@ ChartData buildChartData(StateService state) {
       visible.isNotEmpty &&
       state.timeFrame > 0) {
     final first = visible.first.date;
-    final lastEnd = visible.last.date
-        .add(Duration(minutes: state.timeFrame));
+    final lastEnd = visible.last.date.add(Duration(minutes: state.timeFrame));
     for (final t in timeline) {
       // Tudo em parede BRT (imune ao fuso da máquina): At pode ser absoluto
       // (com offset) ou parede BRT (legado/backend sem offset) — b3Wall
@@ -615,7 +671,8 @@ ChartData buildChartData(StateService state) {
   if (state.strategyTimelineVisible &&
       timeline.isNotEmpty &&
       strategyPoints.length != timeline.length) {
-    logD('[timeline] ${timeline.length} itens -> ${strategyPoints.length} pontos (fora do range)');
+    logD(
+        '[timeline] ${timeline.length} itens -> ${strategyPoints.length} pontos (fora do range)');
   }
 
   // VWAP fonte única do servidor (VwapService: typical HLC/3 dos 1MIN).
@@ -657,8 +714,8 @@ ChartData buildChartData(StateService state) {
     blueBubbles: blueBubbles,
     volumeProfile: volumeProfile,
     structures: structures,
-    extremes: extremes,
-    pivots: pivots,
+    extremeLayers: extremeLayers,
+    pivotLayers: pivotLayers,
     vwapPoints: vwapPoints,
     minPrice: minPrice,
     maxPrice: maxPrice,

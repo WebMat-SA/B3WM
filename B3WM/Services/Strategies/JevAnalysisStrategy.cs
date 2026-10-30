@@ -1,15 +1,17 @@
 using System.Text.Json;
 using B3WM.Services.AI;
 using B3WM.Services.Screen;
+using B3WM.Shared.Models;
 
 namespace B3WM.Services.Strategies
 {
     /// <summary>
     /// Análise da IA como strategy: injeta JevService, monta o snapshot
     /// WYSIWYG a partir do spec cru da sessão e converte a resposta em
-    /// StrategyDecision. Gatilho: primeira bubble visível por candle do TF
-    /// da sessão (filtro da tela congelado no PLAY; ritmo via bucket da hora
-    /// da bubble no runner). Sem trigger em fechamento de candle.
+    /// StrategyDecision. Gatilho: fechamento do candle do TF da sessão que
+    /// teve pelo menos uma bolha; a Jev recebe TODAS as bolhas do candle
+    /// (inclusive a que seria "primeira visível"). Nunca dispara no
+    /// aparecimento da bolha no candle vigente.
     /// </summary>
     public sealed class JevAnalysisStrategy : StrategyBase
     {
@@ -38,7 +40,7 @@ namespace B3WM.Services.Strategies
             "## JevAnalysis\n" +
             "Análise Jev/TypeSafe do contexto de mercado (bolhas, volume, candles, topos/vales, pivots).\n" +
             "\n" +
-            "- **Gatilho:** primeira bubble visível por candle do TF da sessão (filtro da tela congelado no PLAY; bucket pela hora da bubble).\n" +
+            "- **Gatilho:** fechamento do candle do TF da sessão com pelo menos uma bolha; a Jev recebe todas as bolhas ocorridas no candle (não dispara na abertura/1ª bolha do candle vigente).\n" +
             "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
             "- **Parâmetros fixos no código:** `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
             "- **Saída INFORMATIVA (Composite scoring):** 8 dimensões de direção com perguntas espelhadas alta/baixa (16 perguntas) + 5 de operabilidade; viés `comprar|vender|lateral` e proximidade técnica. **Não** decide operar/não-operar — a decisão é manual; pesos/thresholds em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
@@ -47,9 +49,12 @@ namespace B3WM.Services.Strategies
             "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
             "para mudar filtros é preciso `STOP`, editar e `PLAY` de novo.";
 
-        /// <summary>Dispara na 1ª bubble visível de cada bucket do TF (filtro da tela no PLAY; ritmo no runner).</summary>
+        /// <summary>
+        /// Dispara no fechamento do candle do TF quando houve bolha nele.
+        /// O runner entrega a lista completa de bolhas do candle no evento.
+        /// </summary>
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
-            TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
+            TriggerChecks.IsCandleCloseWithBubbles(ev, ctx.TimeFrame);
 
         /// <summary>Config 100% no código (nada no tab).</summary>
         private const int LookbackCandles = 60;
@@ -60,6 +65,13 @@ namespace B3WM.Services.Strategies
         {
             // TF da sessão (não do evento): bubble não carrega TF.
             var tf = ctx.TimeFrame;
+            // Candle fechado: avalia no fechamento (open + TF) e corta o
+            // snapshot nele, para incluir o próprio candle e as bolhas dele.
+            var candle = ev as CandleClosed;
+            var at = candle != null
+                ? candle.Bar.Date.AddMinutes(candle.Bar.TimeFrame)
+                : ev.At;
+            var asOf = candle != null || ev.At.Date < DateTime.Today ? at : (DateTime?)null;
 
             using var doc = JsonDocument.Parse(
                 string.IsNullOrWhiteSpace(ctx.ScreenSpecJson) ? "{}" : ctx.ScreenSpecJson);
@@ -67,8 +79,8 @@ namespace B3WM.Services.Strategies
             {
                 Symbol = ctx.Symbol,
                 TimeFrame = tf,
-                DisplayDate = ev.At.Date,
-                AsOf = ev.At.Date < DateTime.Today ? ev.At : null,
+                DisplayDate = at.Date,
+                AsOf = asOf,
                 VisibleTimeFrames = new() { tf },
                 Spec = doc.RootElement.Clone(),
                 // JEV: escopo resolvido no backend + diário sempre.
@@ -78,6 +90,10 @@ namespace B3WM.Services.Strategies
                 LookbackBubbles = LookbackBubbles,
             }, ct);
             ctx.Snapshot = snap;
+            // Garante que TODAS as bolhas do candle (e a do trigger manual)
+            // entrem no state, mesmo abaixo do threshold da tela ou fora do
+            // recorte do último candle fechado usado pelo builder.
+            MergeTriggerBubbles(snap, ev);
 
             var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
             var stateJson = JsonSerializer.Serialize(state);
@@ -122,6 +138,39 @@ namespace B3WM.Services.Strategies
         }
 
         /// <summary>
+        /// Une as bolhas do gatilho à camada já montada pelo builder. Assim a
+        /// Jev vê todas as bolhas do candle (inclusive abaixo do threshold da
+        /// tela) e a bolha do trigger manual, sem alterar o pool de auditoria.
+        /// </summary>
+        private static void MergeTriggerBubbles(MarketSnapshot snap, StrategyEvent ev)
+        {
+            var extra = ev switch
+            {
+                CandleClosed c => c.Bubbles,
+                BubbleAppeared b => new List<BubbleStorageItem> { b.Item },
+                _ => new List<BubbleStorageItem>(),
+            };
+            if (extra.Count == 0) return;
+
+            var current = snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles)
+                ?? new List<BubbleStorageItem>();
+            snap.Layers[SnapshotLayers.Bubbles] = MergeBubbles(current, extra);
+        }
+
+        /// <summary>
+        /// Une listas de bolhas sem duplicar (mesma bolha = data, preço,
+        /// agente, amount e ação) e ordena por data. Puro e testável.
+        /// </summary>
+        public static List<BubbleStorageItem> MergeBubbles(
+            IEnumerable<BubbleStorageItem> current,
+            IEnumerable<BubbleStorageItem> extra) =>
+            current.Concat(extra)
+                .GroupBy(b => (b.Date, b.Price, b.Agent, b.Amount, b.ActionType))
+                .Select(g => g.First())
+                .OrderBy(b => b.Date)
+                .ToList();
+
+        /// <summary>
         /// Monta e grava a auditoria (best-effort). Nunca lança: falha de
         /// auditoria vira warning e não mascara o erro original da chamada.
         /// </summary>
@@ -154,7 +203,7 @@ namespace B3WM.Services.Strategies
 
                 var record = JevPrompt.BuildAudit(
                     auditId,
-                    DateTime.Now, ev.At, ev.GetType().Name,
+                    DateTime.Now, StrategyRunner.EvaluationTime(ev), ev.GetType().Name,
                     ctx.Symbol, tf,
                     header?.DisplayDate ?? DateTime.Today,
                     "strategy", resp?.Model ?? _jev.Model, ctx.SnapshotHash ?? "",

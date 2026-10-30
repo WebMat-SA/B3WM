@@ -59,6 +59,7 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
                   step: Defaults.extremeMinimumProminenceStep,
                   locked: state.configLocked,
                 ),
+                _colorsSection(state),
                 if (dex != null)
                   Padding(
                     padding:
@@ -87,7 +88,12 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
                     ),
                   ),
                 if (dex != null)
-                  for (final e in dex.extremes) _DailyExtremeRow(point: e),
+                  for (final e in dex.extremes)
+                    _DailyExtremeRow(
+                      point: e,
+                      topColor: parseHexColor(state.dailyExtremeTopColor),
+                      valleyColor: parseHexColor(state.dailyExtremeValleyColor),
+                    ),
                 if (dex == null)
                   Padding(
                     padding:
@@ -106,19 +112,38 @@ class _DailyExtremeTabState extends State<DailyExtremeTab>
       );
     });
   }
+
+  Widget _colorsSection(StateService state) {
+    return ExpansionTile(
+      leading: const Icon(Icons.palette, size: 20),
+      title: const Text('Colors', style: TextStyle(fontSize: 13)),
+      tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      children: [
+        ColorPickerRow('Topo', state.dailyExtremeTopColor,
+            (c) => state.setDailyExtremeTopColor(c)),
+        const SizedBox(height: 4),
+        ColorPickerRow('Vale', state.dailyExtremeValleyColor,
+            (c) => state.setDailyExtremeValleyColor(c)),
+      ],
+    );
+  }
 }
 
 class _DailyExtremeRow extends StatelessWidget {
   final ExtremePoint point;
-  const _DailyExtremeRow({required this.point});
+  final Color topColor;
+  final Color valleyColor;
+  const _DailyExtremeRow(
+      {required this.point, required this.topColor, required this.valleyColor});
 
   @override
   Widget build(BuildContext context) {
     final isTop = point.type == ExtremeType.top;
     final color = isTop
-        ? const Color(0xFF43A047)
+        ? topColor
         : point.type == ExtremeType.valley
-            ? const Color(0xFFE53935)
+            ? valleyColor
             : Colors.grey;
     final label = isTop
         ? 'Topo'

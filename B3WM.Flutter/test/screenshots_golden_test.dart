@@ -1,6 +1,5 @@
-// Golden tests that render the B3WM Flutter app with realistic sample data.
+// Golden tests that render the B3WM Flutter app for the README screenshots.
 //
-// These are used to generate the screenshots shown in the project README.
 // Run with:
 //   flutter test test/screenshots_golden_test.dart --update-goldens
 //
@@ -9,155 +8,48 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:b3wm_flutter/main.dart';
 import 'package:b3wm_flutter/models/bar_storage_item.dart';
 import 'package:b3wm_flutter/models/bubble_storage_item.dart';
+import 'package:b3wm_flutter/models/market_window.dart';
 import 'package:b3wm_flutter/models/structure_storage_item.dart';
-import 'package:b3wm_flutter/models/ticks2.dart';
 import 'package:b3wm_flutter/models/trade_models.dart';
 import 'package:b3wm_flutter/models/volume_level.dart';
 import 'package:b3wm_flutter/models/volume_level_storage_item.dart';
+import 'package:b3wm_flutter/models/extreme_storage_item.dart';
+import 'package:b3wm_flutter/models/pivot_storage_item.dart';
+import 'package:b3wm_flutter/models/vwap_history_point.dart';
 import 'package:b3wm_flutter/services/api_service.dart';
 import 'package:b3wm_flutter/services/audio_service.dart';
 import 'package:b3wm_flutter/services/preferences_service.dart';
 import 'package:b3wm_flutter/services/signalr_service.dart';
 import 'package:b3wm_flutter/services/state_service.dart';
+import 'package:b3wm_flutter/services/strategy_service.dart';
 import 'package:b3wm_flutter/services/trading_service.dart';
+
+import 'readme_data.dart';
 
 const _goldenRoot = Key('golden-root');
 
-// ---------------------------------------------------------------------------
-// Deterministic random generator so the sample data is stable between runs.
-// ---------------------------------------------------------------------------
-class _Rng {
-  int _state;
-  _Rng(int seed) : _state = seed;
-  double nextDouble() {
-    _state = (_state * 1103515245 + 12345) & 0x7fffffff;
-    return _state / 0x7fffffff;
-  }
+late ReadmeSessionData _data;
 
-  int nextInt(int max) => (nextDouble() * max).floor();
-}
+bool _sameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
 
-// ---------------------------------------------------------------------------
-// Sample data
-// ---------------------------------------------------------------------------
+bool _within(DateTime date, DateTime from, DateTime to) =>
+    !date.isBefore(DateTime(from.year, from.month, from.day)) &&
+    !date.isAfter(DateTime(to.year, to.month, to.day, 23, 59, 59));
 
-final List<BarStorageItem> _kSampleBars = _buildBars();
-final List<BubbleStorageItem> _kSampleBubbles = _buildBubbles();
-final List<StructureStorageItem> _kSampleStructures = _buildStructures();
-
-List<BarStorageItem> _buildBars() {
-  final rng = _Rng(20240510);
-  final bars = <BarStorageItem>[];
-  final start = DateTime(2024, 5, 10, 9, 0);
-  double price = 151000.0;
-  for (int i = 0; i < 110; i++) {
-    final date = start.add(Duration(minutes: 2 * i));
-    final open = price;
-    final drift = (rng.nextDouble() - 0.5) * 10 - (price - 151000) * 0.02;
-    final close = open + drift;
-    final high = max(open, close) + rng.nextDouble() * 12;
-    final low = min(open, close) - rng.nextDouble() * 12;
-    bars.add(BarStorageItem(
-      date: date,
-      symbol: 'WINFUT',
-      timeFrame: 2,
-      open: open,
-      high: high,
-      low: low,
-      close: close,
-      volume: 200 + rng.nextInt(2800),
-    ));
-    price = close;
-  }
-  return bars;
-}
-
-List<BubbleStorageItem> _buildBubbles() {
-  final rng = _Rng(7);
-  final bars = _kSampleBars;
-  const agents = [122, 238, 114, 16, 13, 40, 127, 3, 39, 6003];
-  final bubbles = <BubbleStorageItem>[];
-  for (int i = 0; i < 14; i++) {
-    final bar = bars[20 + rng.nextInt(bars.length - 30)];
-    bubbles.add(BubbleStorageItem(
-      price: bar.close + (rng.nextDouble() - 0.5) * 20,
-      agent: agents[rng.nextInt(agents.length)],
-      amount: 1400 + rng.nextDouble() * 2800,
-      date: bar.date,
-      actionType: rng.nextDouble() > 0.5 ? ActionType.buy : ActionType.sale,
-      symbol: 'WINFUT',
-    ));
-  }
-  return bubbles;
-}
-
-VolumeLevelStorageItem _buildVolume() {
-  final bars = _kSampleBars;
-  double minP = bars.first.low;
-  double maxP = bars.first.high;
-  for (final b in bars) {
-    if (b.low < minP) minP = b.low;
-    if (b.high > maxP) maxP = b.high;
-  }
-  final rng = _Rng(11);
-  final levels = <VolumeLevel>[];
-  for (double p = minP; p <= maxP + 0.001; p += 5) {
-    final buy = 200 + rng.nextInt(2500);
-    final sell = 200 + rng.nextInt(2500);
-    levels.add(VolumeLevel(
-      price: p,
-      total: buy + sell,
-      buyVolume: buy,
-      sellVolume: sell,
-    ));
-  }
-  return VolumeLevelStorageItem(
-    id: 1,
-    date: bars.last.date,
-    symbol: 'WINFUT',
-    timeFrame: 2,
-    volumes: levels,
-  );
-}
-
-List<StructureStorageItem> _buildStructures() {
-  final bars = _kSampleBars;
-  const deltas = [
-    [151010.0, 150960.0],
-    [151040.0, 150985.0],
-    [151025.0, 150965.0],
-    [151070.0, 151010.0],
-    [151100.0, 151040.0],
-    [151085.0, 151020.0],
-    [151130.0, 151060.0],
-    [151160.0, 151095.0],
-  ];
-  final structures = <StructureStorageItem>[];
-  for (int i = 0; i < deltas.length; i++) {
-    final bar = bars[i * 14];
-    structures.add(StructureStorageItem(
-      date: bar.date,
-      symbol: 'WINFUT',
-      timeFrame: 2,
-      upBorder: deltas[i][0],
-      downBorder: deltas[i][1],
-      upAuxBorder: deltas[i][0] + 30,
-      downAuxBorder: deltas[i][1] - 30,
-    ));
-  }
-  return structures;
-}
+double get _lastPrice => _data.bars.last.close;
 
 AccountInfo _buildAccount() => AccountInfo(
       login: 7123456,
@@ -180,16 +72,16 @@ List<PositionInfo> _buildPositions() => [
         symbol: 'WINFUT',
         type: 'buy',
         volume: 2,
-        priceOpen: 151450.00,
-        sl: 151220.00,
-        tp: 151820.00,
-        priceCurrent: 151486.00,
-        profit: 72.00,
+        priceOpen: _lastPrice - 120,
+        sl: _lastPrice - 420,
+        tp: _lastPrice + 380,
+        priceCurrent: _lastPrice,
+        profit: 240.00,
         swap: 0,
         commission: 2.00,
         magic: 1234,
         comment: 'b3wm',
-        time: '2024-05-10 10:22:00',
+        time: '2026-10-28 10:22:00',
       ),
       PositionInfo(
         ticket: 102,
@@ -205,7 +97,7 @@ List<PositionInfo> _buildPositions() => [
         commission: 1.00,
         magic: 1234,
         comment: 'b3wm',
-        time: '2024-05-10 11:05:00',
+        time: '2026-10-28 11:05:00',
       ),
     ];
 
@@ -215,10 +107,10 @@ List<OrderInfo> _buildOrders() => [
         symbol: 'WINFUT',
         type: 'sell_limit',
         volume: 1,
-        priceOpen: 151620.00,
-        sl: 151740.00,
-        tp: 151420.00,
-        timeSetup: '2024-05-10 09:15:00',
+        priceOpen: _lastPrice + 260,
+        sl: _lastPrice + 520,
+        tp: _lastPrice - 180,
+        timeSetup: '2026-10-28 09:15:00',
         timeExpiration: '',
         state: 'Valid',
         comment: 'b3wm',
@@ -232,7 +124,7 @@ List<OrderInfo> _buildOrders() => [
         priceOpen: 5.4100,
         sl: 5.3900,
         tp: 5.4600,
-        timeSetup: '2024-05-10 09:40:00',
+        timeSetup: '2026-10-28 09:40:00',
         timeExpiration: '',
         state: 'Valid',
         comment: 'b3wm',
@@ -246,9 +138,9 @@ List<HistoryDeal> _buildHistory() => [
           symbol: 'WINFUT',
           type: 'buy',
           volume: 2,
-          price: 151450.00,
+          price: _lastPrice - 140,
           profit: 120.00,
-          time: '2024-05-10 09:18:00',
+          time: '2026-10-28 09:18:00',
           comment: 'b3wm',
           magic: 1234),
       HistoryDeal(
@@ -256,9 +148,9 @@ List<HistoryDeal> _buildHistory() => [
           symbol: 'WINFUT',
           type: 'sell',
           volume: 2,
-          price: 151510.00,
+          price: _lastPrice - 40,
           profit: 60.00,
-          time: '2024-05-10 10:41:00',
+          time: '2026-10-28 10:41:00',
           comment: 'b3wm',
           magic: 1234),
       HistoryDeal(
@@ -268,40 +160,158 @@ List<HistoryDeal> _buildHistory() => [
           volume: 1,
           price: 5.4400,
           profit: 40.00,
-          time: '2024-05-10 11:12:00',
+          time: '2026-10-28 11:12:00',
           comment: 'b3wm',
           magic: 1234),
     ];
 
-// ---------------------------------------------------------------------------
-// Fake services (no network)
-// ---------------------------------------------------------------------------
-
 class FakeApiService extends ApiService {
-  FakeApiService() : super(baseUrl: 'http://test.local');
+  FakeApiService(this.data) : super(baseUrl: 'http://test.local');
+
+  final ReadmeSessionData data;
 
   @override
   Future<List<BarStorageItem>> getBars(String symbol, DateTime date) async =>
-      _kSampleBars;
+      data.bars.where((b) => _sameDay(b.date, date)).toList();
+
+  @override
+  Future<List<BarStorageItem>> getBarRange(
+      String symbol, DateTime startDate, DateTime endDate, int timeFrame) async {
+    final source = timeFrame == 1440 ? data.dailyBars : data.bars;
+    return source
+        .where((b) => _within(b.date, startDate, endDate))
+        .toList();
+  }
 
   @override
   Future<List<BubbleStorageItem>> getBubbles(
           String symbol, DateTime date) async =>
-      _kSampleBubbles;
+      data.bubbles.where((b) => _sameDay(b.date, date)).toList();
+
+  @override
+  Future<List<BubbleStorageItem>> getBubbleRange(
+          String symbol, DateTime startDate, DateTime endDate) async =>
+      data.bubbles
+          .where((b) => _within(b.date, startDate, endDate))
+          .toList();
 
   @override
   Future<VolumeLevelStorageItem?> getVolume(
           String symbol, DateTime date) async =>
-      _buildVolume();
+      _sameDay(data.volume.date, date) ? data.volume : null;
 
   @override
   Future<List<StructureStorageItem>> getStructure(
           String symbol, DateTime date, double minDistance) async =>
-      _kSampleStructures;
+      data.structures.where((s) => _sameDay(s.date, date)).toList();
 
   @override
-  Future<DateTime> findLastDateWithData(String symbol) async =>
-      DateTime(2024, 5, 10);
+  Future<List<StructureStorageItem>> getStructureRange(String symbol,
+          DateTime startDate, DateTime endDate, double minDistance) async =>
+      data.structures
+          .where((s) => _within(s.date, startDate, endDate))
+          .toList();
+
+  @override
+  Future<List<StructureStorageItem>> setStructureDistance(
+          String symbol, double minDistance) async =>
+      data.structures;
+
+  @override
+  Future<List<StructureStorageItem>> setStructureDistanceForTimeFrame(
+          String symbol, int timeFrame, double minDistance) async =>
+      timeFrame == 1440 ? data.structuresDaily : data.structures;
+
+  @override
+  Future<List<StructureStorageItem>> getStructureHistory(
+      String symbol, int timeFrame, double minDistance,
+      {int days = 90}) async =>
+      timeFrame == 1440 ? data.structuresDaily : data.structures;
+
+  @override
+  Future<ExtremeStorageItem?> getExtreme(String symbol, DateTime date,
+          {DateTime? from, DateTime? to}) async =>
+      data.extreme;
+
+  @override
+  Future<ExtremeStorageItem?> setExtremePeriod(String symbol,
+          {DateTime? date, DateTime? from, DateTime? to}) async =>
+      data.extreme;
+
+  @override
+  Future<ExtremeStorageItem?> setExtremeConfig(String symbol,
+          {DateTime? date,
+          DateTime? from,
+          DateTime? to,
+          double? noiseSensitivity,
+          double? minimumProminence}) async =>
+      data.extreme;
+
+  @override
+  Future<ExtremeStorageItem?> getExtremeDaily(String symbol,
+          {DateTime? from,
+          DateTime? to,
+          double? noiseSensitivity,
+          double? minimumProminence}) async =>
+      data.extremeDaily;
+
+  @override
+  Future<List<VolumeLevel>> getDailyProfile(String symbol,
+          {DateTime? from, DateTime? to}) async =>
+      data.dailyProfile;
+
+  @override
+  Future<PivotStorageItem?> getPivotIntraday(String symbol,
+          {int? lineCount}) async =>
+      data.pivotIntraday;
+
+  @override
+  Future<PivotStorageItem?> getPivotDaily(String symbol,
+          {int? lineCount}) async =>
+      data.pivotDaily;
+
+  @override
+  Future<List<VwapHistoryPoint>> getVwapHistory(
+          String symbol, DateTime date) async =>
+      data.vwap.where((p) => _sameDay(p.day, date)).toList();
+
+  @override
+  Future<List<VwapHistoryPoint>> getVwapRange(
+          String symbol, DateTime startDate, DateTime endDate) async =>
+      data.vwap
+          .where((p) => _within(p.day, startDate, endDate))
+          .toList();
+
+  @override
+  Future<MarketWindow?> getMarketWindow({
+    required String symbol,
+    required int timeFrame,
+    bool profileAuto = true,
+    DateTime? profileFrom,
+    DateTime? profileTo,
+    DateTime? rangeFrom,
+    DateTime? rangeTo,
+    bool dailyAuto = true,
+    DateTime? dailyFrom,
+    DateTime? dailyTo,
+  }) async =>
+      MarketWindow(
+        symbol: symbol,
+        timeFrame: timeFrame,
+        intraday: StructureWindow(
+          from: data.bars.first.date,
+          to: data.bars.last.date,
+          auto: true,
+        ),
+        daily: StructureWindow(
+          from: data.dailyFrom,
+          to: data.dailyTo,
+          auto: true,
+        ),
+      );
+
+  @override
+  Future<DateTime> findLastDateWithData(String symbol) async => data.session;
 }
 
 class FakeSignalRService extends SignalRService {
@@ -322,6 +332,21 @@ class FakeSignalRService extends SignalRService {
 
   @override
   Future<void> dispose() async {}
+
+  @override
+  Future<MarketWindow?> subscribeMarketWindow({
+    required String symbol,
+    required int timeFrame,
+    bool profileAuto = true,
+    DateTime? profileFrom,
+    DateTime? profileTo,
+    DateTime? rangeFrom,
+    DateTime? rangeTo,
+    bool dailyAuto = true,
+    DateTime? dailyFrom,
+    DateTime? dailyTo,
+  }) async =>
+      null;
 }
 
 class FakeTradingApiService extends TradingApiService {
@@ -343,9 +368,50 @@ class FakeTradingApiService extends TradingApiService {
       _buildHistory();
 }
 
-// ---------------------------------------------------------------------------
-// Environment + helpers
-// ---------------------------------------------------------------------------
+class FakeStrategyService extends StrategyService {
+  FakeStrategyService(this.data)
+      : super(
+          baseUrl: 'http://test.local',
+          client: MockClient((_) async => http.Response('[]', 200)),
+        );
+
+  final ReadmeSessionData data;
+
+  StrategySession get session {
+    final decisions = data.strategyLog.decisions;
+    final last = decisions.isEmpty ? null : decisions.last;
+    return StrategySession(
+      sessionId: 'jev-winfut-2',
+      strategy: 'JevAnalysis',
+      symbol: 'WINFUT',
+      triggerTimeFrame: 2,
+      paused: false,
+      snapshotHash: data.strategyLog.snapshotHash,
+      position: 'flat',
+      decisions: decisions.length,
+      realizedPts: data.strategyLog.realizedPts,
+      lastDecision: last == null
+          ? null
+          : '${last.side} conf=${last.confidence.toStringAsFixed(2)}',
+      reportItems: decisions.length > 8
+          ? decisions.sublist(decisions.length - 8)
+          : decisions,
+    );
+  }
+
+  @override
+  Future<List<StrategyInfo>> list() async => data.strategies;
+
+  @override
+  Future<List<StrategySession>> state() async => [session];
+
+  @override
+  Future<List<StrategyLogDay>> log(String symbol, DateTime date) async =>
+      _sameDay(date, data.session) ? [data.strategyLog] : [];
+
+  @override
+  void dispose() {}
+}
 
 class _Env {
   final ApiService api;
@@ -354,6 +420,7 @@ class _Env {
   final PreferencesService prefs;
   final AudioService audio;
   final StateService state;
+  final FakeStrategyService strategy;
 
   _Env({
     required this.api,
@@ -362,65 +429,27 @@ class _Env {
     required this.prefs,
     required this.audio,
     required this.state,
+    required this.strategy,
   });
 }
 
-// Config real do app rodando (shared_preferences.json do usuário), aplicada
-// aos goldens para refletir a visualização real: barras de volume finas,
-// cores suaves de compra/venda, opacidades e bolhas pequenas.
-final Map<String, Object> _kRealConfig = {
-  'b3wm_Config_WINFUT': jsonEncode({
-    'timeFrame': 2,
-    'bubbleVisible': true,
-    'bubbleOpacity': 0.25,
-    'bubbleSizeMin': 5.0,
-    'bubbleSizeMax': 200.0,
-    'thresholdBubble': 475,
-    'profileVisible': true,
-    'profileSizeH': 2.0,
-    'profileSizeV': 0.25,
-    'profileOpacity': 0.86,
-    'profileAutoByPriceStructure': true,
-    'structureVisible': true,
-    'structureAuxVisible': false,
-    'structureOpacity': 0.2,
-    'structureRangeUpd': 200.0,
-    'colorBuyer': '#9696b4',
-    'colorSeller': '#b49696',
-    'selectedAgents': [122, 238, 114, 16, 13, 40, 127, 3, 39],
-    'agentThresholds': {'114': 700, '3': 1225, '39': 1000, '6003': 800},
-    'knownAgents': [],
-    'bubbleAmountFilter': true,
-    'bubbleAgentsFilter': true,
-    'bubbleSoundEnabled': false,
-    'bubbleSoundVolume': 0.08,
-    'tradingHistoryVisible': false,
-    'positionVisible': false,
-    'openOrdersVisible': true,
-    'tradingPanelVisible': false,
-    'tradingAccountExpanded': false,
-    'tradingOrdersExpanded': false,
-    'tradingPositionsExpanded': false,
-    'tradingHistoryExpanded': false,
-  }),
-};
-
 Future<_Env> _createEnv() async {
-  SharedPreferences.setMockInitialValues(_kRealConfig);
+  SharedPreferences.setMockInitialValues(_data.prefs);
   final prefs = PreferencesService();
   await prefs.init();
-  final api = FakeApiService();
+  final api = FakeApiService(_data);
   final signalR = FakeSignalRService(api);
   final tradingApi = FakeTradingApiService();
   final audio = AudioService();
+  final strategy = FakeStrategyService(_data);
   final state = StateService(
     apiService: api,
     signalRService: signalR,
     preferencesService: prefs,
     audioService: audio,
+    strategyService: strategy,
   );
   await state.setSymbol('WINFUT');
-  state.selectAllAgents();
   state.updatePositions(_buildPositions());
   state.updateOrders(_buildOrders());
   state.updateHistory(_buildHistory());
@@ -431,6 +460,7 @@ Future<_Env> _createEnv() async {
     prefs: prefs,
     audio: audio,
     state: state,
+    strategy: strategy,
   );
 }
 
@@ -456,6 +486,7 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 60));
   await tester.pump(const Duration(milliseconds: 250));
   await tester.pump(const Duration(milliseconds: 250));
+  await tester.pump(const Duration(milliseconds: 500));
 }
 
 Future<void> _capture(WidgetTester tester, String name) async {
@@ -481,8 +512,20 @@ Future<void> _openDrawerTab(
   await _cancelTimers(tester, env);
 }
 
+void _prepareIntraday(_Env env) {
+  env.state.setTradingPanelVisible(false);
+  env.state.setDailyPanelVisible(false);
+  env.state.setStructureVisible(true);
+  env.state.setBubbleVisible(true);
+  env.state.setProfileVisible(true);
+  env.state.setExtremeVisible(true);
+  env.state.setPivotVisible(true);
+  env.state.setVwapVisible(true);
+}
+
 void main() {
   setUpAll(() async {
+    _data = await loadReadmeSessionData();
     await _loadFonts();
   });
 
@@ -502,55 +545,110 @@ void main() {
 
   testWidgets('golden - visao geral do grafico', (tester) async {
     final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
+    _prepareIntraday(env);
     await tester.pumpWidget(_buildApp(env));
     await _settle(tester);
     await _capture(tester, 'overview');
     await _cancelTimers(tester, env);
   });
 
-  testWidgets('golden - aba Bubbles', (tester) async {
-    final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(tester, env, 'Notificações de bubbles', 'drawer_bubbles');
-  });
-
-  testWidgets('golden - aba Estrutura', (tester) async {
-    final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(tester, env, 'Notificações de estrutura', 'drawer_estrutura');
-  });
-
-  testWidgets('golden - aba Volume Profile', (tester) async {
-    final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(tester, env, 'Volume Profile', 'drawer_volume_profile');
-  });
-
-  testWidgets('golden - aba Topos/Vales', (tester) async {
-    final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(tester, env, 'Topos/Vales', 'drawer_extreme');
-  });
-
-  testWidgets('golden - aba Pivot Tradicional', (tester) async {
-    final env = await _createEnv();
-    env.state.setTradingPanelVisible(false);
-    await _openDrawerTab(
-        tester, env, 'Pivot Tradicional', 'drawer_pivot');
-  });
-
   testWidgets('golden - painel de trading', (tester) async {
     final env = await _createEnv();
+    _prepareIntraday(env);
     env.state.setTradingPanelVisible(true);
+    env.state.setTradingConfigExpanded(false);
     env.state.setTradingAccountExpanded(true);
     env.state.setTradingOrdersExpanded(false);
     env.state.setTradingPositionsExpanded(true);
     env.state.setTradingHistoryExpanded(true);
     await tester.pumpWidget(_buildApp(env));
     await _settle(tester);
-    await tester.pump(const Duration(milliseconds: 200));
     await _capture(tester, 'trading_panel');
+    await _cancelTimers(tester, env);
+  });
+
+  testWidgets('golden - aba Bubbles', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(tester, env, 'Notificações de bubbles', 'drawer_bubbles');
+  });
+
+  testWidgets('golden - aba Estrutura', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(tester, env, 'Notificações de estrutura', 'drawer_estrutura');
+  });
+
+  testWidgets('golden - aba Volume Profile', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(
+        tester, env, 'Volume Profile', 'drawer_volume_profile');
+  });
+
+  testWidgets('golden - aba Topos/Vales', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(tester, env, 'Topos/Vales', 'drawer_extreme');
+  });
+
+  testWidgets('golden - aba Pivot Tradicional', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(
+        tester, env, 'Pivot Tradicional', 'drawer_pivot');
+  });
+
+  testWidgets('golden - aba VWAP Diario', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(tester, env, 'VWAP Diário', 'drawer_vwap');
+  });
+
+  testWidgets('golden - aba Backup', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    await _openDrawerTab(
+        tester, env, 'Backup (exportar/importar)', 'drawer_backup');
+  });
+
+  testWidgets('golden - aba Estrategias', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/Strategy/List') {
+        final list = _data.strategies
+            .map((s) => {
+                  'name': s.name,
+                  'description': s.description,
+                  'detailsMd': s.detailsMd,
+                })
+            .toList();
+        return http.Response(jsonEncode(list), 200,
+            headers: {'content-type': 'application/json'});
+      }
+      if (request.url.path == '/api/Strategy/State') {
+        return http.Response('[]', 200,
+            headers: {'content-type': 'application/json'});
+      }
+      return http.Response('{}', 200,
+          headers: {'content-type': 'application/json'});
+    });
+    await http.runWithClient(() async {
+      await _openDrawerTab(
+          tester, env, 'Estratégias (rodar)', 'drawer_strategy');
+    }, () => client);
+  });
+
+  testWidgets('golden - painel diario 1D', (tester) async {
+    final env = await _createEnv();
+    _prepareIntraday(env);
+    env.state.setDailyPanelVisible(true);
+    await env.state.loadDailyAll();
+    await tester.pumpWidget(_buildApp(env));
+    await _settle(tester);
+    await tester.pump(const Duration(milliseconds: 500));
+    await _capture(tester, 'daily_panel');
     await _cancelTimers(tester, env);
   });
 }
@@ -561,15 +659,21 @@ Future<void> _loadFonts() async {
       ? '$root/bin/cache/artifacts/material_fonts'
       : 'C:/tools/flutter/bin/cache/artifacts/material_fonts';
   final loader = FontLoader('Roboto');
-  for (final name in ['roboto-regular.ttf', 'roboto-bold.ttf', 'roboto-medium.ttf']) {
+  for (final name in [
+    'roboto-regular.ttf',
+    'roboto-bold.ttf',
+    'roboto-medium.ttf'
+  ]) {
     final bytes = await File('$fontsDir/$name').readAsBytes();
-    final data = ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes);
+    final data =
+        ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes);
     loader.addFont(Future.value(data));
   }
   await loader.load();
 
   final iconsLoader = FontLoader('MaterialIcons');
-  final iconBytes = await File('$fontsDir/materialicons-regular.otf').readAsBytes();
+  final iconBytes =
+      await File('$fontsDir/materialicons-regular.otf').readAsBytes();
   final iconData = ByteData.view(
       iconBytes.buffer, iconBytes.offsetInBytes, iconBytes.lengthInBytes);
   iconsLoader.addFont(Future.value(iconData));

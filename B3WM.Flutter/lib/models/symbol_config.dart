@@ -24,6 +24,7 @@ class SymbolConfig {
   bool structureVisible;
   bool structureAuxVisible;
   double structureOpacity;
+
   /// Range INTRADAY da estrutura (todos os timeframes < 1440 compartilham
   /// este único valor). O range DIÁRIO (1440) vive em `daily.structureRangeUpd`
   /// e nunca é lido/escrito por este campo.
@@ -54,6 +55,9 @@ class SymbolConfig {
   double extremeOpacity;
   double extremeNoiseSensitivity;
   double extremeMinimumProminence;
+  String extremeTopColor;
+  String extremeValleyColor;
+  bool extremeIncludeDaily;
 
   /// Pivot Tradicional do Profit no splitter superior/intraday (issue #14):
   /// fonte HLC de D-1, exibido só no dia atual/último pregão.
@@ -126,6 +130,9 @@ class SymbolConfig {
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
     required this.extremeMinimumProminence,
+    required this.extremeTopColor,
+    required this.extremeValleyColor,
+    required this.extremeIncludeDaily,
     required this.pivotVisible,
     required this.pivotOpacity,
     required this.pivotLineCount,
@@ -177,6 +184,9 @@ class SymbolConfig {
         extremeOpacity = 0.7,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
         extremeMinimumProminence = Defaults.extremeMinimumProminence,
+        extremeTopColor = Defaults.extremeTopColor,
+        extremeValleyColor = Defaults.extremeValleyColor,
+        extremeIncludeDaily = false,
         pivotVisible = true,
         pivotOpacity = 0.7,
         pivotLineCount = 2,
@@ -228,8 +238,8 @@ class SymbolConfig {
     final thresholdMin = Defaults.thresholdBubbleSize(symbol);
     final structureMax = Defaults.structureRangeUpdMax(symbol);
     final structureDailyMax = Defaults.structureRangeUpdDailyMax(symbol);
-    final bubbleSizes = sanitizeBubbleSizes(
-        legacy.bubbleSizeMin, legacy.bubbleSizeMax);
+    final bubbleSizes =
+        sanitizeBubbleSizes(legacy.bubbleSizeMin, legacy.bubbleSizeMax);
     final dailyRange = legacy.daily.structureRangeUpd >= 0 &&
             legacy.daily.structureRangeUpd <= structureDailyMax
         ? legacy.daily.structureRangeUpd
@@ -275,6 +285,8 @@ class SymbolConfig {
         extremeOpacity: defaults.daily.extremeOpacity,
         extremeNoiseSensitivity: defaults.daily.extremeNoiseSensitivity,
         extremeMinimumProminence: defaults.daily.extremeMinimumProminence,
+        extremeTopColor: defaults.daily.extremeTopColor,
+        extremeValleyColor: defaults.daily.extremeValleyColor,
         pivotVisible: true,
         pivotOpacity: 0.7,
         pivotLineCount: 2,
@@ -290,6 +302,9 @@ class SymbolConfig {
       extremeOpacity: defaults.extremeOpacity,
       extremeNoiseSensitivity: defaults.extremeNoiseSensitivity,
       extremeMinimumProminence: defaults.extremeMinimumProminence,
+      extremeTopColor: defaults.extremeTopColor,
+      extremeValleyColor: defaults.extremeValleyColor,
+      extremeIncludeDaily: false,
       pivotVisible: true,
       pivotOpacity: 0.7,
       pivotLineCount: 2,
@@ -318,7 +333,8 @@ class SymbolConfig {
     );
   }
 
-  factory SymbolConfig.fromJson(Map<String, dynamic> json, {String symbol = ''}) {
+  factory SymbolConfig.fromJson(Map<String, dynamic> json,
+      {String symbol = ''}) {
     var timeFrame = json['timeFrame'] as int? ?? 2;
     // Migração #12: o timeframe 1D saiu do seletor principal (só intraday).
     if (timeFrame == 1440) timeFrame = 2;
@@ -326,77 +342,76 @@ class SymbolConfig {
         (json['bubbleSizeMin'] as num?)?.toDouble() ?? 20,
         (json['bubbleSizeMax'] as num?)?.toDouble() ?? 100);
     return SymbolConfig(
-        timeFrame: timeFrame,
-        dateRangeMode: DateRangeMode.values.byName(json['dateRangeMode'] as String? ?? 'intraday'),
-        lookbackDays: json['lookbackDays'] as int? ?? 5,
-        bubbleVisible: json['bubbleVisible'] as bool? ?? true,
-        bubbleOpacity: (json['bubbleOpacity'] as num?)?.toDouble() ?? 0.7,
-        bubbleSizeMin: bubbleSizes[0],
-        bubbleSizeMax: bubbleSizes[1],
-        thresholdBubble: json['thresholdBubble'] as int? ??
-            Defaults.thresholdBubbleSize(symbol),
-        profileVisible: json['profileVisible'] as bool? ?? true,
-        profileSizeH: (json['profileSizeH'] as num?)?.toDouble() ?? 1.0,
-        profileSizeV: (json['profileSizeV'] as num?)?.toDouble() ?? 1.0,
-        profileOpacity: (json['profileOpacity'] as num?)?.toDouble() ?? 0.5,
-        profileAutoByPriceStructure:
-            json['profileAutoByPriceStructure'] as bool? ?? false,
-        structureVisible: json['structureVisible'] as bool? ?? true,
-        structureAuxVisible: json['structureAuxVisible'] as bool? ?? true,
-        structureOpacity:
-            (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
-        structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
-            Defaults.minDistanceUpdateBorder(symbol),
-        yZoom: ((json['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
-        xZoom: DailyAnalysisConfig.clampXZoom(json['xZoom'] as num?),
-        panX: (json['panX'] as num?)?.toDouble(),
-        panY: (json['panY'] as num?)?.toDouble(),
-        daily: DailyAnalysisConfig.fromJson(json, symbol: symbol),
-        extremeVisible: json['extremeVisible'] as bool? ?? true,
-        extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
-        extremeNoiseSensitivity:
-            (json['extremeNoiseSensitivity'] as num?)?.toDouble() ??
-                Defaults.extremeNoiseSensitivity,
-        extremeMinimumProminence:
-            (json['extremeMinimumProminence'] as num?)?.toDouble() ??
-                Defaults.extremeMinimumProminence,
-        pivotVisible: json['pivotVisible'] as bool? ?? true,
-        pivotOpacity: (json['pivotOpacity'] as num?)?.toDouble() ?? 0.7,
-        pivotLineCount:
-            ((json['pivotLineCount'] as num?)?.toInt() ?? 2).clamp(2, 5),
-        vwapVisible: json['vwapVisible'] as bool? ?? true,
-        vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
-        vwapColor: json['vwapColor'] as String? ?? '#FF8800',
-        colorBuyer: json['colorBuyer'] as String? ?? '#4488ff',
-        colorSeller: json['colorSeller'] as String? ?? '#ff4444',
-        selectedAgents:
-            (json['selectedAgents'] as List<dynamic>?)?.cast<int>() ?? [],
-        agentThresholds: (json['agentThresholds'] as Map<String, dynamic>?)
-                ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
-            {},
-        knownAgents:
-            (json['knownAgents'] as List<dynamic>?)?.cast<int>() ?? [],
-        bubbleAmountFilter: json['bubbleAmountFilter'] as bool? ?? true,
-        bubbleAgentsFilter: json['bubbleAgentsFilter'] as bool? ?? true,
-        bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
-        bubbleSoundVolume:
-            (json['bubbleSoundVolume'] as num?)?.toDouble() ?? 0.5,
-        tradingHistoryVisible: json['tradingHistoryVisible'] as bool? ?? true,
-        positionVisible: json['positionVisible'] as bool? ?? true,
-        openOrdersVisible: json['openOrdersVisible'] as bool? ?? true,
-        strategyTimelineVisible:
-            json['strategyTimelineVisible'] as bool? ?? true,
-        tradingPanelVisible: json['tradingPanelVisible'] as bool? ?? true,
-        tradingConfigExpanded:
-            json['tradingConfigExpanded'] as bool? ?? false,
-        tradingAccountExpanded:
-            json['tradingAccountExpanded'] as bool? ?? false,
-        tradingOrdersExpanded: json['tradingOrdersExpanded'] as bool? ?? false,
-        tradingPositionsExpanded:
-            json['tradingPositionsExpanded'] as bool? ?? false,
-        tradingHistoryExpanded:
-            json['tradingHistoryExpanded'] as bool? ?? false,
-      );
+      timeFrame: timeFrame,
+      dateRangeMode: DateRangeMode.values
+          .byName(json['dateRangeMode'] as String? ?? 'intraday'),
+      lookbackDays: json['lookbackDays'] as int? ?? 5,
+      bubbleVisible: json['bubbleVisible'] as bool? ?? true,
+      bubbleOpacity: (json['bubbleOpacity'] as num?)?.toDouble() ?? 0.7,
+      bubbleSizeMin: bubbleSizes[0],
+      bubbleSizeMax: bubbleSizes[1],
+      thresholdBubble: json['thresholdBubble'] as int? ??
+          Defaults.thresholdBubbleSize(symbol),
+      profileVisible: json['profileVisible'] as bool? ?? true,
+      profileSizeH: (json['profileSizeH'] as num?)?.toDouble() ?? 1.0,
+      profileSizeV: (json['profileSizeV'] as num?)?.toDouble() ?? 1.0,
+      profileOpacity: (json['profileOpacity'] as num?)?.toDouble() ?? 0.5,
+      profileAutoByPriceStructure:
+          json['profileAutoByPriceStructure'] as bool? ?? false,
+      structureVisible: json['structureVisible'] as bool? ?? true,
+      structureAuxVisible: json['structureAuxVisible'] as bool? ?? true,
+      structureOpacity: (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
+      structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
+          Defaults.minDistanceUpdateBorder(symbol),
+      yZoom: ((json['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
+      xZoom: DailyAnalysisConfig.clampXZoom(json['xZoom'] as num?),
+      panX: (json['panX'] as num?)?.toDouble(),
+      panY: (json['panY'] as num?)?.toDouble(),
+      daily: DailyAnalysisConfig.fromJson(json, symbol: symbol),
+      extremeVisible: json['extremeVisible'] as bool? ?? true,
+      extremeOpacity: (json['extremeOpacity'] as num?)?.toDouble() ?? 0.7,
+      extremeNoiseSensitivity:
+          (json['extremeNoiseSensitivity'] as num?)?.toDouble() ??
+              Defaults.extremeNoiseSensitivity,
+      extremeMinimumProminence:
+          (json['extremeMinimumProminence'] as num?)?.toDouble() ??
+              Defaults.extremeMinimumProminence,
+      extremeTopColor:
+          json['extremeTopColor'] as String? ?? Defaults.extremeTopColor,
+      extremeValleyColor:
+          json['extremeValleyColor'] as String? ?? Defaults.extremeValleyColor,
+      extremeIncludeDaily: json['extremeIncludeDaily'] as bool? ?? false,
+      pivotVisible: json['pivotVisible'] as bool? ?? true,
+      pivotOpacity: (json['pivotOpacity'] as num?)?.toDouble() ?? 0.7,
+      pivotLineCount:
+          ((json['pivotLineCount'] as num?)?.toInt() ?? 2).clamp(2, 5),
+      vwapVisible: json['vwapVisible'] as bool? ?? true,
+      vwapOpacity: (json['vwapOpacity'] as num?)?.toDouble() ?? 0.5,
+      vwapColor: json['vwapColor'] as String? ?? '#FF8800',
+      colorBuyer: json['colorBuyer'] as String? ?? '#4488ff',
+      colorSeller: json['colorSeller'] as String? ?? '#ff4444',
+      selectedAgents:
+          (json['selectedAgents'] as List<dynamic>?)?.cast<int>() ?? [],
+      agentThresholds: (json['agentThresholds'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
+          {},
+      knownAgents: (json['knownAgents'] as List<dynamic>?)?.cast<int>() ?? [],
+      bubbleAmountFilter: json['bubbleAmountFilter'] as bool? ?? true,
+      bubbleAgentsFilter: json['bubbleAgentsFilter'] as bool? ?? true,
+      bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
+      bubbleSoundVolume: (json['bubbleSoundVolume'] as num?)?.toDouble() ?? 0.5,
+      tradingHistoryVisible: json['tradingHistoryVisible'] as bool? ?? true,
+      positionVisible: json['positionVisible'] as bool? ?? true,
+      openOrdersVisible: json['openOrdersVisible'] as bool? ?? true,
+      strategyTimelineVisible: json['strategyTimelineVisible'] as bool? ?? true,
+      tradingPanelVisible: json['tradingPanelVisible'] as bool? ?? true,
+      tradingConfigExpanded: json['tradingConfigExpanded'] as bool? ?? false,
+      tradingAccountExpanded: json['tradingAccountExpanded'] as bool? ?? false,
+      tradingOrdersExpanded: json['tradingOrdersExpanded'] as bool? ?? false,
+      tradingPositionsExpanded:
+          json['tradingPositionsExpanded'] as bool? ?? false,
+      tradingHistoryExpanded: json['tradingHistoryExpanded'] as bool? ?? false,
+    );
   }
 
   Map<String, dynamic> toJson() => {
@@ -426,6 +441,9 @@ class SymbolConfig {
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,
         'extremeMinimumProminence': extremeMinimumProminence,
+        'extremeTopColor': extremeTopColor,
+        'extremeValleyColor': extremeValleyColor,
+        'extremeIncludeDaily': extremeIncludeDaily,
         'pivotVisible': pivotVisible,
         'pivotOpacity': pivotOpacity,
         'pivotLineCount': pivotLineCount,

@@ -23,8 +23,9 @@ Plataforma **open-source** de visualização em tempo real e estudo de microestr
 
 > 💡 **Quer ver na prática?** As imagens abaixo são **geradas automaticamente por testes
 > golden** do próprio frontend Flutter (`B3WM.Flutter/test/screenshots_golden_test.dart`),
-> usando dados de exemplo. Elas refletem o estado atual da interface — sem necessidade de
-> conectar a dados reais da B3.
+> usando **dados reais** da sessão WINFUT de 2026-10-28 quando `B3WM/Data/` e as
+> `shared_preferences` estão disponíveis. Em clone limpo/CI, o teste usa o fixture
+> versionado `B3WM.Flutter/test/fixtures/readme_session.json` com a mesma sessão.
 
 ---
 
@@ -76,14 +77,36 @@ O drawer lateral organiza as ferramentas de análise em abas (ícones na AppBar 
   <p><em>Pivot Tradicional estilo Profit no intraday (fonte HLC de D-1, 2–5 pares de níveis). Sem dados de D-1, a aba mostra os controles e a mensagem de sessão sem pivot.</em></p>
 </div>
 
-Outras abas sem screenshot dedicado: **VWAP Diário** e **Backup (exportar/importar)**. A aba **Estratégias** depende das strategies registradas no backend e por isso não tem golden dedicado. O histórico intraday é incremental pelo botão `←` inferior-esquerdo do gráfico (dia anterior / semana anterior seg–sex / mês anterior).
+#### 💧 VWAP Diário
+<div align="center">
+  <img src="screenshots/drawer_vwap.png" alt="Aba VWAP Diário" width="800" style="max-width:100%;">
+  <p><em>VWAP diário com exibição no gráfico, opacidade e cor configuráveis.</em></p>
+</div>
+
+#### 💾 Backup
+<div align="center">
+  <img src="screenshots/drawer_backup.png" alt="Aba Backup" width="800" style="max-width:100%;">
+  <p><em>Exportação/importação das configurações por símbolo e do banco de agentes conhecidos.</em></p>
+</div>
+
+O histórico intraday é incremental pelo botão `←` inferior-esquerdo do gráfico (dia anterior / semana anterior seg–sex / mês anterior).
 
 #### ▶️ Estratégias (rodar no backend)
+<div align="center">
+  <img src="screenshots/drawer_strategy.png" alt="Aba Estratégias" width="800" style="max-width:100%;">
+  <p><em>Aba de estratégias com documentação (Markdown), sessões ativas e log de decisões do JevAnalysis.</em></p>
+</div>
+
 A 8ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava a configuração **apenas do símbolo atual** até PAUSE/STOP. Assim, `WINFUT` e `WDOFUT` podem rodar estratégias em paralelo; no mesmo símbolo, cada sessão é identificada por strategy + timeframe e a UI impede duplicar exatamente a mesma combinação. A execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
 
 ### Análise diária (painel inferior 1D)
 
 O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário e 4 abas próprias: **Estrutura 1D**, **Volume Profile 1D**, **Topos/Vales 1D** e **Pivot Tradicional 1D** (fonte HLC da semana anterior, fiel ao Profit).
+
+<div align="center">
+  <img src="screenshots/daily_panel.png" alt="Painel de Análise Diária 1D" width="800" style="max-width:100%;">
+  <p><em>Painel 1D com candles diários, estruturas, perfil de volume, topos/vales e pivot da semana anterior.</em></p>
+</div>
 ---
 
 ## Funcionalidades
@@ -105,7 +128,7 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 - Reconstrução de perfil de volume por intervalo selecionado
 
 ### Estratégias (rodar no backend)
-- Contrato `IStrategy`: `Name`/`Description`/`DetailsMd` (MD obrigatório, renderizado na aba) + `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` 1ª bubble visível por bucket do TF)
+- Contrato `IStrategy`: `Name`/`Description`/`DetailsMd` (MD obrigatório, renderizado na aba) + `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` no fechamento do candle com bolhas, enviando todas as bolhas do candle)
 - `JevAnalysis`: pergunta à Jev o que fazer com o contexto da tela (foto dos filtros enviada no PLAY)
 - Lock de configuração por símbolo: `WINFUT` e `WDOFUT` podem rodar estratégias simultaneamente; PAUSE/STOP libera somente o símbolo correspondente
 - Sessões identificadas por strategy + símbolo + timeframe; dentro do mesmo símbolo, a UI bloqueia apenas a combinação exata já ativa
@@ -274,15 +297,18 @@ dotnet test B3WM.Tests                       # Testes unitários do servidor (.N
 cd B3WM.Flutter && flutter test              # Testes do frontend (widget + golden)
 ```
 
-Para **regenerar as screenshots** do README (goldens com dados de exemplo, sem precisar de dados reais):
+Para **regenerar as screenshots** do README:
 
 ```bash
 cd B3WM.Flutter
 flutter test test/screenshots_golden_test.dart --update-goldens
-cp test/goldens/overview.png test/goldens/drawer_bubbles.png test/goldens/drawer_estrutura.png test/goldens/drawer_volume_profile.png test/goldens/drawer_extreme.png test/goldens/drawer_pivot.png test/goldens/trading_panel.png ../screenshots/
+cp test/goldens/*.png ../screenshots/
 ```
 
-> Os goldens cobrem: visão geral, Bubbles, Estrutura, Volume Profile, **Topos/Vales**, **Pivot Tradicional** e painel de trading. VWAP/Período/Backup/Estratégias e o painel 1D ainda não têm goldens dedicados (gerar com o comando acima + aba Estratégia na máquina com Flutter).
+> Com `B3WM/Data/` e as `shared_preferences` presentes, os goldens usam a sessão real
+> (WINFUT, 2026-10-28); sem eles, o fixture versionado garante o mesmo resultado no CI.
+> Cobertura: visão geral, painel de trading, Bubbles, Estrutura, Volume Profile,
+> Topos/Vales, Pivot Tradicional, VWAP Diário, Backup, Estratégias e painel 1D.
 
 ---
 
