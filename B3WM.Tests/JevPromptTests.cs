@@ -114,7 +114,7 @@ public class JevPromptTests
         // Bolhas (side traduzido).
         var b = Assert.Single(s.Intraday.Bubbles);
         Assert.Equal("buy", b.Side);
-        Assert.Equal(122, b.Agent);
+        Assert.Equal("BGC LIQUIDEZ DTVM", b.Agent);
         // Volume profile.
         Assert.NotNull(s.Intraday.VolumeProfile);
         Assert.Equal(101, s.Intraday.VolumeProfile!.Poc);
@@ -136,6 +136,14 @@ public class JevPromptTests
         // Structures intraday trazem o timeframe.
         Assert.Contains(s.Intraday.Structures, x => x.Timeframe == 2);
         Assert.DoesNotContain(s.Intraday.Structures, x => x.Timeframe == 1440);
+    }
+
+    [Fact]
+    public void AgentName_UsesEnumDescription_AndFallsBackForUnknown()
+    {
+        Assert.Equal("BGC LIQUIDEZ DTVM", JevPrompt.AgentName(122));
+        Assert.Equal("GOLDMAN SACHS DO BRASIL CTVM", JevPrompt.AgentName(238));
+        Assert.Equal("AGENTE 999999", JevPrompt.AgentName(999999));
     }
 
     [Fact]

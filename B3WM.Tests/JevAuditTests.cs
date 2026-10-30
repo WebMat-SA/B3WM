@@ -92,7 +92,7 @@ public class JevAuditTests
                  })
             Assert.True(blocks.ContainsKey(k), $"bloco {k} ausente");
         var state = System.Text.Json.JsonSerializer.Serialize(JevPrompt.BuildStateJson("WINFUT", 2, snap));
-        Assert.Contains("\"agent\":122", state);
+        Assert.Contains("\"agent\":\"BGC LIQUIDEZ DTVM\"", state);
     }
 
     [Fact]
@@ -132,6 +132,8 @@ public class JevAuditTests
         Assert.Equal(2, r.Input.BubblesPool!.Value.GetArrayLength());
         Assert.Equal(1, r.Input.BubblesFiltered!.Value.GetArrayLength());
         Assert.Equal(1, r.Input.BubblesSent!.Value.GetArrayLength());
+        Assert.Equal("BGC LIQUIDEZ DTVM",
+            r.Input.BubblesSent!.Value[0].GetProperty("agent").GetString());
         Assert.NotNull(r.Input.Volume);
         Assert.Equal(1, r.Input.Volume!.Value.GetProperty("Volumes").GetArrayLength());
         Assert.NotNull(r.Input.ExtremesIntra);

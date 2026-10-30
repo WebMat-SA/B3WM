@@ -1,6 +1,7 @@
 using System.Text.Json;
 using B3WM.Services.Screen;
 using B3WM.Shared.Entity;
+using B3WM.Shared.Extensions;
 using B3WM.Shared.Models;
 using B3WM.Shared.Models.AI;
 using B3WM.Shared.Models.ExtremeDetection;
@@ -187,10 +188,20 @@ namespace B3WM.Services.AI
 
         private static JevBubbleDto ToBubble(BubbleStorageItem b) => new()
         {
-            Date = b.Date, Agent = b.Agent,
+            Date = b.Date, Agent = AgentName(b.Agent),
             Side = b.ActionType == Ticks2.ActionType.Buy ? "buy" : "sell",
             Amount = b.Amount, Price = b.Price,
         };
+
+        /// <summary>
+        /// Nome do agente para a Jev (ex.: "BGC LIQUIDEZ DTVM") no lugar do
+        /// código numérico. Agente fora do enum mantém o número com prefixo.
+        /// </summary>
+        public static string AgentName(int agent)
+        {
+            var value = (Ticks2.Agents)agent;
+            return System.Enum.IsDefined(value) ? value.Description() : $"AGENTE {agent}";
+        }
 
         private static JevStructureDto ToStructure(StructureStorageItem s, bool withTimeframe) => new()
         {
@@ -391,7 +402,9 @@ namespace B3WM.Services.AI
                     Candles = ProjectCandles(candles),
                     BubblesPool = Je(Raw(snap, "bubblesPool")),
                     BubblesFiltered = Je(Raw(snap, "bubblesFiltered")),
-                    BubblesSent = Je(snap.Has(SnapshotLayers.Bubbles) ? bubbles : null),
+                    BubblesSent = Je(snap.Has(SnapshotLayers.Bubbles)
+                        ? bubbles.Select(ToBubble).ToList()
+                        : null),
                     Volume = Je(volume),
                     ExtremesIntra = Je(extIntra),
                     ExtremesDaily = Je(extDaily),

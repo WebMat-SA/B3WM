@@ -77,7 +77,8 @@ namespace B3WM.Services.AI
     public sealed class JevBubbleDto
     {
         [JsonPropertyName("date")] public DateTime Date { get; set; }
-        [JsonPropertyName("agent")] public int Agent { get; set; }
+        /// <summary>Nome da corretora/agente (não o código numérico).</summary>
+        [JsonPropertyName("agent")] public string Agent { get; set; } = "";
         /// <summary>buy | sell</summary>
         [JsonPropertyName("side")] public string Side { get; set; } = "";
         [JsonPropertyName("amount")] public decimal Amount { get; set; }
