@@ -243,8 +243,8 @@ public class JevWeightFitterTool
     }
 
     /// <summary>
-    /// Direção exige as 8 dimensões, mas aceita logs antigos que só tinham a
-    /// pergunta de alta (a baixa é derivada como 1 − alta).
+    /// Direção exige todas as dimensões atuais, mas aceita logs antigos que só
+    /// tinham a pergunta de alta (a baixa é derivada como 1 − alta).
     /// </summary>
     private static bool HasAnyDirectionSide(IReadOnlyDictionary<string, double> crit)
     {

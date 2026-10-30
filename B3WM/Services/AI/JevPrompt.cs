@@ -16,6 +16,16 @@ namespace B3WM.Services.AI
     /// </summary>
     public static class JevPrompt
     {
+        /// <summary>Raio (ticks) do cluster de bolhas ao redor de um nível.</summary>
+        public const double LevelClusterTicks = 30;
+        /// <summary>Janela (minutos) do cluster de bolhas ao redor de um nível.</summary>
+        public const int LevelClusterMinutes = 120;
+        /// <summary>Máximo de bolhas por nível no cluster.</summary>
+        public const int LevelClusterMaxBubbles = 12;
+        private const double LevelContextMaxTicks = 100;
+        private const int LevelContextMaxItems = 8;
+        private const int LevelReclaimCandles = 6;
+
         /// <summary>
         /// Predicado único do filtro de bolhas da tela (single source; o
         /// record de gatilho em Strategies delega para cá).
@@ -95,16 +105,37 @@ namespace B3WM.Services.AI
             var intraScope = snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday);
             var dailyScope = snap.Get<DateWindow>(SnapshotLayers.ScopeDaily);
 
+            var triggerKeys = TriggerKeys(snap);
+            var asOf = candles.Count > 0
+                ? candles[^1].Date.AddMinutes(timeFrame)
+                : DateTime.MinValue;
+            var tickSize = Defaults.GetTickSize(symbol);
+            var levels = BuildLevelCandidates(
+                candles, pivIntra, pivDaily, extIntra, extDaily, tickSize);
+            var nearestPivot = levels
+                .Where(l => l.Kind == "pivot")
+                .OrderBy(l => l.DistanceTicks)
+                .FirstOrDefault();
+            var levelContext = levels
+                .Where(l => l.DistanceTicks <= LevelContextMaxTicks ||
+                    (l.TouchedAt is { } touched && touched >= asOf.AddMinutes(-LevelClusterMinutes)))
+                .OrderBy(l => l.DistanceTicks)
+                .Take(LevelContextMaxItems)
+                .Select(l => ToLevelContext(l, bubbles, tickSize, asOf))
+                .ToList();
+
             var intraday = new JevIntradayDto
             {
                 Scope = Range(intraScope, candles),
                 Candles = candles.Select(ToCandle).ToList(),
                 VolumeProfile = ToVolumeProfile(volume, includeVolumeLevels),
-                Bubbles = bubbles.OrderBy(b => b.Date).Select(ToBubble).ToList(),
+                Bubbles = bubbles.OrderBy(b => b.Date).Select(b => ToBubble(b, triggerKeys)).ToList(),
                 Pivots = ToPivots(pivIntra, candles),
                 TopsValleys = ToExtremes(extIntra),
                 Structures = FilterIntradayStructures(structs, timeFrame, intraScope)
                     .Select(s => ToStructure(s, withTimeframe: true)).ToList(),
+                NearestPivot = nearestPivot == null ? null : ToNearestPivot(nearestPivot),
+                LevelContext = levelContext,
             };
 
             var daily = new JevDailyDto
@@ -186,12 +217,23 @@ namespace B3WM.Services.AI
             Close = c.Close, Volume = c.Volume, Vwap = c.VwapPrice,
         };
 
-        private static JevBubbleDto ToBubble(BubbleStorageItem b) => new()
+        private static JevBubbleDto ToBubble(
+            BubbleStorageItem b, IReadOnlySet<string>? triggerKeys = null) => new()
         {
             Date = b.Date, Agent = AgentName(b.Agent),
             Side = b.ActionType == Ticks2.ActionType.Buy ? "buy" : "sell",
             Amount = b.Amount, Price = b.Price,
+            IsTrigger = triggerKeys?.Contains(BubbleKey(b)) == true,
         };
+
+        /// <summary>Chave estável de uma bolha para marcar as do gatilho.</summary>
+        public static string BubbleKey(BubbleStorageItem b) =>
+            $"{b.Date:O}|{b.Price:F2}|{b.Agent}|{b.Amount}|{b.ActionType}";
+
+        private static IReadOnlySet<string>? TriggerKeys(MarketSnapshot snap) =>
+            snap.Raw.TryGetValue("triggerBubbleKeys", out var v) && v is IReadOnlySet<string> keys
+                ? keys
+                : null;
 
         /// <summary>
         /// Nome do agente para a Jev (ex.: "BGC LIQUIDEZ DTVM") no lugar do
@@ -274,6 +316,170 @@ namespace B3WM.Services.AI
                 })
                 .ToList();
 
+        /// <summary>Nível candidato (pivô/vale/topo) com distância ao preço.</summary>
+        public sealed record JevLevelCandidate(
+            string Kind, string Source, string Level, double Value,
+            double DistanceTicks, string Side, DateTime? TouchedAt, bool Reclaimed);
+
+        /// <summary>
+        /// Níveis relevantes do state: pivôs intraday/diário + topos/vales
+        /// intraday/diário. Ordenados por distância ao último close.
+        /// Puro, sem I/O.
+        /// </summary>
+        public static List<JevLevelCandidate> BuildLevelCandidates(
+            IReadOnlyList<BarStorageItem> candles,
+            PivotStorageItem? pivIntra,
+            PivotStorageItem? pivDaily,
+            ExtremeStorageItem? extIntra,
+            ExtremeStorageItem? extDaily,
+            double tickSize)
+        {
+            var list = new List<JevLevelCandidate>();
+            if (candles.Count == 0 || tickSize <= 0) return list;
+            var last = candles[^1].Close;
+            var recentFrom = candles[^1].Date.AddMinutes(-LevelClusterMinutes);
+
+            void AddPivot(PivotStorageItem? pivot, string source)
+            {
+                if (pivot == null) return;
+                foreach (var lvl in pivot.Levels)
+                {
+                    var side = lvl.Key.StartsWith("S", StringComparison.OrdinalIgnoreCase)
+                        ? "support"
+                        : lvl.Key.StartsWith("R", StringComparison.OrdinalIgnoreCase)
+                            ? "resistance" : "neutral";
+                    var (touched, reclaimed) = TouchState(candles, lvl.Value, side, recentFrom);
+                    list.Add(new JevLevelCandidate(
+                        "pivot", source, lvl.Key, lvl.Value,
+                        Math.Abs(last - lvl.Value) / tickSize, side, touched, reclaimed));
+                }
+            }
+
+            void AddExtremes(ExtremeStorageItem? item, string source)
+            {
+                if (item == null) return;
+                foreach (var e in item.Extremes.Where(e => e.Type is ExtremeType.Top or ExtremeType.Valley))
+                {
+                    var kind = e.Type == ExtremeType.Valley ? "vale" : "topo";
+                    var side = e.Type == ExtremeType.Valley ? "support" : "resistance";
+                    var (touched, reclaimed) = TouchState(candles, e.Position, side, recentFrom);
+                    list.Add(new JevLevelCandidate(
+                        kind, source, kind, e.Position,
+                        Math.Abs(last - e.Position) / tickSize, side, touched, reclaimed));
+                }
+            }
+
+            AddPivot(pivIntra, pivIntra?.Source ?? "D-1");
+            AddPivot(pivDaily, pivDaily?.Source ?? "W-1");
+            AddExtremes(extIntra, "intra");
+            AddExtremes(extDaily, "diario");
+            return list.OrderBy(l => l.DistanceTicks).ToList();
+        }
+
+        private static (DateTime? Touched, bool Reclaimed) TouchState(
+            IReadOnlyList<BarStorageItem> candles, double value, string side, DateTime recentFrom)
+        {
+            DateTime? first = null;
+            var recent = false;
+            for (var i = 0; i < candles.Count; i++)
+            {
+                var b = candles[i];
+                if (b.Low > value || value > b.High) continue;
+                first ??= b.Date;
+                if (b.Date >= recentFrom) recent = true;
+            }
+            if (first == null) return (null, false);
+            var last = candles[^1].Close;
+            var reclaimed = side switch
+            {
+                "support" => recent && last > value,
+                "resistance" => recent && last < value,
+                _ => recent && Math.Abs(last - value) <= 2 * Math.Max(1, value * 0.0001),
+            };
+            return (first, reclaimed);
+        }
+
+        private static JevNearestPivotDto ToNearestPivot(JevLevelCandidate c) => new()
+        {
+            Source = c.Source, Level = c.Level, Value = c.Value,
+            DistanceTicks = c.DistanceTicks, Side = c.Side,
+            TouchedAt = c.TouchedAt, Reclaimed = c.Reclaimed,
+        };
+
+        private static JevLevelContextDto ToLevelContext(
+            JevLevelCandidate c, IReadOnlyList<BubbleStorageItem> bubbles,
+            double tickSize, DateTime asOf)
+        {
+            var from = asOf.AddMinutes(-LevelClusterMinutes);
+            var radius = LevelClusterTicks * tickSize;
+            var near = bubbles.Where(b =>
+                    b.Date >= from && b.Date <= asOf && Math.Abs(b.Price - c.Value) <= radius)
+                .ToList();
+            var buys = near.Where(b => b.ActionType == Ticks2.ActionType.Buy).ToList();
+            var sells = near.Where(b => b.ActionType == Ticks2.ActionType.Sale).ToList();
+            var buyAmount = buys.Sum(b => b.Amount);
+            var sellAmount = sells.Sum(b => b.Amount);
+            return new JevLevelContextDto
+            {
+                Kind = c.Kind, Source = c.Source, Level = c.Level, Value = c.Value,
+                Side = c.Side, DistanceTicks = c.DistanceTicks,
+                TouchedAt = c.TouchedAt, Reclaimed = c.Reclaimed,
+                Bubbles = new JevBubbleSummaryDto
+                {
+                    Count = near.Count, BuyCount = buys.Count, SellCount = sells.Count,
+                    BuyAmount = buyAmount, SellAmount = sellAmount,
+                    NetAmount = buyAmount - sellAmount,
+                },
+            };
+        }
+
+        /// <summary>
+        /// Bolhas do pool bruto dentro do raio dos níveis relevantes (mesmo
+        /// abaixo do threshold da tela). Usado pela strategy antes do state.
+        /// Puro, sem I/O; devolve vazio se o pool não estiver no snapshot.
+        /// </summary>
+        public static List<BubbleStorageItem> SelectLevelClusterBubbles(
+            MarketSnapshot snap, DateTime asOf)
+        {
+            if (!snap.Raw.TryGetValue("bubblesPool", out var raw) ||
+                raw is not List<BubbleStorageItem> pool || pool.Count == 0)
+                return new();
+
+            var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
+            if (candles.Count == 0) return new();
+            var symbol = candles[^1].Symbol;
+            var tickSize = Defaults.GetTickSize(symbol);
+            var levels = BuildLevelCandidates(
+                candles,
+                snap.Get<PivotStorageItem>(SnapshotLayers.PivotIntra),
+                snap.Get<PivotStorageItem>(SnapshotLayers.PivotDaily),
+                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesIntra),
+                snap.Get<ExtremeStorageItem>(SnapshotLayers.ExtremesDaily),
+                tickSize)
+                .Where(l => l.DistanceTicks <= 50 ||
+                    (l.TouchedAt is { } touched && touched >= asOf.AddMinutes(-LevelClusterMinutes)))
+                .ToList();
+            if (levels.Count == 0) return new();
+
+            var from = asOf.AddMinutes(-LevelClusterMinutes);
+            var radius = LevelClusterTicks * tickSize;
+            var selected = new List<BubbleStorageItem>();
+            foreach (var level in levels)
+            {
+                selected.AddRange(pool
+                    .Where(b => b.Date >= from && b.Date <= asOf &&
+                        Math.Abs(b.Price - level.Value) <= radius)
+                    .OrderByDescending(b => b.Amount)
+                    .ThenByDescending(b => b.Date)
+                    .Take(LevelClusterMaxBubbles));
+            }
+            return selected
+                .GroupBy(BubbleKey)
+                .Select(g => g.First())
+                .OrderBy(b => b.Date)
+                .ToList();
+        }
+
         /// <summary>
         /// Mede o tamanho (chars) de cada bloco do state JSON, para a auditoria
         /// (issue #23): mostra qual bloco domina tokens. Puro, sem I/O.
@@ -290,6 +496,8 @@ namespace B3WM.Services.AI
                 ["intraday.pivots"] = Len(state.Intraday.Pivots),
                 ["intraday.extremes"] = Len(state.Intraday.TopsValleys),
                 ["intraday.structures"] = Len(state.Intraday.Structures),
+                ["intraday.nearest_pivot"] = Len(state.Intraday.NearestPivot),
+                ["intraday.level_context"] = Len(state.Intraday.LevelContext),
                 ["daily.candles"] = Len(state.Daily.Candles),
                 ["daily.volume"] = Len(state.Daily.VolumeProfile),
                 ["daily.pivots"] = Len(state.Daily.Pivots),
@@ -403,7 +611,7 @@ namespace B3WM.Services.AI
                     BubblesPool = Je(Raw(snap, "bubblesPool")),
                     BubblesFiltered = Je(Raw(snap, "bubblesFiltered")),
                     BubblesSent = Je(snap.Has(SnapshotLayers.Bubbles)
-                        ? bubbles.Select(ToBubble).ToList()
+                        ? bubbles.Select(b => ToBubble(b, TriggerKeys(snap))).ToList()
                         : null),
                     Volume = Je(volume),
                     ExtremesIntra = Je(extIntra),
@@ -506,6 +714,8 @@ namespace B3WM.Services.AI
             new("delta_positivo", "delta_positivo", "delta_negativo"),
             new("bolhas_compra", "bolhas_compra", "bolhas_venda"),
             new("defende_suporte", "defende_suporte", "rejeita_resistencia"),
+            new("reversao_suporte", "reversao_suporte", "reversao_resistencia"),
+            new("exaustao_queda", "exaustao_queda", "exaustao_alta"),
             new("diario_alta", "diario_alta", "diario_baixa"),
         };
 
@@ -522,6 +732,20 @@ namespace B3WM.Services.AI
         {
             "sem_chop", "amplitude_suficiente", "sem_compressao_topovale",
             "referencia_clara", "sem_conflito_intra_diario",
+        };
+
+        private static readonly Dictionary<string, string> DirectionLabels = new()
+        {
+            ["candles_alta"] = "candles",
+            ["acima_vwap"] = "VWAP",
+            ["estrutura_alta"] = "estrutura",
+            ["acima_poc"] = "POC",
+            ["delta_positivo"] = "delta",
+            ["bolhas_compra"] = "bolhas",
+            ["defende_suporte"] = "suporte/resistência",
+            ["reversao_suporte"] = "reversão S/R",
+            ["exaustao_queda"] = "exaustão",
+            ["diario_alta"] = "diário",
         };
 
         private const string NoulScale =
@@ -558,6 +782,10 @@ namespace B3WM.Services.AI
             ["bolhas_venda"] = Noul("Há predomínio recente de bolhas de venda com delta negativo?"),
             ["defende_suporte"] = Noul("O preço está defendendo um suporte, vale ou borda inferior de structure?"),
             ["rejeita_resistencia"] = Noul("O preço está sendo rejeitado em uma resistência, topo ou borda superior de structure?"),
+            ["reversao_suporte"] = Noul("O preço está em S1/S2/S3 ou vale, com reclaim e cluster de bolhas compradoras/absorção nesse nível? Bolhas em pivô/vale são comumente reversão de compra; bolha de venda dentro do suporte pode ser armadilha."),
+            ["reversao_resistencia"] = Noul("O preço está em R1/R2/R3 ou topo, com rejeição e cluster de bolhas vendedoras nesse nível? Bolhas no topo podem indicar reversão de venda."),
+            ["exaustao_queda"] = Noul("Após queda estendida, o delta negativo perde força (divergência) e/ou há absorção compradora no vale?"),
+            ["exaustao_alta"] = Noul("Após alta estendida, o delta positivo perde força (divergência) e/ou há absorção vendedora no topo?"),
             ["diario_alta"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere alta e confirma o intraday?"),
             ["diario_baixa"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere baixa e confirma o intraday?"),
             // Operabilidade (qualidade do contexto), redação neutra.
@@ -606,6 +834,9 @@ namespace B3WM.Services.AI
 
             var scored = JevScoring.Evaluate(indicators, w, DirectionDimensions);
             var (prox, ticks, pref) = ProximityFromState(state, symbol, w);
+            var motive = string.IsNullOrWhiteSpace(scored.DirecaoMotivo)
+                ? BuildDirectionMotive(scored, state)
+                : scored.DirecaoMotivo;
 
             return new JevAnalysisResult
             {
@@ -616,7 +847,7 @@ namespace B3WM.Services.AI
                 DirecaoNet = scored.DirecaoNet,
                 DirecaoConsenso = scored.DirecaoConsenso,
                 DirecaoCobertura = scored.DirecaoCobertura,
-                DirecaoMotivo = scored.DirecaoMotivo,
+                DirecaoMotivo = motive,
                 ConfiancaOperavel = scored.ConfiancaOperavel,
                 Criteria = scored.Criteria,
                 Proximidade = prox,
@@ -626,6 +857,63 @@ namespace B3WM.Services.AI
                 OutputTokens = outputTokens,
                 StatePreview = state.Length <= 6000 ? state : state[..6000] + "…",
             };
+        }
+
+        /// <summary>
+        /// Motivo legível de uma decisão direcional: nível mais próximo +
+        /// 2 dimensões que mais contribuíram para o viés.
+        /// </summary>
+        private static string BuildDirectionMotive(JevScoringResult r, string state)
+        {
+            if (r.Direcao == "lateral" || r.Contributions.Count == 0)
+                return r.DirecaoMotivo;
+
+            var parts = new List<string>();
+            var nearest = NearestPivotLabel(state);
+            if (nearest.Length > 0) parts.Add(nearest);
+
+            foreach (var (id, contribution) in r.Contributions
+                         .OrderByDescending(kv => Math.Abs(kv.Value))
+                         .Take(2))
+            {
+                var dim = DirectionDimensions.FirstOrDefault(d => d.Id == id);
+                if (dim == null) continue;
+                var label = DirectionLabels.TryGetValue(id, out var l) ? l : id;
+                var side = contribution > 0 ? "alta" : "baixa";
+                var key = contribution > 0 ? dim.BullId : dim.BearId;
+                var pct = r.Criteria.TryGetValue(key, out var p)
+                    ? $" {p * 100:F0}%"
+                    : "";
+                parts.Add($"{label} {side}{pct}");
+            }
+            return string.Join(" · ", parts);
+        }
+
+        private static string NearestPivotLabel(string state)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(state);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                    !doc.RootElement.TryGetProperty("intraday", out var intra) ||
+                    intra.ValueKind != JsonValueKind.Object ||
+                    !intra.TryGetProperty("nearest_pivot", out var np) ||
+                    np.ValueKind != JsonValueKind.Object)
+                    return "";
+                var level = np.TryGetProperty("level", out var l) && l.ValueKind == JsonValueKind.String
+                    ? l.GetString() : "";
+                var value = np.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Number
+                    ? v.GetDouble() : double.NaN;
+                var ticks = np.TryGetProperty("distance_ticks", out var t) && t.ValueKind == JsonValueKind.Number
+                    ? t.GetDouble() : double.NaN;
+                if (string.IsNullOrWhiteSpace(level) || double.IsNaN(value) || ticks > LevelContextMaxTicks)
+                    return "";
+                return $"{level} {value:F0} ({ticks:F0}t)";
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         /// <summary>

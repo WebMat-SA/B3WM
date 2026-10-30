@@ -98,6 +98,22 @@ void main() {
     expect(data.operability.first.value, 0.59);
   });
 
+  test('novos pares de reversão aparecem no tooltip', () {
+    final data = JevTooltipData.fromPoint(_point(criteria: const {
+      'reversao_suporte': 0.80,
+      'reversao_resistencia': 0.20,
+      'exaustao_queda': 0.70,
+      'exaustao_alta': 0.30,
+    }));
+
+    expect(data.direction.map((e) => e.id).toList(), [
+      'reversao_suporte',
+      'exaustao_queda',
+    ]);
+    expect(data.direction.first.label, 'Reversão S/R');
+    expect(data.direction.last.label, 'Exaustão');
+  });
+
   test('faz fallback das listas dir/op do reason quando criteria vazio', () {
     final data = JevTooltipData.fromPoint(_point());
 

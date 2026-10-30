@@ -33,6 +33,9 @@ namespace B3WM.Services.AI
 
         /// <summary>Confiança por indicador (todas as respostas 0..1).</summary>
         public Dictionary<string, double> Criteria { get; set; } = new();
+
+        /// <summary>Contribuição assinada por dimensão (peso × (alta − baixa)).</summary>
+        public Dictionary<string, double> Contributions { get; set; } = new();
     }
 
     /// <summary>
@@ -57,6 +60,7 @@ namespace B3WM.Services.AI
             dimensions ??= JevPrompt.DirectionDimensions;
 
             double netSum = 0, absSum = 0, coveredW = 0, totalW = 0;
+            var contributions = new Dictionary<string, double>();
             foreach (var dim in dimensions)
             {
                 if (!weights.Direction.TryGetValue(dim.Id, out var weight) || weight <= 0)
@@ -70,6 +74,7 @@ namespace B3WM.Services.AI
 
                 coveredW += weight;
                 var d = Math.Clamp(bull, 0, 1) - Math.Clamp(bear, 0, 1);
+                contributions[dim.Id] = weight * d;
                 netSum += weight * d;
                 absSum += weight * Math.Abs(d);
             }
@@ -134,6 +139,7 @@ namespace B3WM.Services.AI
                 DirecaoMotivo = motive,
                 ConfiancaOperavel = Math.Clamp(operability, 0, 1),
                 Criteria = new Dictionary<string, double>(indicators),
+                Contributions = contributions,
             };
         }
 

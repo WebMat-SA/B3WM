@@ -59,6 +59,8 @@ namespace B3WM.Services.AI
                 ["delta_positivo"] = 0.75,
                 ["bolhas_compra"] = 0.75,
                 ["defende_suporte"] = 1.0,
+                ["reversao_suporte"] = 2.0,
+                ["exaustao_queda"] = 1.0,
                 ["diario_alta"] = 1.25,
             },
             Operability = new Dictionary<string, double>
@@ -86,10 +88,8 @@ namespace B3WM.Services.AI
                 var loaded = await keeper.ReadDataAsync<JevWeights>(FileName);
                 if (loaded == null)
                     return defaults;
-                if (loaded.Direction.Count == 0)
-                    loaded.Direction = defaults.Direction;
-                if (loaded.Operability.Count == 0)
-                    loaded.Operability = defaults.Operability;
+                loaded.Direction = MergeDefaults(loaded.Direction, defaults.Direction);
+                loaded.Operability = MergeDefaults(loaded.Operability, defaults.Operability);
                 if (loaded.NeutralBand <= 0 || loaded.NeutralBand >= 1)
                     loaded.NeutralBand = defaults.NeutralBand;
                 if (loaded.MinDirectionCoverage <= 0 || loaded.MinDirectionCoverage > 1)
@@ -108,6 +108,18 @@ namespace B3WM.Services.AI
             {
                 return defaults;
             }
+        }
+
+        /// <summary>
+        /// Mantém chaves já calibradas e adiciona defaults para dimensões
+        /// novas (compatibilidade com Data/jev_weights.json antigo).
+        /// </summary>
+        public static Dictionary<string, double> MergeDefaults(
+            Dictionary<string, double> loaded, Dictionary<string, double> defaults)
+        {
+            foreach (var (key, value) in defaults)
+                loaded.TryAdd(key, value);
+            return loaded;
         }
     }
 }

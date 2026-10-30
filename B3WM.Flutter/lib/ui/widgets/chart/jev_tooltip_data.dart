@@ -75,6 +75,8 @@ class JevTooltipData {
     ('delta_positivo', 'delta_negativo', 'Delta'),
     ('bolhas_compra', 'bolhas_venda', 'Bolhas'),
     ('defende_suporte', 'rejeita_resistencia', 'Suporte/Resist.'),
+    ('reversao_suporte', 'reversao_resistencia', 'Reversão S/R'),
+    ('exaustao_queda', 'exaustao_alta', 'Exaustão'),
     ('diario_alta', 'diario_baixa', 'Diário'),
   ];
 
