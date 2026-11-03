@@ -200,7 +200,8 @@ namespace B3WM.Services.Strategies
         {
             var sessions = SessionsOf(bar.Symbol);
             if (sessions.Count == 0) return;
-            // Jev: só avalia no fechamento e recebe TODAS as bolhas do candle.
+            // Jev: só avalia no fechamento e recebe TODAS as bolhas do candle;
+            // o gatilho exige ao menos uma bolha visível (filtro da tela).
             // Carrega a lista autoritativa do dia e recorta a janela do candle;
             // só faz I/O quando há sessão no TF da barra.
             var candleBubbles = sessions.Any(s => s.TriggerTimeFrame == bar.TimeFrame)

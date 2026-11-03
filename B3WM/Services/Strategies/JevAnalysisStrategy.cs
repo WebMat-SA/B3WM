@@ -9,9 +9,9 @@ namespace B3WM.Services.Strategies
     /// Análise da IA como strategy: injeta JevService, monta o snapshot
     /// WYSIWYG a partir do spec cru da sessão e converte a resposta em
     /// StrategyDecision. Gatilho: fechamento do candle do TF da sessão que
-    /// teve pelo menos uma bolha; a Jev recebe TODAS as bolhas do candle
-    /// (inclusive a que seria "primeira visível"). Nunca dispara no
-    /// aparecimento da bolha no candle vigente.
+    /// teve pelo menos uma bolha visível (passou no filtro da tela); a Jev
+    /// recebe TODAS as bolhas do candle (inclusive as abaixo do threshold).
+    /// Nunca dispara no aparecimento da bolha no candle vigente.
     /// </summary>
     public sealed class JevAnalysisStrategy : StrategyBase
     {
@@ -40,7 +40,7 @@ namespace B3WM.Services.Strategies
             "## JevAnalysis\n" +
             "Análise Jev/TypeSafe do contexto de mercado (bolhas, volume, candles, topos/vales, pivots).\n" +
             "\n" +
-            "- **Gatilho:** fechamento do candle do TF da sessão com pelo menos uma bolha; a Jev recebe todas as bolhas ocorridas no candle (não dispara na abertura/1ª bolha do candle vigente).\n" +
+            "- **Gatilho:** fechamento do candle do TF da sessão com pelo menos uma bolha visível (que passa no filtro da tela); a Jev recebe todas as bolhas ocorridas no candle, inclusive as ocultas pelo filtro (não dispara na abertura/1ª bolha do candle vigente).\n" +
             "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
             "- **Parâmetros fixos no código:** `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
             "- **Saída INFORMATIVA (Composite scoring):** 10 dimensões de direção com perguntas espelhadas alta/baixa (20 perguntas) + 5 de operabilidade; viés `comprar|vender|lateral`, proximidade técnica e contexto de níveis (pivô/vale + cluster de bolhas). **Não** decide operar/não-operar — a decisão é manual; pesos/thresholds em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
@@ -50,11 +50,12 @@ namespace B3WM.Services.Strategies
             "para mudar filtros é preciso `STOP`, editar e `PLAY` de novo.";
 
         /// <summary>
-        /// Dispara no fechamento do candle do TF quando houve bolha nele.
-        /// O runner entrega a lista completa de bolhas do candle no evento.
+        /// Dispara no fechamento do candle do TF quando houve ao menos uma
+        /// bolha visível nele (filtro da tela). O runner entrega a lista
+        /// completa de bolhas do candle no evento para o state da Jev.
         /// </summary>
         public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
-            TriggerChecks.IsCandleCloseWithBubbles(ev, ctx.TimeFrame);
+            TriggerChecks.IsCandleCloseWithVisibleBubbles(ev, ctx.TimeFrame, ctx.Filter);
 
         /// <summary>Config 100% no código (nada no tab).</summary>
         private const int LookbackCandles = 60;

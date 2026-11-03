@@ -114,14 +114,53 @@ public class StrategyRunnerTests
     }
 
     [Fact]
-    public void JevAnalysis_TriggersOnCandleWithBubbles_NotOnFirstBubble()
+    public void TriggerChecks_CandleCloseWithVisibleBubbles()
+    {
+        var at = new DateTime(2026, 10, 30, 12, 12, 0);
+        var bar = new BarStorageItem { Date = at, Symbol = "WINFUT", TimeFrame = 2 };
+        var hidden = Bubble(8, 347, 169345, at.AddSeconds(1));
+        var visible = Bubble(122, 500, 169345, at.AddSeconds(2));
+        var filter = Filter();
+
+        Assert.True(TriggerChecks.IsCandleCloseWithVisibleBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { visible },
+        }, 2, filter));
+        Assert.True(TriggerChecks.IsCandleCloseWithVisibleBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { hidden, visible },
+        }, 2, filter));
+        Assert.False(TriggerChecks.IsCandleCloseWithVisibleBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { hidden },
+        }, 2, filter));
+        Assert.False(TriggerChecks.IsCandleCloseWithVisibleBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar,
+        }, 2, filter));
+        Assert.False(TriggerChecks.IsCandleCloseWithVisibleBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at,
+            Bar = new BarStorageItem { Date = at, Symbol = "WINFUT", TimeFrame = 5 },
+            Bubbles = new() { visible },
+        }, 2, filter));
+        // Sem filtro (null) qualquer bolha do candle dispara.
+        Assert.True(TriggerChecks.IsCandleCloseWithVisibleBubbles(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { hidden },
+        }, 2, null));
+    }
+
+    [Fact]
+    public void JevAnalysis_TriggersOnCandleWithVisibleBubbles_NotOnFirstBubble()
     {
         var strategy = new JevAnalysisStrategy(
             new Mock<ILogger<JevAnalysisStrategy>>().Object,
             null!, null!, null!, null!);
         var at = new DateTime(2026, 10, 30, 12, 12, 0);
         var bar = new BarStorageItem { Date = at, Symbol = "WINFUT", TimeFrame = 2 };
-        var bubble = Bubble(8, 347, 169345, at.AddSeconds(1));
+        var visible = Bubble(122, 500, 169345, at.AddSeconds(1));
+        var hidden = Bubble(8, 347, 169345, at.AddSeconds(2));
         var ctx = new StrategyTriggerContext
         {
             Symbol = "WINFUT", TimeFrame = 2, Filter = Filter(),
@@ -129,14 +168,23 @@ public class StrategyRunnerTests
 
         Assert.True(strategy.ShouldTrigger(new CandleClosed
         {
-            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { bubble },
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { visible },
+        }, ctx));
+        Assert.True(strategy.ShouldTrigger(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { hidden, visible },
+        }, ctx));
+        // Candle só com bolhas ocultas pelo filtro da tela não dispara.
+        Assert.False(strategy.ShouldTrigger(new CandleClosed
+        {
+            Symbol = "WINFUT", At = at, Bar = bar, Bubbles = new() { hidden },
         }, ctx));
         Assert.False(strategy.ShouldTrigger(new CandleClosed
         {
             Symbol = "WINFUT", At = at, Bar = bar,
         }, ctx));
         Assert.False(strategy.ShouldTrigger(
-            new BubbleAppeared { Symbol = "WINFUT", At = at, Item = bubble }, ctx));
+            new BubbleAppeared { Symbol = "WINFUT", At = at, Item = visible }, ctx));
     }
 
     [Fact]

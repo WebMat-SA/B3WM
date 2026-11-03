@@ -35,7 +35,8 @@ namespace B3WM.Services.Strategies
     /// Predicados reutilizáveis para `ShouldTrigger` (blocos de montar das
     /// condições, com a decisão final sempre na strategy).
     /// Runner é multi-trigger: cada strategy combina os blocos como quiser
-    /// (ex.: `JevAnalysis` só `IsVisibleBubble`; outra só `IsCandleClose`).
+    /// (ex.: `JevAnalysis` usa `IsCandleCloseWithVisibleBubbles`; outra só
+    /// `IsCandleClose`).
     /// </summary>
     public static class TriggerChecks
     {
@@ -48,6 +49,16 @@ namespace B3WM.Services.Strategies
         /// </summary>
         public static bool IsCandleCloseWithBubbles(StrategyEvent ev, int timeFrame) =>
             ev is CandleClosed c && c.Bar.TimeFrame == timeFrame && c.Bubbles.Count > 0;
+
+        /// <summary>
+        /// Candle do TF fechado com pelo menos uma bolha que passa no filtro da
+        /// tela (quantidade/agentes). O gráfico só mostra essas; bolhas cruas
+        /// ocultas não devem disparar a strategy.
+        /// </summary>
+        public static bool IsCandleCloseWithVisibleBubbles(
+            StrategyEvent ev, int timeFrame, BubbleFilter? filter) =>
+            ev is CandleClosed c && c.Bar.TimeFrame == timeFrame &&
+            c.Bubbles.Any(b => filter == null || filter.Passes(b));
 
         public static bool IsVisibleBubble(StrategyEvent ev, BubbleFilter? filter)
         {

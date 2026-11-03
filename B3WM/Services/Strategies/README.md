@@ -34,12 +34,13 @@ A aba Estratégia do app lista e arma sem mudar nada no Flutter.
    barato, sem I/O**, lendo só o evento + `ctx{Symbol, TimeFrame, Filter}`.
    `TimeFrame` = TF da tela no PLAY (filtros travados, não muda).
    Blocos prontos em `TriggerChecks`: `IsCandleClose(ev, tf)`,
-   `IsCandleCloseWithBubbles(ev, tf)`, `IsVisibleBubble(ev, filter)` —
-   combine como quiser.
+   `IsCandleCloseWithBubbles(ev, tf)`,
+   `IsCandleCloseWithVisibleBubbles(ev, tf, filter)`,
+   `IsVisibleBubble(ev, filter)` — combine como quiser.
    Ex. bubble (1ª visível por bucket do TF, ritmo no runner):
    `TriggerChecks.IsVisibleBubble(ev, ctx.Filter)`.
    Ex. candle: `ev is CandleClosed c && c.Bar.TimeFrame == ctx.TimeFrame`.
-   Ex. candle com bolha (Jev): `IsCandleCloseWithBubbles(ev, ctx.TimeFrame)`.
+   Ex. candle com bolha visível (Jev): `IsCandleCloseWithVisibleBubbles(ev, ctx.TimeFrame, ctx.Filter)`.
 3. **Metadados + config no código**: `Name` (único, aparece no dropdown),
    `Description` (1 linha sob o dropdown) e `DetailsMd` (obrigatório, Markdown
    renderizado sob o dropdown: o que faz, gatilho, TF, parâmetros fixos no
@@ -70,9 +71,10 @@ Filter})` — TF = TF da tela no PLAY. Fonte dos fatos: `OrchestratorService`
 por símbolo (candle enriquecido + bubble repassada); o runner é genérico
 multi-trigger: repassa todo evento do símbolo (`candle_close`, `bubble`,
 futuros via `PublishAsync`) e cada strategy filtra no `ShouldTrigger` (ex.:
-`JevAnalysis` usa `IsCandleCloseWithBubbles` — só no fechamento do candle
-com bolha, recebendo todas as bolhas do candle; outra pode ser só
-`IsCandleClose` ou `IsVisibleBubble`). Disparou →
+`JevAnalysis` usa `IsCandleCloseWithVisibleBubbles` — só no fechamento do
+candle com ao menos uma bolha visível (filtro da tela), recebendo todas as
+bolhas do candle; outra pode ser só `IsCandleClose` ou `IsVisibleBubble`).
+Disparou →
 `EvaluateAsync` com `StrategyContext{Symbol, TimeFrame, ...}` → decisão logada (`[strategy:Nome:sessão] ...`) → paper
 engine genérica (abre no gate, fecha em `encerrar > 0.5`, executa
 no open seguinte, zera na virada do dia) → `WOULD-SEND` no log.
