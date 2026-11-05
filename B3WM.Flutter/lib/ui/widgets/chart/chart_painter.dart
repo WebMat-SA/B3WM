@@ -251,7 +251,7 @@ class ChartPainter extends CustomPainter {
       final strokePaint = Paint()
         ..color = data.colorSeller.withOpacity(strokeOpacity)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.1;
+        ..strokeWidth = data.bubbleStrokeWidth(b.amount, b.threshold);
       _drawAspectCircle(canvas, Offset(x, y), r, strokePaint);
     }
 
@@ -268,7 +268,7 @@ class ChartPainter extends CustomPainter {
       final strokePaint = Paint()
         ..color = data.colorBuyer.withOpacity(strokeOpacity)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.1;
+        ..strokeWidth = data.bubbleStrokeWidth(b.amount, b.threshold);
       _drawAspectCircle(canvas, Offset(x, y), r, strokePaint);
     }
   }

@@ -734,5 +734,29 @@ void main() {
       expect(inverted.bubbleRadius(500), 20);
       expect(inverted.bubbleRadius(1000), 100);
     });
+
+    test('bubbleStrokeWidth cresce em degraus conforme o threshold', () {
+      final d = ChartData(
+        candles: const [],
+        redBubbles: const [],
+        blueBubbles: const [],
+        volumeProfile: const [],
+        vwapPoints: const [],
+        minPrice: 0,
+        maxPrice: 1,
+        lastPrice: 0,
+        dates: const [],
+      );
+
+      expect(d.bubbleStrokeWidth(199, 100), ChartData.bubbleStrokeBase);
+      expect(d.bubbleStrokeWidth(200, 100), ChartData.bubbleStroke2x);
+      expect(d.bubbleStrokeWidth(299, 100), ChartData.bubbleStroke2x);
+      expect(d.bubbleStrokeWidth(300, 100), ChartData.bubbleStroke3x);
+      expect(d.bubbleStrokeWidth(399, 100), ChartData.bubbleStroke3x);
+      expect(d.bubbleStrokeWidth(400, 100), ChartData.bubbleStroke4x);
+      expect(d.bubbleStrokeWidth(1000, 100), ChartData.bubbleStroke4x);
+      // Sem threshold válido, mantém a borda base.
+      expect(d.bubbleStrokeWidth(1000, 0), ChartData.bubbleStrokeBase);
+    });
   });
 }

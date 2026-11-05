@@ -12,6 +12,7 @@ namespace B3WM.Services.Core
         public int TimeFrame { get; private set; }
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
+        private readonly StructureRangeResolver _rangeResolver;
         private readonly ILogger<StructureService> _logger;
 
         public event Func<StructureStorageItem, Task>? OnUpdate;
@@ -33,13 +34,14 @@ namespace B3WM.Services.Core
         #endregion
 
 
-        public StructureService(string symbol, int timeFrame, double minDistance ,IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<StructureService> logger)
+        public StructureService(string symbol, int timeFrame, double minDistance ,IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, StructureRangeResolver rangeResolver, ILogger<StructureService> logger)
             : base(serviceProvider)
         {
             Symbol = symbol;
             TimeFrame = timeFrame;
             _minDistanceUpdateBorder = minDistance;
             this.hubContext = hubContext;
+            _rangeResolver = rangeResolver;
             _logger = logger;
         }
 
@@ -48,6 +50,13 @@ namespace B3WM.Services.Core
             var today = DateTime.Today;
             if (_preloadedFor == today)
                 return;
+
+            // Continua no último range usado (deduzido dos arquivos) em vez de
+            // voltar ao default no restart. Precisa acontecer antes de montar o
+            // Path, para ler/gravar no mesmo range do front.
+            var deducedDistance = await _rangeResolver.ResolveAsync(Symbol, TimeFrame == 1440);
+            if (deducedDistance is > 0)
+                _minDistanceUpdateBorder = deducedDistance.Value;
 
             //fazer aqui, carregar dos arquivos do Data, para saber a ultima structure (mesmo sendo do dia anterior)
             var allData = await GetDataAsync();

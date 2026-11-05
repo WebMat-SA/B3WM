@@ -143,6 +143,19 @@ namespace B3WM.Controllers
                 // usa a distância atual do serviço e nunca é resetado pelo
                 // parâmetro intraday.
                 var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+
+                // Alinha o serviço vivo ao range pedido pelo front. Isso cobre
+                // o restart em que o preload deduziu outro range (ou um range
+                // novo ainda sem arquivo) e semeia os arquivos para o próximo
+                // startup continuar no último valor setado.
+                var distanceAligned = false;
+                if (timeFrame != 1440 && service != null
+                    && service._minDistanceUpdateBorder != minDistance)
+                {
+                    await service.SetMinDistance(minDistance);
+                    distanceAligned = true;
+                }
+
                 var dist = timeFrame == 1440
                     ? service?._minDistanceUpdateBorder ?? minDistance
                     : minDistance;
@@ -164,7 +177,9 @@ namespace B3WM.Controllers
                             // intraday (o diário funciona pois lê o histórico 1440 já
                             // gravado). Força a regeneração a partir dos MESMOS arquivos
                             // de candle que o GetBar usa, com a distância pedida.
-                            await service.SetMinDistance(minDistance);
+                            // Se o alinhamento acima já regenerou, não repete.
+                            if (!distanceAligned)
+                                await service.SetMinDistance(minDistance);
 
                             timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
 

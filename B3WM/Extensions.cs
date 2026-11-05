@@ -16,6 +16,9 @@ namespace B3WM
         {
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
+            // Deduz o último range de estrutura dos arquivos persistidos para o
+            // preload do startup continuar nele em vez de voltar ao default.
+            services.AddSingleton<StructureRangeResolver>();
             services.AddScoped<JevService>(); // consumidor Jev/TypeSafe (issue #16, debug-only)
             services.AddScoped<JevAuditStore>(); // auditoria 1 arquivo/chamada em Data/JEV (issue #23)
             services.AddScoped<ScreenStateBuilder>(); // estado WYSIWYG p/ strategies
@@ -74,7 +77,7 @@ namespace B3WM
                     ? minDistanceUpdateBorderDaily
                     : minDistanceUpdateBorder;
                 services.AddSingleton(sp => new CandleService(symbol, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<CandleService>>()));
-                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<StructureService>>()));
+                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<ILogger<StructureService>>()));
             }
             services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));

@@ -35,6 +35,9 @@ class BubblePoint {
   final int candleIndex;
   final DateTime date;
 
+  /// Threshold do agente que faz a bubble aparecer (o "trigger" do filtro).
+  final int threshold;
+
   /// Bubble original da API: usada no trigger manual (agente, símbolo etc.).
   final BubbleStorageItem source;
 
@@ -46,6 +49,7 @@ class BubblePoint {
     required this.agentName,
     required this.candleIndex,
     required this.date,
+    required this.threshold,
     required this.source,
   });
 }
@@ -343,6 +347,22 @@ class ChartData {
     final t = ((math.sqrt(amount) - smin) / (smax - smin)).clamp(0.0, 1.0);
     return lo + t * (hi - lo);
   }
+
+  static const double bubbleStrokeBase = 0.1;
+  static const double bubbleStroke2x = 0.5;
+  static const double bubbleStroke3x = 1.0;
+  static const double bubbleStroke4x = 1.5;
+
+  /// Espessura da borda da bolha conforme o volume supera o threshold do
+  /// agente: 2x = bem fina, 3x = intermediária, 4x+ = mais grossa.
+  double bubbleStrokeWidth(double amount, int threshold) {
+    if (threshold <= 0) return bubbleStrokeBase;
+    final ratio = amount / threshold;
+    if (ratio >= 4) return bubbleStroke4x;
+    if (ratio >= 3) return bubbleStroke3x;
+    if (ratio >= 2) return bubbleStroke2x;
+    return bubbleStrokeBase;
+  }
 }
 
 String _formatCandleKey(DateTime dt) {
@@ -440,6 +460,7 @@ ChartData buildChartData(StateService state) {
         agentName: Agents.fromValue(b.agent)?.description ?? '',
         candleIndex: findCandleIndex(b.date),
         date: b.date,
+        threshold: state.getThreshold(b.agent),
         source: b,
       );
       if (b.actionType == ActionType.buy) {
