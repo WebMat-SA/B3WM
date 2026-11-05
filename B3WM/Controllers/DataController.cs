@@ -336,51 +336,53 @@ namespace B3WM.Controllers
         public async Task<IActionResult> GetStructureHistory(string symbol, int timeFrame, double minDistance, [FromQuery] int days = 90)
         {
             days = Math.Clamp(days, 2, 365);
-            var all = new List<StructureStorageItem>();
-            for (var d = 0; d < days; d++)
+
+            async Task<List<StructureStorageItem>> ReadRangeAsync(double distance)
             {
-                var date = DateTime.Today.AddDays(-d);
-                var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
-                try
+                var result = new List<StructureStorageItem>();
+                for (var d = 0; d < days; d++)
                 {
-                    var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
-                    if (day != null)
-                        all.AddRange(day);
+                    var date = DateTime.Today.AddDays(-d);
+                    var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{distance}_{date:yyyy-MM-dd}.json";
+                    try
+                    {
+                        var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+                        if (day != null)
+                            result.AddRange(day);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
+                        _logger.LogWarning(ex, "Falha lendo structures do dia {Path}", path);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
-                    _logger.LogWarning(ex, "Falha lendo structures do dia {Path}", path);
-                }
+                return result;
             }
-            // Fallback 1440: o arquivo leva a distância no nome; se o app
-            // pediu uma distância sem nenhum arquivo (ex. slider arrastado
-            // antes do Confirm), retorna o histórico da distância vigente no
-            // serviço em vez de [] silencioso (precedente: GetStructureAsync).
+
+            var all = await ReadRangeAsync(minDistance);
+
+            // Histórico 1440: o arquivo leva a distância no nome. Se o app tem
+            // uma distância salva sem arquivos (ex.: WINFUT 2000), regenera no
+            // range pedido e relê. Sem isso o backend ficaria eternamente no
+            // default e o gráfico 1D mostraria uma estrutura diferente do slider.
             if (all.Count == 0)
             {
                 var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
                 if (service != null && service._minDistanceUpdateBorder != minDistance)
                 {
-                    var current = service._minDistanceUpdateBorder;
-                    for (var d = 0; d < days; d++)
-                    {
-                        var date = DateTime.Today.AddDays(-d);
-                        var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{current}_{date:yyyy-MM-dd}.json";
-                        try
-                        {
-                            var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
-                            if (day != null)
-                                all.AddRange(day);
-                        }
-                        catch (Exception ex)
-                        {
-                            // Dia ausente não lança (keeper retorna vazio); aqui é I/O real.
-                            _logger.LogWarning(ex, "Falha lendo structures do dia {Path}", path);
-                        }
-                    }
+                    await service.SetMinDistance(minDistance);
+                    all = await ReadRangeAsync(minDistance);
+                }
+
+                // Fallback antigo (ex.: falha no regen): serve o range vigente
+                // do serviço em vez de [] silencioso.
+                if (all.Count == 0 && service != null
+                    && service._minDistanceUpdateBorder != minDistance)
+                {
+                    all = await ReadRangeAsync(service._minDistanceUpdateBorder);
                 }
             }
+
             return Ok(all.OrderBy(s => s.Date).ToList());
         }
 

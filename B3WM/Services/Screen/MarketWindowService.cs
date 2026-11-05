@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using B3WM.Services.Core;
 using B3WM.Services.Market;
 using B3WM.Shared.Models;
 
@@ -17,14 +18,29 @@ namespace B3WM.Services.Screen
         private const int DailyTimeFrame = 1440;
 
         private readonly IServiceScopeFactory _scopes;
+        private readonly IEnumerable<StructureService> _structures;
         private readonly ILogger<MarketWindowService> _logger;
         private readonly ConcurrentDictionary<string, DailyCacheEntry> _dailyCache = new();
 
-        public MarketWindowService(IServiceScopeFactory scopes, ILogger<MarketWindowService> logger)
+        public MarketWindowService(
+            IServiceScopeFactory scopes,
+            IEnumerable<StructureService> structures,
+            ILogger<MarketWindowService> logger)
         {
             _scopes = scopes;
+            _structures = structures;
             _logger = logger;
         }
+
+        /// <summary>
+        /// Distância vigente do serviço de estrutura do símbolo/TF. O front pode
+        /// ter um range salvo diferente do default (ex.: WINFUT 1D 2000); o
+        /// automode precisa usar a mesma estrutura exibida.
+        /// </summary>
+        private double GetStructureDistance(string symbol, int timeFrame, double fallback)
+            => _structures
+                .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame)
+                ?._minDistanceUpdateBorder ?? fallback;
 
         private sealed record DailyCacheEntry(StructureWindow Window, DateTime LastStructure);
 
@@ -39,8 +55,11 @@ namespace B3WM.Services.Screen
             var tf = Defaults.TimeFrames.Contains(req.TimeFrame) ? req.TimeFrame : 5;
             var today = DateTime.Today;
 
-            var intraday = await ResolveIntradayAsync(market, req, symbol, tf, today, ct);
-            var daily = await ResolveDailyAsync(market, req, symbol, today, ct);
+            var intradayDistance = GetStructureDistance(symbol, tf, Defaults.GetMinDistance(symbol));
+            var dailyDistance = GetStructureDistance(symbol, DailyTimeFrame, Defaults.GetMinDistanceDaily(symbol));
+
+            var intraday = await ResolveIntradayAsync(market, req, symbol, tf, intradayDistance, today, ct);
+            var daily = await ResolveDailyAsync(market, req, symbol, dailyDistance, today, ct);
 
             return new MarketWindow
             {
@@ -52,7 +71,8 @@ namespace B3WM.Services.Screen
         }
 
         private static async Task<StructureWindow> ResolveIntradayAsync(
-            IMarketData market, MarketWindowRequest req, string symbol, int tf, DateTime today, CancellationToken ct)
+            IMarketData market, MarketWindowRequest req, string symbol, int tf,
+            double minDistance, DateTime today, CancellationToken ct)
         {
             if (!req.ProfileAuto && (req.ProfileFrom != null || req.ProfileTo != null))
             {
@@ -64,7 +84,8 @@ namespace B3WM.Services.Screen
                 };
             }
 
-            var (bars, structures) = await LoadRangeAsync(market, symbol, tf, req, today, ct);
+            var (bars, structures) = await LoadRangeAsync(
+                market, symbol, tf, minDistance, req, today, ct);
             var win = StructureWindowResolver.ResolveIntraday(
                 bars, structures, symbol, tf, Defaults.GetTickSize(symbol));
             if (win is { } w)
@@ -83,9 +104,9 @@ namespace B3WM.Services.Screen
         /// que o app. Estruturas por dia (fonte única por candle fechado).
         /// </summary>
         private static async Task<(List<BarStorageItem> Bars, List<StructureStorageItem> Structures)> LoadRangeAsync(
-            IMarketData market, string symbol, int tf, MarketWindowRequest req, DateTime today, CancellationToken ct)
+            IMarketData market, string symbol, int tf, double minDistance,
+            MarketWindowRequest req, DateTime today, CancellationToken ct)
         {
-            var minDistance = Defaults.GetMinDistance(symbol);
             var start = (req.RangeFrom ?? today).Date;
             var end = (req.RangeTo ?? today).Date;
             if (end < start) (start, end) = (end, start);
@@ -105,7 +126,8 @@ namespace B3WM.Services.Screen
         }
 
         private async Task<StructureWindow> ResolveDailyAsync(
-            IMarketData market, MarketWindowRequest req, string symbol, DateTime today, CancellationToken ct)
+            IMarketData market, MarketWindowRequest req, string symbol,
+            double dailyDistance, DateTime today, CancellationToken ct)
         {
             if (!req.DailyAuto && (req.DailyFrom != null || req.DailyTo != null))
             {
@@ -118,7 +140,7 @@ namespace B3WM.Services.Screen
             }
 
             var dailyStructs = await market.DailyStructuresAsync(
-                symbol, Defaults.GetMinDistanceDaily(symbol), today, 365, ct);
+                symbol, dailyDistance, today, 365, ct);
             var lastStruct = dailyStructs.Count > 0
                 ? dailyStructs.Max(s => s.Date)
                 : DateTime.MinValue;

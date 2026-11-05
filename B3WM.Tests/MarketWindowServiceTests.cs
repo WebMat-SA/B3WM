@@ -1,3 +1,4 @@
+using B3WM.Services.Core;
 using B3WM.Services.Market;
 using B3WM.Services.Screen;
 using B3WM.Shared.Models;
@@ -23,6 +24,7 @@ public class MarketWindowServiceTests
         var sp = services.BuildServiceProvider();
         return new MarketWindowService(
             sp.GetRequiredService<IServiceScopeFactory>(),
+            Enumerable.Empty<StructureService>(),
             NullLogger<MarketWindowService>.Instance);
     }
 
