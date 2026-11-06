@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>B3WM · Service Health</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div id="connection-banner" class="connection-banner" hidden>
+    <span id="connection-banner-text">Falha ao consultar o servidor.</span>
+    <button type="button" class="btn btn-sm" id="banner-retry">Tentar novamente</button>
+  </div>
+
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div>
+          <h1>B3WM <span>Service Health</span></h1>
+          <p id="server-meta" class="muted">Carregando informações do servidor…</p>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <div id="overall-badge" class="badge badge-idle"><span class="dot"></span>Carregando</div>
+        <div class="toolbar">
+          <span id="countdown" class="countdown" title="Próxima atualização">—</span>
+          <button type="button" class="btn" id="pause-btn" title="Pausar/retomar atualização">Pausar</button>
+          <button type="button" class="btn btn-primary" id="refresh-btn" title="Atualizar agora">Atualizar</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="kpi-grid" id="kpi-grid" aria-label="Resumo dos serviços"></section>
+
+    <section id="symbols" class="symbols" aria-label="Serviços por símbolo"></section>
+
+    <section class="panel" id="agents-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Agentes desconhecidos</h2>
+          <p class="muted">Agentes vistos em ticks/bubbles que não existem no enum. Adicione ao backend, ao extractor e ao Flutter.</p>
+        </div>
+        <span id="agents-count" class="badge badge-idle">0</span>
+      </div>
+      <div id="agents-body" class="panel-body"></div>
+    </section>
+
+    <section class="panel" id="errors-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Erros recentes</h2>
+          <p class="muted">Warnings e erros capturados do log do servidor (últimas 200 ocorrências).</p>
+        </div>
+        <div class="filters">
+          <select id="error-level" class="input" aria-label="Filtrar por nível">
+            <option value="all">Todos os níveis</option>
+            <option value="Warning">Warning</option>
+            <option value="Error">Error</option>
+            <option value="Critical">Critical</option>
+          </select>
+          <input id="error-search" class="input" type="search" placeholder="Filtrar mensagem…" aria-label="Filtrar erros">
+        </div>
+      </div>
+      <div id="errors-body" class="panel-body"></div>
+    </section>
+
+    <details class="panel" id="agents-reference">
+      <summary class="panel-head summary">
+        <div>
+          <h2>Referência de agentes (enum)</h2>
+          <p class="muted">Lista canônica usada pelo backend. Consulte antes de adicionar um novo código.</p>
+        </div>
+        <span class="chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="panel-body">
+        <input id="agent-search" class="input" type="search" placeholder="Buscar por código ou nome…" aria-label="Buscar agente">
+        <div id="agents-reference-body" class="panel-body-inner">
+          <p class="muted">Abra esta seção para carregar a lista.</p>
+        </div>
+      </div>
+    </details>
+
+    <footer class="footer">
+      <span id="footer-meta">B3WM Service Health</span>
+      <span class="muted">Polling REST a cada 5s · dados em memória do servidor</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="dashboard.js" defer></script>
+</body>
+</html>

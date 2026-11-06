@@ -1,4 +1,5 @@
-﻿using B3WM.Shared.Entity;
+﻿using B3WM.Services.Dashboard;
+using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
@@ -13,6 +14,7 @@ namespace B3WM.Services.Core
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
         private readonly ILogger<BubbleService> _logger;
+        private readonly DashboardHealthService? _health;
 
         private readonly Channel<Ticks2[]> _channel =
             Channel.CreateUnbounded<Ticks2[]>();
@@ -33,13 +35,14 @@ namespace B3WM.Services.Core
 
         public override string Path => $"{Symbol}_{nameof(BubbleService)}_{DateTime.Now:yyyy-MM-dd}.json";
 
-        public BubbleService(string symbol, int bubbleThreshold, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<BubbleService> logger)
+        public BubbleService(string symbol, int bubbleThreshold, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<BubbleService> logger, DashboardHealthService? health = null)
             : base(serviceProvider)
         {
             Symbol = symbol;
             _bubbleThreshold = bubbleThreshold;
             this.hubContext = hubContext;
             _logger = logger;
+            _health = health;
 
             _ = Task.Run(ProcessLoop);
         }
@@ -134,6 +137,9 @@ namespace B3WM.Services.Core
                         ActionType = _runningStarter ?? default,
                         Symbol = _lastSymbol
                     };
+
+                    _lastItem = bubble;
+                    _health?.RecordBubbleAgent(bubble.Symbol, bubble.Agent);
 
                     _runningSum = 0;
                     _runningAgent = null;

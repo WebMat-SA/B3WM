@@ -1,4 +1,5 @@
-﻿using B3WM.Services.Screen;
+﻿using B3WM.Services.Dashboard;
+using B3WM.Services.Screen;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
@@ -12,15 +13,23 @@ namespace B3WM.Services
         private readonly MarketWindowRegistry _marketWindowRegistry;
         private readonly MarketWindowService _marketWindowService;
         private readonly MarketWindowBroadcaster _marketWindowBroadcaster;
+        private readonly DashboardHealthService _health;
         private readonly ILogger<DataHub> _logger;
 
-        public DataHub(IEnumerable<TickChannelService> tickChannel, MarketWindowRegistry marketWindowRegistry, MarketWindowService marketWindowService, MarketWindowBroadcaster marketWindowBroadcaster, ILogger<DataHub> logger)
+        public DataHub(IEnumerable<TickChannelService> tickChannel, MarketWindowRegistry marketWindowRegistry, MarketWindowService marketWindowService, MarketWindowBroadcaster marketWindowBroadcaster, DashboardHealthService health, ILogger<DataHub> logger)
         {
             _tickChannel = tickChannel;
             _marketWindowRegistry = marketWindowRegistry;
             _marketWindowService = marketWindowService;
             _marketWindowBroadcaster = marketWindowBroadcaster;
+            _health = health;
             _logger = logger;
+        }
+
+        public override Task OnConnectedAsync()
+        {
+            _health.ConnectionOpened();
+            return base.OnConnectedAsync();
         }
 
         public async Task JoinGroup(string group)
@@ -45,14 +54,26 @@ namespace B3WM.Services
         {
             _marketWindowRegistry.Remove(Context.ConnectionId);
             _marketWindowBroadcaster.Clear(Context.ConnectionId);
+            _health.ConnectionClosed();
             return base.OnDisconnectedAsync(exception);
         }
 
+        /// <summary>
+        /// Nomes brutos de agentes que o ExtractorRTD não conseguiu mapear para
+        /// o enum. O dashboard mostra o nome para inclusão posterior na lista.
+        /// </summary>
+        public Task ReportUnknownAgents(string symbol, string[] rawNames)
+        {
+            _health.RecordUnknownAgentNames(symbol, rawNames);
+            return Task.CompletedTask;
+        }
 
         public async Task SendDataTntProfit(Ticks2[] data, string group)
         {
             if (data != null && data.Length > 0 && !string.IsNullOrEmpty(group))
             {
+                _health.RecordTicks(group, data);
+
                 var tickChannel = _tickChannel.FirstOrDefault(tc => tc.Symbol == group);
 
                 if (tickChannel != null)

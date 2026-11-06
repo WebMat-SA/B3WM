@@ -60,11 +60,37 @@
       "problemMatcher": []
     },
     {
+      "label": "ExtractorRTD",
+      "type": "process",
+      "command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$nuget = (Get-Command nuget.exe -ErrorAction SilentlyContinue).Source; if (-not $nuget) { $nuget = 'C:\\VisualStudio\\nuget.exe' }; if (Test-Path $nuget) { & $nuget restore '${workspaceFolder}\\ExtractorRTD\\B3WM.ExtractorRTD.sln' -NonInteractive; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } else { Write-Error 'nuget.exe nao encontrado para restore de packages.config'; exit 1 }; $msbuild = & 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe' -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\\**\\Bin\\MSBuild.exe' | Select-Object -First 1; if (-not $msbuild) { Write-Error 'MSBuild nao encontrado'; exit 1 }; & $msbuild '${workspaceFolder}\\ExtractorRTD\\B3WM.ExtractorRTD.sln' /t:Build /p:Configuration=Debug '/p:Platform=Any CPU' /m:1 /v:minimal; exit $LASTEXITCODE"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "group": "b3wm",
+        "panel": "dedicated",
+        "reveal": "always",
+        "focus": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "run-all",
       "dependsOn": ["python-service", "dotnet-webapp"],
       "group": {
         "kind": "build",
-        "isDefault": true
+        "isDefault": false
       }
     }
   ]

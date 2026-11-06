@@ -1,3 +1,4 @@
+using B3WM.Services.Dashboard;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -20,15 +21,18 @@ namespace B3WM.Services.AI
         private readonly IHttpClientFactory _httpFactory;
         private readonly IConfiguration _config;
         private readonly ILogger<JevService> _logger;
+        private readonly DashboardHealthService? _health;
 
         public JevService(
             IHttpClientFactory httpFactory,
             IConfiguration config,
-            ILogger<JevService> logger)
+            ILogger<JevService> logger,
+            DashboardHealthService? health = null)
         {
             _httpFactory = httpFactory;
             _config = config;
             _logger = logger;
+            _health = health;
         }
 
         public string? ResolveApiKey()
@@ -98,7 +102,10 @@ namespace B3WM.Services.AI
         {
             var apiKey = ResolveApiKey();
             if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                _health?.RecordJevCall(false, 0, 0, "sem chave");
                 throw new InvalidOperationException("JevKey ausente. Configure via 'dotnet user-secrets set JevKey <sua-chave>' ou env TYPESAFE_API_KEY.");
+            }
 
             var stateChars = request.StateChars;
 
@@ -120,6 +127,7 @@ namespace B3WM.Services.AI
                 catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
                 {
                     sw.Stop();
+                    _health?.RecordJevCall(false, sw.ElapsedMilliseconds, 0, "timeout");
                     throw new JevTimeoutException(
                         $"Timeout chamando Jev (attempt {attempt}/{maxAttempts}).",
                         attempt, sw.ElapsedMilliseconds, ex);
@@ -139,7 +147,10 @@ namespace B3WM.Services.AI
             }
 
             if (resp == null)
+            {
+                _health?.RecordJevCall(false, sw.ElapsedMilliseconds, 0, "sem resposta");
                 throw new HttpRequestException("Sem resposta da Jev.");
+            }
 
             using (resp)
             {
@@ -147,6 +158,8 @@ namespace B3WM.Services.AI
                 if (!resp.IsSuccessStatusCode)
                 {
                     sw.Stop();
+                    _health?.RecordJevCall(false, sw.ElapsedMilliseconds, (int)resp.StatusCode,
+                        $"HTTP {(int)resp.StatusCode}");
                     throw new JevHttpException(
                         (int)resp.StatusCode, body, attemptsUsed, sw.ElapsedMilliseconds,
                         $"Jev HTTP {(int)resp.StatusCode}: {Truncate(body, 500)}");
@@ -154,6 +167,7 @@ namespace B3WM.Services.AI
 
                 var (model, inTok, outTok) = ReadUsage(body);
                 sw.Stop();
+                _health?.RecordJevCall(true, sw.ElapsedMilliseconds, (int)resp.StatusCode, "ok");
                 _logger.LogInformation("[jev] model={Model} in={In} out={Out} stateChars={Chars}",
                     model, inTok, outTok, stateChars);
                 return new JevResponse
