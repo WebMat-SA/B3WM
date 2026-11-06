@@ -139,6 +139,13 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 - Bridge Python/FastAPI para execução de ordens via MetaTrader 5
 - Consulta de posições, saldo e informações de conta
 
+### Dashboard de Saúde (backend)
+- Disponível em `https://localhost:5002/dashboard/` (ou `http://localhost:5000/dashboard/`), com polling REST em `/api/Dashboard/Health` a cada 5s.
+- Por símbolo: fonte de dados (último tick e ticks/minuto), candles por timeframe, **estrutura com o range atuando**, bubbles, volume, VWAP, topos/vales, orquestração (fila/heartbeats) e strategies.
+- Integrações: Jev/TypeSafe e bridge Python/MT5 (`/health`).
+- **Agentes desconhecidos:** lista códigos/nomes vistos em ticks/bubbles fora do enum, com contagem e primeiro/último avistamento. O ExtractorRTD reporta o nome bruto via SignalR (`ReportUnknownAgents`).
+- **Erros recentes:** warnings/erros capturados do log do servidor. Lista de referência do enum em `/api/Dashboard/Agents`.
+
 ---
 
 ## Stack Tecnológica

@@ -1,4 +1,5 @@
 ﻿using B3WM.Services.Core;
+using B3WM.Services.Dashboard;
 
 namespace B3WM.Services
 {
@@ -7,13 +8,15 @@ namespace B3WM.Services
         public string Symbol { get; }
         private readonly IEnumerable<TickChannelService> _tickChannel;
         private readonly IEnumerable<OrchestratorService> _orchestratorService;
+        private readonly DashboardHealthService _health;
         private readonly ILogger<TickProcessorService> _logger;
 
-        public TickProcessorService(string symbol, IEnumerable<TickChannelService> tickChannel, IEnumerable<OrchestratorService> orchestrators, ILogger<TickProcessorService> logger)
+        public TickProcessorService(string symbol, IEnumerable<TickChannelService> tickChannel, IEnumerable<OrchestratorService> orchestrators, DashboardHealthService health, ILogger<TickProcessorService> logger)
         {
             this.Symbol = symbol;
             _tickChannel = tickChannel;
             _orchestratorService = orchestrators;
+            _health = health;
             _logger = logger;
         }
 
@@ -34,6 +37,7 @@ namespace B3WM.Services
                 try
                 {
                     await orchestrator.Enqueue(batch);
+                    _health.RecordHeartbeat($"{Symbol}:tickprocessor");
                 }
                 catch (Exception ex)
                 {

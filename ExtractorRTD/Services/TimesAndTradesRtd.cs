@@ -60,6 +60,19 @@ namespace ExtractorRTD.Services
                     string,
                     TradeCounter>();
 
+        // Nomes brutos de agentes que não existem no enum local. Chave:
+        // "{símbolo}\u0001{nome}". Reportados ao servidor para o dashboard.
+        private static readonly ConcurrentDictionary<
+            string,
+            byte>
+            _unknownAgents =
+                new ConcurrentDictionary<
+                    string,
+                    byte>();
+
+        private const char UnknownAgentSeparator =
+            '\u0001';
+
         private static int _nextTopicId = 1;
 
         [STAThread]
@@ -366,8 +379,8 @@ namespace ExtractorRTD.Services
                                 Time = time,
                                 Value = price,
                                 Volume = qty,
-                                Buyer = ParseAgent(acp),
-                                Seller = ParseAgent(avd),
+                                Buyer = ParseAgent(acp, config.Symbol),
+                                Seller = ParseAgent(avd, config.Symbol),
                                 Starter = ParseAction(agr),
                                 Symbol = config.Symbol
                             });
@@ -457,7 +470,8 @@ namespace ExtractorRTD.Services
 
                 CleanupTradeCache();
 
-                if (_pendingTicks.Count > 0)
+                if (_pendingTicks.Count > 0 ||
+                    _unknownAgents.Count > 0)
                 {
                     SendTicks()
                         .GetAwaiter()
@@ -470,15 +484,19 @@ namespace ExtractorRTD.Services
         {
             try
             {
-                if (_pendingTicks.Count == 0)
-                    return;
-
                 if (hubConnection == null ||
                     hubConnection.State !=
                     HubConnectionState.Connected)
                 {
                     StartHubConnection();
                 }
+
+                // Reporta nomes de agentes fora do enum antes dos ticks, para
+                // o dashboard conseguir exibir o nome bruto a ser incluído.
+                await ReportUnknownAgents();
+
+                if (_pendingTicks.Count == 0)
+                    return;
 
                 // AGRUPA POR ATIVO
                 var grouped =
@@ -505,6 +523,42 @@ namespace ExtractorRTD.Services
             catch (Exception ex)
             {
                 Console.WriteLine(ex);
+            }
+        }
+
+        private static async Task ReportUnknownAgents()
+        {
+            if (_unknownAgents.Count == 0 ||
+                hubConnection == null ||
+                hubConnection.State != HubConnectionState.Connected)
+                return;
+
+            var grouped =
+                _unknownAgents
+                .Keys
+                .Select(key => key.Split(
+                    new[] { UnknownAgentSeparator }, 2))
+                .Where(parts => parts.Length == 2)
+                .GroupBy(parts => parts[0]);
+
+            foreach (var group in grouped)
+            {
+                var names =
+                    group
+                    .Select(parts => parts[1])
+                    .ToArray();
+
+                await hubConnection.SendAsync(
+                    "ReportUnknownAgents",
+                    group.Key,
+                    names);
+
+                foreach (var name in names)
+                {
+                    _unknownAgents.TryRemove(
+                        $"{group.Key}{UnknownAgentSeparator}{name}",
+                        out _);
+                }
             }
         }
 
@@ -632,13 +686,17 @@ namespace ExtractorRTD.Services
         }
 
         private static Ticks2.Agents ParseAgent(
-            string value)
+            string value,
+            string symbol)
         {
             if (string.IsNullOrWhiteSpace(value))
                 return 0;
 
-            value =
-                value
+            var rawName =
+                value.Trim();
+
+            var normalized =
+                rawName
                 .Replace("-", "_")
                 .Replace(" ", "_");
 
@@ -646,7 +704,7 @@ namespace ExtractorRTD.Services
                 typeof(Ticks2.Agents)))
             {
                 if (name.Equals(
-                    value,
+                    normalized,
                     StringComparison.OrdinalIgnoreCase))
                 {
                     return
@@ -656,6 +714,11 @@ namespace ExtractorRTD.Services
                             name);
                 }
             }
+
+            // Guarda o nome bruto para o dashboard permitir a inclusão no enum.
+            _unknownAgents.TryAdd(
+                $"{symbol}{UnknownAgentSeparator}{rawName}",
+                0);
 
             return 0;
         }
