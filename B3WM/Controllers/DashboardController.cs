@@ -281,7 +281,9 @@ namespace B3WM.Controllers
                 list.Add(new DashboardStructureHealth
                 {
                     TimeFrame = tf,
-                    Status = DashboardHealthService.StatusForAge(lastAt, now, ok, warn, marketOpen),
+                    Status = tf == 1440
+                        ? DashboardHealthService.StatusForDailySnapshot(lastAt, now, marketOpen)
+                        : DashboardHealthService.StatusForAge(lastAt, now, ok, warn, marketOpen),
                     Range = service._minDistanceUpdateBorder,
                     ResolvedRange = resolved,
                     DefaultRange = tf == 1440
@@ -310,7 +312,7 @@ namespace B3WM.Controllers
 
             return new DashboardValueHealth
             {
-                Status = DashboardHealthService.StatusForAge(lastAt, now, 300, 900, marketOpen),
+                Status = DashboardHealthService.StatusForDailySnapshot(lastAt, now, marketOpen),
                 LastAt = lastAt,
                 AgeSeconds = DashboardHealthService.AgeSeconds(lastAt, now),
                 Count = extreme?.Extremes?.Count ?? 0,

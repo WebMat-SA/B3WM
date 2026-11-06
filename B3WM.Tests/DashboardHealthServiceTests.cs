@@ -110,6 +110,28 @@ public class DashboardHealthServiceTests
     }
 
     [Fact]
+    public void StatusForDailySnapshot_UsesBusinessDays()
+    {
+        var friday = new DateTime(2026, 11, 6, 10, 0, 0);
+
+        Assert.Equal(DashboardStatus.Ok,
+            DashboardHealthService.StatusForDailySnapshot(friday, friday, marketOpen: true));
+        Assert.Equal(DashboardStatus.Ok,
+            DashboardHealthService.StatusForDailySnapshot(friday.AddDays(-1), friday, marketOpen: true));
+        Assert.Equal(DashboardStatus.Warn,
+            DashboardHealthService.StatusForDailySnapshot(friday.AddDays(-3), friday, marketOpen: true));
+        Assert.Equal(DashboardStatus.Error,
+            DashboardHealthService.StatusForDailySnapshot(friday.AddDays(-7), friday, marketOpen: true));
+        Assert.Equal(DashboardStatus.Idle,
+            DashboardHealthService.StatusForDailySnapshot(friday.AddDays(-7), friday, marketOpen: false));
+
+        // Sexta -> segunda: fim de semana não conta como atraso.
+        var monday = new DateTime(2026, 11, 9, 10, 0, 0);
+        Assert.Equal(DashboardStatus.Ok,
+            DashboardHealthService.StatusForDailySnapshot(friday, monday, marketOpen: true));
+    }
+
+    [Fact]
     public void WorstStatus_PicksMostSevere()
     {
         Assert.Equal(DashboardStatus.Error,

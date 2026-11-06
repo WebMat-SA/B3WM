@@ -431,6 +431,37 @@ namespace B3WM.Services.Dashboard
             return open ? DashboardStatus.Error : DashboardStatus.Idle;
         }
 
+        /// <summary>
+        /// Status para snapshots diários (estrutura 1D, topos/vales): não usa
+        /// segundos, e sim dias úteis. Assim uma estrutura de sexta continua OK
+        /// na segunda-feira e uma de 3 dias úteis atrás vira atenção.
+        /// </summary>
+        public static string StatusForDailySnapshot(DateTime? last, DateTime now,
+            bool? marketOpen = null)
+        {
+            var open = marketOpen ?? IsMarketOpen(now);
+            if (last == null)
+                return open ? DashboardStatus.Error : DashboardStatus.Idle;
+
+            var businessDays = BusinessDaysBetween(last.Value.Date, now.Date);
+            if (businessDays <= 1) return DashboardStatus.Ok;
+            if (businessDays <= 3) return DashboardStatus.Warn;
+            return open ? DashboardStatus.Error : DashboardStatus.Idle;
+        }
+
+        private static int BusinessDaysBetween(DateTime from, DateTime to)
+        {
+            if (to <= from) return 0;
+
+            var count = 0;
+            for (var day = from.AddDays(1); day <= to; day = day.AddDays(1))
+            {
+                if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
+                    count++;
+            }
+            return count;
+        }
+
         public static double? AgeSeconds(DateTime? last, DateTime now) =>
             last == null ? null : Math.Max(0, (now - last.Value).TotalSeconds);
 
