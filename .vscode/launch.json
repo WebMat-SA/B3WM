@@ -22,6 +22,17 @@
       }
     },
     {
+      "name": "ExtractorRTD (Debug)",
+      "type": "clr",
+      "request": "launch",
+      "preLaunchTask": "ExtractorRTD",
+      "program": "${workspaceFolder}/ExtractorRTD/bin/Debug/ExtractorRTD.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}/ExtractorRTD/bin/Debug",
+      "stopAtEntry": false,
+      "console": "internalConsole"
+    },
+    {
       "name": "Python: B3WM MT5 Bridge",
       "type": "debugpy",
       "request": "launch",
