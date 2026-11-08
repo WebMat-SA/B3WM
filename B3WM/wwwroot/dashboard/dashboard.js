@@ -5,6 +5,7 @@
   const AGENTS_URL = "/api/Dashboard/Agents";
   const REFRESH_MS = 5000;
   const FETCH_TIMEOUT_MS = 8000;
+  const DASHBOARD_VERSION = "2026-11-06.9";
 
   const STATUS_LABEL = {
     ok: "Operacional",
@@ -22,6 +23,13 @@
     errorFilter: { level: "all", search: "" },
     referenceAgents: null,
     referenceLoaded: false,
+    ticksHistory: {},
+    structureTimelines: {},
+    tradeDates: {},
+    collapsedSymbols: new Set(),
+    timelineLoadedAt: 0,
+    timelineLoading: false,
+    lastDailyStructureAt: "",
   };
 
   const el = (id) => document.getElementById(id);
@@ -32,11 +40,24 @@
 
   function safe(value) {
     return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Se a pagina veio pelo perfil HTTP (porta 5000), redireciona para o
+  // HTTPS (5002). Evita o fetch cross-origin apos o 307 do UseHttpsRedirection,
+  // que alguns navegadores bloqueiam por causa do certificado self-signed.
+  function ensureHttps() {
+    if (window.location.protocol !== "http:") return true;
+    if (window.location.port !== "5000") return true;
+
+    const target =
+      `https://${window.location.hostname}:5002${window.location.pathname}${window.location.search}`;
+    window.location.replace(target);
+    return false;
   }
 
   function worstStatus(...statuses) {
@@ -132,27 +153,57 @@
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
+    let data;
     try {
       const response = await fetch(HEALTH_URL, {
         cache: "no-store",
         signal: controller.signal,
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      state.health = await response.json();
-      hideBanner();
-      render();
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          const legacy = await fetch("/api/Dashboard/Get", { cache: "no-store" });
+          if (legacy.ok) {
+            throw new Error(
+              "o servidor está com um build antigo (sem /api/Dashboard/Health). Reinicie com o build atual.");
+          }
+        }
+        throw new Error(`HTTP ${response.status} em ${HEALTH_URL}`);
+      }
+
+      data = await response.json();
     } catch (error) {
-      const message = error.name === "AbortError" ? "timeout na consulta" : error.message;
-      showBanner(`Falha ao consultar o servidor: ${message}`);
+      const message = error.name === "AbortError"
+        ? `timeout após ${FETCH_TIMEOUT_MS / 1000}s`
+        : error.message;
+      showBanner(
+        `Falha ao consultar ${HEALTH_URL}: ${message}. ` +
+        "Confirme que o servidor está em https://localhost:5002 e que o certificado é confiável.");
+      console.error("[dashboard] health fetch failed", error);
       if (!state.health) {
         el("overall-badge").className = "badge badge-error";
         el("overall-badge").innerHTML = `<span class="dot"></span>Sem conexão`;
       }
-    } finally {
       clearTimeout(timer);
       state.nextRefreshAt = Date.now() + REFRESH_MS;
+      return;
     }
+
+    clearTimeout(timer);
+    state.nextRefreshAt = Date.now() + REFRESH_MS;
+    state.health = data;
+    hideBanner();
+    updateTicksHistory(data);
+
+    try {
+      render();
+    } catch (error) {
+      showBanner(`Dados recebidos, mas falhou ao renderizar o dashboard: ${error.message}`);
+      console.error("[dashboard] render failed", error);
+    }
+
+    maybeLoadStructureTimelines();
   }
 
   async function loadReferenceAgents() {
@@ -177,6 +228,7 @@
     if (!state.health) return;
     renderHeader();
     renderKpis();
+    renderCharts();
     renderSymbols();
     renderAgents();
     renderErrors();
@@ -196,7 +248,7 @@
       `v${health.version} · ${health.environment} · uptime ${formatDuration(health.uptimeSeconds)} · Data: ${dirState}`;
 
     el("footer-meta").textContent =
-      `B3WM Service Health · servidor ${formatDateTime(health.serverTime)} · gerado ${formatDateTime(health.generatedAt)}`;
+      `B3WM Service Health · dashboard ${DASHBOARD_VERSION} · servidor ${formatDateTime(health.serverTime)} · gerado ${formatDateTime(health.generatedAt)}`;
   }
 
   function renderKpis() {
@@ -346,16 +398,20 @@
 
     const bubbleAgent = bubble.agentName
       || (bubble.agent != null ? `#${bubble.agent}` : "—");
+    const isOpen = !state.collapsedSymbols.has(symbol.symbol);
 
     return `
-      <article class="symbol-card">
-        <header class="symbol-head">
+      <details class="symbol-card" data-symbol="${safe(symbol.symbol)}" ${isOpen ? "open" : ""}>
+        <summary class="symbol-head" title="Clique para expandir/recolher">
           <div class="symbol-title">
             <h2>${safe(symbol.symbol)}</h2>
             <span class="symbol-tag">${safe(symbol.symbol)}</span>
           </div>
-          ${badge(symbol.status)}
-        </header>
+          <div class="symbol-actions">
+            ${badge(symbol.status)}
+            <span class="chevron" aria-hidden="true">▾</span>
+          </div>
+        </summary>
         <div class="symbol-body">
           <div class="datasource-strip">
             <div>
@@ -432,7 +488,7 @@
             ])}
           </div>
         </div>
-      </article>
+      </details>
     `;
   }
 
@@ -474,10 +530,11 @@
       const copyValue = (agent.rawNames ?? []).length
         ? agent.rawNames[0]
         : String(agent.agentCode);
+      const codeLabel = agent.agentCode === 0 ? "—" : agent.agentCode;
 
       return `
         <tr>
-          <td class="agent-code">${safe(agent.agentCode)}</td>
+          <td class="agent-code">${safe(codeLabel)}</td>
           <td class="wrap"><strong>${safe(name)}</strong></td>
           <td><span class="agent-source">${safe(agent.source || "—")}</span></td>
           <td>${safe((agent.symbols ?? []).join(", ") || "—")}</td>
@@ -500,7 +557,8 @@
         </table>
       </div>
       <div class="agent-hint">
-        Para incluir, adicione o código/nome em
+        <strong>Código 0 = não mapeado pelo extractor.</strong> O nome bruto é a informação
+        confiável; use-o para localizar o código correto. Para incluir, adicione o código/nome em
         <code>B3WM.Shared/Entity/Ticks2.cs</code>,
         <code>ExtractorRTD/Ticks2.cs</code> e
         <code>B3WM.Flutter/lib/models/ticks2.dart</code>.
@@ -572,6 +630,510 @@
         </table>
       </div>
     `;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Charts                                                              */
+  /* ------------------------------------------------------------------ */
+
+  function updateTicksHistory(health) {
+    const now = Date.now();
+    for (const symbol of health.symbols ?? []) {
+      const list = state.ticksHistory[symbol.symbol] ?? (state.ticksHistory[symbol.symbol] = []);
+      list.push({ at: now, value: Number(symbol.dataSource?.ticksLastMinute) || 0 });
+      while (list.length > 60) list.shift();
+    }
+  }
+
+  function maybeLoadStructureTimelines(force = false) {
+    const health = state.health;
+    if (!health || state.timelineLoading) return;
+
+    const symbols = health.symbols ?? [];
+    const dailyLast = symbols
+      .map((s) => (s.structure ?? []).find((x) => Number(x.timeFrame) === 1440)?.lastAt)
+      .filter(Boolean)
+      .sort()
+      .pop() ?? "";
+
+    const now = Date.now();
+    if (!force &&
+        dailyLast === state.lastDailyStructureAt &&
+        now - state.timelineLoadedAt < 60000) {
+      return;
+    }
+
+    const endDate = toIsoDate(new Date());
+    const startDate = toIsoDate(new Date(Date.now() - 45 * 24 * 60 * 60 * 1000));
+    const requests = [];
+
+    for (const symbol of symbols) {
+      const daily = (symbol.structure ?? []).find((x) => Number(x.timeFrame) === 1440);
+      if (!daily) continue;
+
+      const symbolName = encodeURIComponent(symbol.symbol);
+      const structureUrl =
+        `/api/Data/GetStructureHistory/${symbolName}/1440/` +
+        `${encodeURIComponent(daily.range)}?days=45`;
+      const barsUrl =
+        `/api/Data/GetBarRange/${symbolName}/${startDate}/${endDate}/1440`;
+
+      const structurePromise = fetch(structureUrl, { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : []))
+        .then((items) => {
+          const byDate = new Map();
+          for (const item of items ?? []) {
+            const key = String(item.date ?? "").slice(0, 10);
+            if (key) byDate.set(key, item);
+          }
+          return Array.from(byDate.values())
+            .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        })
+        .catch(() => state.structureTimelines[symbol.symbol] ?? []);
+
+      const tradeDatesPromise = fetch(barsUrl, { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((bars) => {
+          if (!Array.isArray(bars)) return null;
+          return new Set(
+            bars
+              .map((bar) => String(bar.date ?? "").slice(0, 10))
+              .filter(Boolean)
+          );
+        })
+        .catch(() => null);
+
+      requests.push(
+        Promise.all([structurePromise, tradeDatesPromise]).then(([structures, tradeDates]) => {
+          state.structureTimelines[symbol.symbol] = structures;
+          state.tradeDates[symbol.symbol] = tradeDates;
+        })
+      );
+    }
+
+    if (requests.length === 0) return;
+
+    state.timelineLoading = true;
+    state.lastDailyStructureAt = dailyLast;
+    Promise.all(requests).finally(() => {
+      state.timelineLoading = false;
+      state.timelineLoadedAt = Date.now();
+      if (state.health) renderCharts();
+    });
+  }
+
+  function renderCharts() {
+    if (!state.health) return;
+    el("charts").innerHTML = (state.health.symbols ?? []).map(renderChartCard).join("");
+  }
+
+  function renderChartCard(symbol) {
+    const charts = symbol.charts ?? {};
+    const c1 = charts.candles1Min ?? [];
+    const c5 = charts.candles5Min ?? [];
+    const bubbles = charts.bubbles ?? [];
+    const ticks = (state.ticksHistory[symbol.symbol] ?? []).map((t) => t.value);
+    const price = c1.length
+      ? c1[c1.length - 1].close
+      : (c5.length ? c5[c5.length - 1].close : null);
+
+    const tickValues = ticks;
+    const tickBlock = chartBlock("Ticks/min", `
+      ${sparklineSvg(tickValues, {
+        color: "#38bdf8",
+        fill: "rgba(56,189,248,0.14)",
+        label: "ticks por minuto",
+      })}
+      ${chartLegend([
+        ["mín", formatNumber(tickValues.length ? Math.min(...tickValues) : null)],
+        ["máx", formatNumber(tickValues.length ? Math.max(...tickValues) : null)],
+        ["atual", formatNumber(tickValues.length ? tickValues[tickValues.length - 1] : null)],
+      ])}
+    `);
+
+    const candleBlock = (title, candles) => {
+      const closes = (candles ?? [])
+        .map((c) => Number(c.close))
+        .filter((v) => Number.isFinite(v));
+      return chartBlock(title, `
+        ${candleSparklineSvg(candles)}
+        ${chartLegend([
+          ["último", formatPrice(closes.length ? closes[closes.length - 1] : null)],
+          ["mín", formatPrice(closes.length ? Math.min(...closes) : null)],
+          ["máx", formatPrice(closes.length ? Math.max(...closes) : null)],
+        ])}
+      `);
+    };
+
+    return `
+      <article class="chart-card">
+        <div class="chart-head">
+          <h3>${safe(symbol.symbol)}</h3>
+          <div class="chart-price">${price == null ? "—" : formatPrice(price)}</div>
+          ${badge(symbol.status)}
+        </div>
+        <div class="chart-grid">
+          ${tickBlock}
+          ${candleBlock("Candles 1M", c1)}
+          ${candleBlock("Candles 5M", c5)}
+          ${chartBlock("Estrutura · preço vs bordas", structureLadderHtml(symbol))}
+        </div>
+        ${chartBlock(`Bubbles recentes${bubbles.length ? ` (${bubbles.length})` : ""}`, bubbleScatterHtml(bubbles))}
+        ${chartBlock("Cobertura da estrutura 1D", dailyTimelineHtml(symbol))}
+      </article>
+    `;
+  }
+
+  function chartBlock(title, content) {
+    return `<div class="chart-block"><h4>${safe(title)}</h4>${content}</div>`;
+  }
+
+  function chartLegend(items) {
+    return `<div class="chart-legend">${items
+      .map(([key, value]) => `<span>${safe(key)} <strong>${safe(value)}</strong></span>`)
+      .join("")}</div>`;
+  }
+
+  function sparklineSvg(values, options = {}) {
+    const {
+      width = 320,
+      height = 72,
+      color = "#38bdf8",
+      fill = "rgba(56,189,248,0.14)",
+      label = "",
+    } = options;
+
+    if (!values || values.length < 2) {
+      return `<div class="chart-empty">Coletando dados…</div>`;
+    }
+
+    const pad = { top: 8, right: 6, bottom: 8, left: 6 };
+    const w = width - pad.left - pad.right;
+    const h = height - pad.top - pad.bottom;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+
+    const points = values.map((value, index) => {
+      const x = pad.left + (index / (values.length - 1)) * w;
+      const y = pad.top + h - ((value - min) / range) * h;
+      return [x, y];
+    });
+
+    const path = points
+      .map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
+      .join(" ");
+
+    const area = `${path} L${(pad.left + w).toFixed(1)},${(pad.top + h).toFixed(1)} ` +
+      `L${pad.left.toFixed(1)},${(pad.top + h).toFixed(1)} Z`;
+
+    const grid = [0.25, 0.5, 0.75].map((fraction) => {
+      const y = pad.top + h * fraction;
+      return `<line x1="${pad.left}" y1="${y.toFixed(1)}" x2="${pad.left + w}" ` +
+        `y2="${y.toFixed(1)}" stroke="rgba(143,161,189,0.12)" stroke-width="1"/>`;
+    }).join("");
+
+    const last = points[points.length - 1];
+
+    return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" ` +
+      `preserveAspectRatio="none" role="img" aria-label="${safe(label)}">` +
+      `${grid}` +
+      `<path d="${area}" fill="${fill}" stroke="none"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" ` +
+      `stroke-linejoin="round" stroke-linecap="round"/>` +
+      `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="${color}"/>` +
+      `</svg>`;
+  }
+
+  function candleSparklineSvg(candles) {
+    if (!candles || candles.length < 2) {
+      return `<div class="chart-empty">Sem candles recentes</div>`;
+    }
+
+    const width = 320;
+    const height = 96;
+    const pad = { top: 8, right: 6, bottom: 24, left: 6 };
+    const w = width - pad.left - pad.right;
+    const priceH = height - pad.top - pad.bottom;
+
+    const closes = candles.map((c) => Number(c.close));
+    const volumes = candles.map((c) => Number(c.volume) || 0);
+    const min = Math.min(...closes);
+    const max = Math.max(...closes);
+    const range = max - min || 1;
+    const maxVolume = Math.max(...volumes, 1);
+
+    const points = closes.map((value, index) => {
+      const x = pad.left + (index / (closes.length - 1)) * w;
+      const y = pad.top + priceH - ((value - min) / range) * priceH;
+      return [x, y];
+    });
+
+    const path = points
+      .map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
+      .join(" ");
+
+    const barWidth = Math.max(1.5, (w / candles.length) * 0.55);
+    const bars = candles.map((candle, index) => {
+      const x = pad.left + (index / (candles.length - 1)) * w - barWidth / 2;
+      const barHeight = ((Number(candle.volume) || 0) / maxVolume) * (pad.bottom - 5);
+      const y = height - barHeight;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" ` +
+        `height="${barHeight.toFixed(1)}" rx="1" fill="rgba(56,189,248,0.32)"/>`;
+    }).join("");
+
+    const last = points[points.length - 1];
+
+    return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" ` +
+      `preserveAspectRatio="none" role="img" aria-label="candles recentes">` +
+      `<line x1="${pad.left}" y1="${(pad.top + priceH).toFixed(1)}" ` +
+      `x2="${pad.left + w}" y2="${(pad.top + priceH).toFixed(1)}" ` +
+      `stroke="rgba(143,161,189,0.14)" stroke-width="1"/>` +
+      `${bars}` +
+      `<path d="${path}" fill="none" stroke="#38bdf8" stroke-width="2" ` +
+      `stroke-linejoin="round" stroke-linecap="round"/>` +
+      `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="#38bdf8"/>` +
+      `</svg>`;
+  }
+
+  function bubbleScatterHtml(bubbles) {
+    if (!bubbles || bubbles.length === 0) {
+      return `<div class="chart-empty">Sem bubbles recentes</div>`;
+    }
+
+    const width = 680;
+    const height = 170;
+    const pad = { top: 14, right: 12, bottom: 26, left: 58 };
+    const plotW = width - pad.left - pad.right;
+    const plotH = height - pad.top - pad.bottom;
+
+    const times = bubbles
+      .map((b) => new Date(b.date).getTime())
+      .filter((v) => Number.isFinite(v));
+    const prices = bubbles
+      .map((b) => Number(b.price))
+      .filter((v) => Number.isFinite(v));
+    const amounts = bubbles.map((b) => Number(b.amount) || 0);
+
+    if (times.length === 0 || prices.length === 0) {
+      return `<div class="chart-empty">Sem dados de bubbles</div>`;
+    }
+
+    let minT = Math.min(...times);
+    let maxT = Math.max(...times);
+    if (minT === maxT) {
+      minT -= 60000;
+      maxT += 60000;
+    }
+
+    let minP = Math.min(...prices);
+    let maxP = Math.max(...prices);
+    const pricePad = (maxP - minP) * 0.12 || 1;
+    minP -= pricePad;
+    maxP += pricePad;
+
+    const maxAmount = Math.max(...amounts, 1);
+    const x = (t) => pad.left + ((t - minT) / (maxT - minT || 1)) * plotW;
+    const y = (p) => pad.top + plotH - ((p - minP) / (maxP - minP || 1)) * plotH;
+    const radius = (amount) => 3 + Math.sqrt(amount / maxAmount) * 10;
+
+    const grid = [0.25, 0.5, 0.75].map((fraction) => {
+      const gy = pad.top + plotH * fraction;
+      return `<line x1="${pad.left}" y1="${gy.toFixed(1)}" ` +
+        `x2="${(pad.left + plotW).toFixed(1)}" y2="${gy.toFixed(1)}" ` +
+        `stroke="rgba(143,161,189,0.12)" stroke-width="1"/>`;
+    }).join("");
+
+    const points = bubbles.map((bubble) => {
+      const t = new Date(bubble.date).getTime();
+      const p = Number(bubble.price);
+      if (!Number.isFinite(t) || !Number.isFinite(p)) return "";
+
+      const color = bubble.actionType === "Buy"
+        ? "#22c55e"
+        : bubble.actionType === "Sale"
+          ? "#ef4444"
+          : "#94a3b8";
+      const agent = bubble.agentName || (bubble.agent != null ? `#${bubble.agent}` : "—");
+      const title = `${formatDateTime(bubble.date)} · ${agent} · ` +
+        `${formatNumber(bubble.amount)} @ ${formatPrice(bubble.price)} · ` +
+        `${bubble.actionType || "—"}`;
+
+      return `<circle cx="${x(t).toFixed(1)}" cy="${y(p).toFixed(1)}" ` +
+        `r="${radius(Number(bubble.amount) || 0).toFixed(1)}" fill="${color}" ` +
+        `fill-opacity="0.55" stroke="${color}" stroke-width="1">` +
+        `<title>${safe(title)}</title></circle>`;
+    }).join("");
+
+    const priceLabels = [minP, maxP].map((value, index) => {
+      const py = index === 0 ? pad.top + plotH : pad.top;
+      return `<text x="${pad.left - 6}" y="${(py + 3).toFixed(1)}" ` +
+        `text-anchor="end" font-size="9" fill="rgba(143,161,189,0.8)">` +
+        `${formatPrice(value)}</text>`;
+    }).join("");
+
+    const timeLabels = [minT, maxT].map((value, index) => {
+      const tx = index === 0 ? pad.left : pad.left + plotW;
+      const anchor = index === 0 ? "start" : "end";
+      return `<text x="${tx.toFixed(1)}" y="${height - 6}" text-anchor="${anchor}" ` +
+        `font-size="9" fill="rgba(143,161,189,0.8)">` +
+        `${formatTime(new Date(value))}</text>`;
+    }).join("");
+
+    return `
+      <svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="bubbles recentes">
+        ${grid}
+        ${priceLabels}
+        ${timeLabels}
+        ${points}
+      </svg>
+      <div class="chart-legend" style="margin-top:4px;">
+        <span><span class="legend-dot" style="background:#22c55e"></span>compra</span>
+        <span><span class="legend-dot" style="background:#ef4444"></span>venda</span>
+        <span><span class="legend-dot" style="background:#94a3b8"></span>outros</span>
+        <span>tamanho = quantidade</span>
+      </div>
+    `;
+  }
+
+  function structureLadderHtml(symbol) {
+    const wanted = [1, 5, 15, 1440];
+    const rows = (symbol.structure ?? [])
+      .filter((s) => wanted.includes(Number(s.timeFrame)))
+      .sort((a, b) => Number(a.timeFrame) - Number(b.timeFrame))
+      .map((structure) => {
+        const tf = Number(structure.timeFrame);
+        const candle = (symbol.candles ?? []).find((c) => Number(c.timeFrame) === tf);
+        const fallback = (symbol.candles ?? []).find((c) => Number(c.timeFrame) === 1);
+        const price = candle?.close ?? fallback?.close ?? null;
+        return ladderRow(tfLabel(tf), structure, price);
+      })
+      .join("");
+
+    return rows || `<div class="chart-empty">Sem estrutura calculada</div>`;
+  }
+
+  function ladderRow(label, structure, price) {
+    const down = Number(structure.downBorder);
+    const up = Number(structure.upBorder);
+    const current = Number(price);
+    const hasPrice = Number.isFinite(current);
+
+    const values = [down, up, hasPrice ? current : null].filter((v) => Number.isFinite(v));
+    if (values.length === 0) return "";
+
+    let min = Math.min(...values);
+    let max = Math.max(...values);
+    const padding = (max - min) * 0.06 || 1;
+    min -= padding;
+    max += padding;
+
+    const width = 320;
+    const x = (value) => ((value - min) / (max - min)) * width;
+    const downX = x(down);
+    const upX = x(up);
+    const priceX = hasPrice ? x(current) : null;
+    const rangeLeft = Math.min(downX, upX);
+    const rangeWidth = Math.abs(upX - downX);
+    const inside = hasPrice && current >= Math.min(down, up) && current <= Math.max(down, up);
+    const markerColor = inside ? "#22c55e" : "#f59e0b";
+
+    return `
+      <div class="ladder-row">
+        <span class="ladder-label">${safe(label)}</span>
+        <div>
+          <svg class="ladder-svg" viewBox="0 0 ${width} 26" preserveAspectRatio="none" role="img" aria-label="${safe(label)} estrutura">
+            <rect x="0" y="10" width="${width}" height="6" rx="3" fill="rgba(143,161,189,0.16)"/>
+            <rect x="${rangeLeft.toFixed(1)}" y="10" width="${Math.max(2, rangeWidth).toFixed(1)}" height="6" rx="3" fill="rgba(56,189,248,0.35)" stroke="rgba(56,189,248,0.65)"/>
+            ${priceX == null ? "" : `<line x1="${priceX.toFixed(1)}" y1="3" x2="${priceX.toFixed(1)}" y2="23" stroke="${markerColor}" stroke-width="2"/><circle cx="${priceX.toFixed(1)}" cy="13" r="3.2" fill="${markerColor}"/>`}
+          </svg>
+          <div class="ladder-values"><span>${formatPrice(down)}</span><span>${formatPrice(up)}</span></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function dailyTimelineHtml(symbol) {
+    const timeline = state.structureTimelines[symbol.symbol];
+    if (timeline == null) {
+      return `<div class="chart-empty">${state.timelineLoading ? "Carregando histórico 1D…" : "Histórico 1D indisponível"}</div>`;
+    }
+
+    const byDate = new Map();
+    for (const item of timeline) {
+      const key = String(item.date ?? "").slice(0, 10);
+      if (key) byDate.set(key, item);
+    }
+
+    const days = lastBusinessDays(10);
+    const todayIso = toIsoDate(new Date());
+    const tradeDates = state.tradeDates[symbol.symbol];
+
+    const dots = days.map((day) => {
+      const iso = toIsoDate(day);
+      const item = byDate.get(iso);
+      const isToday = iso === todayIso;
+      const hasTrade = tradeDates ? tradeDates.has(iso) : true;
+      const cls = item ? "ok" : isToday ? "pending" : hasTrade ? "missing" : "no-trade";
+      const label = `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+      const title = item
+        ? `${label} · estrutura ok (up ${formatPrice(item.upBorder)} / down ${formatPrice(item.downBorder)})`
+        : isToday
+          ? `${label} · hoje (em formação; fecha no fim do dia)`
+          : hasTrade
+            ? `${label} · sem estrutura 1D`
+            : `${label} · sem pregão (feriado/fim de semana)`;
+      return `<div class="timeline-day ${cls}" title="${safe(title)}"></div>`;
+    }).join("");
+
+    const labels = days.map((day) => {
+      const iso = toIsoDate(day);
+      return `<span>${safe(iso.slice(8, 10))}/${safe(iso.slice(5, 7))}</span>`;
+    }).join("");
+
+    const missing = days.filter((day) => {
+      const iso = toIsoDate(day);
+      const hasTrade = tradeDates ? tradeDates.has(iso) : true;
+      return iso !== todayIso && hasTrade && !byDate.has(iso);
+    }).length;
+
+    return `
+      <div class="timeline-track">${dots}</div>
+      <div class="timeline-labels">${labels}</div>
+      <div class="chart-legend" style="margin-top:8px;">
+        <span><span class="legend-dot" style="background:var(--ok)"></span>com estrutura</span>
+        <span><span class="legend-dot" style="background:var(--error)"></span>sem estrutura</span>
+        <span><span class="legend-dot" style="background:var(--idle)"></span>hoje (em formação)</span>
+        <span><span class="legend-dot" style="background:rgba(100,116,139,0.35)"></span>sem pregão</span>
+      </div>
+      <div class="chart-note" style="margin-top:6px;">
+        ${missing > 0
+          ? `<strong>${missing} dia(s) de pregão sem estrutura 1D</strong> na janela. A estrutura é calculada no fechamento diário; se o servidor ficou off na virada, o dia fica sem registro.`
+          : "Cobertura 1D completa nos dias de pregão da janela exibida."}
+      </div>
+    `;
+  }
+
+  function lastBusinessDays(count) {
+    const days = [];
+    const cursor = new Date();
+    cursor.setHours(0, 0, 0, 0);
+
+    while (days.length < count) {
+      const dow = cursor.getDay();
+      if (dow !== 0 && dow !== 6) days.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    return days.reverse();
+  }
+
+  function toIsoDate(date) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   function renderFooter() {
@@ -648,6 +1210,24 @@
       if (event.target.open) loadReferenceAgents();
     });
 
+    // Persiste o estado de expandido/recolhido entre os polls de 5s.
+    // Usamos "click" (e não "toggle") para não sermos afetados por eventos
+    // disparados quando o DOM é recriado a cada atualização.
+    el("symbols").addEventListener("click", (event) => {
+      const summary = event.target.closest("summary.symbol-head");
+      if (!summary) return;
+
+      const details = summary.closest("details.symbol-card");
+      if (!details) return;
+
+      const symbol = details.dataset.symbol;
+      if (!symbol) return;
+
+      // O <details> nativo inverte o estado logo após o clique.
+      if (details.open) state.collapsedSymbols.add(symbol);
+      else state.collapsedSymbols.delete(symbol);
+    });
+
     document.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-copy]");
       if (!button) return;
@@ -668,6 +1248,8 @@
   /* ------------------------------------------------------------------ */
   /* Boot                                                                */
   /* ------------------------------------------------------------------ */
+
+  if (!ensureHttps()) return;
 
   bindEvents();
   updateCountdown();

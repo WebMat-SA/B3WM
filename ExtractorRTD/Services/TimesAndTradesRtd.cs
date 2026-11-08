@@ -73,6 +73,27 @@ namespace ExtractorRTD.Services
         private const char UnknownAgentSeparator =
             '\u0001';
 
+        // Mapa nome-normalizado -> enum, montado a partir do próprio enum
+        // (nome do membro + Description). Assim o ParseAgent usa o nome que o
+        // Profit envia (ex.: "Warren Rena" -> 92) sem aliases hardcoded:
+        // basta a Description do enum estar correta.
+        private static readonly Dictionary<
+            string,
+            Ticks2.Agents>
+            _agentNameMap =
+                BuildAgentNameMap();
+
+        // Cache nome-bruto -> enum, para não normalizar/alocar a cada tick.
+        // Só guarda nomes já mapeados; desconhecidos seguem o fluxo de report.
+        private static readonly ConcurrentDictionary<
+            string,
+            Ticks2.Agents>
+            _agentLookupCache =
+                new ConcurrentDictionary<
+                    string,
+                    Ticks2.Agents>(
+                        StringComparer.OrdinalIgnoreCase);
+
         private static int _nextTopicId = 1;
 
         [STAThread]
@@ -685,6 +706,57 @@ namespace ExtractorRTD.Services
             return false;
         }
 
+        private static string NormalizeAgentName(
+            string value)
+        {
+            return value
+                .Trim()
+                .Replace("-", "_")
+                .Replace(" ", "_")
+                .ToUpperInvariant();
+        }
+
+        /// <summary>
+        /// Monta o mapa a partir do próprio enum: nome do membro + Description.
+        /// Assim o ParseAgent aceita tanto "Renascenca" quanto "Warren Rena"
+        /// (Description atual do código 92), sem aliases hardcoded.
+        /// </summary>
+        private static Dictionary<string, Ticks2.Agents> BuildAgentNameMap()
+        {
+            var map =
+                new Dictionary<string, Ticks2.Agents>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (var name in Enum.GetNames(
+                typeof(Ticks2.Agents)))
+            {
+                var agent =
+                    (Ticks2.Agents)
+                    Enum.Parse(
+                        typeof(Ticks2.Agents),
+                        name);
+
+                map[NormalizeAgentName(name)] = agent;
+
+                var description =
+                    typeof(Ticks2.Agents)
+                    .GetField(name)?
+                    .GetCustomAttributes(
+                        typeof(DescriptionAttribute),
+                        false)
+                    .OfType<DescriptionAttribute>()
+                    .FirstOrDefault()?
+                    .Description;
+
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    map[NormalizeAgentName(description)] = agent;
+                }
+            }
+
+            return map;
+        }
+
         private static Ticks2.Agents ParseAgent(
             string value,
             string symbol)
@@ -695,24 +767,20 @@ namespace ExtractorRTD.Services
             var rawName =
                 value.Trim();
 
-            var normalized =
-                rawName
-                .Replace("-", "_")
-                .Replace(" ", "_");
-
-            foreach (var name in Enum.GetNames(
-                typeof(Ticks2.Agents)))
+            // Fast path: nome já resolvido anteriormente (sem normalizar/alocar).
+            if (_agentLookupCache.TryGetValue(
+                rawName,
+                out var cached))
             {
-                if (name.Equals(
-                    normalized,
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    return
-                        (Ticks2.Agents)
-                        Enum.Parse(
-                            typeof(Ticks2.Agents),
-                            name);
-                }
+                return cached;
+            }
+
+            if (_agentNameMap.TryGetValue(
+                NormalizeAgentName(rawName),
+                out var agent))
+            {
+                _agentLookupCache.TryAdd(rawName, agent);
+                return agent;
             }
 
             // Guarda o nome bruto para o dashboard permitir a inclusão no enum.

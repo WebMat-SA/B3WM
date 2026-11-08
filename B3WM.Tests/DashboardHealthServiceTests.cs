@@ -152,4 +152,81 @@ public class DashboardHealthServiceTests
         Assert.Equal("BGC_Liquidez", DashboardHealthService.AgentName(122));
         Assert.Equal("", DashboardHealthService.AgentName(999999));
     }
+
+    [Fact]
+    public void RecordTicks_ConcurrentWritesAndReads_AreSafeAndExact()
+    {
+        var health = new DashboardHealthService();
+
+        const int symbolCount = 4;
+        const int batchesPerSymbol = 2000;
+        const int batchSize = 8;
+
+        var symbols = Enumerable.Range(0, symbolCount).Select(i => $"SYM{i}").ToArray();
+        var batch = Enumerable.Range(0, batchSize)
+            .Select(_ => Tick(122, 114))
+            .ToArray();
+
+        var start = new ManualResetEventSlim(false);
+        var stop = new[] { 0 };
+
+        var writers = symbols.Select(symbol => Task.Run(() =>
+        {
+            start.Wait();
+            for (var i = 0; i < batchesPerSymbol; i++)
+                health.RecordTicks(symbol, batch);
+        })).ToArray();
+
+        var reader = Task.Run(() =>
+        {
+            start.Wait();
+            while (Volatile.Read(ref stop[0]) == 0)
+            {
+                foreach (var symbol in symbols)
+                    Assert.True(health.GetSymbolMetrics(symbol).TotalTicks >= 0);
+
+                health.GetUnknownAgents();
+                health.GetRecentErrors(50);
+                health.GetHeartbeat("WINFUT:tickprocessor");
+            }
+        });
+
+        start.Set();
+        Task.WaitAll(writers);
+        Volatile.Write(ref stop[0], 1);
+        Assert.True(reader.Wait(TimeSpan.FromSeconds(30)));
+
+        foreach (var symbol in symbols)
+        {
+            var metrics = health.GetSymbolMetrics(symbol);
+            Assert.Equal(batchesPerSymbol * batchSize, metrics.TotalTicks);
+            Assert.Equal(batchesPerSymbol * batchSize, metrics.TicksLastMinute);
+            Assert.NotNull(metrics.FirstTickAt);
+            Assert.NotNull(metrics.LastTickAt);
+        }
+    }
+
+    [Fact]
+    public void RecordUnknownAgents_RespectsCapUnderConcurrency()
+    {
+        var health = new DashboardHealthService();
+        var total = DashboardHealthService.MaxUnknownAgents + 250;
+
+        Parallel.For(0, total, i =>
+            health.RecordBubbleAgent("WINFUT", 1_000_000 + i));
+
+        Assert.True(health.GetUnknownAgents().Count <= DashboardHealthService.MaxUnknownAgents);
+    }
+
+    [Fact]
+    public void RecordError_ConcurrentWrites_RespectsRingBuffer()
+    {
+        var health = new DashboardHealthService();
+
+        Parallel.For(0, DashboardHealthService.MaxRecentErrors * 4, i =>
+            health.RecordError("Warning", "Test", $"erro {i}"));
+
+        var errors = health.GetRecentErrors(int.MaxValue);
+        Assert.Equal(DashboardHealthService.MaxRecentErrors, errors.Count);
+    }
 }

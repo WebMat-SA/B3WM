@@ -1,5 +1,6 @@
 using B3WM.Shared.Entity;
 using B3WM.Shared.Models.Dashboard;
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace B3WM.Services.Dashboard
@@ -9,21 +10,44 @@ namespace B3WM.Services.Dashboard
     /// serviços (ticks, bubbles, heartbeats, erros) e lido pelo
     /// <c>DashboardController</c> no polling de 5s.
     ///
-    /// Tudo é thread-safe: o DataHub grava em paralelo com os loops dos
-    /// serviços e o controller lê a qualquer momento.
+    /// O caminho quente (ticks/heartbeats) é livre de lock: usa apenas
+    /// coleções concorrentes e <see cref="Interlocked"/>. Os locks dedicados
+    /// existem só para manter invariantes exatos em rotas de baixa frequência
+    /// (criação de agente desconhecido, buffer de erros e sonda do bridge).
+    /// Nada aqui alimenta decisão de trading: o snapshot pode ser eventualmente
+    /// consistente entre campos, mas nunca corrompido.
     /// </summary>
     public sealed class DashboardHealthService
     {
         public const int MaxRecentErrors = 200;
-        private const int MaxUnknownAgents = 500;
+        public const int MaxUnknownAgents = 500;
         private static readonly TimeSpan PythonCacheTtl = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan PythonProbeTimeout = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan DataDirectoryCacheTtl = TimeSpan.FromSeconds(60);
 
-        private readonly object _lock = new();
-        private readonly Dictionary<string, SymbolMetrics> _symbols = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, UnknownAgentRecord> _unknownAgents = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Queue<DashboardRecentError> _errors = new();
-        private readonly Dictionary<string, DateTime> _heartbeats = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Set imutável dos códigos válidos — evita reflexão por tick.</summary>
+        private static readonly HashSet<int> KnownAgents =
+            new(Enum.GetValues<Ticks2.Agents>().Select(static a => (int)a));
+
+        // Lock dedicado: só na criação de um registro de agente desconhecido
+        // (primeira vez que a chave aparece), nunca em updates.
+        private readonly object _agentLock = new();
+
+        // Lock dedicado: só no enfileiramento/trim do buffer de erros.
+        private readonly object _errorLock = new();
+
+        // Lock dedicado: só em volta da sonda do bridge Python (cache de 10s).
+        private readonly SemaphoreSlim _pythonLock = new(1, 1);
+
+        // Lock dedicado: só na revalidação da sonda de escrita do diretório (cache de 60s).
+        private readonly object _dataDirLock = new();
+
+        private readonly ConcurrentDictionary<string, SymbolMetrics> _symbols = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, UnknownAgentRecord> _unknownAgents = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentQueue<DashboardRecentError> _errors = new();
+        private readonly ConcurrentDictionary<string, long> _heartbeats = new(StringComparer.OrdinalIgnoreCase);
+
+        private int _unknownAgentCount;
 
         private readonly DateTime _startedAt = DateTime.Now;
         private readonly IServiceProvider? _services;
@@ -32,13 +56,12 @@ namespace B3WM.Services.Dashboard
         private int _connectedClients;
         private long _totalConnections;
 
-        private DateTime? _jevLastCallAt;
-        private string? _jevLastResult;
-        private long? _jevLastLatencyMs;
-        private int? _jevLastHttpStatus;
+        private JevState _jev = new(null, null, null, null);
 
-        private DashboardPythonBridgeHealth? _pythonCache;
-        private DateTime _pythonCacheAt = DateTime.MinValue;
+        private PythonCache? _pythonCache;
+
+        private DashboardDataDirectory? _dataDirCache;
+        private long _dataDirAtTicks;
 
         public DashboardHealthService(
             IServiceProvider? services = null,
@@ -64,29 +87,32 @@ namespace B3WM.Services.Dashboard
                 return;
 
             var now = DateTime.Now;
-            var unknown = new List<int>();
+            List<int>? unknown = null;
 
             foreach (var tick in ticks)
             {
                 if (tick == null) continue;
-                if (!IsKnownAgent((int)tick.Buyer)) unknown.Add((int)tick.Buyer);
-                if (!IsKnownAgent((int)tick.Seller)) unknown.Add((int)tick.Seller);
+
+                // Código 0 = fallback do ExtractorRTD quando ele não mapeia o
+                // nome. O nome bruto chega separado via ReportUnknownAgents;
+                // registrar o 0 aqui só duplicaria a linha no dashboard.
+                var buyer = (int)tick.Buyer;
+                if (buyer != 0 && !IsKnownAgent(buyer))
+                    (unknown ??= new List<int>()).Add(buyer);
+
+                var seller = (int)tick.Seller;
+                if (seller != 0 && !IsKnownAgent(seller))
+                    (unknown ??= new List<int>()).Add(seller);
             }
 
-            lock (_lock)
-            {
-                var metrics = GetOrCreateMetrics(symbol);
-                metrics.FirstTickAt ??= now;
-                metrics.LastTickAt = now;
-                metrics.TotalTicks += ticks.Length;
-                metrics.TickBatches.Enqueue((now, ticks.Length));
-                PruneTickBatches(metrics, now);
+            var metrics = _symbols.GetOrAdd(symbol, static _ => new SymbolMetrics());
+            metrics.RecordBatch(now, ticks.Length);
 
+            if (unknown is { Count: > 0 })
+            {
                 foreach (var code in unknown.Distinct())
-                {
-                    RecordUnknownAgentLocked(symbol, code, "", "tick", now);
-                    metrics.LastUnknownAgentAt = now;
-                }
+                    RecordUnknownAgent(symbol, code, "", "tick", now);
+                metrics.TouchUnknownAgent(now);
             }
         }
 
@@ -97,12 +123,8 @@ namespace B3WM.Services.Dashboard
                 return;
 
             var now = DateTime.Now;
-            lock (_lock)
-            {
-                RecordUnknownAgentLocked(symbol, agent, "", "bubble", now);
-                var metrics = GetOrCreateMetrics(symbol);
-                metrics.LastUnknownAgentAt = now;
-            }
+            RecordUnknownAgent(symbol, agent, "", "bubble", now);
+            _symbols.GetOrAdd(symbol, static _ => new SymbolMetrics()).TouchUnknownAgent(now);
         }
 
         /// <summary>
@@ -115,46 +137,39 @@ namespace B3WM.Services.Dashboard
                 return;
 
             var now = DateTime.Now;
-            lock (_lock)
+            var metrics = _symbols.GetOrAdd(symbol, static _ => new SymbolMetrics());
+
+            foreach (var raw in rawNames.Take(200))
             {
-                var metrics = GetOrCreateMetrics(symbol);
-                foreach (var raw in rawNames.Take(200))
-                {
-                    if (string.IsNullOrWhiteSpace(raw)) continue;
-                    var name = raw.Trim();
-                    RecordUnknownAgentLocked(symbol, 0, name, "extractor", now);
-                    metrics.LastUnknownAgentAt = now;
-                }
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                RecordUnknownAgent(symbol, 0, raw.Trim(), "extractor", now);
+                metrics.TouchUnknownAgent(now);
             }
         }
 
-        public static bool IsKnownAgent(int agent) =>
-            Enum.IsDefined(typeof(Ticks2.Agents), agent);
+        public static bool IsKnownAgent(int agent) => KnownAgents.Contains(agent);
 
         public static string AgentName(int agent) =>
             IsKnownAgent(agent) ? ((Ticks2.Agents)agent).ToString() : "";
 
         public IReadOnlyList<DashboardUnknownAgent> GetUnknownAgents()
         {
-            lock (_lock)
-            {
-                return _unknownAgents.Values
-                    .OrderByDescending(r => r.LastSeenAt)
-                    .Select(r => new DashboardUnknownAgent
-                    {
-                        AgentCode = r.AgentCode,
-                        AgentName = AgentName(r.AgentCode),
-                        RawNames = string.IsNullOrWhiteSpace(r.RawName)
-                            ? new List<string>()
-                            : new List<string> { r.RawName },
-                        Symbols = r.Symbols.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList(),
-                        Count = r.Count,
-                        FirstSeenAt = r.FirstSeenAt,
-                        LastSeenAt = r.LastSeenAt,
-                        Source = r.Source,
-                    })
-                    .ToList();
-            }
+            return _unknownAgents.Values
+                .OrderByDescending(r => r.LastSeenAt)
+                .Select(r => new DashboardUnknownAgent
+                {
+                    AgentCode = r.AgentCode,
+                    AgentName = AgentName(r.AgentCode),
+                    RawNames = string.IsNullOrWhiteSpace(r.RawName)
+                        ? new List<string>()
+                        : new List<string> { r.RawName },
+                    Symbols = r.Symbols.Keys.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList(),
+                    Count = Interlocked.Read(ref r.Count),
+                    FirstSeenAt = r.FirstSeenAt,
+                    LastSeenAt = r.LastSeenAt,
+                    Source = r.Source,
+                })
+                .ToList();
         }
 
         // ------------------------------------------------------------------
@@ -163,22 +178,23 @@ namespace B3WM.Services.Dashboard
 
         public DashboardSymbolMetrics GetSymbolMetrics(string symbol)
         {
-            lock (_lock)
+            if (!_symbols.TryGetValue(symbol, out var metrics))
+                return new DashboardSymbolMetrics();
+
+            PruneTickBatches(metrics, DateTime.Now);
+
+            long ticksLastMinute = 0;
+            foreach (var (_, count) in metrics.TickBatches)
+                ticksLastMinute += count;
+
+            return new DashboardSymbolMetrics
             {
-                if (!_symbols.TryGetValue(symbol, out var metrics))
-                    return new DashboardSymbolMetrics();
-
-                PruneTickBatches(metrics, DateTime.Now);
-
-                return new DashboardSymbolMetrics
-                {
-                    FirstTickAt = metrics.FirstTickAt,
-                    LastTickAt = metrics.LastTickAt,
-                    TotalTicks = metrics.TotalTicks,
-                    TicksLastMinute = metrics.TickBatches.Sum(b => (long)b.Count),
-                    LastUnknownAgentAt = metrics.LastUnknownAgentAt,
-                };
-            }
+                FirstTickAt = metrics.FirstTickAt,
+                LastTickAt = metrics.LastTickAt,
+                TotalTicks = metrics.TotalTicks,
+                TicksLastMinute = ticksLastMinute,
+                LastUnknownAgentAt = metrics.LastUnknownAgentAt,
+            };
         }
 
         // ------------------------------------------------------------------
@@ -188,14 +204,13 @@ namespace B3WM.Services.Dashboard
         public void RecordHeartbeat(string key)
         {
             if (string.IsNullOrWhiteSpace(key)) return;
-            lock (_lock) _heartbeats[key] = DateTime.Now;
+            _heartbeats[key] = DateTime.Now.Ticks;
         }
 
-        public DateTime? GetHeartbeat(string key)
-        {
-            lock (_lock)
-                return _heartbeats.TryGetValue(key, out var at) ? at : null;
-        }
+        public DateTime? GetHeartbeat(string key) =>
+            _heartbeats.TryGetValue(key, out var ticks)
+                ? new DateTime(ticks, DateTimeKind.Local)
+                : null;
 
         // ------------------------------------------------------------------
         // Erros recentes
@@ -214,23 +229,24 @@ namespace B3WM.Services.Dashboard
                 ExceptionMessage = Truncate(exceptionMessage, 2000),
             };
 
-            lock (_lock)
+            lock (_errorLock)
             {
                 _errors.Enqueue(item);
                 while (_errors.Count > MaxRecentErrors)
-                    _errors.Dequeue();
+                    _errors.TryDequeue(out _);
             }
         }
 
         public IReadOnlyList<DashboardRecentError> GetRecentErrors(int max = 100)
         {
-            lock (_lock)
-            {
-                return _errors
-                    .Reverse()
-                    .Take(Math.Clamp(max, 1, MaxRecentErrors))
-                    .ToList();
-            }
+            var take = Math.Clamp(max, 1, MaxRecentErrors);
+            var snapshot = _errors.ToArray(); // mais antigo -> mais recente
+
+            var result = new List<DashboardRecentError>(Math.Min(take, snapshot.Length));
+            for (var i = snapshot.Length - 1; i >= 0 && result.Count < take; i--)
+                result.Add(snapshot[i]);
+
+            return result;
         }
 
         // ------------------------------------------------------------------
@@ -239,19 +255,13 @@ namespace B3WM.Services.Dashboard
 
         public void RecordJevCall(bool success, long latencyMs, int httpStatus, string result)
         {
-            lock (_lock)
-            {
-                _jevLastCallAt = DateTime.Now;
-                _jevLastResult = result;
-                _jevLastLatencyMs = latencyMs;
-                _jevLastHttpStatus = httpStatus;
-            }
+            Volatile.Write(ref _jev, new JevState(DateTime.Now, result, latencyMs, httpStatus));
         }
 
         public (DateTime? LastCallAt, string? LastResult, long? LatencyMs, int? HttpStatus) GetJevCall()
         {
-            lock (_lock)
-                return (_jevLastCallAt, _jevLastResult, _jevLastLatencyMs, _jevLastHttpStatus);
+            var state = Volatile.Read(ref _jev);
+            return (state.LastCallAt, state.LastResult, state.LatencyMs, state.HttpStatus);
         }
 
         // ------------------------------------------------------------------
@@ -282,21 +292,25 @@ namespace B3WM.Services.Dashboard
 
         public async Task<DashboardPythonBridgeHealth> GetPythonBridgeAsync(CancellationToken ct = default)
         {
-            lock (_lock)
+            var cache = Volatile.Read(ref _pythonCache);
+            if (cache != null && DateTime.Now - cache.At < PythonCacheTtl)
+                return cache.Value;
+
+            await _pythonLock.WaitAsync(ct);
+            try
             {
-                if (_pythonCache != null && DateTime.Now - _pythonCacheAt < PythonCacheTtl)
-                    return _pythonCache;
+                cache = Volatile.Read(ref _pythonCache);
+                if (cache != null && DateTime.Now - cache.At < PythonCacheTtl)
+                    return cache.Value;
+
+                var result = await ProbePythonBridgeAsync(ct);
+                Volatile.Write(ref _pythonCache, new PythonCache(result, DateTime.Now));
+                return result;
             }
-
-            var result = await ProbePythonBridgeAsync(ct);
-
-            lock (_lock)
+            finally
             {
-                _pythonCache = result;
-                _pythonCacheAt = DateTime.Now;
+                _pythonLock.Release();
             }
-
-            return result;
         }
 
         private async Task<DashboardPythonBridgeHealth> ProbePythonBridgeAsync(CancellationToken ct)
@@ -371,6 +385,29 @@ namespace B3WM.Services.Dashboard
         // ------------------------------------------------------------------
 
         public DashboardDataDirectory GetDataDirectory()
+        {
+            // A sonda de escrita faz I/O; cacheia por 60s para não escrever um
+            // arquivo a cada poll de 5s. Fora do caminho de cálculos.
+            var cached = Volatile.Read(ref _dataDirCache);
+            if (cached != null &&
+                DateTime.Now.Ticks - Interlocked.Read(ref _dataDirAtTicks) < DataDirectoryCacheTtl.Ticks)
+                return cached;
+
+            lock (_dataDirLock)
+            {
+                cached = Volatile.Read(ref _dataDirCache);
+                if (cached != null &&
+                    DateTime.Now.Ticks - _dataDirAtTicks < DataDirectoryCacheTtl.Ticks)
+                    return cached;
+
+                var result = ProbeDataDirectory();
+                Volatile.Write(ref _dataDirCache, result);
+                Interlocked.Exchange(ref _dataDirAtTicks, DateTime.Now.Ticks);
+                return result;
+            }
+        }
+
+        private static DashboardDataDirectory ProbeDataDirectory()
         {
             const string path = "Data";
             var result = new DashboardDataDirectory { Path = path };
@@ -477,45 +514,54 @@ namespace B3WM.Services.Dashboard
         // Internos
         // ------------------------------------------------------------------
 
-        private SymbolMetrics GetOrCreateMetrics(string symbol)
-        {
-            if (!_symbols.TryGetValue(symbol, out var metrics))
-                _symbols[symbol] = metrics = new SymbolMetrics();
-            return metrics;
-        }
-
         private static void PruneTickBatches(SymbolMetrics metrics, DateTime now)
         {
-            var cutoff = now.AddMinutes(-1);
-            while (metrics.TickBatches.Count > 0 && metrics.TickBatches.Peek().At < cutoff)
-                metrics.TickBatches.Dequeue();
+            var cutoff = now.AddMinutes(-1).Ticks;
+            while (metrics.TickBatches.TryPeek(out var head) && head.AtTicks < cutoff)
+                metrics.TickBatches.TryDequeue(out _);
         }
 
-        private void RecordUnknownAgentLocked(string symbol, int code, string rawName,
+        /// <summary>
+        /// Cria/atualiza a linha do agente desconhecido. O lock dedicado só é
+        /// adquirido quando a chave ainda não existe; updates são atômicos.
+        /// </summary>
+        private void RecordUnknownAgent(string symbol, int code, string rawName,
             string source, DateTime now)
         {
-            var key = $"{source}|{code}|{rawName.ToUpperInvariant()}";
+            var key = string.Concat(source, "|", code.ToString(), "|", rawName.ToUpperInvariant());
+
             if (!_unknownAgents.TryGetValue(key, out var record))
             {
-                // Evita crescimento ilimitado se um cliente malformado reportar
-                // milhares de nomes diferentes.
-                if (_unknownAgents.Count >= MaxUnknownAgents)
-                    return;
-
-                record = new UnknownAgentRecord
+                lock (_agentLock)
                 {
-                    AgentCode = code,
-                    RawName = rawName,
-                    Source = source,
-                    FirstSeenAt = now,
-                };
-                _unknownAgents[key] = record;
+                    if (!_unknownAgents.TryGetValue(key, out record))
+                    {
+                        // Evita crescimento ilimitado se um cliente malformado
+                        // reportar milhares de nomes diferentes.
+                        if (Volatile.Read(ref _unknownAgentCount) >= MaxUnknownAgents)
+                            return;
+
+                        record = new UnknownAgentRecord
+                        {
+                            AgentCode = code,
+                            RawName = rawName,
+                            Source = source,
+                            FirstSeenAtTicks = now.Ticks,
+                            LastSeenTicks = now.Ticks,
+                        };
+                        _unknownAgents[key] = record;
+                        Interlocked.Increment(ref _unknownAgentCount);
+                    }
+                }
             }
 
-            record.Count++;
-            record.LastSeenAt = now;
-            record.Symbols.Add(symbol);
+            Interlocked.Increment(ref record.Count);
+            Interlocked.Exchange(ref record.LastSeenTicks, now.Ticks);
+            record.Symbols.TryAdd(symbol, 0);
         }
+
+        private static DateTime? FromTicks(long ticks) =>
+            ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Local);
 
         private static string Truncate(string? value, int max)
         {
@@ -525,11 +571,31 @@ namespace B3WM.Services.Dashboard
 
         private sealed class SymbolMetrics
         {
-            public DateTime? FirstTickAt;
-            public DateTime? LastTickAt;
-            public long TotalTicks;
-            public DateTime? LastUnknownAgentAt;
-            public readonly Queue<(DateTime At, int Count)> TickBatches = new();
+            private long _firstTickTicks;
+            private long _lastTickTicks;
+            private long _totalTicks;
+            private long _lastUnknownAgentTicks;
+
+            public readonly ConcurrentQueue<(long AtTicks, int Count)> TickBatches = new();
+
+            public DateTime? FirstTickAt => FromTicks(Volatile.Read(ref _firstTickTicks));
+            public DateTime? LastTickAt => FromTicks(Volatile.Read(ref _lastTickTicks));
+            public DateTime? LastUnknownAgentAt => FromTicks(Volatile.Read(ref _lastUnknownAgentTicks));
+            public long TotalTicks => Interlocked.Read(ref _totalTicks);
+
+            public void RecordBatch(DateTime now, int count)
+            {
+                var ticks = now.Ticks;
+                if (Volatile.Read(ref _firstTickTicks) == 0)
+                    Interlocked.CompareExchange(ref _firstTickTicks, ticks, 0);
+
+                Interlocked.Exchange(ref _lastTickTicks, ticks);
+                Interlocked.Add(ref _totalTicks, count);
+                TickBatches.Enqueue((ticks, count));
+            }
+
+            public void TouchUnknownAgent(DateTime now) =>
+                Interlocked.Exchange(ref _lastUnknownAgentTicks, now.Ticks);
         }
 
         private sealed class UnknownAgentRecord
@@ -537,11 +603,23 @@ namespace B3WM.Services.Dashboard
             public int AgentCode;
             public string RawName = "";
             public string Source = "";
-            public readonly HashSet<string> Symbols = new(StringComparer.OrdinalIgnoreCase);
+            public readonly ConcurrentDictionary<string, byte> Symbols =
+                new(StringComparer.OrdinalIgnoreCase);
             public long Count;
-            public DateTime FirstSeenAt;
-            public DateTime LastSeenAt;
+            public long FirstSeenAtTicks;
+            public long LastSeenTicks;
+
+            public DateTime FirstSeenAt =>
+                new(Volatile.Read(ref FirstSeenAtTicks), DateTimeKind.Local);
+
+            public DateTime LastSeenAt =>
+                new(Volatile.Read(ref LastSeenTicks), DateTimeKind.Local);
         }
+
+        private sealed record JevState(
+            DateTime? LastCallAt, string? LastResult, long? LatencyMs, int? HttpStatus);
+
+        private sealed record PythonCache(DashboardPythonBridgeHealth Value, DateTime At);
     }
 
     /// <summary>Cópia imutável das métricas de um símbolo.</summary>

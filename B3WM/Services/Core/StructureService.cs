@@ -95,7 +95,85 @@ namespace B3WM.Services.Core
                     await Regenerate();
             }
 
+            // 1440: se o servidor ficou fora no fechamento diário, a estrutura
+            // fica parada no último dia persistido. Faz backfill incremental
+            // dos candles diários faltantes (sem recalcular 365 dias).
+            if (TimeFrame == 1440 && _lastStructure != null)
+                await BackfillDailyAsync();
+
             _preloadedFor = today;
+        }
+
+        /// <summary>
+        /// Processa apenas os candles diários posteriores à última estrutura
+        /// conhecida. É o caso de o servidor ter ficado off na virada do dia:
+        /// o candle 1440 fecha no primeiro tick do dia seguinte e, sem o
+        /// servidor ligado, o StructureService não calcula aquele dia.
+        /// Persiste o resultado no arquivo da última data processada.
+        /// </summary>
+        private async Task BackfillDailyAsync()
+        {
+            var candleService = _serviceProvider.GetServices<CandleService>()
+                .FirstOrDefault(q => q.Symbol == Symbol && q.TimeFrame == TimeFrame);
+
+            if (candleService == null || _lastStructure == null ||
+                _lastStructure.Date == default)
+                return;
+
+            var today = DateTime.Today;
+            var start = _lastStructure.Date.Date.AddDays(1);
+            if (start > today)
+                return;
+
+            // Mesmo limite do Regenerate diário: não varre anos de arquivos.
+            var minStart = today.AddDays(-365);
+            if (start < minStart)
+                start = minStart;
+
+            DataKeep ??= new List<StructureStorageItem>();
+
+            var processed = 0;
+            var lastProcessedDate = _lastStructure.Date.Date;
+
+            for (var date = start; date <= today; date = date.AddDays(1))
+            {
+                var candlePath =
+                    $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{date:yyyy-MM-dd}.json";
+
+                var candles = await candleService.GetDataAsync(candlePath);
+                if (candles is not { Count: > 0 })
+                    continue;
+
+                foreach (var candle in candles.OrderBy(c => c.Date))
+                {
+                    if (candle == null)
+                        continue;
+
+                    await Calculate(candle, skipPreLoad: true, broadcast: false, persist: false);
+                    processed++;
+                    lastProcessedDate = candle.Date.Date;
+                }
+            }
+
+            if (processed == 0)
+                return;
+
+            // Remove duplicatas de data (o arquivo do dia pode já conter parte
+            // do histórico) e mantém a versão mais recente de cada dia.
+            DataKeep = DataKeep
+                .GroupBy(s => s.Date.Date)
+                .Select(g => g.OrderByDescending(s => s.Date).First())
+                .OrderBy(s => s.Date)
+                .ToList();
+
+            var persistPath =
+                $"{Symbol}_{nameof(StructureService)}_{TimeFrame}MIN_{_minDistanceUpdateBorder}_{lastProcessedDate:yyyy-MM-dd}.json";
+
+            await WriteFileAsync(DataKeep, persistPath);
+
+            _logger.LogInformation(
+                "[structure-backfill] {Symbol} {TimeFrame}MIN: {Processed} candles, last={Last:yyyy-MM-dd}",
+                Symbol, TimeFrame, processed, _lastStructure?.Date);
         }
 
         public async Task Regenerate(bool broadcastEach = false)

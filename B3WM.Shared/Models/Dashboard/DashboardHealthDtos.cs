@@ -56,6 +56,35 @@ namespace B3WM.Shared.Models.Dashboard
         public DashboardValueHealth Vwap { get; set; } = new();
         public DashboardOrchestrationHealth Orchestration { get; set; } = new();
         public DashboardStrategyHealth Strategies { get; set; } = new();
+        public DashboardChartData Charts { get; set; } = new();
+    }
+
+    /// <summary>Série curta para os sparklines do dashboard.</summary>
+    public sealed class DashboardChartData
+    {
+        public List<DashboardCandlePoint> Candles1Min { get; set; } = new();
+        public List<DashboardCandlePoint> Candles5Min { get; set; } = new();
+        public List<DashboardBubblePoint> Bubbles { get; set; } = new();
+    }
+
+    public sealed class DashboardBubblePoint
+    {
+        public DateTime Date { get; set; }
+        public int Agent { get; set; }
+        public string AgentName { get; set; } = "";
+        public decimal Amount { get; set; }
+        public double Price { get; set; }
+        public string ActionType { get; set; } = "";
+    }
+
+    public sealed class DashboardCandlePoint
+    {
+        public DateTime Date { get; set; }
+        public double Open { get; set; }
+        public double High { get; set; }
+        public double Low { get; set; }
+        public double Close { get; set; }
+        public long Volume { get; set; }
     }
 
     public sealed class DashboardDataSourceHealth

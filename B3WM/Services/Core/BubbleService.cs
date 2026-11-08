@@ -33,6 +33,11 @@ namespace B3WM.Services.Core
 
         private BubbleStorageItem _lastItem { get; set; }  = new BubbleStorageItem();
 
+        // Últimas bubbles para o gráfico do dashboard (preço x tempo x qtd).
+        private const int MaxRecentBubbles = 50;
+        private readonly object _recentLock = new();
+        private readonly Queue<BubbleStorageItem> _recentBubbles = new();
+
         public override string Path => $"{Symbol}_{nameof(BubbleService)}_{DateTime.Now:yyyy-MM-dd}.json";
 
         public BubbleService(string symbol, int bubbleThreshold, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<BubbleService> logger, DashboardHealthService? health = null)
@@ -54,10 +59,42 @@ namespace B3WM.Services.Core
 
         public BubbleStorageItem GetSnapshot() => _lastItem;
 
+        /// <summary>Últimas bubbles em memória, para o scatter do dashboard.</summary>
+        public IReadOnlyList<BubbleStorageItem> GetRecentBubbles(int count)
+        {
+            lock (_recentLock)
+            {
+                var take = Math.Max(1, count);
+                return _recentBubbles
+                    .Skip(Math.Max(0, _recentBubbles.Count - take))
+                    .ToList();
+            }
+        }
+
         private async Task ProcessLoop()
         {
             // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.
             await LoadAsync();
+
+            // Semeia o gráfico com as últimas bubbles do arquivo do dia.
+            try
+            {
+                var recent = (DataKeep ?? new List<BubbleStorageItem>())
+                    .OrderBy(b => b.Date)
+                    .TakeLast(MaxRecentBubbles)
+                    .ToList();
+
+                lock (_recentLock)
+                {
+                    _recentBubbles.Clear();
+                    foreach (var item in recent)
+                        _recentBubbles.Enqueue(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "BubbleService seed recent bubbles error");
+            }
 
             await foreach (var ticks in _channel.Reader.ReadAllAsync())
             {
@@ -140,6 +177,13 @@ namespace B3WM.Services.Core
 
                     _lastItem = bubble;
                     _health?.RecordBubbleAgent(bubble.Symbol, bubble.Agent);
+
+                    lock (_recentLock)
+                    {
+                        _recentBubbles.Enqueue(bubble);
+                        while (_recentBubbles.Count > MaxRecentBubbles)
+                            _recentBubbles.Dequeue();
+                    }
 
                     _runningSum = 0;
                     _runningAgent = null;
