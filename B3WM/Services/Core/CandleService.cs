@@ -61,6 +61,36 @@ namespace B3WM.Services.Core
             }
         }
 
+        /// <summary>
+        /// Últimas barras fechadas + a barra aberta, para os sparklines do
+        /// dashboard. Não lê arquivo: usa o DataKeep em memória.
+        /// </summary>
+        public IReadOnlyList<BarStorageItem> GetRecentBars(int count)
+        {
+            lock (_barLock)
+            {
+                var result = new List<BarStorageItem>();
+
+                if (DataKeep is { Count: > 0 })
+                {
+                    // DataKeep é mantido ordenado por Date (UpsertBar).
+                    var start = Math.Max(0, DataKeep.Count - Math.Max(1, count));
+                    result.AddRange(DataKeep.Skip(start).Select(CloneBar));
+                }
+
+                if (_currentBar != null)
+                {
+                    var last = result.LastOrDefault();
+                    if (last == null || _currentBar.Date > last.Date)
+                        result.Add(CloneBar(_currentBar));
+                    else if (_currentBar.Date == last.Date)
+                        result[^1] = CloneBar(_currentBar);
+                }
+
+                return result;
+            }
+        }
+
         private async Task ProcessLoop()
         {
             // se houver arquivo no sistema com a especificação desse serviço, já carrega na memória para evitar perda de dados.

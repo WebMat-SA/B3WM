@@ -60,6 +60,40 @@ namespace ExtractorRTD.Services
                     string,
                     TradeCounter>();
 
+        // Nomes brutos de agentes que não existem no enum local. Chave:
+        // "{símbolo}\u0001{nome}". Reportados ao servidor para o dashboard.
+        private static readonly ConcurrentDictionary<
+            string,
+            byte>
+            _unknownAgents =
+                new ConcurrentDictionary<
+                    string,
+                    byte>();
+
+        private const char UnknownAgentSeparator =
+            '\u0001';
+
+        // Mapa nome-normalizado -> enum, montado a partir do próprio enum
+        // (nome do membro + Description). Assim o ParseAgent usa o nome que o
+        // Profit envia (ex.: "Warren Rena" -> 92) sem aliases hardcoded:
+        // basta a Description do enum estar correta.
+        private static readonly Dictionary<
+            string,
+            Ticks2.Agents>
+            _agentNameMap =
+                BuildAgentNameMap();
+
+        // Cache nome-bruto -> enum, para não normalizar/alocar a cada tick.
+        // Só guarda nomes já mapeados; desconhecidos seguem o fluxo de report.
+        private static readonly ConcurrentDictionary<
+            string,
+            Ticks2.Agents>
+            _agentLookupCache =
+                new ConcurrentDictionary<
+                    string,
+                    Ticks2.Agents>(
+                        StringComparer.OrdinalIgnoreCase);
+
         private static int _nextTopicId = 1;
 
         [STAThread]
@@ -366,8 +400,8 @@ namespace ExtractorRTD.Services
                                 Time = time,
                                 Value = price,
                                 Volume = qty,
-                                Buyer = ParseAgent(acp),
-                                Seller = ParseAgent(avd),
+                                Buyer = ParseAgent(acp, config.Symbol),
+                                Seller = ParseAgent(avd, config.Symbol),
                                 Starter = ParseAction(agr),
                                 Symbol = config.Symbol
                             });
@@ -457,7 +491,8 @@ namespace ExtractorRTD.Services
 
                 CleanupTradeCache();
 
-                if (_pendingTicks.Count > 0)
+                if (_pendingTicks.Count > 0 ||
+                    _unknownAgents.Count > 0)
                 {
                     SendTicks()
                         .GetAwaiter()
@@ -470,15 +505,19 @@ namespace ExtractorRTD.Services
         {
             try
             {
-                if (_pendingTicks.Count == 0)
-                    return;
-
                 if (hubConnection == null ||
                     hubConnection.State !=
                     HubConnectionState.Connected)
                 {
                     StartHubConnection();
                 }
+
+                // Reporta nomes de agentes fora do enum antes dos ticks, para
+                // o dashboard conseguir exibir o nome bruto a ser incluído.
+                await ReportUnknownAgents();
+
+                if (_pendingTicks.Count == 0)
+                    return;
 
                 // AGRUPA POR ATIVO
                 var grouped =
@@ -505,6 +544,42 @@ namespace ExtractorRTD.Services
             catch (Exception ex)
             {
                 Console.WriteLine(ex);
+            }
+        }
+
+        private static async Task ReportUnknownAgents()
+        {
+            if (_unknownAgents.Count == 0 ||
+                hubConnection == null ||
+                hubConnection.State != HubConnectionState.Connected)
+                return;
+
+            var grouped =
+                _unknownAgents
+                .Keys
+                .Select(key => key.Split(
+                    new[] { UnknownAgentSeparator }, 2))
+                .Where(parts => parts.Length == 2)
+                .GroupBy(parts => parts[0]);
+
+            foreach (var group in grouped)
+            {
+                var names =
+                    group
+                    .Select(parts => parts[1])
+                    .ToArray();
+
+                await hubConnection.SendAsync(
+                    "ReportUnknownAgents",
+                    group.Key,
+                    names);
+
+                foreach (var name in names)
+                {
+                    _unknownAgents.TryRemove(
+                        $"{group.Key}{UnknownAgentSeparator}{name}",
+                        out _);
+                }
             }
         }
 
@@ -631,31 +706,87 @@ namespace ExtractorRTD.Services
             return false;
         }
 
-        private static Ticks2.Agents ParseAgent(
+        private static string NormalizeAgentName(
             string value)
         {
-            if (string.IsNullOrWhiteSpace(value))
-                return 0;
-
-            value =
-                value
+            return value
+                .Trim()
                 .Replace("-", "_")
-                .Replace(" ", "_");
+                .Replace(" ", "_")
+                .ToUpperInvariant();
+        }
+
+        /// <summary>
+        /// Monta o mapa a partir do próprio enum: nome do membro + Description.
+        /// Assim o ParseAgent aceita tanto "Renascenca" quanto "Warren Rena"
+        /// (Description atual do código 92), sem aliases hardcoded.
+        /// </summary>
+        private static Dictionary<string, Ticks2.Agents> BuildAgentNameMap()
+        {
+            var map =
+                new Dictionary<string, Ticks2.Agents>(
+                    StringComparer.OrdinalIgnoreCase);
 
             foreach (var name in Enum.GetNames(
                 typeof(Ticks2.Agents)))
             {
-                if (name.Equals(
-                    value,
-                    StringComparison.OrdinalIgnoreCase))
+                var agent =
+                    (Ticks2.Agents)
+                    Enum.Parse(
+                        typeof(Ticks2.Agents),
+                        name);
+
+                map[NormalizeAgentName(name)] = agent;
+
+                var description =
+                    typeof(Ticks2.Agents)
+                    .GetField(name)?
+                    .GetCustomAttributes(
+                        typeof(DescriptionAttribute),
+                        false)
+                    .OfType<DescriptionAttribute>()
+                    .FirstOrDefault()?
+                    .Description;
+
+                if (!string.IsNullOrWhiteSpace(description))
                 {
-                    return
-                        (Ticks2.Agents)
-                        Enum.Parse(
-                            typeof(Ticks2.Agents),
-                            name);
+                    map[NormalizeAgentName(description)] = agent;
                 }
             }
+
+            return map;
+        }
+
+        private static Ticks2.Agents ParseAgent(
+            string value,
+            string symbol)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return 0;
+
+            var rawName =
+                value.Trim();
+
+            // Fast path: nome já resolvido anteriormente (sem normalizar/alocar).
+            if (_agentLookupCache.TryGetValue(
+                rawName,
+                out var cached))
+            {
+                return cached;
+            }
+
+            if (_agentNameMap.TryGetValue(
+                NormalizeAgentName(rawName),
+                out var agent))
+            {
+                _agentLookupCache.TryAdd(rawName, agent);
+                return agent;
+            }
+
+            // Guarda o nome bruto para o dashboard permitir a inclusão no enum.
+            _unknownAgents.TryAdd(
+                $"{symbol}{UnknownAgentSeparator}{rawName}",
+                0);
 
             return 0;
         }

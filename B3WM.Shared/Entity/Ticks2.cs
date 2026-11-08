@@ -131,8 +131,8 @@ namespace B3WM.Shared.Entity
             [Display(Description = "NUINVEST – TITULO CV S.A.")]
             NuInvest = 90,
 
-            [Description("RENASCENCA DTVM LTDA.")]
-            [Display(Description = "RENASCENCA DTVM LTDA.")]
+            [Description("WARREN RENA")]
+            [Display(Description = "WARREN RENA")]
             Renascenca = 92,
 
             [Description("NOVA FUTURA CTVM LTDA")]

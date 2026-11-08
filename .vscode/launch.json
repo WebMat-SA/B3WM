@@ -14,12 +14,23 @@
       "serverReadyAction": {
         "action": "openExternally",
         "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
-        "uriFormat": "%s/api/Dashboard/Get"
+        "uriFormat": "%s/dashboard/"
       },
       "env": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "ASPNETCORE_URLS": "https://localhost:5002;http://localhost:5000"
       }
+    },
+    {
+      "name": "ExtractorRTD (Debug)",
+      "type": "clr",
+      "request": "launch",
+      "preLaunchTask": "ExtractorRTD",
+      "program": "${workspaceFolder}/ExtractorRTD/bin/Debug/ExtractorRTD.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}/ExtractorRTD/bin/Debug",
+      "stopAtEntry": false,
+      "console": "internalConsole"
     },
     {
       "name": "Python: B3WM MT5 Bridge",

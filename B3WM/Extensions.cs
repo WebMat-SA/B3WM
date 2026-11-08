@@ -1,6 +1,7 @@
 ﻿using B3WM.Services;
 using B3WM.Services.AI;
 using B3WM.Services.Core;
+using B3WM.Services.Dashboard;
 using B3WM.Services.Market;
 using B3WM.Services.Screen;
 using B3WM.Services.Strategies;
@@ -16,6 +17,9 @@ namespace B3WM
         {
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
+            // Estado de saúde em memória consumido pelo dashboard (polling REST).
+            services.AddSingleton<DashboardHealthService>();
+            services.AddSingleton<ILoggerProvider, DashboardLogSink>();
             // Deduz o último range de estrutura dos arquivos persistidos para o
             // preload do startup continuar nele em vez de voltar ao default.
             services.AddSingleton<StructureRangeResolver>();
@@ -79,7 +83,7 @@ namespace B3WM
                 services.AddSingleton(sp => new CandleService(symbol, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<CandleService>>()));
                 services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<ILogger<StructureService>>()));
             }
-            services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>()));
+            services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>(), sp.GetRequiredService<DashboardHealthService>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));
             services.AddSingleton(sp => new ExtremeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<ExtremeService>>()));
             services.AddSingleton(sp => new VwapService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VwapService>>()));
@@ -97,10 +101,10 @@ namespace B3WM
                 );
             services.AddSingleton<TickChannelService>(sp => new TickChannelService(symbol));
 
-            services.AddSingleton(sp => new TickProcessorService(symbol, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>(), sp.GetRequiredService<ILogger<TickProcessorService>>()));
+            services.AddSingleton(sp => new TickProcessorService(symbol, sp.GetServices<TickChannelService>(), sp.GetServices<OrchestratorService>(), sp.GetRequiredService<DashboardHealthService>(), sp.GetRequiredService<ILogger<TickProcessorService>>()));
             services.AddSingleton<IHostedService>(sp => sp.GetServices<TickProcessorService>().First(s => s.Symbol == symbol));
 
-            services.AddSingleton(sp => new ThrottlingService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<ThrottlingService>>()));
+            services.AddSingleton(sp => new ThrottlingService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<DashboardHealthService>(), sp.GetRequiredService<ILogger<ThrottlingService>>()));
             services.AddSingleton<IHostedService>(sp => sp.GetServices<ThrottlingService>().First(s => s.Symbol == symbol));
 
             return services;

@@ -63,7 +63,7 @@ class Agents {
   static const btg = Agents._(85, 'BTG PACTUAL CTVM S.A.');
   static const capital = Agents._(88, 'CM CAPITAL MARKETS CCTVM LTDA');
   static const nuInvest = Agents._(90, 'NUINVEST – TITULO CV S.A.');
-  static const renascenca = Agents._(92, 'RENASCENCA DTVM LTDA.');
+  static const renascenca = Agents._(92, 'WARREN RENA');
   static const novaFutura = Agents._(93, 'NOVA FUTURA CTVM LTDA');
   static const mercantil = Agents._(106, 'MERC. DO BRASIL COR. S.A. CTVM');
   static const terra = Agents._(107, 'TERRA INVESTIMENTOS DTVM LTDA');

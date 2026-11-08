@@ -109,7 +109,22 @@ namespace B3WM
 
             app.UseHttpsRedirection();
 
-            app.UseStaticFiles();
+            app.UseDefaultFiles();
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                OnPrepareResponse = ctx =>
+                {
+                    // O dashboard evolui junto com o servidor; evita que o
+                    // navegador fique preso em um dashboard.js/css antigo.
+                    if (ctx.Context.Request.Path.StartsWithSegments("/dashboard"))
+                    {
+                        ctx.Context.Response.Headers.CacheControl =
+                            "no-cache, no-store, must-revalidate";
+                        ctx.Context.Response.Headers.Pragma = "no-cache";
+                        ctx.Context.Response.Headers.Expires = "0";
+                    }
+                }
+            });
 
             app.UseRouting();
 

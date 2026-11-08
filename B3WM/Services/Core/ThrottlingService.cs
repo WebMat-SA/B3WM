@@ -1,4 +1,5 @@
-﻿using B3WM.Shared.Interfaces;
+﻿using B3WM.Services.Dashboard;
+using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
 
@@ -9,14 +10,16 @@ namespace B3WM.Services.Core
         public string Symbol { get; }
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
         private readonly IServiceProvider _serviceProvider;
+        private readonly DashboardHealthService _health;
         private readonly int timerMiliseconds;
         private readonly ILogger<ThrottlingService> _logger;
 
-        public ThrottlingService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, ILogger<ThrottlingService> logger, int intervalMilliseconds=250)
+        public ThrottlingService(string symbol, IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, DashboardHealthService health, ILogger<ThrottlingService> logger, int intervalMilliseconds=250)
         {
             this.Symbol = symbol;
             this.hubContext = hubContext;
             this._serviceProvider = serviceProvider;
+            this._health = health;
             this.timerMiliseconds = intervalMilliseconds;
             _logger = logger;
             
@@ -60,6 +63,7 @@ namespace B3WM.Services.Core
 
                     // Perform throttling logic here
                     await hubContext.Clients.Groups(Symbol).ReceiveThrottlingData(data);
+                    _health.RecordHeartbeat($"{Symbol}:throttling");
                 }
                 catch (Exception ex)
                 {
