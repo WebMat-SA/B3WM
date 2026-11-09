@@ -75,6 +75,37 @@
       "problemMatcher": []
     },
     {
+      "label": "flutter-win-run",
+      "type": "shell",
+      "command": "flutter pub get; flutter run -d windows",
+      "options": {
+        "cwd": "${workspaceFolder}/../B3WM/B3WM.Flutter"
+      },
+      "presentation": {
+        "group": "b3wm",
+        "panel": "dedicated",
+        "focus": true,
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ExtractorRTD-run",
+      "type": "process",
+      "command": "${workspaceFolder}\\ExtractorRTD\\bin\\Debug\\ExtractorRTD.exe",
+      "options": {
+        "cwd": "${workspaceFolder}\\ExtractorRTD\\bin\\Debug"
+      },
+      "dependsOn": ["ExtractorRTD-build"],
+      "presentation": {
+        "group": "b3wm",
+        "panel": "dedicated",
+        "focus": true,
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "ExtractorRTD-build",
       "type": "process",
       "command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
