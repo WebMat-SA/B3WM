@@ -82,7 +82,9 @@ namespace B3WM.Controllers
                     : displayDate.Date.AddDays(1);
                 JevPrompt.EnsureLevelCluster(snap, asOf);
 
-                var state = JevPrompt.BuildStateJson(req.Symbol, req.TimeFrame, snap);
+                var state = JevPrompt.BuildStateJson(
+                    req.Symbol, req.TimeFrame, snap,
+                    maxCandles: req.LookbackCandles, maxBubbles: req.LookbackBubbles);
                 var stateJson = System.Text.Json.JsonSerializer.Serialize(state);
                 var questions = JevPrompt.BuildQuestions();
                 var request = _jev.BuildRequest(state, questions);

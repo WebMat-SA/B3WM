@@ -175,7 +175,9 @@ namespace B3WM.Services.Strategies
                 "[strategy-runner] MANUAL {Strategy} {Symbol} sessão={Id} bubble={At:O} trigger={Trigger}",
                 s.Strategy, s.Symbol, s.Id, bubble.Date, triggerId);
             var fired = await FireAsync(s, ev, "manual", triggerId);
-            return fired ? ManualTriggerStatus.Fired : ManualTriggerStatus.NoDecision;
+            return fired == FireOutcome.Decided
+                ? ManualTriggerStatus.Fired
+                : ManualTriggerStatus.NoDecision;
         }
 
         public StrategyLogDay? Stop(string id)
@@ -302,8 +304,17 @@ namespace B3WM.Services.Strategies
                     }
                     if (!CheckTrigger(s, ev))
                         continue; // filtro reprovou: bucket segue livre
+                    var outcome = await FireAsync(s, ev, why);
+                    if (outcome == FireOutcome.Failed)
+                    {
+                        // Avaliação falhou (ex.: erro HTTP da Jev): NÃO consome
+                        // o bucket, para a próxima bolha do mesmo período tentar.
+                        _logger.LogDebug(
+                            "[strategy:{Name}:{Id}] bubble bucket {Bucket:HH:mm} liberado após falha",
+                            s.Strategy, s.Id, bucket);
+                        continue;
+                    }
                     lock (_lock) { s.LastBubbleBucket = bucket; }
-                    await FireAsync(s, ev, why);
                     continue;
                 }
                 if (!CheckTrigger(s, ev))
@@ -370,7 +381,16 @@ namespace B3WM.Services.Strategies
                 return _sessions.Values.Where(s => !s.Paused && s.Symbol == symbol).ToList();
         }
 
-        private async Task<bool> FireAsync(
+        /// <summary>Resultado interno do FireAsync (o bucket só é consumido se
+        /// a avaliação não falhou).</summary>
+        private enum FireOutcome
+        {
+            Failed,
+            NoDecision,
+            Decided,
+        }
+
+        private async Task<FireOutcome> FireAsync(
             StrategySession s, StrategyEvent ev, string why, string? triggerId = null)
         {
             using var scope = _scopes.CreateScope();
@@ -385,7 +405,7 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy-runner] sessão {Id} sem strategy", s.Id);
-                return false;
+                return FireOutcome.Failed;
             }
 
             var ctx = new StrategyContext
@@ -408,9 +428,9 @@ namespace B3WM.Services.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[strategy:{Name}:{Id}] erro no Evaluate", s.Strategy, s.Id);
-                return false;
+                return FireOutcome.Failed;
             }
-            if (decision == null) return false;
+            if (decision == null) return FireOutcome.NoDecision;
 
             // Threshold de saída do paper engine (política do runner; a
             // strategy só informa Encerrar 0..1).
@@ -464,7 +484,7 @@ namespace B3WM.Services.Strategies
             // Custo ~ms (JSON pequeno do dia) frente à latência do Jev.
             s.PersistedDecisions = s.Decisions.Count;
             await PersistLogAsync(ToLogDay(s));
-            return true;
+            return FireOutcome.Decided;
         }
 
         /// <summary>

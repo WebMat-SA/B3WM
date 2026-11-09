@@ -98,7 +98,9 @@ namespace B3WM.Services.Strategies
             JevPrompt.EnsureLevelCluster(snap, at);
             snap.Raw["triggerBubbleKeys"] = TriggerKeysFor(ev);
 
-            var state = JevPrompt.BuildStateJson(ctx.Symbol, tf, snap);
+            var state = JevPrompt.BuildStateJson(
+                ctx.Symbol, tf, snap,
+                maxCandles: LookbackCandles, maxBubbles: LookbackBubbles);
             var stateJson = JsonSerializer.Serialize(state);
             var questions = JevPrompt.BuildQuestions();
             var request = _jev.BuildRequest(state, questions);

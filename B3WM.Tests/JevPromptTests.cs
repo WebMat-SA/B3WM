@@ -139,6 +139,56 @@ public class JevPromptTests
     }
 
     [Fact]
+    public void BuildStateJson_CapsPayloadToLookback_AndKeepsTriggerBubbles()
+    {
+        var snap = Snap();
+        var start = Day.AddHours(9);
+        var candles = Enumerable.Range(0, 100)
+            .Select(i => new BarStorageItem
+            {
+                Date = start.AddMinutes(i * 2), Symbol = "WINFUT", TimeFrame = 2,
+                Open = 100, High = 101, Low = 99, Close = 100, Volume = 1,
+            }).ToList();
+        var bubbles = Enumerable.Range(0, 80)
+            .Select(i => new BubbleStorageItem
+            {
+                Date = start.AddMinutes(i * 2), Agent = 122, Amount = 500, Price = 100,
+                ActionType = Ticks2.ActionType.Buy, Symbol = "WINFUT",
+            }).ToList();
+        var structs = Enumerable.Range(0, 100)
+            .Select(i => new StructureStorageItem
+            {
+                Date = start.AddMinutes(i * 2), Symbol = "WINFUT", TimeFrame = 2,
+                UpBorder = 101, DownBorder = 99, UpAuxBorder = 100.5, DownAuxBorder = 99.5,
+            }).ToList();
+        snap.Layers[SnapshotLayers.Candles] = candles;
+        snap.Layers[SnapshotLayers.Bubbles] = bubbles;
+        snap.Layers[SnapshotLayers.Structures] = structs;
+        snap.Layers[SnapshotLayers.ScopeIntraday] = new DateWindow
+        {
+            From = candles[0].Date, To = candles[^1].Date,
+        };
+        // Gatilho numa bolha antiga (fora das 30 mais recentes): deve sobreviver ao corte.
+        snap.Raw["triggerBubbleKeys"] = new HashSet<string> { JevPrompt.BubbleKey(bubbles[0]) };
+
+        var s = JevPrompt.BuildStateJson("WINFUT", 2, snap, maxCandles: 60, maxBubbles: 30);
+
+        Assert.Equal(60, s.Intraday.Candles.Count);
+        Assert.Equal(candles[40].Date, s.Intraday.Candles[0].Date);
+        Assert.Equal(candles[^1].Date, s.Intraday.Candles[^1].Date);
+        Assert.Equal(candles[40].Date, s.Intraday.Scope.From);
+        Assert.Equal(candles[^1].Date, s.Intraday.Scope.To);
+        // 30 mais recentes + a bolha do gatilho.
+        Assert.Equal(31, s.Intraday.Bubbles.Count);
+        Assert.Contains(s.Intraday.Bubbles, b => b.Date == bubbles[0].Date && b.IsTrigger);
+        Assert.Equal(bubbles[^1].Date, s.Intraday.Bubbles[^1].Date);
+        // Estruturas recortadas ao mesmo escopo dos candles enviados.
+        Assert.Equal(60, s.Intraday.Structures.Count);
+        Assert.All(s.Intraday.Structures,
+            st => Assert.InRange(st.Date, candles[40].Date, candles[^1].Date));
+    }
+
+    [Fact]
     public void AgentName_UsesEnumDescription_AndFallsBackForUnknown()
     {
         Assert.Equal("BGC LIQUIDEZ DTVM", JevPrompt.AgentName(122));

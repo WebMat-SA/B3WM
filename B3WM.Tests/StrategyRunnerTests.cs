@@ -24,6 +24,22 @@ public sealed class StubStrategy : StrategyBase
         Task.FromResult<StrategyDecision?>(new StrategyDecision { Side = "manter" });
 }
 
+public sealed class FailingStrategy : StrategyBase
+{
+    public int Calls;
+    public FailingStrategy() : base(new Mock<ILogger<FailingStrategy>>().Object) { }
+    public override string Name => "Failing";
+    public override string DetailsMd => "## Failing\nStrategy que falha (teste).";
+    public override bool ShouldTrigger(StrategyEvent ev, StrategyTriggerContext ctx) =>
+        TriggerChecks.IsVisibleBubble(ev, ctx.Filter);
+    public override Task<StrategyDecision?> EvaluateAsync(
+        StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default)
+    {
+        Calls++;
+        throw new InvalidOperationException("falha simulada");
+    }
+}
+
 public class StrategyRunnerTests
 {
 
@@ -305,6 +321,39 @@ public class StrategyRunnerTests
         var next = new DateTime(2026, 10, 6, 10, 6, 10);
         Assert.True(StrategyRunner.IsNewBubbleBucket(last2, StrategyRunner.BubbleBucketFor(next, 2)));
         Assert.False(StrategyRunner.IsNewBubbleBucket(last5, StrategyRunner.BubbleBucketFor(next, 5)));
+    }
+
+    [Fact]
+    public async Task BubbleBucket_NaoEhConsumidoQuandoAvaliacaoFalha()
+    {
+        var services = new ServiceCollection();
+        var failing = new FailingStrategy();
+        services.AddSingleton<IStrategy>(failing);
+        using var provider = services.BuildServiceProvider();
+        var runner = new StrategyRunner(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Enumerable.Empty<B3WM.Services.Core.OrchestratorService>(),
+            new Mock<ILogger<StrategyRunner>>().Object);
+
+        runner.Arm("Failing", "WINFUT", 2, "{}", Filter(), "failhash");
+        var t0 = DateTime.Today.AddHours(11).AddMinutes(28);
+
+        await runner.PublishAsync(new BubbleAppeared
+        {
+            Symbol = "WINFUT", At = t0,
+            Item = Bubble(122, 500, 209770, t0),
+        }, "bubble");
+        Assert.Equal(1, failing.Calls);
+
+        // Mesma janela/bucket: como a 1ª avaliação falhou, a próxima bolha
+        // precisa chamar o serviço de novo (bucket não foi consumido).
+        var t1 = t0.AddSeconds(30);
+        await runner.PublishAsync(new BubbleAppeared
+        {
+            Symbol = "WINFUT", At = t1,
+            Item = Bubble(122, 500, 209780, t1),
+        }, "bubble");
+        Assert.Equal(2, failing.Calls);
     }
 
     [Fact]

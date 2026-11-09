@@ -86,7 +86,9 @@ namespace B3WM.Services.AI
             string symbol,
             int timeFrame,
             MarketSnapshot snap,
-            bool includeVolumeLevels = false)
+            bool includeVolumeLevels = false,
+            int maxCandles = 0,
+            int maxBubbles = 0)
         {
             var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
             var bubbles = snap.Has(SnapshotLayers.Bubbles)
@@ -106,6 +108,30 @@ namespace B3WM.Services.AI
             var dailyScope = snap.Get<DateWindow>(SnapshotLayers.ScopeDaily);
 
             var triggerKeys = TriggerKeys(snap);
+
+            // Limite de payload (LookbackCandles/Bubbles): o snapshot resolve o
+            // dia inteiro, mas o state não pode crescer junto — senão estoura o
+            // max_tokens do provider. Mantém a janela mais recente e recorta o
+            // escopo das estruturas/pivôs ao mesmo intervalo.
+            var stateScope = intraScope;
+            if (maxCandles > 0 && candles.Count > maxCandles)
+            {
+                candles = candles.Skip(candles.Count - maxCandles).ToList();
+                stateScope = new DateWindow { From = candles[0].Date, To = candles[^1].Date };
+            }
+
+            var stateBubbles = bubbles.OrderBy(b => b.Date).ToList();
+            if (maxBubbles > 0 && stateBubbles.Count > maxBubbles)
+            {
+                // Sempre preserva as bolhas do gatilho (podem ser antigas dentro
+                // do mesmo candle) + as mais recentes até o limite.
+                var keep = stateBubbles.Skip(stateBubbles.Count - maxBubbles)
+                    .Select(BubbleKey).ToHashSet();
+                if (triggerKeys != null)
+                    foreach (var key in triggerKeys) keep.Add(key);
+                stateBubbles = stateBubbles.Where(b => keep.Contains(BubbleKey(b))).ToList();
+            }
+
             var asOf = candles.Count > 0
                 ? candles[^1].Date.AddMinutes(timeFrame)
                 : DateTime.MinValue;
@@ -121,18 +147,18 @@ namespace B3WM.Services.AI
                     (l.TouchedAt is { } touched && touched >= asOf.AddMinutes(-LevelClusterMinutes)))
                 .OrderBy(l => l.DistanceTicks)
                 .Take(LevelContextMaxItems)
-                .Select(l => ToLevelContext(l, bubbles, tickSize, asOf))
+                .Select(l => ToLevelContext(l, stateBubbles, tickSize, asOf))
                 .ToList();
 
             var intraday = new JevIntradayDto
             {
-                Scope = Range(intraScope, candles),
+                Scope = Range(stateScope, candles),
                 Candles = candles.Select(ToCandle).ToList(),
                 VolumeProfile = ToVolumeProfile(volume, includeVolumeLevels),
-                Bubbles = bubbles.OrderBy(b => b.Date).Select(b => ToBubble(b, triggerKeys)).ToList(),
+                Bubbles = stateBubbles.Select(b => ToBubble(b, triggerKeys)).ToList(),
                 Pivots = ToPivots(pivIntra, candles),
                 TopsValleys = ToExtremes(extIntra),
-                Structures = FilterIntradayStructures(structs, timeFrame, intraScope)
+                Structures = FilterIntradayStructures(structs, timeFrame, stateScope)
                     .Select(s => ToStructure(s, withTimeframe: true)).ToList(),
                 NearestPivot = nearestPivot == null ? null : ToNearestPivot(nearestPivot),
                 LevelContext = levelContext,
