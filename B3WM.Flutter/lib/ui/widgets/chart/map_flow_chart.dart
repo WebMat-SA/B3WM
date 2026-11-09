@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'chart_data.dart';
 import 'chart_painter.dart';
 import 'chart_fixed_painter.dart';
+import 'chart_price_scale.dart';
 import 'measure_ruler.dart';
 import 'strategy_timeline_lane.dart';
 import '../../../services/trading_service.dart';
@@ -80,6 +81,19 @@ class _MapFlowChartState extends State<MapFlowChart>
   final Set<int> _cancellingTickets = {};
   late final AnimationController _loadingCtrl;
 
+  /// Escala preço↔Y do range de candles visíveis. Recalculada quando o
+  /// viewport X muda (zoom/pan), o Y-zoom muda, o dado troca ou a área muda.
+  /// Mantém `ytop`/`ybottom` fixos no zoom X porque os extremos visíveis
+  /// caem sempre em coordenadas constantes do child.
+  ChartPriceScale _yScale = const ChartPriceScale(min: 0, max: 0);
+  ChartData? _yScaleData;
+  int _yScaleCandleCount = -1;
+  double _yScaleScaleX = double.nan;
+  double _yScaleTx = double.nan;
+  double _yScaleYZoom = double.nan;
+  double _yScaleAreaWidth = double.nan;
+  double _yScaleAreaHeight = double.nan;
+
   // Régua de medição (issue #20): toggle 📏 + Ctrl+drag medem, drag puro dá pan.
   // O InteractiveViewer aceita todos os botões por padrão, então enquanto
   // mede (`_isMeasuring`) o pan é suprimido via `_panEnabled = false` + o
@@ -106,6 +120,11 @@ class _MapFlowChartState extends State<MapFlowChart>
   void initState() {
     super.initState();
     _yZoom = widget.data.yZoom;
+    _yScale = ChartPriceScale(
+      min: widget.data.minPrice,
+      max: widget.data.maxPrice,
+      yZoom: _yZoom,
+    );
     _controller.addListener(_onTransformChanged);
     _loadingCtrl = AnimationController(
       vsync: this,
@@ -113,6 +132,74 @@ class _MapFlowChartState extends State<MapFlowChart>
     )..addListener(() {
       if (mounted) setState(() {});
     });
+  }
+
+  /// Primeiro/último índice de candle que intersecta o viewport X (em
+  /// coordenadas do child, largura `viewerW`). Mesmo `stepX`/recorte do
+  /// `ChartFixedPainter._drawXAxis`. Retorna `null` se nada está visível.
+  (int, int)? _visibleIndexRange(double viewerW, int count) {
+    if (count <= 0 || !viewerW.isFinite || viewerW <= 0) return null;
+    final m = _controller.value;
+    final sx = m[0];
+    final tx = m.getTranslation().x;
+    if (!sx.isFinite || sx <= 0) return null;
+    const step = 8.0;
+    final startChildX = -tx / sx;
+    final endChildX = (viewerW - tx) / sx;
+    final first = ((startChildX - step / 2) / step).floor();
+    final last = ((endChildX - step / 2) / step).ceil();
+    if (first > count - 1 || last < 0) return null;
+    return (first.clamp(0, count - 1), last.clamp(0, count - 1));
+  }
+
+  /// Recalcula [_yScale] a partir dos candles visíveis (high/low). Usa cache
+  /// por (dado, contagem, escala X, tx, yZoom, área) para não varrer os
+  /// visíveis a cada rebuild de hover.
+  void _ensureYScale() {
+    final n = widget.data.candles.length;
+    final m = _controller.value;
+    final sx = m[0];
+    final tx = m.getTranslation().x;
+    final areaW = _lastCandleAreaWidth;
+    final areaH = _lastCandleAreaHeight;
+
+    if (identical(widget.data, _yScaleData) &&
+        _yScaleCandleCount == n &&
+        _yScaleScaleX == sx &&
+        _yScaleTx == tx &&
+        _yScaleYZoom == _yZoom &&
+        _yScaleAreaWidth == areaW &&
+        _yScaleAreaHeight == areaH) {
+      return;
+    }
+
+    ChartPriceScale next;
+    final viewerW = areaW - ChartFixedPainter.rightReserved;
+    final range = _visibleIndexRange(viewerW, n);
+    if (range == null) {
+      next = ChartPriceScale.fallback(widget.data, yZoom: _yZoom);
+    } else {
+      final candles = widget.data.candles;
+      var lo = double.infinity;
+      var hi = double.negativeInfinity;
+      for (var i = range.$1; i <= range.$2; i++) {
+        final c = candles[i];
+        if (c.low < lo) lo = c.low;
+        if (c.high > hi) hi = c.high;
+      }
+      next = (lo.isFinite && hi.isFinite && hi > lo)
+          ? ChartPriceScale(min: lo, max: hi, yZoom: _yZoom)
+          : ChartPriceScale.fallback(widget.data, yZoom: _yZoom);
+    }
+
+    _yScale = next;
+    _yScaleData = widget.data;
+    _yScaleCandleCount = n;
+    _yScaleScaleX = sx;
+    _yScaleTx = tx;
+    _yScaleYZoom = _yZoom;
+    _yScaleAreaWidth = areaW;
+    _yScaleAreaHeight = areaH;
   }
 
   void _onTransformChanged() {
@@ -140,6 +227,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _clampPan() {
+    _ensureYScale();
     final m = _controller.value;
     final s = m.getMaxScaleOnAxis();
     final tx = m.getTranslation().x;
@@ -175,12 +263,12 @@ class _MapFlowChartState extends State<MapFlowChart>
     final maxX = viewerW - minVisibleX;
     double minY;
     double maxY;
-    final range = widget.data.priceRange;
+    final range = _yScale.priceRange;
     final areaH = _lastCandleAreaHeight;
     final sy = m[5].isFinite && m[5] > 0 ? m[5].toDouble() : s;
     if (range > 0 && areaH > 0) {
-      final yTop = _toChildY(widget.data.maxPrice, areaH);
-      final yBot = _toChildY(widget.data.minPrice, areaH);
+      final yTop = _toChildY(_yScale.max, areaH);
+      final yBot = _toChildY(_yScale.min, areaH);
       final bandH = (yBot - yTop) * sy;
       if (bandH > 0 && bandH.isFinite) {
         if (bandH >= viewerH) {
@@ -479,8 +567,9 @@ class _MapFlowChartState extends State<MapFlowChart>
     // referência (o bloqueio de translação em `_onTransformChanged`
     // reverteria o ajuste de `ty` do zoom).
     if (_isMeasuring) return;
+    _ensureYScale();
     final areaH = _lastCandleAreaHeight;
-    final range = widget.data.priceRange;
+    final range = _yScale.priceRange;
     if (areaH <= 0 || range <= 0) return;
 
     final m = _controller.value;
@@ -572,24 +661,13 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _centerLastCandleY() {
+    _ensureYScale();
     final areaH = _lastCandleAreaHeight;
     if (areaH <= 0) return;
-    final range = widget.data.priceRange;
-    if (range <= 0) return;
-
-    final padding = range * 0.25;
-    final minP = widget.data.minPrice - padding;
-    final maxP = widget.data.maxPrice + padding;
-    final center = (minP + maxP) / 2;
-    final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / _yZoom;
-    final adjustedMin = center - zoomedHalf;
-    final adjustedMax = center + zoomedHalf;
-    final adjustedRange = adjustedMax - adjustedMin;
-    if (adjustedRange <= 0) return;
+    if (_yScale.priceRange <= 0) return;
 
     final lastPrice = widget.data.lastPrice;
-    final yLast = areaH - ((lastPrice - adjustedMin) / adjustedRange) * areaH;
+    final yLast = _toChildY(lastPrice, areaH);
 
     final m = Matrix4.copy(_controller.value);
     final s = m.getMaxScaleOnAxis();
@@ -1105,37 +1183,13 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   double _yToPrice(double y, double chartHeight, [double? zoom]) {
-    final range = widget.data.priceRange;
-    if (range <= 0) return 0;
-    final z = zoom ?? _yZoom;
-    final padding = range * 0.25;
-    final minP = widget.data.minPrice - padding;
-    final maxP = widget.data.maxPrice + padding;
-    final center = (minP + maxP) / 2;
-    final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / z;
-    final adjustedMin = center - zoomedHalf;
-    final adjustedMax = center + zoomedHalf;
-    final adjustedRange = adjustedMax - adjustedMin;
-    if (adjustedRange <= 0) return 0;
-    return adjustedMin + ((chartHeight - y) / chartHeight) * adjustedRange;
+    final scale = zoom == null ? _yScale : _yScale.rezoom(zoom);
+    return scale.priceAtChildY(y, chartHeight);
   }
 
   double _toChildY(double price, double chartHeight, [double? zoom]) {
-    final range = widget.data.priceRange;
-    if (range <= 0) return chartHeight / 2;
-    final z = zoom ?? _yZoom;
-    final padding = range * 0.25;
-    final minP = widget.data.minPrice - padding;
-    final maxP = widget.data.maxPrice + padding;
-    final center = (minP + maxP) / 2;
-    final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / z;
-    final adjustedMin = center - zoomedHalf;
-    final adjustedMax = center + zoomedHalf;
-    final adjustedRange = adjustedMax - adjustedMin;
-    if (adjustedRange <= 0) return chartHeight / 2;
-    return chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
+    final scale = zoom == null ? _yScale : _yScale.rezoom(zoom);
+    return scale.childY(price, chartHeight);
   }
 
   @override
@@ -1168,6 +1222,7 @@ class _MapFlowChartState extends State<MapFlowChart>
         _lastCandleAreaWidth = candleAreaWidth;
         _lastVirtualCandleWidth = virtualCandleWidth;
         _lastCandleAreaHeight = candleAreaHeight;
+        _ensureYScale();
 
         if (!_initialFitDone && data.candles.isNotEmpty) {
           _initialFitDone = true;
@@ -1215,6 +1270,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                     candleAreaWidth: candleAreaWidth,
                     candleAreaHeight: candleAreaHeight,
                     yZoom: _yZoom,
+                    priceScale: _yScale,
                     controller: _controller,
                     hoverY: _hoverY,
                     hoverCandleIndex: _effectiveHoverIndex(),
@@ -1365,6 +1421,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                           size: Size(virtualCandleWidth, candleAreaHeight),
                           painter: ChartPainter(
                             data: data,
+                            priceScale: _yScale,
                             candleWidth: candleWidth,
                             candleSpacing: candleSpacing,
                             yZoom: _yZoom,

@@ -1,12 +1,16 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'chart_data.dart';
+import 'chart_price_scale.dart';
 
 class ChartPainter extends CustomPainter {
   final ChartData data;
   final double candleWidth;
   final double candleSpacing;
   final double yZoom;
+
+  /// Escala preço↔Y do range de candles visíveis no viewport X.
+  final ChartPriceScale priceScale;
 
   /// Razão `scaleY/scaleX` da matriz (1.0 = uniforme). O InteractiveViewer
   /// escala o canvas filho; com zoom só no X (roda), círculos virariam
@@ -28,6 +32,7 @@ class ChartPainter extends CustomPainter {
 
   ChartPainter({
     required this.data,
+    required this.priceScale,
     this.candleWidth = 6.0,
     this.candleSpacing = 2.0,
     this.yZoom = 1.0,
@@ -55,19 +60,7 @@ class ChartPainter extends CustomPainter {
   }
 
   double _priceToY(double price, double chartHeight) {
-    final range = data.priceRange;
-    if (range <= 0) return chartHeight / 2;
-    final padding = range * 0.25;
-    final minP = data.minPrice - padding;
-    final maxP = data.maxPrice + padding;
-    final center = (minP + maxP) / 2;
-    final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / yZoom;
-    final adjustedMin = center - zoomedHalf;
-    final adjustedMax = center + zoomedHalf;
-    final adjustedRange = adjustedMax - adjustedMin;
-    if (adjustedRange <= 0) return chartHeight / 2;
-    return chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
+    return priceScale.childY(price, chartHeight);
   }
 
   double _indexToX(int index, double stepX) {

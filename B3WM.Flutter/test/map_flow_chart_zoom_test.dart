@@ -243,17 +243,9 @@ void main() {
     final viewer = tester.widget<InteractiveViewer>(viewerFinder);
     final controller = viewer.transformationController!;
     final areaHeight = paint.size.height;
-    final range = painter.data.priceRange;
-    final paddedMin = painter.data.minPrice - range * 0.25;
-    final paddedMax = painter.data.maxPrice + range * 0.25;
-    final center = (paddedMin + paddedMax) / 2;
-    final halfRange = (paddedMax - paddedMin) / 2 / painter.yZoom;
-    final adjustedMin = center - halfRange;
-    final adjustedRange = 2 * halfRange;
-    final yTop = areaHeight -
-        ((painter.data.maxPrice - adjustedMin) / adjustedRange * areaHeight);
-    final yBottom = areaHeight -
-        ((painter.data.minPrice - adjustedMin) / adjustedRange * areaHeight);
+    final yTop = painter.priceScale.childY(painter.priceScale.max, areaHeight);
+    final yBottom =
+        painter.priceScale.childY(painter.priceScale.min, areaHeight);
     final minimumTy = 8.0 - yBottom;
     final maximumTy = areaHeight - 8.0 - yTop;
 
@@ -276,5 +268,56 @@ void main() {
       controller.value.getTranslation().y,
       closeTo(minimumTy, 0.1),
     );
+  });
+
+  testWidgets('zoom X preserva ytop/ybottom após pan vertical assimétrico',
+      (tester) async {
+    await tester.pumpWidget(_chartFrame(candleCount: 200, height: 560));
+    await _settleLayout(tester);
+
+    final viewer =
+        tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    final controller = viewer.transformationController!;
+    final paintFinder = find.byWidgetPredicate(
+      (widget) => widget is CustomPaint && widget.painter is ChartPainter,
+    );
+
+    ChartPainter painter() =>
+        tester.widget<CustomPaint>(paintFinder).painter! as ChartPainter;
+    double areaHeight() => tester.widget<CustomPaint>(paintFinder).size.height;
+
+    (double, double) margins() {
+      final m = controller.value;
+      final sy = m[5];
+      final ty = m.getTranslation().y;
+      final h = areaHeight();
+      final scale = painter().priceScale;
+      final ytop = scale.childY(scale.max, h) * sy + ty;
+      final ybottom = h - scale.childY(scale.min, h) * sy - ty;
+      return (ytop, ybottom);
+    }
+
+    // Pan vertical para cima: ytop pequeno, ybottom grande.
+    final panned = controller.value.clone();
+    panned.setTranslationRaw(
+      controller.value.getTranslation().x,
+      -60,
+      0,
+    );
+    controller.value = panned;
+    await tester.pump();
+
+    final before = margins();
+    expect(before.$1, lessThan(before.$2));
+
+    // Zoom X: muda quantos candles aparecem, mas não o ty.
+    final zoomed = controller.value.clone();
+    zoomed[0] = (zoomed[0] * 2).clamp(0.01, 5.0);
+    controller.value = zoomed;
+    await tester.pump();
+
+    final after = margins();
+    expect(after.$1, closeTo(before.$1, 0.001));
+    expect(after.$2, closeTo(before.$2, 0.001));
   });
 }

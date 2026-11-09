@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'chart_data.dart';
+import 'chart_price_scale.dart';
 import '../../../models/defaults.dart';
 
 class ChartFixedPainter extends CustomPainter {
@@ -8,6 +9,10 @@ class ChartFixedPainter extends CustomPainter {
   final double candleAreaWidth;
   final double candleAreaHeight;
   final double yZoom;
+
+  /// Escala preço↔Y do range de candles visíveis no viewport X. Compartilhada
+  /// com o [ChartPainter] para manter candles e overlays no mesmo eixo.
+  final ChartPriceScale priceScale;
   final TransformationController controller;
   final Set<int> closingTickets;
   final Set<int> cancellingTickets;
@@ -33,6 +38,7 @@ class ChartFixedPainter extends CustomPainter {
     required this.candleAreaWidth,
     required this.candleAreaHeight,
     this.yZoom = 1.0,
+    required this.priceScale,
     required this.controller,
     this.hoverY,
     this.hoverCandleIndex,
@@ -55,19 +61,7 @@ class ChartFixedPainter extends CustomPainter {
   }
 
   double _toChildY(double price) {
-    final range = data.priceRange;
-    if (range <= 0) return chartHeight / 2;
-    final padding = range * 0.25;
-    final minP = data.minPrice - padding;
-    final maxP = data.maxPrice + padding;
-    final center = (minP + maxP) / 2;
-    final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / yZoom;
-    final adjustedMin = center - zoomedHalf;
-    final adjustedMax = center + zoomedHalf;
-    final adjustedRange = adjustedMax - adjustedMin;
-    if (adjustedRange <= 0) return chartHeight / 2;
-    return chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
+    return priceScale.childY(price, chartHeight);
   }
 
   double _priceToY(double price) {
@@ -76,19 +70,7 @@ class ChartFixedPainter extends CustomPainter {
 
   double _yToPrice(double y) {
     final childY = (y - marginTop - _transY) / _scaleY;
-    final range = data.priceRange;
-    if (range <= 0) return 0;
-    final padding = range * 0.25;
-    final minP = data.minPrice - padding;
-    final maxP = data.maxPrice + padding;
-    final center = (minP + maxP) / 2;
-    final halfRange = (maxP - minP) / 2;
-    final zoomedHalf = halfRange / yZoom;
-    final adjustedMin = center - zoomedHalf;
-    final adjustedMax = center + zoomedHalf;
-    final adjustedRange = adjustedMax - adjustedMin;
-    if (adjustedRange <= 0) return 0;
-    return adjustedMin + ((chartHeight - childY) / chartHeight) * adjustedRange;
+    return priceScale.priceAtChildY(childY, chartHeight);
   }
 
   @override
@@ -215,10 +197,12 @@ class ChartFixedPainter extends CustomPainter {
       if (v.total > maxVol) maxVol = v.total;
     }
     if (maxVol <= 0) return;
+    final priceRange = priceScale.priceRange;
+    if (!priceRange.isFinite || priceRange <= 0) return;
 
     for (final v in data.volumeProfile) {
       final y = _priceToY(v.price);
-      final barHeight = (v.step / data.priceRange) *
+      final barHeight = (v.step / priceRange) *
           chartHeight *
           data.profileSizeV *
           _scaleY;
