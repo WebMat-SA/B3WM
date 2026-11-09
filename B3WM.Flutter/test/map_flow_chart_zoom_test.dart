@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -319,5 +320,62 @@ void main() {
     final after = margins();
     expect(after.$1, closeTo(before.$1, 0.001));
     expect(after.$2, closeTo(before.$2, 0.001));
+  });
+
+  testWidgets('roda do mouse altera só X e preserva ytop/ybottom após reset',
+      (tester) async {
+    await tester.pumpWidget(_chartFrame(candleCount: 400, height: 560));
+    await _settleLayout(tester);
+
+    // Reset: viewport volta ao auto-fit (todos os candles, ty = 0).
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await _settleLayout(tester);
+
+    final viewer =
+        tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    final controller = viewer.transformationController!;
+    final paintFinder = find.byWidgetPredicate(
+      (widget) => widget is CustomPaint && widget.painter is ChartPainter,
+    );
+
+    ChartPainter painter() =>
+        tester.widget<CustomPaint>(paintFinder).painter! as ChartPainter;
+    double areaHeight() => tester.widget<CustomPaint>(paintFinder).size.height;
+
+    (double, double) margins() {
+      final m = controller.value;
+      final sy = m[5];
+      final ty = m.getTranslation().y;
+      final h = areaHeight();
+      final scale = painter().priceScale;
+      return (
+        scale.childY(scale.max, h) * sy + ty,
+        h - scale.childY(scale.min, h) * sy - ty,
+      );
+    }
+
+    final before = margins();
+    // Hover perto da borda direita (candles recentes) e usa a roda.
+    final chartTopLeft = tester.getTopLeft(find.byType(MapFlowChart));
+    final pointer = TestPointer(1, PointerDeviceKind.mouse)
+      ..hover(chartTopLeft + const Offset(600, 280));
+
+    // Zoom in.
+    await tester.sendEventToBinding(pointer.scroll(const Offset(0, -120)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(controller.value[5], 1.0);
+    final afterIn = margins();
+    expect(afterIn.$1, closeTo(before.$1, 0.5));
+    expect(afterIn.$2, closeTo(before.$2, 0.5));
+
+    // Zoom out.
+    await tester.sendEventToBinding(pointer.scroll(const Offset(0, 120)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(controller.value[5], 1.0);
+    final afterOut = margins();
+    expect(afterOut.$1, closeTo(before.$1, 0.5));
+    expect(afterOut.$2, closeTo(before.$2, 0.5));
   });
 }

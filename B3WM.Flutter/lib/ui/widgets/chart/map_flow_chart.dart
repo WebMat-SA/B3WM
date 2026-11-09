@@ -596,9 +596,10 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   /// Roda do mouse = zoom no eixo X (tempo), ancorado no cursor: o candle sob
-  /// o cursor fica parado na tela. Só toca `m[0]` e `tx`; `m[5]`, `ty` e
-  /// `_yZoom` ficam intactos, então o Y não muda. Piso `fitScale`
-  /// (mostra todos os candles), teto `5.0` (igual ao pinch).
+  /// o cursor fica parado na tela. Único caminho da roda: o `InteractiveViewer`
+  /// está com `scaleEnabled: false`, então só `m[0]` e `tx` mudam — `m[5]`,
+  /// `ty` e `_yZoom` ficam intactos e as margens `ytop`/`ybottom` não se
+  /// deslocam. Piso `fitScale` (mostra todos os candles), teto `5.0`.
   void _applyXZoomAt(double factor, double localDx) {
     if (_isMeasuring) return;
     if (_lastVirtualCandleWidth <= 0) return;
@@ -1414,6 +1415,17 @@ class _MapFlowChartState extends State<MapFlowChart>
                         boundaryMargin: const EdgeInsets.all(double.infinity),
                         minScale: _minAllowedScale,
                         maxScale: 5.0,
+                        // A roda do mouse é tratada SÓ por `_handleScroll`
+                        // (`_applyXZoomAt`). O InteractiveViewer, por padrão,
+                        // também responde ao scroll aplicando scale UNIFORME
+                        // (`m[0]` e `m[5]`) em torno do cursor — isso mudava
+                        // `ty`/`m[5]` e deslocava `ytop`/`ybottom`. Pinch por
+                        // toque também fica desligado; o Y tem zoom próprio na
+                        // coluna de preços.
+                        scaleEnabled: false,
+                        // Sem isso, o scroll de trackpad cairia no ramo de
+                        // pan do InteractiveViewer e brigaria com o zoom X.
+                        trackpadScrollCausesScale: true,
                         panEnabled: _panEnabled,
                         onInteractionEnd: (_) => _onInteractionEnd(),
 
