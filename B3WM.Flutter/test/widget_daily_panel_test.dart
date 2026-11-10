@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:b3wm_flutter/main.dart';
+import 'package:b3wm_flutter/models/bar_storage_item.dart';
 import 'package:b3wm_flutter/models/symbol_config.dart';
 import 'package:b3wm_flutter/services/api_service.dart';
 import 'package:b3wm_flutter/services/audio_service.dart';
@@ -402,5 +403,101 @@ void main() {
     expect(reloaded.dailyProfileFrom, DateTime(2026, 8, 10));
     expect(reloaded.dailyProfileTo, DateTime(2026, 8, 10));
     reloaded.reset();
+  });
+
+  testWidgets(
+      'Novo candle diário entra na janela manual ancorada no último dia',
+      (tester) async {
+    final initial = SymbolConfig.withDefaults('WINFUT')
+      ..daily.profileAutoByPriceStructure = false;
+    SharedPreferences.setMockInitialValues({
+      'b3wm_Config_WINFUT': jsonEncode(initial.toJson()),
+    });
+    final prefs = PreferencesService();
+    await prefs.init();
+
+    final api = _panelApi();
+    final signalR =
+        _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
+    final service = StateService(
+      apiService: api,
+      signalRService: signalR,
+      preferencesService: prefs,
+      audioService: AudioService(),
+    );
+    await service.setSymbol('WINFUT');
+    await tester.pump(const Duration(seconds: 1));
+    await service.loadDailyAll();
+
+    expect(service.dailyBars, hasLength(2));
+    // Borda superior no último dia disponível → acompanha novos candles.
+    await service.applyDailyVolumeFilterAndSyncExtremes(0, 2);
+    expect(service.dailyRangeEnd, 2);
+    expect(service.dailyProfileTo, DateTime(2026, 8, 11));
+
+    signalR.onDailyBar!(BarStorageItem(
+      date: DateTime(2026, 8, 12),
+      symbol: 'WINFUT',
+      timeFrame: 1440,
+      open: 100600,
+      high: 100700,
+      low: 100500,
+      close: 100650,
+      volume: 900,
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(service.dailyBars, hasLength(3));
+    expect(service.dailyRangeEnd, 3);
+    expect(service.dailyProfileFrom, DateTime(2026, 8, 10));
+    expect(service.dailyProfileTo, DateTime(2026, 8, 12));
+    service.reset();
+  });
+
+  testWidgets(
+      'Novo candle diário não entra na janela manual fora do último dia',
+      (tester) async {
+    final initial = SymbolConfig.withDefaults('WINFUT')
+      ..daily.profileAutoByPriceStructure = false;
+    SharedPreferences.setMockInitialValues({
+      'b3wm_Config_WINFUT': jsonEncode(initial.toJson()),
+    });
+    final prefs = PreferencesService();
+    await prefs.init();
+
+    final api = _panelApi();
+    final signalR =
+        _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
+    final service = StateService(
+      apiService: api,
+      signalRService: signalR,
+      preferencesService: prefs,
+      audioService: AudioService(),
+    );
+    await service.setSymbol('WINFUT');
+    await tester.pump(const Duration(seconds: 1));
+    await service.loadDailyAll();
+
+    // Borda superior no primeiro dia → não acompanha novos candles.
+    await service.applyDailyVolumeFilterAndSyncExtremes(0, 1);
+    expect(service.dailyRangeEnd, 1);
+
+    signalR.onDailyBar!(BarStorageItem(
+      date: DateTime(2026, 8, 12),
+      symbol: 'WINFUT',
+      timeFrame: 1440,
+      open: 100600,
+      high: 100700,
+      low: 100500,
+      close: 100650,
+      volume: 900,
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(service.dailyRangeEnd, 1);
+    expect(service.dailyProfileTo, DateTime(2026, 8, 10));
+    service.reset();
   });
 }

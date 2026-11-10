@@ -28,6 +28,11 @@ class DailyAnalysisConfig {
   DateTime? profileManualFrom;
   DateTime? profileManualTo;
 
+  /// `true` quando a borda superior manual estava no último candle
+  /// disponível ao ser aplicada. Nesse caso novos candles diários passam a
+  /// ser incluídos automaticamente na janela (e a janela persiste assim).
+  bool profileManualFollowLast;
+
   /// Topos/vales do diário.
   bool extremeVisible;
   double extremeOpacity;
@@ -77,6 +82,7 @@ class DailyAnalysisConfig {
     required this.profileOpacity,
     this.profileManualFrom,
     this.profileManualTo,
+    this.profileManualFollowLast = false,
     required this.extremeVisible,
     required this.extremeOpacity,
     required this.extremeNoiseSensitivity,
@@ -104,6 +110,7 @@ class DailyAnalysisConfig {
         profileSizeH = 1.0,
         profileSizeV = 1.0,
         profileOpacity = 0.5,
+        profileManualFollowLast = false,
         extremeVisible = true,
         extremeOpacity = 0.5,
         extremeNoiseSensitivity = Defaults.extremeNoiseSensitivity,
@@ -147,6 +154,7 @@ class DailyAnalysisConfig {
       profileOpacity: numOr('profileOpacity', 0.5),
       profileManualFrom: dateOr('profileManualFrom'),
       profileManualTo: dateOr('profileManualTo'),
+      profileManualFollowLast: src['profileManualFollowLast'] as bool? ?? false,
       extremeVisible: src['extremeVisible'] as bool? ??
           json['dailyExtremeVisible'] as bool? ??
           true,
@@ -193,6 +201,7 @@ class DailyAnalysisConfig {
         'profileOpacity': profileOpacity,
         'profileManualFrom': profileManualFrom?.toIso8601String(),
         'profileManualTo': profileManualTo?.toIso8601String(),
+        'profileManualFollowLast': profileManualFollowLast,
         'extremeVisible': extremeVisible,
         'extremeOpacity': extremeOpacity,
         'extremeNoiseSensitivity': extremeNoiseSensitivity,

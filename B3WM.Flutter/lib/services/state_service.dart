@@ -562,6 +562,8 @@ class StateService extends ChangeNotifier {
     if (count == 0) return;
     _dailyRangeStart = start.clamp(0, count - 1);
     _dailyRangeEnd = end.clamp(_dailyRangeStart + 1, count);
+    // Borda superior no último candle = "acompanhar novos candles".
+    _currentConfig.daily.profileManualFollowLast = _dailyRangeEnd >= count;
     notifyListeners();
     final bars = List.of(_dailyBars)..sort((a, b) => a.date.compareTo(b.date));
     DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -614,6 +616,11 @@ class StateService extends ChangeNotifier {
     for (var i = 0; i < bars.length; i++) {
       if (!dayOnly(bars[i].date).isAfter(t)) end = i + 1;
     }
+    // A borda superior estava no último candle quando aplicada: acompanha
+    // os candles diários que surgiram desde então.
+    if (_currentConfig.daily.profileManualFollowLast) {
+      end = bars.length;
+    }
     if (start >= end) {
       // Janela fora do histórico recarregado (ex.: > 120 dias): full.
       _dailyRangeStart = 0;
@@ -624,10 +631,40 @@ class StateService extends ChangeNotifier {
 
     _dailyRangeStart = start.clamp(0, bars.length - 1);
     _dailyRangeEnd = end.clamp(_dailyRangeStart + 1, bars.length);
-    _currentConfig.daily.profileManualFrom = f;
-    _currentConfig.daily.profileManualTo = t;
+    final actualFrom = dayOnly(bars[_dailyRangeStart].date);
+    final actualTo = dayOnly(bars[_dailyRangeEnd - 1].date);
+    _currentConfig.daily.profileManualFrom = actualFrom;
+    _currentConfig.daily.profileManualTo = actualTo;
     await _saveConfigForSymbol(_symbol);
-    await loadDailyProfileAndExtremes(from: f, to: t);
+    await loadDailyProfileAndExtremes(from: actualFrom, to: actualTo);
+  }
+
+  /// Estende a janela manual 1D quando um novo candle diário aparece e o
+  /// usuário ancorou a borda superior no último candle disponível (ver
+  /// [DailyAnalysisConfig.profileManualFollowLast]). Recarrega perfil + topos
+  /// com o novo `to`; não notifica (chamadores já notificam).
+  void _maybeExtendDailyManualRange() {
+    if (_isDailyLoading) return;
+    if (_currentConfig.daily.profileAutoByPriceStructure) return;
+    if (!_currentConfig.daily.profileManualFollowLast) return;
+    final bars = List.of(_dailyBars)..sort((a, b) => a.date.compareTo(b.date));
+    if (bars.isEmpty) return;
+    final end = _dailyRangeEnd.clamp(0, bars.length);
+    if (end <= 0) return;
+    DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final lastIncluded = dayOnly(bars[end - 1].date);
+    final newLast = dayOnly(bars[bars.length - 1].date);
+    if (!newLast.isAfter(lastIncluded)) return;
+
+    final start = _dailyRangeStart.clamp(0, bars.length - 1);
+    _dailyRangeStart = start;
+    _dailyRangeEnd = bars.length;
+    final from = dayOnly(bars[start].date);
+    _currentConfig.daily.profileManualFrom = from;
+    _currentConfig.daily.profileManualTo = newLast;
+    _saveConfigForSymbol(_symbol);
+    // ignore: discarded_futures
+    loadDailyProfileAndExtremes(from: from, to: newLast);
   }
 
   /// Auto Mode 1D: janela = última perna do 1440 resolvida pelo BACKEND
@@ -1433,6 +1470,7 @@ class StateService extends ChangeNotifier {
     } else {
       _dailyBars.add(live);
       _dailyBars.sort((a, b) => a.date.compareTo(b.date));
+      _maybeExtendDailyManualRange();
     }
   }
 
@@ -2993,6 +3031,7 @@ class StateService extends ChangeNotifier {
     } else {
       _dailyBars.add(live);
       _dailyBars.sort((a, b) => a.date.compareTo(b.date));
+      _maybeExtendDailyManualRange();
     }
     notifyListeners();
   }

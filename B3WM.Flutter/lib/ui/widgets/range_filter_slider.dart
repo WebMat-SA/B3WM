@@ -37,6 +37,25 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
   RangeValues? _localValues;
 
   @override
+  void didUpdateWidget(covariant RangeFilterSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sincroniza só quando o estado EXTERNO mudou (novo candle, auto mode,
+    // troca de símbolo…). Durante o arrasto o widget.onChanged atualiza
+    // apenas `_localValues`, então não podemos reancorar a cada rebuild —
+    // isso fazia o thumb voltar e escondia a data de destino.
+    if (oldWidget.count != widget.count ||
+        oldWidget.start != widget.start ||
+        oldWidget.end != widget.end) {
+      final count = widget.count;
+      if (count > 0) {
+        final safeStart = widget.start.clamp(0, count - 1);
+        final safeEnd = widget.end.clamp(safeStart + 1, count);
+        _localValues = RangeValues(safeStart.toDouble(), safeEnd.toDouble());
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final count = widget.count;
     if (count == 0) return const SizedBox.shrink();
@@ -47,12 +66,8 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
     // Initialize local values from state on first build
     _localValues ??= RangeValues(safeStart.toDouble(), safeEnd.toDouble());
 
-    // If state changed externally (e.g., auto mode), sync local values
-    if (!widget.autoMode &&
-        (_localValues!.start != safeStart ||
-            _localValues!.end != safeEnd)) {
-      _localValues = RangeValues(safeStart.toDouble(), safeEnd.toDouble());
-    }
+    final localStart = _localValues!.start.round().clamp(0, count - 1);
+    final localEnd = _localValues!.end.round().clamp(localStart + 1, count);
 
     void onChangeEnd(RangeValues v) {
       final newStart = v.start.round().clamp(0, count - 2);
@@ -62,15 +77,15 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
       }
       widget.onApply(newStart, newEnd);
       setState(() {
-        _localValues = v;
+        _localValues = RangeValues(newStart.toDouble(), newEnd.toDouble());
       });
     }
 
     if (widget.autoMode) {
-      return _buildAutoModeLabel(safeEnd);
+      return _buildAutoModeLabel(safeEnd - 1);
     }
 
-    return _buildManualSlider(count, safeStart, safeEnd, onChangeEnd);
+    return _buildManualSlider(count, localStart, localEnd, onChangeEnd);
   }
 
   Widget _headerEnd(String text) {
@@ -86,7 +101,7 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
     );
   }
 
-  Widget _buildAutoModeLabel(int safeEnd) {
+  Widget _buildAutoModeLabel(int lastIndex) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -96,7 +111,7 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _headerEnd(widget.formatDate(safeEnd)),
+          _headerEnd(widget.formatDate(lastIndex)),
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -120,8 +135,11 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
     );
   }
 
-  Widget _buildManualSlider(int count, int safeStart, int safeEnd,
+  Widget _buildManualSlider(int count, int localStart, int localEnd,
       void Function(RangeValues) onChangeEnd) {
+    // `end` é exclusivo: a data exibida é a do último candle incluído.
+    final startLabel = widget.formatDate(localStart);
+    final endLabel = widget.formatDate(localEnd - 1);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -131,16 +149,16 @@ class _RangeFilterSliderState extends State<RangeFilterSlider> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // End date label
-          _headerEnd(widget.formatDate(safeEnd)),
+          // Mostra a data de destino durante o arrasto (antes só aparecia
+          // depois de soltar).
+          _headerEnd('$startLabel → $endLabel'),
           // Range filter
           RangeSlider(
             min: 0,
             max: count.toDouble(),
             divisions: count,
-            values: _localValues!,
-            labels: RangeLabels(
-                widget.formatDate(safeStart), widget.formatDate(safeEnd)),
+            values: RangeValues(localStart.toDouble(), localEnd.toDouble()),
+            labels: RangeLabels(startLabel, endLabel),
             onChanged: (v) {
               // Apenas atualiza UI local durante o arrasto, sem aplicar
               setState(() {

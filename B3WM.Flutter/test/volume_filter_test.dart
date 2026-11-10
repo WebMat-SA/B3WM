@@ -155,6 +155,40 @@ void main() {
     expect(levels.firstWhere((v) => v.price == 1002).total, 3);
   });
 
+  test('novo candle entra na janela se a borda superior era o último candle',
+      () async {
+    signalR.onCloseBar!(_bar(0, [_lvl(1000, 10)]));
+    signalR.onCloseBar!(_bar(1, [_lvl(1000, 10), _lvl(1001, 5)]));
+    signalR.onCloseBar!(
+        _bar(2, [_lvl(1000, 10), _lvl(1001, 5), _lvl(1002, 3)]));
+
+    service.applyVolumeFilter(1, 3);
+    expect(service.dateRangeEnd, 3);
+
+    signalR.onCloseBar!(
+        _bar(3, [_lvl(1000, 10), _lvl(1001, 5), _lvl(1002, 3), _lvl(1003, 4)]));
+
+    expect(service.dateRangeEnd, 4);
+    final levels = service.filteredVolumeLevels!;
+    expect(levels.firstWhere((v) => v.price == 1003).total, 4);
+  });
+
+  test('novo candle não entra na janela se a borda superior não era o último',
+      () async {
+    signalR.onCloseBar!(_bar(0, [_lvl(1000, 10)]));
+    signalR.onCloseBar!(_bar(1, [_lvl(1000, 10), _lvl(1001, 5)]));
+    signalR.onCloseBar!(
+        _bar(2, [_lvl(1000, 10), _lvl(1001, 5), _lvl(1002, 3)]));
+
+    service.applyVolumeFilter(0, 2);
+    expect(service.dateRangeEnd, 2);
+
+    signalR.onCloseBar!(
+        _bar(3, [_lvl(1000, 10), _lvl(1001, 5), _lvl(1002, 3), _lvl(1003, 4)]));
+
+    expect(service.dateRangeEnd, 2);
+  });
+
   test('current bar ao vivo sem VolumeLevel preserva o snapshot cumulativo',
       () async {
     signalR.onCloseBar!(_bar(0, [_lvl(1000, 10)]));
