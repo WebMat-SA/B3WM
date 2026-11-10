@@ -108,7 +108,7 @@ class Agents {
   static const inter = Agents._(1099, 'INTER DTVM LTDA');
   static const ourinvest = Agents._(1106, 'Ourinvest DTVM S.A.');
   static const citibank = Agents._(1116, 'BANCO CITIBANK');
-  static const stoneX = Agents._(1130, 'StoneX Distribuidora de Títulos e Valores Mobiliários Ltda');
+  static const stoneX = Agents._(1130, 'STONEX DISTRIBUIDORA DE TÍTULOS E VALORES MOBILIÁRIOS LTDA');
   static const caixa = Agents._(1570, 'CAIXA ECONOMICA FEDERAL');
   static const ideal = Agents._(1618, 'IDEAL CTVM SA');
   static const modal = Agents._(1982, 'MODAL DTVM LTDA');

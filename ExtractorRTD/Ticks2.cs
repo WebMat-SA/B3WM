@@ -309,8 +309,8 @@ namespace B3WM.Shared.Entity
             [Display(Description = "BANCO CITIBANK")]
             Citibank = 1116,
 
-            [Description("StoneX Distribuidora de Títulos e Valores Mobiliários Ltda")]
-            [Display(Description = "StoneX Distribuidora de Títulos e Valores Mobiliários Ltda")]
+            [Description("STONEX DISTRIBUIDORA DE TÍTULOS E VALORES MOBILIÁRIOS LTDA")]
+            [Display(Description = "STONEX DISTRIBUIDORA DE TÍTULOS E VALORES MOBILIÁRIOS LTDA")]
             StoneX = 1130,
 
             [Description("CAIXA ECONOMICA FEDERAL")]
