@@ -108,7 +108,7 @@ class Agents {
   static const inter = Agents._(1099, 'INTER DTVM LTDA');
   static const ourinvest = Agents._(1106, 'Ourinvest DTVM S.A.');
   static const citibank = Agents._(1116, 'BANCO CITIBANK');
-  static const intl = Agents._(1130, 'INTL FCStone DTVM Ltda.');
+  static const stoneX = Agents._(1130, 'StoneX Distribuidora de Títulos e Valores Mobiliários Ltda');
   static const caixa = Agents._(1570, 'CAIXA ECONOMICA FEDERAL');
   static const ideal = Agents._(1618, 'IDEAL CTVM SA');
   static const modal = Agents._(1982, 'MODAL DTVM LTDA');
@@ -140,7 +140,7 @@ class Agents {
     geral, sita, elliotWarren, senso, amaril, codepe, goldman, bancoBnp,
     mirae, clear, paginvest, daycoval, rico, bancoOurinvest, bancoModal,
     abnAmro, dillon, bbRecursos, icap, levDtvM, bb, advalor, rbCapital,
-    inter, ourinvest, citibank, intl, caixa, ideal, modal, bcoFibra,
+    inter, ourinvest, citibank, stoneX, caixa, ideal, modal, bcoFibra,
     orla, positiva, santanderSecurities, lla, banestes, rioBravo, orama,
     rji, andBank, bs2, toro, c6,
   ];

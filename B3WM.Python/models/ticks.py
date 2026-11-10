@@ -93,7 +93,7 @@ class Agents(DescribedEnum):
     Inter = (1099, "INTER DTVM LTDA")
     Ourinvest = (1106, "Ourinvest DTVM S.A.")
     Citibank = (1116, "BANCO CITIBANK")
-    Intl = (1130, "INTL FCStone DTVM Ltda.")
+    StoneX = (1130, "StoneX Distribuidora de Títulos e Valores Mobiliários Ltda")
     Caixa = (1570, "CAIXA ECONOMICA FEDERAL")
     Ideal = (1618, "IDEAL CTVM SA")
     Modal = (1982, "MODAL DTVM LTDA")
