@@ -88,6 +88,16 @@ namespace B3WM.Shared.Models.Strategies
         public double? DirecaoCobertura { get; set; }
         /// <summary>Motivo da lateral JEV (vazio quando há direção).</summary>
         public string? DirecaoMotivo { get; set; }
+        /// <summary>Leitura simples da Jev (continuar/reverter/lateralizar).</summary>
+        public string Leitura { get; set; } = "";
+        public double LeituraConfidence { get; set; }
+        public double PerdaDeForca { get; set; }
+        public double Absorcao { get; set; }
+        public double Contexto { get; set; }
+        public bool SetupContexto { get; set; }
+        public bool SetupConfirmacao { get; set; }
+        public string NivelChave { get; set; } = "";
+        public List<string> Evidencias { get; set; } = new();
         public int StateChars { get; set; }
         public string SnapshotHash { get; set; } = "";
         public string PositionBefore { get; set; } = "flat";

@@ -1,4 +1,4 @@
-namespace B3WM.Shared.Models.AI
+﻿namespace B3WM.Shared.Models.AI
 {
     /// <summary>
     /// Pedido de análise (endpoint avulso Ai/Analyze). Leva o blob cru da
@@ -10,8 +10,8 @@ namespace B3WM.Shared.Models.AI
     {
         public string Symbol { get; set; } = string.Empty;
         public int TimeFrame { get; set; } = 5;
-        public int LookbackCandles { get; set; } = 60;
-        public int LookbackBubbles { get; set; } = 30;
+        public int LookbackCandles { get; set; } = 24;
+        public int LookbackBubbles { get; set; } = 20;
 
         /// <summary>Dia exibido na tela (default: hoje). Se != hoje, só arquivos (sem live).</summary>
         public DateTime? DisplayDate { get; set; }
@@ -64,6 +64,33 @@ namespace B3WM.Shared.Models.AI
 
         /// <summary>Motivo da lateral (vazio quando há compra/venda).</summary>
         public string DirecaoMotivo { get; set; } = "";
+
+        /// <summary>Leitura simples: continuar_alta|continuar_baixa|lateralizar|reverter_para_baixa|reverter_para_alta|inconclusivo.</summary>
+        public string Leitura { get; set; } = "";
+
+        /// <summary>Confiança da leitura (0..1), já ponderada pela evidência.</summary>
+        public double LeituraConfidence { get; set; }
+
+        /// <summary>Perda de força do movimento (0..1).</summary>
+        public double PerdaDeForca { get; set; }
+
+        /// <summary>Absorção contra o movimento no nível (0..1).</summary>
+        public double Absorcao { get; set; }
+
+        /// <summary>Qualidade objetiva do contexto (0..1).</summary>
+        public double Contexto { get; set; }
+
+        /// <summary>Setup amplo: zona diária oposta + bolhas filtradas + movimento forte.</summary>
+        public bool SetupContexto { get; set; }
+
+        /// <summary>Setup estrito: contexto + baixo volume/absorção e zona curta.</summary>
+        public bool SetupConfirmacao { get; set; }
+
+        /// <summary>Nível/nome do gatilho (ex.: "topo diario 172930 (79t)").</summary>
+        public string NivelChave { get; set; } = "";
+
+        /// <summary>Evidências curtas que sustentam a leitura.</summary>
+        public List<string> Evidencias { get; set; } = new();
 
         /// <summary>Confiança de operabilidade = média ponderada (0..1).</summary>
         public double ConfiancaOperavel { get; set; }

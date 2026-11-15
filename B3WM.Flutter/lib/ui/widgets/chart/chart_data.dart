@@ -144,6 +144,17 @@ class StrategyPoint {
 
   /// Motivo da lateral JEV. Nulo/vazio quando há compra/venda.
   final String? direcaoMotivo;
+
+  /// Leitura simples da Jev e evidências objetivas do contexto.
+  final String leitura;
+  final double leituraConfidence;
+  final double perdaDeForca;
+  final double absorcao;
+  final double contexto;
+  final bool setupContexto;
+  final bool setupConfirmacao;
+  final String nivelChave;
+  final List<String> evidencias;
   final String snapshotHash;
 
   StrategyPoint({
@@ -161,6 +172,15 @@ class StrategyPoint {
     this.direcaoConsenso,
     this.direcaoCobertura,
     this.direcaoMotivo,
+    this.leitura = '',
+    this.leituraConfidence = 0,
+    this.perdaDeForca = 0,
+    this.absorcao = 0,
+    this.contexto = 0,
+    this.setupContexto = false,
+    this.setupConfirmacao = false,
+    this.nivelChave = '',
+    this.evidencias = const [],
     required this.snapshotHash,
   });
 }
@@ -683,6 +703,15 @@ ChartData buildChartData(StateService state) {
         direcaoConsenso: t.direcaoConsenso,
         direcaoCobertura: t.direcaoCobertura,
         direcaoMotivo: t.direcaoMotivo,
+        leitura: t.leitura,
+        leituraConfidence: t.leituraConfidence,
+        perdaDeForca: t.perdaDeForca,
+        absorcao: t.absorcao,
+        contexto: t.contexto,
+        setupContexto: t.setupContexto,
+        setupConfirmacao: t.setupConfirmacao,
+        nivelChave: t.nivelChave,
+        evidencias: t.evidencias,
         snapshotHash: t.snapshotHash,
       ));
     }

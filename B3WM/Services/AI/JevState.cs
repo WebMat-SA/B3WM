@@ -28,6 +28,7 @@ namespace B3WM.Services.AI
     public sealed class JevIntradayDto
     {
         [JsonPropertyName("scope")] public JevRangeDto Scope { get; set; } = new();
+        [JsonPropertyName("context")] public JevContextDto? Context { get; set; }
         [JsonPropertyName("candles")] public List<JevCandleDto> Candles { get; set; } = new();
         [JsonPropertyName("volume_profile")] public JevVolumeProfileDto? VolumeProfile { get; set; }
         [JsonPropertyName("bubbles")] public List<JevBubbleDto> Bubbles { get; set; } = new();
@@ -93,6 +94,10 @@ namespace B3WM.Services.AI
         [JsonPropertyName("is_trigger")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool IsTrigger { get; set; }
+        /// <summary>filter | cluster | trigger</summary>
+        [JsonPropertyName("source")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Source { get; set; }
     }
 
     public sealed class JevNearestPivotDto
@@ -129,7 +134,17 @@ namespace B3WM.Services.AI
         [JsonPropertyName("distance_ticks")] public double DistanceTicks { get; set; }
         [JsonPropertyName("touched_at")] public DateTime? TouchedAt { get; set; }
         [JsonPropertyName("reclaimed")] public bool Reclaimed { get; set; }
+        [JsonPropertyName("volume_rank")] public double? VolumeRank { get; set; }
+        [JsonPropertyName("low_volume")] public bool LowVolume { get; set; }
+        [JsonPropertyName("zone_low")] public double? ZoneLow { get; set; }
+        [JsonPropertyName("zone_high")] public double? ZoneHigh { get; set; }
+        [JsonPropertyName("zone_strength")] public double? ZoneStrength { get; set; }
+        [JsonPropertyName("zone_confidence")] public double? ZoneConfidence { get; set; }
+        [JsonPropertyName("is_major")] public bool IsMajor { get; set; }
         [JsonPropertyName("bubbles")] public JevBubbleSummaryDto Bubbles { get; set; } = new();
+        [JsonPropertyName("cluster_bubbles")] public JevBubbleSummaryDto ClusterBubbles { get; set; } = new();
+        /// <summary>buy | sell | none</summary>
+        [JsonPropertyName("absorption")] public string Absorption { get; set; } = "none";
     }
 
     public sealed class JevPivotDto
@@ -146,6 +161,90 @@ namespace B3WM.Services.AI
         /// <summary>topo | vale</summary>
         [JsonPropertyName("type")] public string Type { get; set; } = "";
         [JsonPropertyName("price")] public double Price { get; set; }
+        [JsonPropertyName("strength")] public double Strength { get; set; }
+        [JsonPropertyName("confidence")] public double Confidence { get; set; }
+        [JsonPropertyName("width")] public double Width { get; set; }
+        [JsonPropertyName("start")] public double Start { get; set; }
+        [JsonPropertyName("end")] public double End { get; set; }
+        [JsonPropertyName("distance_ticks")] public double DistanceTicks { get; set; }
+        /// <summary>support | resistance</summary>
+        [JsonPropertyName("side")] public string Side { get; set; } = "";
+        [JsonPropertyName("is_major")] public bool IsMajor { get; set; }
+    }
+
+    /// <summary>
+    /// Contexto destilado da regra: movimento recente, resumo de volume,
+    /// confluência de zona diária + bolhas filtradas + baixo volume/absorção.
+    /// </summary>
+    public sealed class JevContextDto
+    {
+        [JsonPropertyName("price")] public double Price { get; set; }
+        [JsonPropertyName("tick_size")] public double TickSize { get; set; }
+        [JsonPropertyName("recent_move")] public JevRecentMoveDto RecentMove { get; set; } = new();
+        [JsonPropertyName("daily_volume")] public JevVolumeSummaryDto? DailyVolume { get; set; }
+        [JsonPropertyName("intraday_volume")] public JevVolumeSummaryDto? IntradayVolume { get; set; }
+        [JsonPropertyName("confluence")] public JevConfluenceDto Confluence { get; set; } = new();
+    }
+
+    public sealed class JevRecentMoveDto
+    {
+        /// <summary>alta | baixa | lateral</summary>
+        [JsonPropertyName("direction")] public string Direction { get; set; } = "lateral";
+        [JsonPropertyName("candles")] public int Candles { get; set; }
+        [JsonPropertyName("change_ticks")] public double ChangeTicks { get; set; }
+        [JsonPropertyName("range_ticks")] public double RangeTicks { get; set; }
+        [JsonPropertyName("atr_ticks")] public double AtrTicks { get; set; }
+        [JsonPropertyName("efficiency")] public double Efficiency { get; set; }
+        /// <summary>forte | fraca</summary>
+        [JsonPropertyName("strength")] public string Strength { get; set; } = "fraca";
+    }
+
+    public sealed class JevVolumeSummaryDto
+    {
+        [JsonPropertyName("poc")] public double Poc { get; set; }
+        [JsonPropertyName("vah")] public double Vah { get; set; }
+        [JsonPropertyName("val")] public double Val { get; set; }
+        [JsonPropertyName("delta_total")] public long DeltaTotal { get; set; }
+        [JsonPropertyName("total")] public long Total { get; set; }
+        [JsonPropertyName("price_rank")] public double PriceRank { get; set; }
+        [JsonPropertyName("price_in_low_volume")] public bool PriceInLowVolume { get; set; }
+        [JsonPropertyName("nearest_lvn")] public JevVolumeNodeDto? NearestLvn { get; set; }
+        [JsonPropertyName("hvn")] public List<JevVolumeNodeDto> Hvn { get; set; } = new();
+        [JsonPropertyName("lvn")] public List<JevVolumeNodeDto> Lvn { get; set; } = new();
+    }
+
+    public sealed class JevVolumeNodeDto
+    {
+        [JsonPropertyName("price")] public double Price { get; set; }
+        [JsonPropertyName("total")] public long Total { get; set; }
+        [JsonPropertyName("share")] public double Share { get; set; }
+        [JsonPropertyName("distance_ticks")] public double DistanceTicks { get; set; }
+    }
+
+    public sealed class JevConfluenceDto
+    {
+        [JsonPropertyName("at_daily_zone")] public bool AtDailyZone { get; set; }
+        /// <summary>topo | vale | ""</summary>
+        [JsonPropertyName("daily_zone_type")] public string DailyZoneType { get; set; } = "";
+        [JsonPropertyName("opposite_daily_zone")] public bool OppositeDailyZone { get; set; }
+        [JsonPropertyName("opposite_daily_zone_price")] public double? OppositeDailyZonePrice { get; set; }
+        [JsonPropertyName("opposite_daily_zone_distance_ticks")] public double? OppositeDailyZoneDistanceTicks { get; set; }
+        [JsonPropertyName("opposite_daily_zone_in_range")] public bool OppositeDailyZoneInRange { get; set; }
+        [JsonPropertyName("low_volume_near_valley")] public bool LowVolumeNearValley { get; set; }
+        [JsonPropertyName("low_volume_valley_rank")] public double? LowVolumeValleyRank { get; set; }
+        [JsonPropertyName("low_volume_valley_distance_ticks")] public double? LowVolumeValleyDistanceTicks { get; set; }
+        [JsonPropertyName("filtered_bubbles_at_zone")] public bool FilteredBubblesAtZone { get; set; }
+        [JsonPropertyName("filtered_bubble_count")] public int FilteredBubbleCount { get; set; }
+        /// <summary>buy | sell | none</summary>
+        [JsonPropertyName("absorption_side")] public string AbsorptionSide { get; set; } = "none";
+        [JsonPropertyName("prior_move")] public string PriorMove { get; set; } = "";
+        /// <summary>alta | baixa | lateral</summary>
+        [JsonPropertyName("prior_move_direction")] public string PriorMoveDirection { get; set; } = "lateral";
+        [JsonPropertyName("prior_move_strong")] public bool PriorMoveStrong { get; set; }
+        /// <summary>Sinal amplo: zona diária oposta + bolhas filtradas + movimento forte.</summary>
+        [JsonPropertyName("setup_contexto")] public bool SetupContexto { get; set; }
+        /// <summary>Sinal estrito: contexto + baixo volume/absorção e zona curta.</summary>
+        [JsonPropertyName("setup_confirmacao")] public bool SetupConfirmacao { get; set; }
     }
 
     public sealed class JevStructureDto

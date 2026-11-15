@@ -129,7 +129,7 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 
 ### Estratégias (rodar no backend)
 - Contrato `IStrategy`: `Name`/`Description`/`DetailsMd` (MD obrigatório, renderizado na aba) + `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` no fechamento do candle com ao menos uma bolha visível no filtro da tela, enviando todas as bolhas do candle)
-- `JevAnalysis`: pergunta à Jev o que fazer com o contexto da tela (foto dos filtros enviada no PLAY)
+- `JevAnalysis`: envia o contexto destilado (zonas diárias, volume, bolhas filtradas, movimento) e a Jev confirma a leitura simples (`continuar/reverter/lateralizar`) + perda de força (foto dos filtros enviada no PLAY)
 - Lock de configuração por símbolo: `WINFUT` e `WDOFUT` podem rodar estratégias simultaneamente; PAUSE/STOP libera somente o símbolo correspondente
 - Sessões identificadas por strategy + símbolo + timeframe; dentro do mesmo símbolo, a UI bloqueia apenas a combinação exata já ativa
 - Paper trades com relatório diário em JSON; envio real ao MT5 implementado mas comentado (`LiveTradingEnabled=false`)

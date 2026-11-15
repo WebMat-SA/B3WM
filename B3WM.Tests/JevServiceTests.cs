@@ -48,7 +48,10 @@ public class JevServiceTests
 
     private sealed class Factory(HttpMessageHandler handler) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://api.typesafe.ai/"),
+        };
     }
 
     private sealed class CaptureHandler : HttpMessageHandler

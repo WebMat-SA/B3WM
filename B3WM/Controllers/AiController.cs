@@ -48,8 +48,9 @@ namespace B3WM.Controllers
             if (string.IsNullOrWhiteSpace(req.Symbol))
                 return BadRequest("Symbol é obrigatório (WINFUT/WDOFUT).");
             req.TimeFrame = req.TimeFrame <= 0 ? 5 : req.TimeFrame;
-            req.LookbackCandles = Math.Clamp(req.LookbackCandles, 5, 200);
-            req.LookbackBubbles = Math.Clamp(req.LookbackBubbles, 0, 200);
+            // Orçamento do state: o endpoint avulso usa o mesmo teto da strategy.
+            req.LookbackCandles = Math.Clamp(req.LookbackCandles, 5, 30);
+            req.LookbackBubbles = Math.Clamp(req.LookbackBubbles, 0, 24);
 
             var displayDate = (req.DisplayDate?.Date ?? DateTime.Today);
             var specRaw = req.ScreenConfig?.GetRawText() ?? "{}";

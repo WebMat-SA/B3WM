@@ -187,6 +187,8 @@ public class JevWeightFitterTool
             try { rec = JsonSerializer.Deserialize<JevAuditRecord>(await File.ReadAllTextAsync(file)); }
             catch { continue; }
             if (rec == null || rec.Answer.Criteria.Count == 0) continue;
+            // Formato novo (leitura simples) não usa os 25 indicadores legados.
+            if (!rec.Answer.Criteria.ContainsKey("candles_alta")) continue;
 
             var date = rec.DisplayDate.Date;
             var key = $"{rec.Symbol}_{rec.TimeFrame}_{date:yyyy-MM-dd}";

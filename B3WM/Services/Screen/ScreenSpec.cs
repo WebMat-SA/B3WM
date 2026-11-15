@@ -99,6 +99,11 @@ namespace B3WM.Services.Screen
             "strategyTimelineVisible", // display puro da faixa ⓘ (não entra no snapshot)
             "panelFraction",
             "lookbackDays", // multi-day é fase 2; hoje o backend usa janela explícita
+            // View state / cores / janela manual: o backend recebe a janela
+            // explícita em ProfileFrom/ProfileTo e o resto é só display.
+            "yZoom", "xZoom", "panX", "panY",
+            "extremeTopColor", "extremeValleyColor", "extremeIncludeDaily",
+            "profileManualFrom", "profileManualTo", "profileManualFollowLast",
         };
     }
 }

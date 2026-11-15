@@ -76,6 +76,11 @@ public class JevAuditTests
         ConfiancaOperavel = 0.9,
         Criteria = new() { ["candles_alta"] = 0.8, ["sem_chop"] = 0.7 },
         Proximidade = 0.6, ProximidadeTicks = 12, ProximidadeRef = "vwap",
+        Leitura = "reverter_para_baixa", LeituraConfidence = 0.74,
+        PerdaDeForca = 0.85, Absorcao = 0.78, Contexto = 0.62,
+        SetupContexto = true, SetupConfirmacao = true,
+        NivelChave = "topo diario 172930 (79t)",
+        Evidencias = new() { "topo diario 172930 a 79t" },
         InputTokens = 100, OutputTokens = 10,
     };
 
@@ -86,7 +91,8 @@ public class JevAuditTests
         var blocks = JevPrompt.MeasureBlocks("WINFUT", 2, snap);
         foreach (var k in new[]
                  {
-                     "intraday.candles", "intraday.bubbles", "intraday.volume",
+                     "intraday.context", "intraday.candles", "intraday.bubbles",
+                     "intraday.volume",
                      "intraday.pivots", "intraday.extremes", "intraday.structures",
                      "daily.candles", "daily.volume", "daily.pivots", "daily.extremes", "daily.structures",
                  })
@@ -122,7 +128,7 @@ public class JevAuditTests
         Assert.Equal(payload, r.Payload);
         Assert.StartsWith("{\"state\":{", r.Payload);
         Assert.Contains("\"questions\":", r.Payload);
-        Assert.Contains("candles_alta", r.Payload);
+        Assert.Contains("leitura", r.Payload);
         // Inputs detalhados: JSONs reais de tudo que chegou.
         Assert.NotNull(r.Input.Candles);
         var candlesJson = r.Input.Candles!.Value.EnumerateArray().ToList();
@@ -150,6 +156,12 @@ public class JevAuditTests
         Assert.Equal("comprar", r.Answer.Direcao);
         Assert.Equal(0.72, r.Answer.DirecaoNet, 6);
         Assert.Equal(0.9, r.Answer.DirecaoConsenso, 6);
+        Assert.Equal("reverter_para_baixa", r.Answer.Leitura);
+        Assert.Equal(0.85, r.Answer.PerdaDeForca, 6);
+        Assert.True(r.Answer.SetupContexto);
+        Assert.True(r.Answer.SetupConfirmacao);
+        Assert.Equal("topo diario 172930 (79t)", r.Answer.NivelChave);
+        Assert.Single(r.Answer.Evidencias);
         Assert.Equal(100, r.Answer.InputTokens);
     }
 
@@ -217,7 +229,7 @@ public class JevAuditTests
         Assert.Empty(r.Answer.Criteria);
         // O payload que estourou fica registrado integralmente para diagnóstico.
         Assert.Equal(payload, r.Payload);
-        Assert.Contains("candles_alta", r.Payload);
+        Assert.Contains("leitura", r.Payload);
         Assert.Equal(1, r.Filtered.CandlesSent);
     }
 

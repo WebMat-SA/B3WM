@@ -84,9 +84,7 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     for (final p in widget.points) {
       byIndex.putIfAbsent(p.candleIndex, () => []).add(p);
     }
-    final gs = byIndex.entries
-        .map((e) => _LaneGroup(e.key, e.value))
-        .toList()
+    final gs = byIndex.entries.map((e) => _LaneGroup(e.key, e.value)).toList()
       ..sort((a, b) => a.candleIndex.compareTo(b.candleIndex));
     return gs;
   }
@@ -163,8 +161,7 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     final screen = MediaQuery.of(context).size;
     final global = box.localToGlobal(Offset(iconLocalX, 13));
     const cardW = 340.0;
-    final maxLeft =
-        (screen.width - cardW - 8).clamp(8.0, double.infinity);
+    final maxLeft = (screen.width - cardW - 8).clamp(8.0, double.infinity);
     final left = (global.dx + 12).clamp(8.0, maxLeft);
 
     // Abre preferencialmente acima do ícone; se não houver altura, abaixo.
@@ -172,11 +169,12 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     final spaceAbove = global.dy - gap - 8;
     final spaceBelow = screen.height - global.dy - gap - 8;
     final above = spaceAbove >= spaceBelow || spaceBelow < 120;
-    final maxHeight = (above ? spaceAbove : spaceBelow)
-        .clamp(80.0, screen.height);
+    final maxHeight =
+        (above ? spaceAbove : spaceBelow).clamp(80.0, screen.height);
     final top = above ? null : (global.dy + gap).clamp(8.0, screen.height - 8);
-    final bottom =
-        above ? (screen.height - global.dy + gap).clamp(8.0, screen.height - 8) : null;
+    final bottom = above
+        ? (screen.height - global.dy + gap).clamp(8.0, screen.height - 8)
+        : null;
 
     _hideTip();
     _tipEntry = OverlayEntry(
@@ -255,9 +253,8 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     final data = JevTooltipData.fromPoint(p);
     final sideColor =
         data.isJev ? _jevSideColor(data.vies) : strategyPointColor(p);
-    final sideLabel = data.isJev
-        ? JevTooltipData.sideLabel(data.vies)
-        : p.side.toUpperCase();
+    final sideLabel =
+        data.isJev ? JevTooltipData.sideLabel(data.vies) : p.side.toUpperCase();
     final badge = data.isJev
         ? (sideLabel == 'LATERAL'
             ? '$sideLabel · sem sinal'
@@ -311,63 +308,9 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
             decoration: TextDecoration.none,
           ),
         ),
-        if (data.isJev) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _biasTile(data, sideColor)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _summaryTile(
-                  'OPERÁVEL',
-                  data.operabilidade,
-                  'qualidade do contexto',
-                ),
-              ),
-            ],
-          ),
-          _skepticStrip(data),
-          if (data.proximidade != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                children: [
-                  const Text(
-                    'Proximidade',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 9.5,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${data.proximidade!.toStringAsFixed(2)}'
-                    '${data.proximidadeRef.isEmpty ? '' : ' · ${JevTooltipData.refLabel(data.proximidadeRef)}'}'
-                    '${data.proximidadeTicks == null ? '' : ' · ${data.proximidadeTicks!.toStringAsFixed(0)}t'}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          _indicatorSection(
-            'DIREÇÃO',
-            data.direction,
-            directional: true,
-            subtitle: 'baixo = venda · centro = lateral · alto = compra\n'
-                '↑/↓ = confiança de alta/baixa · número à direita = saldo',
-          ),
-          _indicatorSection(
-            'OPERABILIDADE',
-            data.operability,
-            subtitle: '0% = contexto ruim · 100% = favorável',
-          ),
-        ] else if (p.reason.isNotEmpty) ...[
+        if (data.isJev)
+          _jevCard(data, sideColor)
+        else if (p.reason.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
             p.reason,
@@ -380,6 +323,170 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _jevCard(JevTooltipData data, Color sideColor) {
+    if (!data.hasSimpleReading) return _legacyJevCard(data, sideColor);
+
+    final color = JevTooltipData.readingColor(data.leitura);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: color.withValues(alpha: 0.7)),
+              ),
+              child: Text(
+                '${JevTooltipData.readingLabel(data.leitura)} · '
+                '${(data.leituraConfidence * 100).round()}%',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+            if (data.setupLabel.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  data.setupLabel,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 8,
+                    letterSpacing: 0.4,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: _summaryTile(
+                'PERDA DE FORÇA',
+                data.perdaDeForca,
+                null,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _summaryTile('CONTEXTO', data.contexto, null),
+            ),
+          ],
+        ),
+        if (data.nivelChave.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Nível: ${data.nivelChave}',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+        if (data.evidencias.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          ...data.evidencias.take(4).map(
+                (e) => Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '• $e',
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 9,
+                      height: 1.25,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+              ),
+        ],
+      ],
+    );
+  }
+
+  Widget _legacyJevCard(JevTooltipData data, Color sideColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _biasTile(data, sideColor)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _summaryTile(
+                'OPERÁVEL',
+                data.operabilidade,
+                'qualidade do contexto',
+              ),
+            ),
+          ],
+        ),
+        _skepticStrip(data),
+        if (data.proximidade != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                const Text(
+                  'Proximidade',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 9.5,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${data.proximidade!.toStringAsFixed(2)}'
+                  '${data.proximidadeRef.isEmpty ? '' : ' · ${JevTooltipData.refLabel(data.proximidadeRef)}'}'
+                  '${data.proximidadeTicks == null ? '' : ' · ${data.proximidadeTicks!.toStringAsFixed(0)}t'}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        _indicatorSection(
+          'DIREÇÃO',
+          data.direction,
+          directional: true,
+          subtitle: 'baixo = venda · centro = lateral · alto = compra\n'
+              '↑/↓ = confiança de alta/baixa · número à direita = saldo',
+        ),
+        _indicatorSection(
+          'OPERABILIDADE',
+          data.operability,
+          subtitle: '0% = contexto ruim · 100% = favorável',
+        ),
       ],
     );
   }
@@ -520,9 +627,8 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     final netColor = net == null
         ? Colors.white54
         : JevTooltipData.directionColor(0.5 + 0.5 * net);
-    final netText = net == null
-        ? '—'
-        : '${net >= 0 ? '+' : ''}${net.toStringAsFixed(2)}';
+    final netText =
+        net == null ? '—' : '${net >= 0 ? '+' : ''}${net.toStringAsFixed(2)}';
     final metrics = <String>[
       if (cons != null) 'CONSENSO ${(cons * 100).round()}%',
       if (cov != null) 'COBERTURA ${(cov * 100).round()}%',
@@ -685,10 +791,10 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
                     ? '↓${(item.bear! * 100).round()}%'
                     : '${(item.value * 100).round()}%'
         : '${(item.value * 100).round()}%';
-    final barValue = directional && !paired &&
-            (item.bull != null || item.bear != null)
-        ? (item.bull ?? item.bear)!
-        : item.value;
+    final barValue =
+        directional && !paired && (item.bull != null || item.bear != null)
+            ? (item.bull ?? item.bear)!
+            : item.value;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -729,8 +835,7 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
     );
   }
 
-  Widget _directionBar(double value,
-      {required double height, Color? color}) {
+  Widget _directionBar(double value, {required double height, Color? color}) {
     final v = value.clamp(0.0, 1.0);
     final fillColor = color ?? JevTooltipData.directionColor(v);
     final delta = (v - 0.5).abs();
@@ -817,8 +922,7 @@ class _StrategyTimelineLaneState extends State<StrategyTimelineLane> {
   @override
   Widget build(BuildContext context) {
     final m = widget.controller.value;
-    final scaleX =
-        (m[0].isFinite && m[0] > 0) ? m[0].toDouble() : 1.0;
+    final scaleX = (m[0].isFinite && m[0] > 0) ? m[0].toDouble() : 1.0;
     final tx = m.getTranslation().x.isFinite ? m.getTranslation().x : 0.0;
     // Sem GestureDetector de propósito: o detalhe abre no hover (igual ao
     // bubble info) e o tap atravessa para o gráfico abaixo. O tooltip vive
@@ -889,8 +993,7 @@ class _TimelinePainter extends CustomPainter {
       layout.add((x: x, group: g));
       final color = strategyPointColor(g.items.first);
       // Círculo + letra i.
-      canvas.drawCircle(
-          Offset(x, 13), 8, Paint()..color = color);
+      canvas.drawCircle(Offset(x, 13), 8, Paint()..color = color);
       canvas.drawCircle(
           Offset(x, 13),
           8,

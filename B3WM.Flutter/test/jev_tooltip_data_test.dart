@@ -19,6 +19,15 @@ StrategyPoint _point({
   double? direcaoConsenso,
   double? direcaoCobertura,
   String? direcaoMotivo,
+  String leitura = '',
+  double leituraConfidence = 0,
+  double perdaDeForca = 0,
+  double absorcao = 0,
+  double contexto = 0,
+  bool setupContexto = false,
+  bool setupConfirmacao = false,
+  String nivelChave = '',
+  List<String> evidencias = const [],
 }) =>
     StrategyPoint(
       candleIndex: 10,
@@ -35,10 +44,46 @@ StrategyPoint _point({
       direcaoConsenso: direcaoConsenso,
       direcaoCobertura: direcaoCobertura,
       direcaoMotivo: direcaoMotivo,
+      leitura: leitura,
+      leituraConfidence: leituraConfidence,
+      perdaDeForca: perdaDeForca,
+      absorcao: absorcao,
+      contexto: contexto,
+      setupContexto: setupContexto,
+      setupConfirmacao: setupConfirmacao,
+      nivelChave: nivelChave,
+      evidencias: evidencias,
       snapshotHash: 'ABC',
     );
 
 void main() {
+  test('leitura simples usa o cartão novo e evidências', () {
+    final data = JevTooltipData.fromPoint(_point(
+      leitura: 'reverter_para_baixa',
+      leituraConfidence: 0.72,
+      perdaDeForca: 0.81,
+      contexto: 0.62,
+      setupConfirmacao: true,
+      nivelChave: 'topo diario 172930 (79t)',
+      evidencias: const [
+        'topo diario 172930 a 79t',
+        'baixo volume perto de vale',
+      ],
+    ));
+
+    expect(data.hasSimpleReading, isTrue);
+    expect(data.isJev, isTrue);
+    expect(data.leitura, 'reverter_para_baixa');
+    expect(JevTooltipData.readingLabel(data.leitura), 'REVERSÃO ↓');
+    expect(data.setupLabel, 'CONFIRMAÇÃO');
+    expect(data.perdaDeForca, 0.81);
+    expect(data.contexto, 0.62);
+    expect(data.nivelChave, 'topo diario 172930 (79t)');
+    expect(data.evidencias.length, 2);
+    expect(data.direction, isEmpty);
+    expect(data.operability, isEmpty);
+  });
+
   test('colapsa cada par alta/baixa em um indicador de direção', () {
     final data = JevTooltipData.fromPoint(_point(criteria: const {
       'candles_alta': 0.80,

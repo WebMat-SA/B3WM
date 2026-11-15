@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using B3WM.Services.AI;
 using B3WM.Services.Screen;
 using B3WM.Shared.Models;
@@ -42,8 +42,9 @@ namespace B3WM.Services.Strategies
             "\n" +
             "- **Gatilho:** fechamento do candle do TF da sessão com pelo menos uma bolha visível (que passa no filtro da tela); a Jev recebe todas as bolhas ocorridas no candle, inclusive as ocultas pelo filtro (não dispara na abertura/1ª bolha do candle vigente).\n" +
             "- **TF:** o TF vigente no PLAY (filtros travados na sessão; execução no open do próprio TF).\n" +
-            "- **Parâmetros fixos no código:** `LookbackCandles=60`, `LookbackBubbles=30`.\n" +
-            "- **Saída INFORMATIVA (Composite scoring):** 10 dimensões de direção com perguntas espelhadas alta/baixa (20 perguntas) + 5 de operabilidade; viés `comprar|vender|lateral`, proximidade técnica e contexto de níveis (pivô/vale + cluster de bolhas). **Não** decide operar/não-operar — a decisão é manual; pesos/thresholds em `JevWeights` (sobrescrevíveis por `Data/jev_weights.json`).\n" +
+            "- **Parâmetros fixos no código:** `LookbackCandles=24`, `LookbackBubbles=20`, estruturas 6, diário 24/4, extremos 8, zonas 6.\n" +
+            "- **Envio enriquecido:** o state leva um bloco `context` pré-calculado com movimento recente (direção/força/eficiência), zonas diárias com qualidade, resumo do volume profile (POC/VAH/VAL/HVN/LVN/rank), bolhas filtradas vs cluster e flags de confluência (`setup_contexto` amplo, `setup_confirmacao` estrito). O orçamento alvo é ≤26k tokens por pergunta.\n" +
+            "- **Saída simples:** a Jev responde 4 perguntas atômicas (`evidencia_suficiente`, `leitura` choice, `perda_de_forca` score, `absorcao_no_nivel`) e o código devolve `leitura` (`continuar_alta|continuar_baixa|lateralizar|reverter_para_baixa|reverter_para_alta|inconclusivo`), confiança, perda de força, contexto objetivo e evidências curtas. **Não** decide operar/não-operar — a decisão é manual.\n" +
             "- **Foto da tela:** o PLAY congela `SymbolConfig` (filtros de bolhas, estrutura, visibilidades); " +
             "a avaliação reconstrói o snapshot a partir dessa foto.\n" +
             "- **Riscos/limitações:** depende da IA (latência/cota); log-only (sem envio real); " +
@@ -58,8 +59,8 @@ namespace B3WM.Services.Strategies
             TriggerChecks.IsCandleCloseWithVisibleBubbles(ev, ctx.TimeFrame, ctx.Filter);
 
         /// <summary>Config 100% no código (nada no tab).</summary>
-        private const int LookbackCandles = 60;
-        private const int LookbackBubbles = 30;
+        private const int LookbackCandles = 24;
+        private const int LookbackBubbles = 20;
 
         public override async Task<StrategyDecision?> EvaluateAsync(
             StrategyEvent ev, StrategyContext ctx, CancellationToken ct = default)
@@ -130,13 +131,23 @@ namespace B3WM.Services.Strategies
             return new StrategyDecision
             {
                 Side = res!.Direcao,
-                Confidence = res.DirecaoConfidence,
+                Confidence = res.LeituraConfidence > 0
+                    ? res.LeituraConfidence : res.DirecaoConfidence,
                 Criteria = res.Criteria,
                 Reason = JevPrompt.FormatCriteria(res),
                 DirecaoNet = res.DirecaoNet,
                 DirecaoConsenso = res.DirecaoConsenso,
                 DirecaoCobertura = res.DirecaoCobertura,
                 DirecaoMotivo = res.DirecaoMotivo,
+                Leitura = res.Leitura,
+                LeituraConfidence = res.LeituraConfidence,
+                PerdaDeForca = res.PerdaDeForca,
+                Absorcao = res.Absorcao,
+                Contexto = res.Contexto,
+                SetupContexto = res.SetupContexto,
+                SetupConfirmacao = res.SetupConfirmacao,
+                NivelChave = res.NivelChave,
+                Evidencias = res.Evidencias,
                 StateChars = res.StatePreview.Length,
                 AuditFile = auditFile,
             };

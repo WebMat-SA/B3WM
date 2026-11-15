@@ -36,17 +36,33 @@ class StrategyDecisionItem {
   final double confidence;
   final double encerrar;
   final bool shouldTrade;
+
   /// Confiança por criteria (JEV — informativo). Vazio no resto.
   final Map<String, double> criteria;
   final String reason;
+
   /// Net direcional JEV (-1..1). Nulo em logs antigos/outras strategies.
   final double? direcaoNet;
+
   /// Consenso das dimensões JEV (0..1). Nulo em logs antigos.
   final double? direcaoConsenso;
+
   /// Cobertura das dimensões JEV (0..1). Nulo em logs antigos.
   final double? direcaoCobertura;
+
   /// Motivo da lateral JEV. Nulo/vazio quando há compra/venda.
   final String? direcaoMotivo;
+
+  /// Leitura simples da Jev (continuar/reverter/lateralizar/inconclusivo).
+  final String leitura;
+  final double leituraConfidence;
+  final double perdaDeForca;
+  final double absorcao;
+  final double contexto;
+  final bool setupContexto;
+  final bool setupConfirmacao;
+  final String nivelChave;
+  final List<String> evidencias;
   final int stateChars;
   final String snapshotHash;
   final String positionBefore;
@@ -67,6 +83,15 @@ class StrategyDecisionItem {
     this.direcaoConsenso,
     this.direcaoCobertura,
     this.direcaoMotivo,
+    this.leitura = '',
+    this.leituraConfidence = 0,
+    this.perdaDeForca = 0,
+    this.absorcao = 0,
+    this.contexto = 0,
+    this.setupContexto = false,
+    this.setupConfirmacao = false,
+    this.nivelChave = '',
+    this.evidencias = const [],
     required this.stateChars,
     required this.snapshotHash,
     required this.positionBefore,
@@ -94,6 +119,17 @@ class StrategyDecisionItem {
             (json['DirecaoCobertura'] as num?)?.toDouble(),
         direcaoMotivo: json['direcaoMotivo'] as String? ??
             json['DirecaoMotivo'] as String?,
+        leitura: _string(json['leitura'] ?? json['Leitura']),
+        leituraConfidence:
+            _double(json['leituraConfidence'] ?? json['LeituraConfidence']),
+        perdaDeForca: _double(json['perdaDeForca'] ?? json['PerdaDeForca']),
+        absorcao: _double(json['absorcao'] ?? json['Absorcao']),
+        contexto: _double(json['contexto'] ?? json['Contexto']),
+        setupContexto: _bool(json['setupContexto'] ?? json['SetupContexto']),
+        setupConfirmacao:
+            _bool(json['setupConfirmacao'] ?? json['SetupConfirmacao']),
+        nivelChave: _string(json['nivelChave'] ?? json['NivelChave']),
+        evidencias: _stringList(json['evidencias'] ?? json['Evidencias']),
         stateChars: (json['stateChars'] as num?)?.toInt() ?? 0,
         snapshotHash: json['snapshotHash'] as String? ?? '',
         positionBefore: json['positionBefore'] as String? ?? 'flat',
@@ -143,7 +179,8 @@ class StrategySession {
         reportItems: (((json['reportItems'] as List?) ??
                     json['recentDecisions'] as List?) ??
                 [])
-            .map((e) => StrategyDecisionItem.fromJson(e as Map<String, dynamic>))
+            .map(
+                (e) => StrategyDecisionItem.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
 }
@@ -161,12 +198,20 @@ DateTime b3Wall(DateTime at) {
 /// Parse tolerante de data/hora completa (novo campo `at`/`At`).
 /// Com offset/Z: absoluto. Sem offset (backend serializa Unspecified sem
 /// offset): parede BRT. Retorna null se ausente/inválido (log muito antigo).
+double _double(dynamic v) => (v as num?)?.toDouble() ?? 0;
+
+bool _bool(dynamic v) => v is bool ? v : false;
+
+String _string(dynamic v) => v is String ? v : '';
+
+List<String> _stringList(dynamic v) =>
+    v is List ? v.whereType<String>().toList(growable: false) : const [];
+
 DateTime? _parseAt(dynamic v) {
   if (v == null) return null;
   if (v is DateTime) return v;
   if (v is String && v.isNotEmpty) {
-    final hasZone =
-        RegExp(r'([Zz]|[+-]\d{2}:?\d{2})$').hasMatch(v);
+    final hasZone = RegExp(r'([Zz]|[+-]\d{2}:?\d{2})$').hasMatch(v);
     final parsed = DateTime.tryParse(v);
     if (parsed == null) return null;
     if (hasZone) return parsed;
@@ -192,6 +237,15 @@ class StrategyTimelineItem {
   final double? direcaoConsenso;
   final double? direcaoCobertura;
   final String? direcaoMotivo;
+  final String leitura;
+  final double leituraConfidence;
+  final double perdaDeForca;
+  final double absorcao;
+  final double contexto;
+  final bool setupContexto;
+  final bool setupConfirmacao;
+  final String nivelChave;
+  final List<String> evidencias;
   final String snapshotHash;
 
   const StrategyTimelineItem({
@@ -208,6 +262,15 @@ class StrategyTimelineItem {
     this.direcaoConsenso,
     this.direcaoCobertura,
     this.direcaoMotivo,
+    this.leitura = '',
+    this.leituraConfidence = 0,
+    this.perdaDeForca = 0,
+    this.absorcao = 0,
+    this.contexto = 0,
+    this.setupContexto = false,
+    this.setupConfirmacao = false,
+    this.nivelChave = '',
+    this.evidencias = const [],
     required this.snapshotHash,
   });
 
@@ -227,6 +290,15 @@ class StrategyTimelineItem {
         direcaoConsenso: d.direcaoConsenso,
         direcaoCobertura: d.direcaoCobertura,
         direcaoMotivo: d.direcaoMotivo,
+        leitura: d.leitura,
+        leituraConfidence: d.leituraConfidence,
+        perdaDeForca: d.perdaDeForca,
+        absorcao: d.absorcao,
+        contexto: d.contexto,
+        setupContexto: d.setupContexto,
+        setupConfirmacao: d.setupConfirmacao,
+        nivelChave: d.nivelChave,
+        evidencias: d.evidencias,
         snapshotHash: d.snapshotHash,
       );
 }
@@ -297,12 +369,15 @@ class StrategyLogDay {
         symbol: json['symbol'] as String? ?? '',
         strategy: json['strategy'] as String? ?? '',
         snapshotHash: json['snapshotHash'] as String? ?? '',
-        decisions: ((json['decisions'] as List?) ?? (json['Decisions'] as List?) ?? [])
-            .whereType<Map>()
-            .map((e) => StrategyDecisionItem.fromJson(
-                e.map((k, v) => MapEntry(k.toString(), v))))
-            .toList(),
-        paperTrades: ((json['paperTrades'] as List?) ?? (json['PaperTrades'] as List?) ?? [])
+        decisions:
+            ((json['decisions'] as List?) ?? (json['Decisions'] as List?) ?? [])
+                .whereType<Map>()
+                .map((e) => StrategyDecisionItem.fromJson(
+                    e.map((k, v) => MapEntry(k.toString(), v))))
+                .toList(),
+        paperTrades: ((json['paperTrades'] as List?) ??
+                (json['PaperTrades'] as List?) ??
+                [])
             .whereType<Map>()
             .map((e) => StrategyPaperTrade.fromJson(
                 e.map((k, v) => MapEntry(k.toString(), v))))
@@ -353,13 +428,11 @@ class StrategyService {
           'strategy': strategy,
           'symbol': symbol,
           'screenConfig': screenConfig,
-          if (displayDate != null)
-            'displayDate': displayDate.toIso8601String(),
+          if (displayDate != null) 'displayDate': displayDate.toIso8601String(),
         }),
       );
       if (response.statusCode != 200) {
-        logD(
-            '[strategy] Arm HTTP ${response.statusCode}: ${response.body}');
+        logD('[strategy] Arm HTTP ${response.statusCode}: ${response.body}');
         return null;
       }
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -382,8 +455,8 @@ class StrategyService {
 
   Future<Map<String, dynamic>?> stop(String sessionId) async {
     try {
-      final response = await _client.post(Uri.parse(
-          '$_baseUrl/api/Strategy/Stop?sessionId=$sessionId'));
+      final response = await _client
+          .post(Uri.parse('$_baseUrl/api/Strategy/Stop?sessionId=$sessionId'));
       if (response.statusCode != 200) return null;
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {

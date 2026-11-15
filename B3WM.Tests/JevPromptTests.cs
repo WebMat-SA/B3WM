@@ -115,6 +115,16 @@ public class JevPromptTests
         var b = Assert.Single(s.Intraday.Bubbles);
         Assert.Equal("buy", b.Side);
         Assert.Equal("BGC LIQUIDEZ DTVM", b.Agent);
+        Assert.Equal("filter", b.Source);
+        // Contexto destilado (movimento + volume + confluência).
+        Assert.NotNull(s.Intraday.Context);
+        Assert.Equal(101, s.Intraday.Context!.Price);
+        Assert.Equal("alta", s.Intraday.Context.RecentMove.Direction);
+        Assert.NotNull(s.Intraday.Context.DailyVolume);
+        Assert.True(s.Intraday.Context.DailyVolume!.Total > 0);
+        Assert.NotNull(s.Intraday.Context.Confluence);
+        Assert.Contains(s.Intraday.LevelContext,
+            l => l.VolumeRank != null);
         // Volume profile.
         Assert.NotNull(s.Intraday.VolumeProfile);
         Assert.Equal(101, s.Intraday.VolumeProfile!.Poc);
@@ -127,12 +137,12 @@ public class JevPromptTests
         // Pivots com toque (candle 99..102 contém 100 e 102).
         Assert.Equal(2, s.Intraday.Pivots.Count);
         Assert.All(s.Intraday.Pivots, p => Assert.NotNull(p.TouchedAt));
-        // Topos/vales: só Top/Valley (Indeterminate fora), ordenado por preço.
+        // Topos/vales: só Top/Valley (Indeterminate fora), ordenado por distância.
         Assert.Equal(2, s.Intraday.TopsValleys.Count);
-        Assert.Equal("vale", s.Intraday.TopsValleys[0].Type);
-        Assert.Equal(99, s.Intraday.TopsValleys[0].Price);
-        Assert.Equal("topo", s.Intraday.TopsValleys[1].Type);
-        Assert.Equal(103, s.Intraday.TopsValleys[1].Price);
+        Assert.Contains(s.Intraday.TopsValleys,
+            e => e.Type == "vale" && e.Price == 99);
+        Assert.Contains(s.Intraday.TopsValleys,
+            e => e.Type == "topo" && e.Price == 103);
         // Structures intraday trazem o timeframe.
         Assert.Contains(s.Intraday.Structures, x => x.Timeframe == 2);
         Assert.DoesNotContain(s.Intraday.Structures, x => x.Timeframe == 1440);
@@ -182,8 +192,8 @@ public class JevPromptTests
         Assert.Equal(31, s.Intraday.Bubbles.Count);
         Assert.Contains(s.Intraday.Bubbles, b => b.Date == bubbles[0].Date && b.IsTrigger);
         Assert.Equal(bubbles[^1].Date, s.Intraday.Bubbles[^1].Date);
-        // Estruturas recortadas ao mesmo escopo dos candles enviados.
-        Assert.Equal(60, s.Intraday.Structures.Count);
+        // Estruturas recortadas ao escopo e limitadas às mais recentes.
+        Assert.Equal(6, s.Intraday.Structures.Count);
         Assert.All(s.Intraday.Structures,
             st => Assert.InRange(st.Date, candles[40].Date, candles[^1].Date));
     }
@@ -227,6 +237,7 @@ public class JevPromptTests
         };
         snap.Layers[SnapshotLayers.Bubbles] = new List<BubbleStorageItem> { triggerBubble };
         snap.Raw["bubblesPool"] = new List<BubbleStorageItem> { clusterBubble, triggerBubble };
+        snap.Raw["bubblesFiltered"] = new List<BubbleStorageItem> { triggerBubble };
         snap.Raw["triggerBubbleKeys"] = new HashSet<string> { JevPrompt.BubbleKey(triggerBubble) };
         JevPrompt.EnsureLevelCluster(snap, at.AddMinutes(2));
 
@@ -237,7 +248,10 @@ public class JevPromptTests
             l => l.Level == "S2" && l.Bubbles.BuyAmount == 475 && l.Reclaimed);
         var sent = state.Intraday.Bubbles.Single(b => b.Price == 99.0);
         Assert.True(sent.IsTrigger);
+        Assert.Equal("trigger", sent.Source);
         Assert.False(state.Intraday.Bubbles.Single(b => b.Price == 98.9).IsTrigger);
+        Assert.Equal("cluster",
+            state.Intraday.Bubbles.Single(b => b.Price == 98.9).Source);
 
         var cluster = JevPrompt.SelectLevelClusterBubbles(snap, at.AddMinutes(2));
         Assert.Contains(cluster, b => b.Price == 98.9);
@@ -389,23 +403,127 @@ public class JevPromptTests
     }
 
     [Fact]
-    public void BuildQuestions_HasPairedDirectionIndicators_NoEncerrar()
+    public void BuildQuestions_HasSimpleReadingContract_NoLegacyIndicators()
     {
         var q = JevPrompt.BuildQuestions();
-        // 10 dimensões (20 perguntas alta/baixa) + 5 de operabilidade.
-        Assert.Equal(25, q.Count);
-        Assert.Equal(10, JevPrompt.DirectionDimensions.Length);
-        foreach (var dim in JevPrompt.DirectionDimensions)
-        {
-            Assert.True(q.ContainsKey(dim.BullId), $"pergunta de alta ausente: {dim.BullId}");
-            Assert.True(q.ContainsKey(dim.BearId), $"pergunta de baixa ausente: {dim.BearId}");
-        }
-        foreach (var id in JevPrompt.OperabilityIndicators)
-            Assert.True(q.ContainsKey(id), $"indicador de operabilidade ausente: {id}");
-        // Não existe mais pergunta de direção/gate/encerrar.
-        Assert.False(q.ContainsKey("direcao"));
-        Assert.False(q.ContainsKey("confianca_operavel"));
+        Assert.Equal(4, q.Count);
+        Assert.True(q.ContainsKey("evidencia_suficiente"));
+        Assert.True(q.ContainsKey("leitura"));
+        Assert.True(q.ContainsKey("perda_de_forca"));
+        Assert.True(q.ContainsKey("absorcao_no_nivel"));
+
+        var leitura = Assert.IsType<Dictionary<string, object>>(q["leitura"]);
+        Assert.Equal("choice", leitura["type"]);
+        var choices = Assert.IsType<Dictionary<string, string>>(leitura["criteria"]);
+        Assert.Equal(5, choices.Count);
+        Assert.Contains("reverter_para_baixa", choices.Keys);
+        Assert.Contains("lateralizar", choices.Keys);
+
+        var perda = Assert.IsType<Dictionary<string, object>>(q["perda_de_forca"]);
+        Assert.Equal("score", perda["type"]);
+        Assert.Equal(3, Assert.IsType<string[]>(perda["criteria"]).Length);
+
+        // O contrato antigo de 25 indicadores não é mais enviado.
+        Assert.False(q.ContainsKey("candles_alta"));
+        Assert.False(q.ContainsKey("sem_chop"));
         Assert.False(q.ContainsKey("encerrar_posicao"));
+    }
+
+    private const string AnswersLeitura = """
+        {"model":"jev-1.14.0","answers":{
+        "evidencia_suficiente":{"type":"noul","noul":0.82},
+        "leitura":{"type":"choice","choice":"reverter_para_baixa",
+          "confidence":0.74,
+          "probabilities":{"continuar_alta":0.08,"continuar_baixa":0.10,
+            "lateralizar":0.05,"reverter_para_baixa":0.74,"reverter_para_alta":0.03}},
+        "perda_de_forca":{"type":"score","score":1.70,"confidence":0.80,
+          "probabilities":{"0":0.10,"1":0.10,"2":0.80}},
+        "absorcao_no_nivel":{"type":"noul","noul":0.78}},
+        "usage":{"input_tokens":100,"output_tokens":10}}
+        """;
+
+    private const string StateWithContext = """
+        {"intraday":{
+          "context":{
+            "price":172535,"tick_size":5,
+            "recent_move":{"direction":"alta","candles":30,"change_ticks":84,
+              "range_ticks":120,"atr_ticks":18,"efficiency":0.62,"strength":"forte"},
+            "daily_volume":{"poc":172565,"vah":173175,"val":172260,
+              "delta_total":-98033,"total":16645094,"price_rank":0.28,
+              "price_in_low_volume":true,"nearest_lvn":{"price":172545,
+              "total":900,"share":0.01,"distance_ticks":2},"hvn":[],"lvn":[]},
+            "intraday_volume":null,
+            "confluence":{"at_daily_zone":true,"daily_zone_type":"topo",
+              "opposite_daily_zone":true,"opposite_daily_zone_price":172930,
+              "opposite_daily_zone_distance_ticks":79,
+              "opposite_daily_zone_in_range":true,
+              "low_volume_near_valley":true,"low_volume_valley_rank":0.18,
+              "low_volume_valley_distance_ticks":40,
+              "filtered_bubbles_at_zone":true,"filtered_bubble_count":3,
+              "absorption_side":"sell","prior_move":"alta_forte",
+              "prior_move_direction":"alta","prior_move_strong":true,
+              "setup_contexto":true,"setup_confirmacao":true}
+          },
+          "candles":[{"close":172535}],
+          "pivots":[],"structures":[],"tops_valleys":[],
+          "level_context":[
+            {"kind":"topo","side":"resistance","distance_ticks":79},
+            {"kind":"vale","side":"support","distance_ticks":40}],
+          "nearest_pivot":{"level":"R1","value":172723,"distance_ticks":38}
+        },"daily":{}}
+        """;
+
+    [Fact]
+    public void ParseDecision_ReadsSimpleReadingChoiceAndScores()
+    {
+        var r = JevPrompt.ParseDecision("WINFUT", "jev-1.14.0",
+            AnswersLeitura, 100, 10, StateJson);
+
+        Assert.Equal("reverter_para_baixa", r.Leitura);
+        Assert.Equal("vender", r.Direcao);
+        Assert.True(r.LeituraConfidence > 0.5);
+        Assert.Equal(0.85, r.PerdaDeForca, 6);
+        Assert.Equal(0.78, r.Absorcao, 6);
+        Assert.Equal(5, r.Criteria.Count);
+        Assert.Contains("perda de forca alta", string.Join(" ", r.Evidencias));
+        Assert.Contains("leitura=reverter_para_baixa", JevPrompt.FormatCriteria(r));
+    }
+
+    [Fact]
+    public void ParseDecision_NewFormatReadsContextSetupAndEvidence()
+    {
+        var r = JevPrompt.ParseDecision("WINFUT", "jev-1.14.0",
+            AnswersLeitura, 100, 10, StateWithContext);
+
+        Assert.True(r.SetupContexto);
+        Assert.True(r.SetupConfirmacao);
+        Assert.Equal("topo diario 172930 (79t)", r.NivelChave);
+        Assert.True(r.Contexto > 0);
+        var evidence = string.Join(" · ", r.Evidencias);
+        Assert.Contains("topo diario", evidence);
+        Assert.Contains("baixo volume perto de vale", evidence);
+        Assert.Contains("bolhas filtradas", evidence);
+        Assert.Contains("absorcao vendedora", evidence);
+    }
+
+    [Fact]
+    public void ParseDecision_LowEvidence_ReturnsInconclusivo()
+    {
+        const string answers = """
+            {"answers":{
+            "evidencia_suficiente":{"type":"noul","noul":0.20},
+            "leitura":{"type":"choice","choice":"reverter_para_baixa",
+              "confidence":0.90,"probabilities":{}},
+            "perda_de_forca":{"type":"score","score":2.0,"confidence":0.9,
+              "probabilities":{}},
+            "absorcao_no_nivel":{"type":"noul","noul":0.8}}}
+            """;
+
+        var r = JevPrompt.ParseDecision("WINFUT", "m", answers, 0, 0, StateJson);
+
+        Assert.Equal("inconclusivo", r.Leitura);
+        Assert.Equal(0, r.LeituraConfidence);
+        Assert.Equal("lateral", r.Direcao);
     }
 
     private const string AnswersComprar = """

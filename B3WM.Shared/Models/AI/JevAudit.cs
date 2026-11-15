@@ -95,6 +95,10 @@ namespace B3WM.Shared.Models.AI
         public int PivotDailyLevels { get; set; }
         public bool HasVwap { get; set; }
         public int StateChars { get; set; }
+        /// <summary>Estimativa conservadora (1 token/char) usada pelo orçamento.</summary>
+        public int EstimatedTokens { get; set; }
+        /// <summary>State dentro do limite default de 32k tokens por pergunta.</summary>
+        public bool BudgetOk { get; set; }
         public Dictionary<string, int> StateBlocks { get; set; } = new();
     }
 
@@ -126,6 +130,16 @@ namespace B3WM.Shared.Models.AI
         public double DirecaoCobertura { get; set; }
         /// <summary>Motivo da lateral (vazio quando há compra/venda).</summary>
         public string DirecaoMotivo { get; set; } = "";
+        /// <summary>Leitura simples: continuar_alta|continuar_baixa|lateralizar|reverter_para_baixa|reverter_para_alta|inconclusivo.</summary>
+        public string Leitura { get; set; } = "";
+        public double LeituraConfidence { get; set; }
+        public double PerdaDeForca { get; set; }
+        public double Absorcao { get; set; }
+        public double Contexto { get; set; }
+        public bool SetupContexto { get; set; }
+        public bool SetupConfirmacao { get; set; }
+        public string NivelChave { get; set; } = "";
+        public List<string> Evidencias { get; set; } = new();
         /// <summary>Confiança de operabilidade = média ponderada (0..1).</summary>
         public double ConfiancaOperavel { get; set; }
         /// <summary>Confiança por indicador/criteria (id → 0..1).</summary>

@@ -35,19 +35,42 @@ class JevTooltipData {
   final double? proximidade;
   final String proximidadeRef;
   final double? proximidadeTicks;
+
   /// Net assinado (-1..1): negativo = baixa/venda, positivo = alta/compra.
   final double? direcaoNet;
+
   /// Consenso das dimensões (0..1).
   final double? direcaoConsenso;
+
   /// Cobertura das dimensões (0..1).
   final double? direcaoCobertura;
+
   /// Motivo textual da lateral (vazio quando há compra/venda ou log antigo).
   final String direcaoMotivo;
+
+  /// Leitura simples nova (continuar/reverter/lateralizar/inconclusivo).
+  final String leitura;
+  final double leituraConfidence;
+  final double perdaDeForca;
+  final double absorcao;
+  final double contexto;
+  final bool setupContexto;
+  final bool setupConfirmacao;
+  final String nivelChave;
+  final List<String> evidencias;
   final List<JevIndicator> direction;
   final List<JevIndicator> operability;
   final String rawReason;
 
-  bool get isJev => direction.isNotEmpty || operability.isNotEmpty;
+  bool get hasSimpleReading => leitura.isNotEmpty;
+  bool get isJev =>
+      hasSimpleReading || direction.isNotEmpty || operability.isNotEmpty;
+
+  String get setupLabel => setupConfirmacao
+      ? 'CONFIRMAÇÃO'
+      : setupContexto
+          ? 'CONTEXTO'
+          : '';
 
   const JevTooltipData({
     required this.vies,
@@ -60,6 +83,15 @@ class JevTooltipData {
     this.direcaoConsenso,
     this.direcaoCobertura,
     this.direcaoMotivo = '',
+    this.leitura = '',
+    this.leituraConfidence = 0,
+    this.perdaDeForca = 0,
+    this.absorcao = 0,
+    this.contexto = 0,
+    this.setupContexto = false,
+    this.setupConfirmacao = false,
+    this.nivelChave = '',
+    this.evidencias = const [],
     required this.direction,
     required this.operability,
     required this.rawReason,
@@ -108,9 +140,13 @@ class JevTooltipData {
   factory JevTooltipData.fromPoint(StrategyPoint p) {
     final parsed = _ReasonSummary.tryParse(p.reason);
     final criteria = p.criteria;
+    final hasSimple = p.leitura.isNotEmpty;
 
-    final direction = _collectDirections(criteria);
-    final operability = _collect(criteria, operabilityLabels);
+    final direction =
+        hasSimple ? const <JevIndicator>[] : _collectDirections(criteria);
+    final operability = hasSimple
+        ? const <JevIndicator>[]
+        : _collect(criteria, operabilityLabels);
 
     // Sem criteria (log antigo ou strategy não-Jev): aproveita as listas
     // `dir:`/`op:` do próprio reason.
@@ -123,9 +159,11 @@ class JevTooltipData {
 
     final rawVies = _blank(parsed?.vies) ? p.side : parsed!.vies;
     return JevTooltipData(
-      vies: normalizeSide(rawVies),
-      direcaoConfidence: parsed?.confidence ?? p.confidence,
-      operabilidade: parsed?.operability ?? 0,
+      vies: normalizeSide(hasSimple ? p.side : rawVies),
+      direcaoConfidence: hasSimple
+          ? p.leituraConfidence
+          : (parsed?.confidence ?? p.confidence),
+      operabilidade: hasSimple ? p.contexto : (parsed?.operability ?? 0),
       proximidade: parsed?.proximity,
       proximidadeRef: parsed?.proximityRef ?? '',
       proximidadeTicks: parsed?.proximityTicks,
@@ -135,10 +173,51 @@ class JevTooltipData {
       direcaoMotivo: _blank(p.direcaoMotivo)
           ? (parsed?.motive ?? '')
           : p.direcaoMotivo!.trim(),
+      leitura: p.leitura,
+      leituraConfidence: p.leituraConfidence,
+      perdaDeForca: p.perdaDeForca,
+      absorcao: p.absorcao,
+      contexto: p.contexto,
+      setupContexto: p.setupContexto,
+      setupConfirmacao: p.setupConfirmacao,
+      nivelChave: p.nivelChave,
+      evidencias: p.evidencias,
       direction: reasonDirection,
       operability: reasonOperability,
       rawReason: p.reason,
     );
+  }
+
+  /// Rótulo curto da leitura simples.
+  static String readingLabel(String leitura) {
+    switch (leitura) {
+      case 'continuar_alta':
+        return 'CONTINUAÇÃO ↑';
+      case 'continuar_baixa':
+        return 'CONTINUAÇÃO ↓';
+      case 'reverter_para_baixa':
+        return 'REVERSÃO ↓';
+      case 'reverter_para_alta':
+        return 'REVERSÃO ↑';
+      case 'lateralizar':
+        return 'LATERAL';
+      default:
+        return 'INCONCLUSIVO';
+    }
+  }
+
+  /// Cor da leitura: reversão/continuação usam a direção; lateral é cinza.
+  static Color readingColor(String leitura) {
+    switch (leitura) {
+      case 'continuar_alta':
+      case 'reverter_para_alta':
+        return const Color(0xFF42A5F5);
+      case 'continuar_baixa':
+      case 'reverter_para_baixa':
+        return const Color(0xFFEF5350);
+      default:
+        return const Color(0xFF9E9E9E);
+    }
   }
 
   /// Normaliza rótulos antigos (`manter`) para o contrato atual (`lateral`).
@@ -271,13 +350,13 @@ class _ReasonSummary {
   static final _netRe = RegExp(r'\bnet=(-?[0-9]+(?:\.[0-9]+)?)');
   static final _consRe = RegExp(r'\bcons=(-?[0-9]+(?:\.[0-9]+)?)');
   static final _covRe = RegExp(r'\bcov=(-?[0-9]+(?:\.[0-9]+)?)');
-  static final _motivoRe =
-      RegExp(r'\bmotivo=(.*?)(?=\s+(?:op|prox)=|$)');
+  static final _motivoRe = RegExp(r'\bmotivo=(.*?)(?=\s+(?:op|prox)=|$)');
   static final _proxRe = RegExp(
       r'\bprox=([0-9]+(?:\.[0-9]+)?)\(([^)]*?)\s+([0-9]+(?:\.[0-9]+)?)t\)');
   static final _dirRe = RegExp(r'dir:\s*(.*?)(?:\s*\|\s*op:|$)');
   static final _opSectionRe = RegExp(r'\bop:\s*(.*)$');
-  static final _pairRe = RegExp(r'([A-Za-z_][A-Za-z0-9_]*)=([0-9]+(?:\.[0-9]+)?)%');
+  static final _pairRe =
+      RegExp(r'([A-Za-z_][A-Za-z0-9_]*)=([0-9]+(?:\.[0-9]+)?)%');
 
   static _ReasonSummary? tryParse(String reason) {
     if (reason.trim().isEmpty) return null;
@@ -292,7 +371,8 @@ class _ReasonSummary {
     return _ReasonSummary(
       vies: vies ?? '',
       confidence: conf ?? 0,
-      operability: double.tryParse(_opRe.firstMatch(reason)?.group(1) ?? '') ?? 0,
+      operability:
+          double.tryParse(_opRe.firstMatch(reason)?.group(1) ?? '') ?? 0,
       proximity: double.tryParse(proxMatch?.group(1) ?? ''),
       proximityRef: proxMatch?.group(2)?.trim() ?? '',
       proximityTicks: double.tryParse(proxMatch?.group(3) ?? ''),

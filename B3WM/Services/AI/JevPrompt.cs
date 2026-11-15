@@ -88,9 +88,18 @@ namespace B3WM.Services.AI
             MarketSnapshot snap,
             bool includeVolumeLevels = false,
             int maxCandles = 0,
-            int maxBubbles = 0)
+            int maxBubbles = 0,
+            int maxStructures = 6,
+            int maxDailyCandles = 24,
+            int maxDailyStructures = 4,
+            int maxExtremes = 8,
+            int maxZones = 6)
         {
             var candles = snap.Get<List<BarStorageItem>>(SnapshotLayers.Candles) ?? new();
+            // A janela do contexto pode ser maior que a série crua enviada;
+            // assim o movimento de 30 candles continua completo mesmo com o
+            // payload enxuto.
+            var contextCandles = candles;
             var bubbles = snap.Has(SnapshotLayers.Bubbles)
                 ? snap.Get<List<BubbleStorageItem>>(SnapshotLayers.Bubbles) ?? new()
                 : new();
@@ -132,33 +141,70 @@ namespace B3WM.Services.AI
                 stateBubbles = stateBubbles.Where(b => keep.Contains(BubbleKey(b))).ToList();
             }
 
+            // Bolhas que passaram no filtro real da tela (sem o cluster extra
+            // abaixo do threshold). Fallback: as bolhas do state.
+            var filteredBubbles = snap.Raw.TryGetValue("bubblesFiltered", out var rawFiltered)
+                && rawFiltered is List<BubbleStorageItem> filteredList
+                    ? filteredList
+                    : stateBubbles;
+            var filteredKeys = filteredBubbles.Select(BubbleKey).ToHashSet();
+
             var asOf = candles.Count > 0
                 ? candles[^1].Date.AddMinutes(timeFrame)
                 : DateTime.MinValue;
             var tickSize = Defaults.GetTickSize(symbol);
+            var lastPrice = candles.Count > 0 ? candles[^1].Close : 0;
             var levels = BuildLevelCandidates(
-                candles, pivIntra, pivDaily, extIntra, extDaily, tickSize);
+                contextCandles, pivIntra, pivDaily, extIntra, extDaily, tickSize);
             var nearestPivot = levels
                 .Where(l => l.Kind == "pivot")
                 .OrderBy(l => l.DistanceTicks)
                 .FirstOrDefault();
-            var levelContext = levels
-                .Where(l => l.DistanceTicks <= LevelContextMaxTicks ||
-                    (l.TouchedAt is { } touched && touched >= asOf.AddMinutes(-LevelClusterMinutes)))
-                .OrderBy(l => l.DistanceTicks)
-                .Take(LevelContextMaxItems)
-                .Select(l => ToLevelContext(l, stateBubbles, tickSize, asOf))
+
+            // Contexto destilado: o modelo recebe fatos pré-calculados, não
+            // precisa fazer contas de volume/distância.
+            var broadOptions = JevFeatureOptions.Broad with
+            {
+                ZoneMaxItems = Math.Max(maxZones, 8),
+            };
+            var context = JevContextAnalyzer.Build(
+                symbol, timeFrame, contextCandles, volume, dailyVolume,
+                pivIntra, pivDaily, extIntra, extDaily,
+                filteredBubbles, stateBubbles, asOf, broadOptions);
+            var strictMove = JevContextAnalyzer.BuildRecentMove(
+                contextCandles, tickSize, JevFeatureOptions.Strict);
+            var strictConfluence = JevContextAnalyzer.EvaluateConfluence(
+                context.Zones, strictMove, JevFeatureOptions.Strict, lastPrice);
+            var contextDto = ToContext(context, strictConfluence);
+
+            var levelContext = context.Zones
+                .Take(maxZones)
+                .Select(ToLevelContext)
                 .ToList();
+
+            var intraStructures = FilterIntradayStructures(structs, timeFrame, stateScope);
+            if (maxStructures > 0 && intraStructures.Count > maxStructures)
+                intraStructures = intraStructures.TakeLast(maxStructures).ToList();
+
+            var dailyStateCandles = dailyCandles;
+            if (maxDailyCandles > 0 && dailyStateCandles.Count > maxDailyCandles)
+                dailyStateCandles = dailyStateCandles.TakeLast(maxDailyCandles).ToList();
+
+            var dailyStructures = FilterDailyStructures(structs, dailyScope, dailyCandles);
+            if (maxDailyStructures > 0 && dailyStructures.Count > maxDailyStructures)
+                dailyStructures = dailyStructures.TakeLast(maxDailyStructures).ToList();
 
             var intraday = new JevIntradayDto
             {
                 Scope = Range(stateScope, candles),
+                Context = contextDto,
                 Candles = candles.Select(ToCandle).ToList(),
                 VolumeProfile = ToVolumeProfile(volume, includeVolumeLevels),
-                Bubbles = stateBubbles.Select(b => ToBubble(b, triggerKeys)).ToList(),
+                Bubbles = stateBubbles
+                    .Select(b => ToBubble(b, triggerKeys, filteredKeys)).ToList(),
                 Pivots = ToPivots(pivIntra, candles),
-                TopsValleys = ToExtremes(extIntra),
-                Structures = FilterIntradayStructures(structs, timeFrame, stateScope)
+                TopsValleys = ToExtremes(extIntra, lastPrice, tickSize, maxExtremes),
+                Structures = intraStructures
                     .Select(s => ToStructure(s, withTimeframe: true)).ToList(),
                 NearestPivot = nearestPivot == null ? null : ToNearestPivot(nearestPivot),
                 LevelContext = levelContext,
@@ -167,11 +213,11 @@ namespace B3WM.Services.AI
             var daily = new JevDailyDto
             {
                 Scope = Range(dailyScope, dailyCandles),
-                Candles = dailyCandles.Select(ToCandle).ToList(),
+                Candles = dailyStateCandles.Select(ToCandle).ToList(),
                 VolumeProfile = ToVolumeProfile(dailyVolume, includeVolumeLevels),
                 Pivots = ToPivots(pivDaily, dailyCandles),
-                TopsValleys = ToExtremes(extDaily),
-                Structures = FilterDailyStructures(structs, dailyScope, dailyCandles)
+                TopsValleys = ToExtremes(extDaily, lastPrice, tickSize, maxExtremes),
+                Structures = dailyStructures
                     .Select(s => ToStructure(s, withTimeframe: false)).ToList(),
             };
 
@@ -244,13 +290,24 @@ namespace B3WM.Services.AI
         };
 
         private static JevBubbleDto ToBubble(
-            BubbleStorageItem b, IReadOnlySet<string>? triggerKeys = null) => new()
+            BubbleStorageItem b,
+            IReadOnlySet<string>? triggerKeys = null,
+            IReadOnlySet<string>? filteredKeys = null)
         {
-            Date = b.Date, Agent = AgentName(b.Agent),
-            Side = b.ActionType == Ticks2.ActionType.Buy ? "buy" : "sell",
-            Amount = b.Amount, Price = b.Price,
-            IsTrigger = triggerKeys?.Contains(BubbleKey(b)) == true,
-        };
+            var key = BubbleKey(b);
+            var trigger = triggerKeys?.Contains(key) == true;
+            var source = trigger ? "trigger"
+                : filteredKeys?.Contains(key) == true ? "filter"
+                : "cluster";
+            return new JevBubbleDto
+            {
+                Date = b.Date, Agent = AgentName(b.Agent),
+                Side = b.ActionType == Ticks2.ActionType.Buy ? "buy" : "sell",
+                Amount = b.Amount, Price = b.Price,
+                IsTrigger = trigger,
+                Source = source,
+            };
+        }
 
         /// <summary>Chave estável de uma bolha para marcar as do gatilho.</summary>
         public static string BubbleKey(BubbleStorageItem b) =>
@@ -260,6 +317,18 @@ namespace B3WM.Services.AI
             snap.Raw.TryGetValue("triggerBubbleKeys", out var v) && v is IReadOnlySet<string> keys
                 ? keys
                 : null;
+
+        private static IReadOnlySet<string>? FilteredBubbleKeys(MarketSnapshot snap) =>
+            snap.Raw.TryGetValue("bubblesFiltered", out var v) &&
+            v is IEnumerable<BubbleStorageItem> filtered
+                ? filtered.Select(BubbleKey).ToHashSet()
+                : null;
+
+        private static int ArrayLength(JsonElement parent, string name, int fallback) =>
+            parent.TryGetProperty(name, out var value) &&
+            value.ValueKind == JsonValueKind.Array
+                ? value.GetArrayLength()
+                : fallback;
 
         /// <summary>
         /// Nome do agente para a Jev (ex.: "BGC LIQUIDEZ DTVM") no lugar do
@@ -331,16 +400,35 @@ namespace B3WM.Services.AI
             return out_;
         }
 
-        private static List<JevExtremeDto> ToExtremes(ExtremeStorageItem? item) =>
-            (item?.Extremes ?? new List<ExtremePoint>())
+        private static List<JevExtremeDto> ToExtremes(
+            ExtremeStorageItem? item,
+            double lastPrice,
+            double tickSize,
+            int maxItems)
+        {
+            var extremes = (item?.Extremes ?? new List<ExtremePoint>())
                 .Where(e => e.Type is ExtremeType.Top or ExtremeType.Valley)
-                .OrderBy(e => e.Position)
                 .Select(e => new JevExtremeDto
                 {
                     Type = e.Type == ExtremeType.Top ? "topo" : "vale",
                     Price = e.Position,
+                    Strength = e.Strength,
+                    Confidence = e.Confidence,
+                    Width = e.Width,
+                    Start = e.StartPosition,
+                    End = e.EndPosition,
+                    DistanceTicks = tickSize > 0
+                        ? Math.Abs(lastPrice - e.Position) / tickSize
+                        : 0,
+                    Side = e.Type == ExtremeType.Valley ? "support" : "resistance",
+                    IsMajor = e.Confidence >= 0.50,
                 })
+                .OrderBy(e => e.DistanceTicks)
                 .ToList();
+            return maxItems > 0 && extremes.Count > maxItems
+                ? extremes.Take(maxItems).ToList()
+                : extremes;
+        }
 
         /// <summary>Nível candidato (pivô/vale/topo) com distância ao preço.</summary>
         public sealed record JevLevelCandidate(
@@ -432,30 +520,108 @@ namespace B3WM.Services.AI
             TouchedAt = c.TouchedAt, Reclaimed = c.Reclaimed,
         };
 
-        private static JevLevelContextDto ToLevelContext(
-            JevLevelCandidate c, IReadOnlyList<BubbleStorageItem> bubbles,
-            double tickSize, DateTime asOf)
+        private static JevLevelContextDto ToLevelContext(JevZoneFeature zone) => new()
         {
-            var from = asOf.AddMinutes(-LevelClusterMinutes);
-            var radius = LevelClusterTicks * tickSize;
-            var near = bubbles.Where(b =>
-                    b.Date >= from && b.Date <= asOf && Math.Abs(b.Price - c.Value) <= radius)
-                .ToList();
-            var buys = near.Where(b => b.ActionType == Ticks2.ActionType.Buy).ToList();
-            var sells = near.Where(b => b.ActionType == Ticks2.ActionType.Sale).ToList();
-            var buyAmount = buys.Sum(b => b.Amount);
-            var sellAmount = sells.Sum(b => b.Amount);
-            return new JevLevelContextDto
+            Kind = zone.Kind,
+            Source = zone.Source,
+            Level = zone.Level,
+            Value = zone.Price,
+            Side = zone.Side,
+            DistanceTicks = zone.DistanceTicks,
+            TouchedAt = zone.TouchedAt,
+            Reclaimed = zone.Reclaimed,
+            VolumeRank = zone.VolumeRank,
+            LowVolume = zone.LowVolume,
+            ZoneLow = zone.ZoneLow,
+            ZoneHigh = zone.ZoneHigh,
+            ZoneStrength = zone.ZoneStrength,
+            ZoneConfidence = zone.ZoneConfidence,
+            IsMajor = zone.IsMajor,
+            Bubbles = ToBubbleSummary(zone.FilteredBubbles),
+            ClusterBubbles = ToBubbleSummary(zone.ClusterBubbles),
+            Absorption = zone.Absorption,
+        };
+
+        private static JevBubbleSummaryDto ToBubbleSummary(JevBubbleSummary s) => new()
+        {
+            Count = s.Count,
+            BuyCount = s.BuyCount,
+            SellCount = s.SellCount,
+            BuyAmount = s.BuyAmount,
+            SellAmount = s.SellAmount,
+            NetAmount = s.NetAmount,
+        };
+
+        private static JevContextDto ToContext(
+            JevContextFeatures context, JevConfluence strict)
+        {
+            var broad = context.Confluence;
+            return new JevContextDto
             {
-                Kind = c.Kind, Source = c.Source, Level = c.Level, Value = c.Value,
-                Side = c.Side, DistanceTicks = c.DistanceTicks,
-                TouchedAt = c.TouchedAt, Reclaimed = c.Reclaimed,
-                Bubbles = new JevBubbleSummaryDto
+                Price = context.Price,
+                TickSize = context.TickSize,
+                RecentMove = new JevRecentMoveDto
                 {
-                    Count = near.Count, BuyCount = buys.Count, SellCount = sells.Count,
-                    BuyAmount = buyAmount, SellAmount = sellAmount,
-                    NetAmount = buyAmount - sellAmount,
+                    Direction = context.RecentMove.Direction,
+                    Candles = context.RecentMove.Candles,
+                    ChangeTicks = context.RecentMove.ChangeTicks,
+                    RangeTicks = context.RecentMove.RangeTicks,
+                    AtrTicks = context.RecentMove.AtrTicks,
+                    Efficiency = context.RecentMove.Efficiency,
+                    Strength = context.RecentMove.Strong ? "forte" : "fraca",
                 },
+                DailyVolume = ToVolumeSummary(context.DailyVolume),
+                IntradayVolume = ToVolumeSummary(context.IntradayVolume),
+                Confluence = new JevConfluenceDto
+                {
+                    AtDailyZone = broad.AtDailyZone,
+                    DailyZoneType = broad.DailyZoneType,
+                    OppositeDailyZone = broad.OppositeDailyZone,
+                    OppositeDailyZonePrice = broad.OppositeDailyZonePrice,
+                    OppositeDailyZoneDistanceTicks = broad.OppositeDailyZoneDistanceTicks,
+                    OppositeDailyZoneInRange = broad.OppositeDailyZoneInRange,
+                    LowVolumeNearValley = broad.LowVolumeNearValley,
+                    LowVolumeValleyRank = broad.LowVolumeValleyRank,
+                    LowVolumeValleyDistanceTicks = broad.LowVolumeValleyDistanceTicks,
+                    FilteredBubblesAtZone = broad.FilteredBubblesAtZone,
+                    FilteredBubbleCount = broad.FilteredBubbleCount,
+                    AbsorptionSide = broad.AbsorptionSide,
+                    PriorMove = broad.PriorMove,
+                    PriorMoveDirection = broad.PriorMoveDirection,
+                    PriorMoveStrong = broad.PriorMoveStrong,
+                    SetupContexto = JevContextAnalyzer.IsSetupContexto(broad),
+                    SetupConfirmacao = JevContextAnalyzer.IsSetupConfirmacao(strict),
+                },
+            };
+        }
+
+        private static JevVolumeSummaryDto? ToVolumeSummary(JevVolumeSummary? summary)
+        {
+            if (summary == null) return null;
+            return new JevVolumeSummaryDto
+            {
+                Poc = summary.Poc,
+                Vah = summary.Vah,
+                Val = summary.Val,
+                DeltaTotal = summary.DeltaTotal,
+                Total = summary.Total,
+                PriceRank = summary.PriceRank,
+                PriceInLowVolume = summary.PriceInLowVolume,
+                NearestLvn = ToVolumeNode(summary.NearestLvn),
+                Hvn = summary.Hvn.Select(ToVolumeNode).Where(n => n != null).Cast<JevVolumeNodeDto>().ToList(),
+                Lvn = summary.Lvn.Select(ToVolumeNode).Where(n => n != null).Cast<JevVolumeNodeDto>().ToList(),
+            };
+        }
+
+        private static JevVolumeNodeDto? ToVolumeNode(JevVolumeNode? node)
+        {
+            if (node == null) return null;
+            return new JevVolumeNodeDto
+            {
+                Price = node.Price,
+                Total = node.Total,
+                Share = node.Share,
+                DistanceTicks = node.DistanceTicks,
             };
         }
 
@@ -536,12 +702,16 @@ namespace B3WM.Services.AI
         /// Mede o tamanho (chars) de cada bloco do state JSON, para a auditoria
         /// (issue #23): mostra qual bloco domina tokens. Puro, sem I/O.
         /// </summary>
-        public static Dictionary<string, int> MeasureBlocks(string symbol, int timeFrame, MarketSnapshot snap)
+        public static Dictionary<string, int> MeasureBlocks(
+            string symbol, int timeFrame, MarketSnapshot snap,
+            int maxCandles = 30, int maxBubbles = 24)
         {
-            var state = BuildStateJson(symbol, timeFrame, snap);
+            var state = BuildStateJson(symbol, timeFrame, snap,
+                maxCandles: maxCandles, maxBubbles: maxBubbles);
             int Len(object v) => JsonSerializer.Serialize(v).Length;
             return new Dictionary<string, int>
             {
+                ["intraday.context"] = Len(state.Intraday.Context),
                 ["intraday.candles"] = Len(state.Intraday.Candles),
                 ["intraday.bubbles"] = Len(state.Intraday.Bubbles),
                 ["intraday.volume"] = Len(state.Intraday.VolumeProfile),
@@ -634,7 +804,45 @@ namespace B3WM.Services.AI
                   SnapshotLayers.Vwap, SnapshotLayers.DailyCandles, SnapshotLayers.DailyVolume })
                 if (snap.Has(key)) layersOn.Add(key);
 
-            var blocks = MeasureBlocks(symbol, timeFrame, snap);
+            var sentCandles = candles.Count;
+            var sentBubbles = bubbles.Count;
+            var sentStructures = 0;
+            var sentExtremesIntra = 0;
+            var sentExtremesDaily = 0;
+            var sentPivotsIntra = 0;
+            var sentPivotsDaily = 0;
+            JsonElement? sentBubblesJson = null;
+            try
+            {
+                using var stateDoc = JsonDocument.Parse(state);
+                if (stateDoc.RootElement.ValueKind == JsonValueKind.Object &&
+                    stateDoc.RootElement.TryGetProperty("intraday", out var intra) &&
+                    intra.ValueKind == JsonValueKind.Object)
+                {
+                    sentCandles = ArrayLength(intra, "candles", sentCandles);
+                    sentBubbles = ArrayLength(intra, "bubbles", sentBubbles);
+                    sentStructures = ArrayLength(intra, "structures", 0);
+                    sentExtremesIntra = ArrayLength(intra, "tops_valleys", 0);
+                    sentPivotsIntra = ArrayLength(intra, "pivots", 0);
+                    if (intra.TryGetProperty("bubbles", out var bubblesElement) &&
+                        bubblesElement.ValueKind == JsonValueKind.Array)
+                        sentBubblesJson = bubblesElement.Clone();
+                }
+                if (stateDoc.RootElement.TryGetProperty("daily", out var daily) &&
+                    daily.ValueKind == JsonValueKind.Object)
+                {
+                    sentStructures += ArrayLength(daily, "structures", 0);
+                    sentExtremesDaily = ArrayLength(daily, "tops_valleys", 0);
+                    sentPivotsDaily = ArrayLength(daily, "pivots", 0);
+                }
+            }
+            catch
+            {
+                // state sempre é JSON; se falhar, mantém as contagens da camada.
+            }
+
+            var blocks = MeasureBlocks(symbol, timeFrame, snap,
+                lookbackCandles, lookbackBubbles);
             return new JevAuditRecord
             {
                 Id = auditId,
@@ -662,9 +870,12 @@ namespace B3WM.Services.AI
                     Candles = ProjectCandles(candles),
                     BubblesPool = Je(Raw(snap, "bubblesPool")),
                     BubblesFiltered = Je(Raw(snap, "bubblesFiltered")),
-                    BubblesSent = Je(snap.Has(SnapshotLayers.Bubbles)
-                        ? bubbles.Select(b => ToBubble(b, TriggerKeys(snap))).ToList()
-                        : null),
+                    BubblesSent = sentBubblesJson != null
+                        ? Je(sentBubblesJson)
+                        : Je(snap.Has(SnapshotLayers.Bubbles)
+                            ? bubbles.Select(b => ToBubble(b, TriggerKeys(snap),
+                                FilteredBubbleKeys(snap))).ToList()
+                            : null),
                     Volume = Je(volume),
                     ExtremesIntra = Je(extIntra),
                     ExtremesDaily = Je(extDaily),
@@ -677,20 +888,18 @@ namespace B3WM.Services.AI
                 },
                 Filtered = new JevAuditFiltered
                 {
-                    CandlesSent = candles.Count,
-                    BubblesSent = snap.Has(SnapshotLayers.Bubbles) ? bubbles.Count : 0,
+                    CandlesSent = sentCandles,
+                    BubblesSent = sentBubbles,
                     VolumeLevels = volume?.Volumes.Count ?? 0,
-                    ExtremesIntraCount = extIntra?.Extremes.Count ?? 0,
-                    ExtremesDailyCount = extDaily?.Extremes.Count ?? 0,
-                    StructuresCount =
-                        FilterIntradayStructures(structs, timeFrame,
-                            snap.Get<DateWindow>(SnapshotLayers.ScopeIntraday)).Count +
-                        FilterDailyStructures(structs,
-                            snap.Get<DateWindow>(SnapshotLayers.ScopeDaily), dailyCandles).Count,
-                    PivotIntraLevels = pivIntra?.Levels.Count ?? 0,
-                    PivotDailyLevels = pivDaily?.Levels.Count ?? 0,
+                    ExtremesIntraCount = sentExtremesIntra,
+                    ExtremesDailyCount = sentExtremesDaily,
+                    StructuresCount = sentStructures,
+                    PivotIntraLevels = sentPivotsIntra,
+                    PivotDailyLevels = sentPivotsDaily,
                     HasVwap = snap.Num(SnapshotLayers.Vwap) is not null,
                     StateChars = state.Length,
+                    EstimatedTokens = JevStateBudget.EstimateTokens(state),
+                    BudgetOk = !JevStateBudget.ExceedsPerQuestionLimit(state),
                     StateBlocks = blocks,
                 },
                 Payload = payload,
@@ -715,6 +924,15 @@ namespace B3WM.Services.AI
                         DirecaoConsenso = parsed.DirecaoConsenso,
                         DirecaoCobertura = parsed.DirecaoCobertura,
                         DirecaoMotivo = parsed.DirecaoMotivo,
+                        Leitura = parsed.Leitura,
+                        LeituraConfidence = parsed.LeituraConfidence,
+                        PerdaDeForca = parsed.PerdaDeForca,
+                        Absorcao = parsed.Absorcao,
+                        Contexto = parsed.Contexto,
+                        SetupContexto = parsed.SetupContexto,
+                        SetupConfirmacao = parsed.SetupConfirmacao,
+                        NivelChave = parsed.NivelChave,
+                        Evidencias = new List<string>(parsed.Evidencias),
                         ConfiancaOperavel = parsed.ConfiancaOperavel,
                         Criteria = new Dictionary<string, double>(parsed.Criteria),
                         Proximidade = parsed.Proximidade,
@@ -805,47 +1023,76 @@ namespace B3WM.Services.AI
             "0.5 = inconclusiva ou dado insuficiente; 1 = afirmação claramente verdadeira. " +
             "Não presuma direção; use apenas o state.";
 
-        private static object Noul(string instructions) => new Dictionary<string, object>
+        private static object Noul(
+            string instructions, Dictionary<string, string>? criteria = null)
         {
-            ["type"] = "noul",
-            ["instructions"] = instructions + NoulScale,
+            var question = new Dictionary<string, object>
+            {
+                ["type"] = "noul",
+                ["instructions"] = instructions + NoulScale,
+            };
+            if (criteria != null) question["criteria"] = criteria;
+            return question;
+        }
+
+        private static object Choice(
+            string instructions, Dictionary<string, string> criteria) => new Dictionary<string, object>
+        {
+            ["type"] = "choice",
+            ["instructions"] = instructions,
+            ["criteria"] = criteria,
+        };
+
+        private static object Score(string instructions, string[] criteria) => new Dictionary<string, object>
+        {
+            ["type"] = "score",
+            ["instructions"] = instructions,
+            ["criteria"] = criteria,
         };
 
         /// <summary>
-        /// Perguntas da Jev (Composite scoring): indicadores `noul` independentes
-        /// que o CÓDIGO combina com pesos. Direção usa pares espelhados
-        /// (alta/baixa) para não induzir o modelo a confirmar só um lado; a
-        /// resposta é a probabilidade da afirmação (0..1).
+        /// Perguntas atômicas da leitura simples. O código já entrega o
+        /// contexto destilado (zonas, volume, bolhas filtradas, movimento);
+        /// a Jev só confirma a leitura e a perda de força.
         /// </summary>
         public static Dictionary<string, object> BuildQuestions() => new()
         {
-            // Direção: cada dimensão tem uma afirmação de alta e a simétrica de baixa.
-            ["candles_alta"] = Noul("Os candles recentes mostram fundos e topos ascendentes (fundos e topos mais altos)?"),
-            ["candles_baixa"] = Noul("Os candles recentes mostram fundos e topos descendentes (fundos e topos mais baixos)?"),
-            ["acima_vwap"] = Noul("O preço está acima do VWAP, ou rejeitou o VWAP de baixo para cima?"),
-            ["abaixo_vwap"] = Noul("O preço está abaixo do VWAP, ou rejeitou o VWAP de cima para baixo?"),
-            ["estrutura_alta"] = Noul("A structure do timeframe está em ascensão (upgrade) e/ou o preço está na metade superior dela?"),
-            ["estrutura_baixa"] = Noul("A structure do timeframe está em queda (downgrade) e/ou o preço está na metade inferior dela?"),
-            ["acima_poc"] = Noul("O preço está acima do POC do volume profile intraday?"),
-            ["abaixo_poc"] = Noul("O preço está abaixo do POC do volume profile intraday?"),
-            ["delta_positivo"] = Noul("O delta do volume profile intraday é positivo (volume de compra > venda)?"),
-            ["delta_negativo"] = Noul("O delta do volume profile intraday é negativo (volume de venda > compra)?"),
-            ["bolhas_compra"] = Noul("Há predomínio recente de bolhas de compra com delta positivo?"),
-            ["bolhas_venda"] = Noul("Há predomínio recente de bolhas de venda com delta negativo?"),
-            ["defende_suporte"] = Noul("O preço está defendendo um suporte, vale ou borda inferior de structure?"),
-            ["rejeita_resistencia"] = Noul("O preço está sendo rejeitado em uma resistência, topo ou borda superior de structure?"),
-            ["reversao_suporte"] = Noul("O preço está em S1/S2/S3 ou vale, com reclaim e cluster de bolhas compradoras/absorção nesse nível?"),
-            ["reversao_resistencia"] = Noul("O preço está em R1/R2/R3 ou topo, com rejeição e cluster de bolhas vendedoras nesse nível? Bolhas no topo podem indicar reversão de venda."),
-            ["exaustao_queda"] = Noul("Após queda estendida, o delta negativo perde força (divergência) e/ou há absorção compradora no vale?"),
-            ["exaustao_alta"] = Noul("Após alta estendida, o delta positivo perde força (divergência) e/ou há absorção vendedora no topo?"),
-            ["diario_alta"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere alta e confirma o intraday?"),
-            ["diario_baixa"] = Noul("O bloco diário (candles/pivôs/topos-vales) sugere baixa e confirma o intraday?"),
-            // Operabilidade (qualidade do contexto), redação neutra.
-            ["sem_chop"] = Noul("O contexto mostra tendência definida, sem lateralidade/chop apertado?"),
-            ["amplitude_suficiente"] = Noul("A amplitude recente é suficiente para um gatilho com risco controlado?"),
-            ["sem_compressao_topovale"] = Noul("O preço tem espaço entre o topo e o vale próximos (não está espremido)?"),
-            ["referencia_clara"] = Noul("Existe uma referência clara e próxima (VWAP, structure ou pivô) para se orientar?"),
-            ["sem_conflito_intra_diario"] = Noul("Intraday e diário apontam para a mesma direção (sem conflito)?"),
+            ["evidencia_suficiente"] = Noul(
+                "O `intraday.context` contém evidência suficiente para escolher uma das opções de `leitura`? " +
+                "Use `intraday.context.confluence`, `intraday.context.recent_move` e `intraday.level_context`.",
+                new Dictionary<string, string>
+                {
+                    ["true"] = "Há zona diária, volume e bolhas filtradas que sustentam uma leitura.",
+                    ["false"] = "Os dados são ambíguos, insuficientes ou conflitantes.",
+                }),
+            ["leitura"] = Choice(
+                "Qual leitura o `intraday.context` sustenta para o movimento recente? " +
+                "Use `recent_move`, `confluence`, `daily_volume` e `intraday_volume` como fatos, sem recalcular.",
+                new Dictionary<string, string>
+                {
+                    ["continuar_alta"] = "O movimento de alta recente tem continuação provável.",
+                    ["continuar_baixa"] = "O movimento de baixa recente tem continuação provável.",
+                    ["lateralizar"] = "O movimento perdeu força e o preço tende a oscilar na região.",
+                    ["reverter_para_baixa"] = "Após alta recente, há sinais de exaustão/absorção vendedora em zona diária de topo ou vale de baixo volume.",
+                    ["reverter_para_alta"] = "Após baixa recente, há sinais de exaustão/absorção compradora em zona diária de fundo ou topo de baixo volume.",
+                }),
+            ["perda_de_forca"] = Score(
+                "Quanta perda de força o movimento recente mostra no nível atual? " +
+                "Use `recent_move`, `confluence` e `level_context`.",
+                new[]
+                {
+                    "Sem perda de força",
+                    "Perda moderada; sinais de exaustão",
+                    "Perda forte; reversão provável",
+                }),
+            ["absorcao_no_nivel"] = Noul(
+                "As bolhas filtradas no nível mostram absorção contra a direção do movimento recente? " +
+                "Use `confluence.filtered_bubbles_at_zone`, `confluence.absorption_side` e `level_context`.",
+                new Dictionary<string, string>
+                {
+                    ["true"] = "No topo, vendedoras absorvem compradoras; no fundo, compradoras absorvem vendedoras.",
+                    ["false"] = "As bolhas seguem a favor do movimento ou não há cluster relevante.",
+                }),
         };
 
         /// <summary>
@@ -861,6 +1108,8 @@ namespace B3WM.Services.AI
         {
             var w = weights ?? JevWeights.Defaults();
             var indicators = new Dictionary<string, double>();
+            ChoiceAnswer? choice = null;
+            double? perdaScore = null, absorcao = null, evidencia = null;
 
             using (var doc = JsonDocument.Parse(answersJson,
                 new JsonDocumentOptions { AllowTrailingCommas = true }))
@@ -875,17 +1124,36 @@ namespace B3WM.Services.AI
                 if (node.HasValue)
                 {
                     var n = node.Value;
-                    foreach (var id in DirectionIndicators.Concat(OperabilityIndicators))
+                    if (n.TryGetProperty("leitura", out var le) &&
+                        le.ValueKind == JsonValueKind.Object &&
+                        le.TryGetProperty("type", out var lt) &&
+                        lt.ValueKind == JsonValueKind.String &&
+                        lt.GetString() == "choice")
                     {
-                        if (n.TryGetProperty(id, out var q) && q.ValueKind == JsonValueKind.Object &&
-                            q.TryGetProperty("noul", out var v) && v.ValueKind == JsonValueKind.Number)
-                            indicators[id] = v.GetDouble();
+                        choice = ReadChoice(le);
+                        perdaScore = ReadScore(n, "perda_de_forca");
+                        absorcao = ReadNoul(n, "absorcao_no_nivel");
+                        evidencia = ReadNoul(n, "evidencia_suficiente");
+                    }
+                    else
+                    {
+                        // Formato antigo (25 noul) para auditorias/backfill.
+                        foreach (var id in DirectionIndicators.Concat(OperabilityIndicators))
+                        {
+                            if (n.TryGetProperty(id, out var q) && q.ValueKind == JsonValueKind.Object &&
+                                q.TryGetProperty("noul", out var v) && v.ValueKind == JsonValueKind.Number)
+                                indicators[id] = v.GetDouble();
+                        }
                     }
                 }
             }
 
-            var scored = JevScoring.Evaluate(indicators, w, DirectionDimensions);
             var (prox, ticks, pref) = ProximityFromState(state, symbol, w);
+            if (choice != null)
+                return ParseLeitura(symbol, model, inputTokens, outputTokens, state,
+                    choice, perdaScore, absorcao, evidencia, prox, ticks, pref);
+
+            var scored = JevScoring.Evaluate(indicators, w, DirectionDimensions);
             var motive = string.IsNullOrWhiteSpace(scored.DirecaoMotivo)
                 ? BuildDirectionMotive(scored, state)
                 : scored.DirecaoMotivo;
@@ -910,6 +1178,313 @@ namespace B3WM.Services.AI
                 StatePreview = state.Length <= 6000 ? state : state[..6000] + "…",
             };
         }
+
+        private sealed record ChoiceAnswer(string Choice, double Confidence);
+
+        private static ChoiceAnswer? ReadChoice(JsonElement element)
+        {
+            if (!element.TryGetProperty("choice", out var c) ||
+                c.ValueKind != JsonValueKind.String)
+                return null;
+            var choice = c.GetString();
+            if (string.IsNullOrWhiteSpace(choice)) return null;
+            var confidence = element.TryGetProperty("confidence", out var cf) &&
+                cf.ValueKind == JsonValueKind.Number
+                    ? cf.GetDouble()
+                    : 0.5;
+            return new ChoiceAnswer(choice, Math.Clamp(confidence, 0, 1));
+        }
+
+        private static double? ReadScore(JsonElement answers, string id)
+        {
+            if (!answers.TryGetProperty(id, out var q) || q.ValueKind != JsonValueKind.Object)
+                return null;
+            if (!q.TryGetProperty("score", out var s) || s.ValueKind != JsonValueKind.Number)
+                return null;
+            return s.GetDouble();
+        }
+
+        private static double? ReadNoul(JsonElement answers, string id)
+        {
+            if (!answers.TryGetProperty(id, out var q) || q.ValueKind != JsonValueKind.Object)
+                return null;
+            if (!q.TryGetProperty("noul", out var n) || n.ValueKind != JsonValueKind.Number)
+                return null;
+            return Math.Clamp(n.GetDouble(), 0, 1);
+        }
+
+        private static JevAnalysisResult ParseLeitura(
+            string symbol, string model, int inputTokens, int outputTokens,
+            string state, ChoiceAnswer choice, double? perdaScore,
+            double? absorcao, double? evidencia, double prox,
+            double ticks, string pref)
+        {
+            var evid = Math.Clamp(evidencia ?? 1.0, 0, 1);
+            var leitura = choice.Confidence < 0.35 || evid < 0.5
+                ? "inconclusivo"
+                : choice.Choice;
+            var confidence = leitura == "inconclusivo"
+                ? 0
+                : Math.Clamp(choice.Confidence * evid, 0, 1);
+            var perda = Math.Clamp((perdaScore ?? 0) / 2.0, 0, 1);
+            var abs = Math.Clamp(absorcao ?? 0, 0, 1);
+            var contexto = ContextScoreFromState(state);
+            var (setupContexto, setupConfirmacao) = SetupFromState(state);
+            var direcao = MapDirecao(leitura);
+            var motivo = leitura switch
+            {
+                "inconclusivo" => "evidência insuficiente",
+                "lateralizar" => "sem continuação clara",
+                _ => "",
+            };
+            var criteria = new Dictionary<string, double>
+            {
+                ["leitura_conf"] = choice.Confidence,
+                ["evidencia_suficiente"] = evid,
+                ["perda_de_forca"] = perda,
+                ["absorcao"] = abs,
+                ["contexto"] = contexto,
+            };
+
+            return new JevAnalysisResult
+            {
+                Symbol = symbol,
+                Model = model,
+                Direcao = direcao,
+                DirecaoConfidence = confidence,
+                DirecaoNet = direcao == "comprar" ? confidence
+                    : direcao == "vender" ? -confidence : 0,
+                DirecaoConsenso = 1,
+                DirecaoCobertura = 1,
+                DirecaoMotivo = motivo,
+                ConfiancaOperavel = contexto,
+                Criteria = criteria,
+                Proximidade = prox,
+                ProximidadeTicks = ticks,
+                ProximidadeRef = pref,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
+                Leitura = leitura,
+                LeituraConfidence = confidence,
+                PerdaDeForca = perda,
+                Absorcao = abs,
+                Contexto = contexto,
+                SetupContexto = setupContexto,
+                SetupConfirmacao = setupConfirmacao,
+                NivelChave = KeyLevelLabel(state),
+                Evidencias = BuildEvidencias(state, leitura, perda, abs),
+                StatePreview = state.Length <= 6000 ? state : state[..6000] + "…",
+            };
+        }
+
+        private static string MapDirecao(string leitura) => leitura switch
+        {
+            "continuar_alta" or "reverter_para_alta" => "comprar",
+            "continuar_baixa" or "reverter_para_baixa" => "vender",
+            _ => "lateral",
+        };
+
+        private static (bool Contexto, bool Confirmacao) SetupFromState(string state)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(state);
+                if (!TryContext(doc.RootElement, out var context) ||
+                    !context.TryGetProperty("confluence", out var confluence) ||
+                    confluence.ValueKind != JsonValueKind.Object)
+                    return (false, false);
+                return (ReadBool(confluence, "setup_contexto"),
+                    ReadBool(confluence, "setup_confirmacao"));
+            }
+            catch
+            {
+                return (false, false);
+            }
+        }
+
+        private static double ContextScoreFromState(string state)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(state);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                    !doc.RootElement.TryGetProperty("intraday", out var intra) ||
+                    intra.ValueKind != JsonValueKind.Object ||
+                    !intra.TryGetProperty("context", out var context) ||
+                    context.ValueKind != JsonValueKind.Object)
+                    return 0.5;
+
+                var efficiency = 0.5;
+                var atrTicks = 0.0;
+                var rangeTicks = 0.0;
+                if (context.TryGetProperty("recent_move", out var move) &&
+                    move.ValueKind == JsonValueKind.Object)
+                {
+                    efficiency = ReadDouble(move, "efficiency", efficiency);
+                    atrTicks = ReadDouble(move, "atr_ticks", 0);
+                    rangeTicks = ReadDouble(move, "range_ticks", 0);
+                }
+
+                var topDistance = 40.0;
+                var valleyDistance = 40.0;
+                if (intra.TryGetProperty("level_context", out var levels) &&
+                    levels.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var level in levels.EnumerateArray())
+                    {
+                        if (level.ValueKind != JsonValueKind.Object) continue;
+                        var kind = ReadString(level, "kind");
+                        var side = ReadString(level, "side");
+                        var distance = ReadDouble(level, "distance_ticks", 999);
+                        if (kind == "topo" || side == "resistance")
+                            topDistance = Math.Min(topDistance, distance);
+                        if (kind == "vale" || side == "support")
+                            valleyDistance = Math.Min(valleyDistance, distance);
+                    }
+                }
+
+                var referenceDistance = 60.0;
+                if (intra.TryGetProperty("nearest_pivot", out var nearest) &&
+                    nearest.ValueKind == JsonValueKind.Object)
+                    referenceDistance = ReadDouble(nearest, "distance_ticks", 60);
+
+                var trend = Math.Clamp(efficiency, 0, 1);
+                var amplitude = atrTicks > 0
+                    ? Math.Clamp(rangeTicks / (3 * atrTicks), 0, 1) : 0;
+                var space = Math.Clamp((topDistance + valleyDistance) / 80.0, 0, 1);
+                var reference = Math.Clamp(1 - referenceDistance / 60.0, 0, 1);
+                return Math.Clamp(
+                    0.4 * trend + 0.3 * amplitude + 0.2 * space + 0.1 * reference,
+                    0, 1);
+            }
+            catch
+            {
+                return 0.5;
+            }
+        }
+
+        private static string KeyLevelLabel(string state)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(state);
+                if (TryContext(doc.RootElement, out var context) &&
+                    context.TryGetProperty("confluence", out var confluence) &&
+                    confluence.ValueKind == JsonValueKind.Object)
+                {
+                    var type = ReadString(confluence, "daily_zone_type");
+                    var price = ReadDouble(confluence, "opposite_daily_zone_price", double.NaN);
+                    var distance = ReadDouble(confluence, "opposite_daily_zone_distance_ticks", double.NaN);
+                    if (!string.IsNullOrWhiteSpace(type) && !double.IsNaN(price))
+                        return $"{type} diario {price:F0}" +
+                            (double.IsNaN(distance) ? "" : $" ({distance:F0}t)");
+                }
+            }
+            catch
+            {
+                // cai no pivô mais próximo
+            }
+            return NearestPivotLabel(state);
+        }
+
+        private static List<string> BuildEvidencias(
+            string state, string leitura, double perda, double absorcao)
+        {
+            var evidence = new List<string>();
+            try
+            {
+                using var doc = JsonDocument.Parse(state);
+                if (TryContext(doc.RootElement, out var context))
+                {
+                    if (context.TryGetProperty("recent_move", out var move) &&
+                        move.ValueKind == JsonValueKind.Object)
+                    {
+                        var direction = ReadString(move, "direction");
+                        var strength = ReadString(move, "strength");
+                        if (strength == "forte" && direction is "alta" or "baixa")
+                            evidence.Add(
+                                $"movimento previo de {direction} forte " +
+                                $"({ReadDouble(move, "change_ticks", 0):F0}t em " +
+                                $"{ReadDouble(move, "candles", 0):F0} candles)");
+                    }
+
+                    if (context.TryGetProperty("confluence", out var confluence) &&
+                        confluence.ValueKind == JsonValueKind.Object)
+                    {
+                        var type = ReadString(confluence, "daily_zone_type");
+                        var price = ReadDouble(confluence, "opposite_daily_zone_price", double.NaN);
+                        var distance = ReadDouble(confluence, "opposite_daily_zone_distance_ticks", double.NaN);
+                        if (!string.IsNullOrWhiteSpace(type) && !double.IsNaN(price))
+                            evidence.Add($"{type} diario {price:F0}" +
+                                (double.IsNaN(distance) ? "" : $" a {distance:F0}t"));
+
+                        if (ReadBool(confluence, "low_volume_near_valley"))
+                        {
+                            var rank = ReadDouble(confluence, "low_volume_valley_rank", 0);
+                            evidence.Add($"baixo volume perto de vale (rank {rank:F2})");
+                        }
+
+                        if (ReadBool(confluence, "filtered_bubbles_at_zone"))
+                        {
+                            var count = ReadDouble(confluence, "filtered_bubble_count", 0);
+                            var absorption = ReadString(confluence, "absorption_side");
+                            var text = $"bolhas filtradas no nivel ({count:F0})";
+                            if (absorption is "buy" or "sell")
+                                text += absorption == "buy"
+                                    ? " com absorcao compradora"
+                                    : " com absorcao vendedora";
+                            evidence.Add(text);
+                        }
+
+                        if (ReadBool(confluence, "setup_confirmacao"))
+                            evidence.Add("setup de confirmacao");
+                        else if (ReadBool(confluence, "setup_contexto"))
+                            evidence.Add("setup de contexto");
+                    }
+                }
+            }
+            catch
+            {
+                // evidência é best-effort
+            }
+
+            if (leitura == "inconclusivo")
+                evidence.Add("evidencia insuficiente");
+            else if (leitura == "lateralizar")
+                evidence.Add("sem continuacao clara");
+            if (perda >= 0.67)
+                evidence.Add($"perda de forca alta ({perda:F2})");
+            if (absorcao >= 0.5)
+                evidence.Add($"absorcao ({absorcao:F2})");
+            return evidence.Distinct().Take(4).ToList();
+        }
+
+        private static bool TryContext(JsonElement root, out JsonElement context)
+        {
+            context = default;
+            return root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("intraday", out var intra) &&
+                intra.ValueKind == JsonValueKind.Object &&
+                intra.TryGetProperty("context", out context) &&
+                context.ValueKind == JsonValueKind.Object;
+        }
+
+        private static string ReadString(JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value) &&
+            value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? ""
+                : "";
+
+        private static double ReadDouble(JsonElement element, string name, double fallback) =>
+            element.TryGetProperty(name, out var value) &&
+            value.ValueKind == JsonValueKind.Number
+                ? value.GetDouble()
+                : fallback;
+
+        private static bool ReadBool(JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value) &&
+            value.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+            value.GetBoolean();
 
         /// <summary>
         /// Motivo legível de uma decisão direcional: nível mais próximo +
@@ -974,6 +1549,18 @@ namespace B3WM.Services.AI
         /// </summary>
         public static string FormatCriteria(JevAnalysisResult r)
         {
+            if (!string.IsNullOrWhiteSpace(r.Leitura))
+            {
+                var setup = r.SetupConfirmacao ? "confirmacao"
+                    : r.SetupContexto ? "contexto" : "nenhum";
+                var evidence = r.Evidencias.Count > 0
+                    ? " | " + string.Join(" · ", r.Evidencias)
+                    : "";
+                return $"leitura={r.Leitura} conf={r.LeituraConfidence:F2} " +
+                    $"perda={r.PerdaDeForca:F2} abs={r.Absorcao:F2} " +
+                    $"ctx={r.Contexto:F2} setup={setup}{evidence}";
+            }
+
             static string Pct(double v) => $"{v * 100:F0}%";
             var dirs = DirectionIndicators.Where(r.Criteria.ContainsKey)
                 .Select(k => $"{k}={Pct(r.Criteria[k])}");
