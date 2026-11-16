@@ -136,6 +136,9 @@ class StateService extends ChangeNotifier {
   /// e trafega por rotas/histórico próprios).
   double get structureRangeUpd => _currentConfig.structureRangeUpd;
 
+  /// Modo do range intraday: manual | atr_leg | atr_bar.
+  String get structureRangeMode => _currentConfig.structureRangeMode;
+
   String get colorBuyer => _currentConfig.colorBuyer;
   String get colorSeller => _currentConfig.colorSeller;
 
@@ -967,6 +970,37 @@ class StateService extends ChangeNotifier {
     await setMinDistanceStructure(_currentConfig.structureRangeUpd);
     _isStructureUpdating = false;
     notifyListeners();
+  }
+
+  /// Troca o método do range intraday no backend e recarrega as estruturas.
+  /// Componentes que dependem da estrutura (volume automode, chart, JEV)
+  /// passam a consumir a série nova.
+  Future<void> setStructureRangeMode(String mode) async {
+    if (_guardLocked('setStructureRangeMode')) return;
+    final normalized = Defaults.normalizeStructureRangeMode(mode);
+    final previous = _currentConfig.structureRangeMode;
+    if (previous == normalized) return;
+
+    _currentConfig.structureRangeMode = normalized;
+    _isStructureUpdating = true;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+
+    try {
+      final structures =
+          await _apiService.setStructureMode(_symbol, normalized);
+      _structures = structures.where((s) => s.timeFrame != 1440).toList();
+      _recomputeStructureChanges(_structures);
+      await refreshMarketWindow();
+      _applyStructureAutoFilter();
+    } catch (e) {
+      _currentConfig.structureRangeMode = previous;
+      _saveConfigForSymbol(_symbol);
+      logD('[structureMode] error: $e');
+    } finally {
+      _isStructureUpdating = false;
+      notifyListeners();
+    }
   }
 
   void setBubbleAmountFilter(bool v) {
@@ -2002,6 +2036,7 @@ class StateService extends ChangeNotifier {
       lookbackDays: 5,
       thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
       structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
+      structureRangeMode: Defaults.structureRangeModeManual,
       yZoom: 1.0,
       daily: DailyAnalysisConfig.withDefaults(''),
       structureVisible: p.getBool('StructureVisible') ?? true,

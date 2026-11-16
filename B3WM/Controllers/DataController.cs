@@ -156,10 +156,11 @@ namespace B3WM.Controllers
                     distanceAligned = true;
                 }
 
-                var dist = timeFrame == 1440
-                    ? service?._minDistanceUpdateBorder ?? minDistance
-                    : minDistance;
-                string path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{dist}_{date:yyyy-MM-dd}.json";
+                // Manual usa o range numérico no nome; ATR usa a chave do modo
+                // (ATR_LEG/ATR_BAR) porque o range efetivo varia por candle.
+                string path = service != null
+                    ? service.GetPathForDate(date)
+                    : $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
 
                 var timeframeData = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
 
@@ -286,6 +287,54 @@ namespace B3WM.Controllers
             return Ok(new List<StructureStorageItem>());
         }
 
+        /// <summary>
+        /// Troca o modo intraday da estrutura (manual | atr_leg | atr_bar).
+        /// Regera só os TFs &lt; 1440 e devolve a série nova. O range manual
+        /// continua sendo a base/fallback usado pelos modos ATR.
+        /// </summary>
+        [HttpGet("{symbol}/{mode}")]
+        public async Task<IActionResult> SetStructureModeAsync(string symbol, string mode)
+        {
+            var normalized = StructureRangeModes.Normalize(mode);
+            if (!StructureRangeModes.IsValid(normalized))
+                return BadRequest(new
+                {
+                    error = "mode inválido",
+                    valid = StructureRangeModes.All,
+                });
+
+            var services = structureServices
+                .Where(s => s.Symbol == symbol && s.TimeFrame != 1440)
+                .ToList();
+            if (services.Count == 0)
+                return NotFound();
+
+            foreach (var service in services)
+                await service.SetRangeModeAsync(normalized);
+
+            var manualRange = services[0]._minDistanceUpdateBorder;
+            var data = await GetStructureAsync(symbol, DateTime.Today, manualRange) as OkObjectResult;
+            if (data?.Value is List<StructureStorageItem> all)
+                return Ok(all.Where(s => s.TimeFrame != 1440).ToList());
+            return Ok(new List<StructureStorageItem>());
+        }
+
+        [HttpGet("{symbol}")]
+        public IActionResult GetStructureMode(string symbol)
+        {
+            var service = structureServices
+                .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame != 1440);
+            if (service == null)
+                return NotFound();
+
+            return Ok(new StructureModeConfig
+            {
+                Mode = service.RangeMode,
+                ManualRange = service._minDistanceUpdateBorder,
+                UpdatedAt = DateTime.Now,
+            });
+        }
+
         [HttpGet("{symbol}/{startDate}/{endDate}/{minDistance:double}")]
         public async Task<IActionResult> GetStructureRange(string symbol, DateTime startDate, DateTime endDate, double minDistance)
         {
@@ -299,10 +348,14 @@ namespace B3WM.Controllers
             var all = new List<StructureStorageItem>();
             foreach (var timeFrame in Defaults.TimeFrames.Where(t => t != 1440))
             {
+                var service = structureServices
+                    .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+                var storageKey = service?.StorageKey ?? minDistance.ToString();
+
                 for (var d = 0; d <= days; d++)
                 {
                     var date = startDate.Date.AddDays(d);
-                    var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{date:yyyy-MM-dd}.json";
+                    var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{storageKey}_{date:yyyy-MM-dd}.json";
                     try
                     {
                         var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
@@ -327,7 +380,7 @@ namespace B3WM.Controllers
 
             await service.SetMinDistance(minDistance);
 
-            string path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{minDistance}_{DateTime.Today:yyyy-MM-dd}.json";
+            string path = service.GetPathForDate(DateTime.Today);
             var data = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
             return Ok(data);
         }
@@ -337,13 +390,13 @@ namespace B3WM.Controllers
         {
             days = Math.Clamp(days, 2, 365);
 
-            async Task<List<StructureStorageItem>> ReadRangeAsync(double distance)
+            async Task<List<StructureStorageItem>> ReadRangeAsync(string storageKey)
             {
                 var result = new List<StructureStorageItem>();
                 for (var d = 0; d < days; d++)
                 {
                     var date = DateTime.Today.AddDays(-d);
-                    var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{distance}_{date:yyyy-MM-dd}.json";
+                    var path = $"{symbol}_{nameof(StructureService)}_{timeFrame}MIN_{storageKey}_{date:yyyy-MM-dd}.json";
                     try
                     {
                         var day = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
@@ -359,7 +412,9 @@ namespace B3WM.Controllers
                 return result;
             }
 
-            var all = await ReadRangeAsync(minDistance);
+            var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+            var storageKey = service?.StorageKey ?? minDistance.ToString();
+            var all = await ReadRangeAsync(storageKey);
 
             // Histórico 1440: o arquivo leva a distância no nome. Se o app tem
             // uma distância salva sem arquivos (ex.: WINFUT 2000), regenera no
@@ -367,20 +422,16 @@ namespace B3WM.Controllers
             // default e o gráfico 1D mostraria uma estrutura diferente do slider.
             if (all.Count == 0)
             {
-                var service = structureServices.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
                 if (service != null && service._minDistanceUpdateBorder != minDistance)
                 {
                     await service.SetMinDistance(minDistance);
-                    all = await ReadRangeAsync(minDistance);
+                    all = await ReadRangeAsync(service.StorageKey);
                 }
 
                 // Fallback antigo (ex.: falha no regen): serve o range vigente
                 // do serviço em vez de [] silencioso.
-                if (all.Count == 0 && service != null
-                    && service._minDistanceUpdateBorder != minDistance)
-                {
-                    all = await ReadRangeAsync(service._minDistanceUpdateBorder);
-                }
+                if (all.Count == 0 && service != null)
+                    all = await ReadRangeAsync(service.StorageKey);
             }
 
             return Ok(all.OrderBy(s => s.Date).ToList());

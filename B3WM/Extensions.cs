@@ -113,7 +113,7 @@ namespace B3WM
                     ? minDistanceUpdateBorderDaily
                     : minDistanceUpdateBorder;
                 services.AddSingleton(sp => new CandleService(symbol, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<CandleService>>()));
-                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<ILogger<StructureService>>()));
+                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<StructureResearchOptions>(), sp.GetRequiredService<ILogger<StructureService>>()));
             }
             services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>(), sp.GetRequiredService<DashboardHealthService>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));

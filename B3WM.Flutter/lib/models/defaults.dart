@@ -31,6 +31,40 @@ class Defaults {
     }
   }
 
+  /// Modos do range intraday da estrutura (issue #25). As strings são a
+  /// chave estável usada na API e no arquivo de config do backend.
+  static const String structureRangeModeManual = 'manual';
+  static const String structureRangeModeAtrPerLeg = 'atr_leg';
+  static const String structureRangeModeAtrBar = 'atr_bar';
+
+  static const List<String> structureRangeModes = [
+    structureRangeModeManual,
+    structureRangeModeAtrPerLeg,
+    structureRangeModeAtrBar,
+  ];
+
+  static String normalizeStructureRangeMode(String? mode) {
+    switch (mode) {
+      case structureRangeModeAtrPerLeg:
+        return structureRangeModeAtrPerLeg;
+      case structureRangeModeAtrBar:
+        return structureRangeModeAtrBar;
+      default:
+        return structureRangeModeManual;
+    }
+  }
+
+  static String structureRangeModeLabel(String mode) {
+    switch (normalizeStructureRangeMode(mode)) {
+      case structureRangeModeAtrPerLeg:
+        return 'ATR perna';
+      case structureRangeModeAtrBar:
+        return 'ATR barra';
+      default:
+        return 'Manual';
+    }
+  }
+
   /// Distanciamento de quebra de estrutura do 1440 (seção diária, issue #10).
   static double minDistanceUpdateBorderDaily(String symbol) {
     switch (symbol) {

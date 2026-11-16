@@ -91,7 +91,9 @@ class _StructureDrawerState extends State<StructureDrawer>
               Defaults.structureRangeUpdMax(state.symbol),
               (v) => state.setStructureRangeUpd(v),
               decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol),
-              locked: state.configLocked,
+              locked: state.configLocked ||
+                  state.structureRangeMode !=
+                      Defaults.structureRangeModeManual,
               trailing: state.isStructureUpdating
                   ? _isStructureRangeLoading
                       ? const Padding(
@@ -117,8 +119,57 @@ class _StructureDrawerState extends State<StructureDrawer>
                           visualDensity: VisualDensity.compact,
                         )
                   : null),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Método do range (intraday)',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _modeChip(state, Defaults.structureRangeModeManual, 'Manual'),
+              _modeChip(
+                  state, Defaults.structureRangeModeAtrPerLeg, 'ATR perna'),
+              _modeChip(state, Defaults.structureRangeModeAtrBar, 'ATR barra'),
+            ],
+          ),
+          if (state.structureRangeMode != Defaults.structureRangeModeManual)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'O range manual vira fallback até o ATR ter amostras.',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+            ),
         ],
       ),
+    );
+  }
+
+  Widget _modeChip(StateService state, String mode, String label) {
+    final selected = state.structureRangeMode == mode;
+    final locked = state.configLocked || _isStructureRangeLoading;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: locked
+          ? null
+          : (value) async {
+              if (!value || selected) return;
+              setState(() => _isStructureRangeLoading = true);
+              await state.setStructureRangeMode(mode);
+              if (mounted) {
+                setState(() => _isStructureRangeLoading = false);
+              }
+            },
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 

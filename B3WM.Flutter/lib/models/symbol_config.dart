@@ -30,6 +30,9 @@ class SymbolConfig {
   /// e nunca é lido/escrito por este campo.
   double structureRangeUpd;
 
+  /// Modo do range intraday: `manual`, `atr_leg` ou `atr_bar`.
+  String structureRangeMode;
+
   /// Zoom Y (esticar/desesticar o eixo de preço) do gráfico intraday.
   /// Independente do `daily.yZoom` (diário): um nunca toca no outro.
   /// Faixa `0.3..10.0` (paridade com `StateService.min/maxYZoom`).
@@ -121,6 +124,7 @@ class SymbolConfig {
     required this.structureAuxVisible,
     required this.structureOpacity,
     required this.structureRangeUpd,
+    required this.structureRangeMode,
     required this.yZoom,
     this.xZoom,
     this.panX,
@@ -178,6 +182,7 @@ class SymbolConfig {
         structureAuxVisible = true,
         structureOpacity = 0.8,
         structureRangeUpd = Defaults.minDistanceUpdateBorder(symbol),
+        structureRangeMode = Defaults.structureRangeModeManual,
         yZoom = 1.0,
         daily = DailyAnalysisConfig.withDefaults(symbol),
         extremeVisible = true,
@@ -268,6 +273,8 @@ class SymbolConfig {
               legacy.structureRangeUpd <= structureMax
           ? legacy.structureRangeUpd
           : defaults.structureRangeUpd,
+      structureRangeMode:
+          Defaults.normalizeStructureRangeMode(legacy.structureRangeMode),
       yZoom: legacy.yZoom.clamp(0.3, 10.0),
       xZoom: legacy.xZoom,
       panX: legacy.panX,
@@ -363,6 +370,8 @@ class SymbolConfig {
       structureOpacity: (json['structureOpacity'] as num?)?.toDouble() ?? 0.8,
       structureRangeUpd: (json['structureRangeUpd'] as num?)?.toDouble() ??
           Defaults.minDistanceUpdateBorder(symbol),
+      structureRangeMode: Defaults.normalizeStructureRangeMode(
+          json['structureRangeMode'] as String?),
       yZoom: ((json['yZoom'] as num?)?.toDouble() ?? 1.0).clamp(0.3, 10.0),
       xZoom: DailyAnalysisConfig.clampXZoom(json['xZoom'] as num?),
       panX: (json['panX'] as num?)?.toDouble(),
@@ -432,6 +441,7 @@ class SymbolConfig {
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,
         'structureRangeUpd': structureRangeUpd,
+        'structureRangeMode': structureRangeMode,
         'yZoom': yZoom,
         'xZoom': xZoom,
         'panX': panX,

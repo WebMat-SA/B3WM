@@ -1,7 +1,10 @@
-﻿using B3WM.Shared.Entity;
+﻿using B3WM.Services;
+using B3WM.Services.Research;
+using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
+using System.Globalization;
 using System.Threading.Channels;
 
 namespace B3WM.Services.Core
@@ -13,16 +16,38 @@ namespace B3WM.Services.Core
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
         private readonly StructureRangeResolver _rangeResolver;
+        private readonly StructureResearchOptions _rangeOptions;
         private readonly ILogger<StructureService> _logger;
 
         public event Func<StructureStorageItem, Task>? OnUpdate;
 
-        public override string Path => $"{Symbol}_{nameof(StructureService)}_{TimeFrame}MIN_{_minDistanceUpdateBorder}_{DateTime.Now:yyyy-MM-dd}.json";
+        public override string Path => GetPathForDate(DateTime.Now);
+
+        /// <summary>
+        /// Chave estável usada no nome do arquivo. Manual mantém o range
+        /// numérico (compatível com os arquivos existentes); ATR usa a chave
+        /// do modo, pois o range varia candle a candle.
+        /// </summary>
+        public string StorageKey => RangeMode switch
+        {
+            StructureRangeModes.AtrPerLeg => "ATR_LEG",
+            StructureRangeModes.AtrPerBar => "ATR_BAR",
+            _ => _minDistanceUpdateBorder.ToString(CultureInfo.CurrentCulture),
+        };
+
+        public string GetPathForDate(DateTime date) =>
+            $"{Symbol}_{nameof(StructureService)}_{TimeFrame}MIN_{StorageKey}_{date:yyyy-MM-dd}.json";
 
         //variaveis de memoria
         StructureStorageItem? _lastStructure { get; set; }
         private StructureEngine _engine = new();
+        private readonly AtrState _atr;
+        private DateTime _lastAtrDate = DateTime.MinValue;
+        private double? _legRange;
         private DateTime _preloadedFor;
+
+        /// <summary>Modo vigente do range intraday (manual | atr_leg | atr_bar).</summary>
+        public string RangeMode { get; private set; } = StructureRangeModes.Manual;
 
         public StructureStorageItem? GetLastStructure()
             => _lastStructure?.Clone() as StructureStorageItem;
@@ -42,7 +67,15 @@ namespace B3WM.Services.Core
         }
 
 
-        public StructureService(string symbol, int timeFrame, double minDistance ,IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, StructureRangeResolver rangeResolver, ILogger<StructureService> logger)
+        public StructureService(
+            string symbol,
+            int timeFrame,
+            double minDistance,
+            IHubContext<DataHub, IDataHubClient> hubContext,
+            IServiceProvider serviceProvider,
+            StructureRangeResolver rangeResolver,
+            StructureResearchOptions rangeOptions,
+            ILogger<StructureService> logger)
             : base(serviceProvider)
         {
             Symbol = symbol;
@@ -50,7 +83,9 @@ namespace B3WM.Services.Core
             _minDistanceUpdateBorder = minDistance;
             this.hubContext = hubContext;
             _rangeResolver = rangeResolver;
+            _rangeOptions = rangeOptions;
             _logger = logger;
+            _atr = new AtrState(rangeOptions.AtrPeriod);
         }
 
         public async Task PreLoad()
@@ -58,6 +93,10 @@ namespace B3WM.Services.Core
             var today = DateTime.Today;
             if (_preloadedFor == today)
                 return;
+
+            // Carrega o modo intraday persistido antes de montar o Path: em
+            // ATR o arquivo usa a chave do modo, não o range numérico.
+            await LoadModeAsync();
 
             // Continua no último range usado (deduzido dos arquivos) em vez de
             // voltar ao default no restart. Precisa acontecer antes de montar o
@@ -85,7 +124,7 @@ namespace B3WM.Services.Core
                 for(int i = 0; i < 7; i++)
                 {
                     var date = today.AddDays(-i);
-                    var path = $"{Symbol}_{nameof(StructureService)}_{TimeFrame}MIN_{_minDistanceUpdateBorder}_{date:yyyy-MM-dd}.json";
+                    var path = GetPathForDate(date);
                     var data = await GetDataAsync(path);
                     if (data is { Count: > 0 })
                     {
@@ -108,6 +147,11 @@ namespace B3WM.Services.Core
             // dos candles diários faltantes (sem recalcular 365 dias).
             if (TimeFrame == 1440 && _lastStructure != null)
                 await BackfillDailyAsync();
+
+            // Modo ATR retomado de arquivo: reaquece o ATR e o range da perna
+            // sem precisar regerar os 7 dias. Se o Regenerate já rodou, o
+            // estado veio do replay e este método é no-op.
+            await WarmAtrAsync();
 
             _preloadedFor = today;
         }
@@ -175,7 +219,7 @@ namespace B3WM.Services.Core
                 .ToList();
 
             var persistPath =
-                $"{Symbol}_{nameof(StructureService)}_{TimeFrame}MIN_{_minDistanceUpdateBorder}_{lastProcessedDate:yyyy-MM-dd}.json";
+                GetPathForDate(lastProcessedDate);
 
             await WriteFileAsync(DataKeep, persistPath);
 
@@ -201,6 +245,12 @@ namespace B3WM.Services.Core
             var hasTodayCandles = false;
             DataKeep ??= new List<StructureStorageItem>();
 
+            // Replay completo: o ATR e a perna corrente precisam ser
+            // reconstruídos do zero para não misturar com o modo anterior.
+            _atr.Reset();
+            _lastAtrDate = DateTime.MinValue;
+            _legRange = null;
+
             //buscar todos os candles dos ultimos N dias, gerar a estrutura e salvar
             for (int i = days - 1; i >= 0; i--)
             {
@@ -224,7 +274,25 @@ namespace B3WM.Services.Core
             // quando existe candle do pregão de hoje (não cria arquivo em
             // fds/feriado/sem ticks).
             if (hasTodayCandles && DataKeep.Count > 0)
+            {
                 await SetDataAsync(DataKeep);
+
+                // ATR não tem arquivo histórico anterior (o range numérico não
+                // identifica o modo); grava também os dias do replay para o
+                // multi-day e o automode encontrarem a série.
+                if (RangeMode != StructureRangeModes.Manual && TimeFrame != 1440)
+                {
+                    foreach (var group in DataKeep.GroupBy(s => s.Date.Date))
+                    {
+                        if (group.Key == today)
+                            continue;
+
+                        await WriteFileAsync(
+                            group.OrderBy(s => s.Date).ToList(),
+                            GetPathForDate(group.Key));
+                    }
+                }
+            }
         }
 
         public async Task<StructureStorageItem> Calculate(
@@ -279,17 +347,74 @@ namespace B3WM.Services.Core
 
                 if (!_engine.IsInitialized)
                 {
-                    _engine.Step(newBar, _minDistanceUpdateBorder);
-                    _lastStructure = _engine.ToStorage(
-                        newBar.Symbol, newBar.Date, newBar.TimeFrame);
-                    return _lastStructure;
+                    FeedAtr(newBar);
+                    var initialRange = ResolveRange();
+                    _engine.Step(newBar, initialRange);
+                    return Store(newBar, initialRange);
                 }
             }
 
-            _engine.Step(newBar, _minDistanceUpdateBorder);
-            _lastStructure = _engine.ToStorage(
-                newBar.Symbol, newBar.Date, newBar.TimeFrame);
+            FeedAtr(newBar);
+            var range = ResolveRange();
+            var step = _engine.Step(newBar, range);
 
+            if (RangeMode == StructureRangeModes.AtrPerLeg && step.Changed)
+                _legRange = EffectiveAtrRange();
+
+            return Store(newBar, range);
+        }
+
+        private void FeedAtr(BarStorageItem bar)
+        {
+            if (bar.Date <= _lastAtrDate)
+                return;
+
+            _atr.Add(bar);
+            _lastAtrDate = bar.Date;
+        }
+
+        private double ResolveRange()
+        {
+            if (TimeFrame == 1440 ||
+                RangeMode == StructureRangeModes.Manual ||
+                _atr.Value <= 0)
+                return _minDistanceUpdateBorder;
+
+            if (RangeMode == StructureRangeModes.AtrPerBar)
+                return EffectiveAtrRange();
+
+            if (_legRange is null || _legRange <= 0)
+                _legRange = EffectiveAtrRange();
+
+            return _legRange.Value;
+        }
+
+        private double EffectiveAtrRange()
+        {
+            if (_atr.Value <= 0)
+                return _minDistanceUpdateBorder;
+
+            var tickSize = Defaults.GetTickSize(Symbol);
+            if (tickSize <= 0)
+                return _minDistanceUpdateBorder;
+
+            var range = AtrCalculator.ClampRangePoints(
+                _atr.Value,
+                _rangeOptions.MultiplierFor(Symbol),
+                tickSize,
+                _rangeOptions.AtrFloorTicks,
+                _rangeOptions.AtrCapTicks);
+
+            return range > 0 ? range : _minDistanceUpdateBorder;
+        }
+
+        private StructureStorageItem Store(BarStorageItem bar, double range)
+        {
+            _lastStructure = _engine.ToStorage(
+                bar.Symbol, bar.Date, bar.TimeFrame);
+            _lastStructure.RangeMode = RangeMode;
+            _lastStructure.RangeUsed = range;
+            _lastStructure.Atr = _atr.Value;
             return _lastStructure;
         }
 
@@ -298,6 +423,9 @@ namespace B3WM.Services.Core
             DataKeep = new();
             _lastStructure = null;
             _engine = new StructureEngine();
+            _atr.Reset();
+            _lastAtrDate = DateTime.MinValue;
+            _legRange = null;
             _minDistanceUpdateBorder = minDistance;
 
             // Regen silencioso + 1 push final com a última estrutura (evita
@@ -312,6 +440,141 @@ namespace B3WM.Services.Core
                     await hubContext.Clients.Group(Symbol).ReceiveOnStructure(finalItem);
                 }
                 if (OnUpdate != null) await OnUpdate.Invoke(finalItem);
+            }
+
+            await PersistModeConfigAsync();
+        }
+
+        /// <summary>
+        /// Troca o modo intraday (manual | atr_leg | atr_bar), regenera a
+        /// série no modo novo e persiste a configuração do símbolo.
+        /// </summary>
+        public async Task SetRangeModeAsync(string mode, bool broadcastFinal = true)
+        {
+            if (TimeFrame == 1440)
+                return;
+
+            var normalized = StructureRangeModes.Normalize(mode);
+            if (!StructureRangeModes.IsValid(normalized))
+                return;
+
+            RangeMode = normalized;
+            DataKeep = new();
+            _lastStructure = null;
+            _engine = new StructureEngine();
+            _atr.Reset();
+            _lastAtrDate = DateTime.MinValue;
+            _legRange = null;
+
+            await Regenerate(broadcastEach: false);
+
+            if (broadcastFinal && _lastStructure?.Clone() is StructureStorageItem finalItem)
+            {
+                if (hubContext != null)
+                {
+                    await hubContext.Clients.Group(Symbol).ReceiveOnStructure(finalItem);
+                }
+                if (OnUpdate != null) await OnUpdate.Invoke(finalItem);
+            }
+
+            await PersistModeConfigAsync();
+        }
+
+        private async Task LoadModeAsync()
+        {
+            if (TimeFrame == 1440)
+                return;
+
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
+                var config = await keeper.ReadDataAsync<StructureModeConfig>(
+                    $"{Symbol}_StructureMode.json");
+
+                if (config == null)
+                    return;
+
+                RangeMode = StructureRangeModes.Normalize(config.Mode);
+                if (config.ManualRange > 0)
+                    _minDistanceUpdateBorder = config.ManualRange;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[structure-mode] falha ao carregar modo de {Symbol} {TimeFrame}MIN",
+                    Symbol, TimeFrame);
+            }
+        }
+
+        private async Task WarmAtrAsync()
+        {
+            if (TimeFrame == 1440 ||
+                RangeMode == StructureRangeModes.Manual ||
+                _atr.Samples > 0)
+                return;
+
+            try
+            {
+                var candleService = _serviceProvider.GetServices<CandleService>()
+                    .FirstOrDefault(c => c.Symbol == Symbol && c.TimeFrame == TimeFrame);
+                if (candleService == null)
+                    return;
+
+                var bars = candleService.DataKeep?
+                    .OrderBy(b => b.Date)
+                    .ToList();
+
+                if (bars is not { Count: > 0 })
+                {
+                    var path =
+                        $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{DateTime.Today:yyyy-MM-dd}.json";
+                    bars = await candleService.GetDataAsync(path);
+                }
+
+                if (bars is not { Count: > 0 })
+                    return;
+
+                var take = Math.Min(bars.Count, _rangeOptions.AtrPeriod + 1);
+                _atr.Reset();
+                _atr.Warmup(bars.TakeLast(take));
+                _lastAtrDate = bars[^1].Date;
+
+                _legRange = _lastStructure?.RangeUsed is > 0
+                    ? _lastStructure.RangeUsed
+                    : EffectiveAtrRange();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[structure-mode] falha ao aquecer ATR de {Symbol} {TimeFrame}MIN",
+                    Symbol, TimeFrame);
+            }
+        }
+
+        private async Task PersistModeConfigAsync()
+        {
+            if (TimeFrame == 1440)
+                return;
+
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
+                await keeper.WriteDataAsync(
+                    $"{Symbol}_StructureMode.json",
+                    new StructureModeConfig
+                    {
+                        Mode = RangeMode,
+                        ManualRange = _minDistanceUpdateBorder,
+                        UpdatedAt = DateTime.Now,
+                    });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[structure-mode] falha ao persistir modo de {Symbol} {TimeFrame}MIN",
+                    Symbol, TimeFrame);
             }
         }
     }
