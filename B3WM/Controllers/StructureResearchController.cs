@@ -31,8 +31,8 @@ namespace B3WM.Controllers
             atrPeriod = _options.AtrPeriod,
             multipliers = new
             {
-                WINFUT = _options.AtrMultiplierWinfut,
-                WDOFUT = _options.AtrMultiplierWdofut,
+                winfut = _options.AtrMultiplierWinfut,
+                wdofut = _options.AtrMultiplierWdofut,
             },
             atrFloorTicks = _options.AtrFloorTicks,
             atrCapTicks = _options.AtrCapTicks,
