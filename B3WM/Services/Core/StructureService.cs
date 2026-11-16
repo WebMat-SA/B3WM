@@ -21,6 +21,7 @@ namespace B3WM.Services.Core
 
         //variaveis de memoria
         StructureStorageItem? _lastStructure { get; set; }
+        private StructureEngine _engine = new();
         private DateTime _preloadedFor;
 
         public StructureStorageItem? GetLastStructure()
@@ -28,10 +29,17 @@ namespace B3WM.Services.Core
 
         #region Calculating
         public double _minDistanceUpdateBorder { get; set; }
-        bool expectBuyDrop = true;
-        bool expectSellDrop = true;
-        bool isSizeChanger = false;
         #endregion
+
+        /// <summary>
+        /// Semeia a estrutura + engine a partir do último registro persistido.
+        /// As flags de expectativa não são persistidas (comportamento antigo).
+        /// </summary>
+        private void SetLastStructure(StructureStorageItem item)
+        {
+            _lastStructure = item;
+            _engine = new StructureEngine(StructureEngineState.FromStructure(item));
+        }
 
 
         public StructureService(string symbol, int timeFrame, double minDistance ,IHubContext<DataHub, IDataHubClient> hubContext, IServiceProvider serviceProvider, StructureRangeResolver rangeResolver, ILogger<StructureService> logger)
@@ -68,7 +76,7 @@ namespace B3WM.Services.Core
                 var last = allData.OrderByDescending(q => q.Date).FirstOrDefault();
                 if (last != null)
                 {
-                    _lastStructure = last;
+                    SetLastStructure(last);
                 }
             }
             else
@@ -84,7 +92,7 @@ namespace B3WM.Services.Core
                         var last = data.OrderByDescending(q => q.Date).FirstOrDefault();
                         if (last != null)
                         {
-                            _lastStructure = last;
+                            SetLastStructure(last);
                             break;
                         }
                     }
@@ -239,7 +247,7 @@ namespace B3WM.Services.Core
                 }
 
                 DataKeep ??= new List<StructureStorageItem>();
-                DataKeep.Add(result.Clone() as StructureStorageItem);
+                DataKeep.Add((StructureStorageItem)result.Clone());
 
                 if (persist && DataPersistencePolicy.ShouldPersistStructure(newBar, DateTime.Today))
                     await SetDataAsync(DataKeep);
@@ -265,81 +273,31 @@ namespace B3WM.Services.Core
         private async Task<StructureStorageItem> Generate(BarStorageItem newBar, bool skipPreLoad = false)
         {
             //se for primeiro candle
-            if (_lastStructure == null)
+            if (!_engine.IsInitialized)
             {
                 if (!skipPreLoad) await PreLoad();
 
-                if (_lastStructure == null)
+                if (!_engine.IsInitialized)
                 {
-                    _lastStructure = new StructureStorageItem()
-                    {
-                        Symbol = newBar.Symbol,
-                        Date = newBar.Date,
-                        TimeFrame = newBar.TimeFrame,
-                        UpBorder = newBar.High,
-                        UpAuxBorder = newBar.High,
-                        DownBorder = newBar.Low,
-                        DownAuxBorder = newBar.Low
-                    };
+                    _engine.Step(newBar, _minDistanceUpdateBorder);
+                    _lastStructure = _engine.ToStorage(
+                        newBar.Symbol, newBar.Date, newBar.TimeFrame);
+                    return _lastStructure;
                 }
-
-                return _lastStructure;
             }
 
-
-            //atualiza o date
-            _lastStructure.Date = newBar.Date;
-            double virtualSameUpAuxBorder = Math.Max(_lastStructure.UpAuxBorder, newBar.High);
-            double virtualSameDownAuxBorder = Math.Min(_lastStructure.DownAuxBorder, newBar.Low);
-
-            //se houve um distanciamento entre a borda superior e o preço (rebotando para baixo)
-            if (virtualSameUpAuxBorder - newBar.Close >= _minDistanceUpdateBorder && expectBuyDrop)
-            {
-                //atualiza aux
-                _lastStructure.UpAuxBorder = virtualSameUpAuxBorder;
-
-                //atualiza a up
-                _lastStructure.UpBorder = _lastStructure.UpAuxBorder;
-
-                //reset
-                expectSellDrop = true; expectBuyDrop = false;
-
-                _lastStructure.DownAuxBorder = newBar.Low;
-
-                isSizeChanger = true;
-            }
-
-            //se houve um distanciamento entre a borda inferior e o preço (rebotando para cima)
-            if (newBar.Close - virtualSameDownAuxBorder >= _minDistanceUpdateBorder && expectSellDrop && !isSizeChanger)
-            {
-                //atualiza aux
-                _lastStructure.DownAuxBorder = virtualSameDownAuxBorder;
-
-                //atualiza a down
-                _lastStructure.DownBorder = _lastStructure.DownAuxBorder;
-
-                //reset
-                expectSellDrop = false; expectBuyDrop = true;
-
-                _lastStructure.UpAuxBorder = newBar.High;
-            }
-
-            _lastStructure.UpAuxBorder = Math.Max(_lastStructure.UpAuxBorder, newBar.High);
-            _lastStructure.DownAuxBorder = Math.Min(_lastStructure.DownAuxBorder, newBar.Low);
-
-            isSizeChanger = false;
+            _engine.Step(newBar, _minDistanceUpdateBorder);
+            _lastStructure = _engine.ToStorage(
+                newBar.Symbol, newBar.Date, newBar.TimeFrame);
 
             return _lastStructure;
-
-        } 
+        }
 
         public async Task SetMinDistance(double minDistance, bool broadcastFinal = true)
         {
             DataKeep = new();
             _lastStructure = null;
-            expectBuyDrop = true;
-            expectSellDrop = true;
-            isSizeChanger = false;
+            _engine = new StructureEngine();
             _minDistanceUpdateBorder = minDistance;
 
             // Regen silencioso + 1 push final com a última estrutura (evita
