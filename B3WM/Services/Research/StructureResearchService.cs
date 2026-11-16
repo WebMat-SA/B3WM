@@ -275,6 +275,17 @@ namespace B3WM.Services.Research
                     _points[variant].Add(point);
                 }
 
+                if (step.Changed)
+                {
+                    _logger.LogInformation(
+                        "[structure-research] {Symbol} TF{TimeFrame} {Variant} {Date:yyyy-MM-dd HH:mm} " +
+                        "change up={UpChanged} down={DownChanged} upBorder={UpBorder:F1} " +
+                        "downBorder={DownBorder:F1} range={Range:F1} atr={Atr:F1}",
+                        _symbol, _timeFrame, variant, bar.Date,
+                        step.UpChanged, step.DownChanged, state.UpBorder,
+                        state.DownBorder, range, atr);
+                }
+
                 // Nova perna: congela o range para o próximo candle. O candle
                 // atual ainda registra o range que confirmou a mudança.
                 if (variant == StructureResearchVariants.AtrPerLeg && step.Changed)

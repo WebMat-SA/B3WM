@@ -53,6 +53,23 @@ namespace B3WM.Controllers
             return Ok(all.OrderBy(p => p.Date).ThenBy(p => p.Variant).ToList());
         }
 
+        /// <summary>Último ponto de cada variante no dia (polling rápido).</summary>
+        [HttpGet("{symbol}/{timeFrame:int}")]
+        public async Task<IActionResult> GetLatest(
+            string symbol, int timeFrame, [FromQuery] DateTime? date = null)
+        {
+            var day = (date ?? DateTime.Today).Date;
+            var latest = new List<StructureResearchPoint>();
+            foreach (var variant in StructureResearchVariants.All)
+            {
+                var points = await ReadPointsAsync(symbol, timeFrame, day, variant);
+                if (points.Count > 0)
+                    latest.Add(points[^1]);
+            }
+
+            return Ok(latest);
+        }
+
         [HttpGet("{symbol}/{timeFrame:int}/{date:datetime}")]
         public async Task<IActionResult> GetReport(
             string symbol, int timeFrame, DateTime date)
