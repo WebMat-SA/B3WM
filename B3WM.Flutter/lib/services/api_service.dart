@@ -142,6 +142,20 @@ class ApiService {
         .toList();
   }
 
+  /// Troca o modo de um timeframe específico (o diário usa 1440).
+  Future<List<StructureStorageItem>> setStructureModeForTimeFrame(
+      String symbol, int timeFrame, String mode) async {
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/SetStructureModeForTimeFrame/$symbol/$timeFrame/$mode'),
+    );
+    if (response.statusCode != 200) return [];
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Distância de estrutura de um timeframe específico (seção diária usa 1440,
   /// issue #10). Não toca nos demais timeframes.
   Future<List<StructureStorageItem>> setStructureDistanceForTimeFrame(

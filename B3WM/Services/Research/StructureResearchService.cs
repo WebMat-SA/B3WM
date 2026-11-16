@@ -304,12 +304,23 @@ namespace B3WM.Services.Research
             if (atrTicks <= 0 || _tickSize <= 0)
                 return CurrentManualRange();
 
+            var floorTicks = _timeFrame == 1440
+                ? _options.AtrDailyFloorTicks
+                : _options.AtrFloorTicks;
+            var capTicks = _timeFrame == 1440
+                ? _options.AtrDailyCapTicks
+                : _options.AtrCapTicks;
+
+            var multiplier = _timeFrame == 1440
+                ? _options.DailyMultiplierFor(_symbol)
+                : _options.MultiplierFor(_symbol);
+
             var range = AtrCalculator.ClampRangePoints(
                 atrTicks * _tickSize,
-                _options.MultiplierFor(_symbol),
+                multiplier,
                 _tickSize,
-                _options.AtrFloorTicks,
-                _options.AtrCapTicks);
+                floorTicks,
+                capTicks);
 
             return range > 0 ? range : CurrentManualRange();
         }

@@ -15,11 +15,25 @@ namespace B3WM.Services.Research
         public double AtrMultiplierWinfut { get; set; } = 1.5;
         public double AtrMultiplierWdofut { get; set; } = 1.0;
 
-        /// <summary>Piso do range em ticks.</summary>
+        /// <summary>
+        /// Multiplicadores do diário (1440). A ordem de grandeza é outra:
+        /// WINFUT ~0,3 ATR e WDOFUT ~1,0 ATR aproximam os ranges manuais
+        /// históricos (1000 / 100).
+        /// </summary>
+        public double AtrDailyMultiplierWinfut { get; set; } = 0.3;
+        public double AtrDailyMultiplierWdofut { get; set; } = 1.0;
+
+        /// <summary>Piso do range intraday em ticks.</summary>
         public double AtrFloorTicks { get; set; } = 5;
 
-        /// <summary>Teto do range em ticks.</summary>
+        /// <summary>Teto do range intraday em ticks.</summary>
         public double AtrCapTicks { get; set; } = 400;
+
+        /// <summary>Piso do range diário (1440) em ticks.</summary>
+        public double AtrDailyFloorTicks { get; set; } = 20;
+
+        /// <summary>Teto do range diário (1440) em ticks.</summary>
+        public double AtrDailyCapTicks { get; set; } = 2000;
 
         /// <summary>Dias de candles reprocessados no startup para aquecer ATR/estrutura.</summary>
         public int WarmupDays { get; set; } = 3;
@@ -36,5 +50,10 @@ namespace B3WM.Services.Research
             symbol.Equals("WINFUT", StringComparison.OrdinalIgnoreCase)
                 ? AtrMultiplierWinfut
                 : AtrMultiplierWdofut;
+
+        public double DailyMultiplierFor(string symbol) =>
+            symbol.Equals("WINFUT", StringComparison.OrdinalIgnoreCase)
+                ? AtrDailyMultiplierWinfut
+                : AtrDailyMultiplierWdofut;
     }
 }

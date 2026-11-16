@@ -6,8 +6,14 @@ namespace B3WM.Shared.Models
     /// </summary>
     public sealed class StructureModeConfig
     {
+        /// <summary>Modo intraday (TFs &lt; 1440).</summary>
         public string Mode { get; set; } = StructureRangeModes.Manual;
         public double ManualRange { get; set; }
+
+        /// <summary>Modo do diário (1440).</summary>
+        public string DailyMode { get; set; } = StructureRangeModes.Manual;
+        public double DailyManualRange { get; set; }
+
         public DateTime UpdatedAt { get; set; }
     }
 }

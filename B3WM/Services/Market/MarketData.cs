@@ -310,7 +310,11 @@ namespace B3WM.Services.Market
 
             }
 
-            return all.OrderBy(s => s.Date).ToList();
+            return all
+                .GroupBy(s => (s.Symbol, s.TimeFrame, s.Date))
+                .Select(g => g.First())
+                .OrderBy(s => s.Date)
+                .ToList();
 
         }
 

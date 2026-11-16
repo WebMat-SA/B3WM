@@ -280,7 +280,7 @@ namespace B3WM.Services.Core
                 // ATR não tem arquivo histórico anterior (o range numérico não
                 // identifica o modo); grava também os dias do replay para o
                 // multi-day e o automode encontrarem a série.
-                if (RangeMode != StructureRangeModes.Manual && TimeFrame != 1440)
+                if (RangeMode != StructureRangeModes.Manual)
                 {
                     foreach (var group in DataKeep.GroupBy(s => s.Date.Date))
                     {
@@ -375,9 +375,7 @@ namespace B3WM.Services.Core
 
         private double ResolveRange()
         {
-            if (TimeFrame == 1440 ||
-                RangeMode == StructureRangeModes.Manual ||
-                _atr.Value <= 0)
+            if (RangeMode == StructureRangeModes.Manual || _atr.Value <= 0)
                 return _minDistanceUpdateBorder;
 
             if (RangeMode == StructureRangeModes.AtrPerBar)
@@ -398,12 +396,23 @@ namespace B3WM.Services.Core
             if (tickSize <= 0)
                 return _minDistanceUpdateBorder;
 
+            var floorTicks = TimeFrame == 1440
+                ? _rangeOptions.AtrDailyFloorTicks
+                : _rangeOptions.AtrFloorTicks;
+            var capTicks = TimeFrame == 1440
+                ? _rangeOptions.AtrDailyCapTicks
+                : _rangeOptions.AtrCapTicks;
+
+            var multiplier = TimeFrame == 1440
+                ? _rangeOptions.DailyMultiplierFor(Symbol)
+                : _rangeOptions.MultiplierFor(Symbol);
+
             var range = AtrCalculator.ClampRangePoints(
                 _atr.Value,
-                _rangeOptions.MultiplierFor(Symbol),
+                multiplier,
                 tickSize,
-                _rangeOptions.AtrFloorTicks,
-                _rangeOptions.AtrCapTicks);
+                floorTicks,
+                capTicks);
 
             return range > 0 ? range : _minDistanceUpdateBorder;
         }
@@ -446,14 +455,12 @@ namespace B3WM.Services.Core
         }
 
         /// <summary>
-        /// Troca o modo intraday (manual | atr_leg | atr_bar), regenera a
-        /// série no modo novo e persiste a configuração do símbolo.
+        /// Troca o modo (manual | atr_leg | atr_bar), regenera a série no modo
+        /// novo e persiste a configuração do símbolo. Funciona no intraday e
+        /// no 1440 (campos separados no arquivo de config).
         /// </summary>
         public async Task SetRangeModeAsync(string mode, bool broadcastFinal = true)
         {
-            if (TimeFrame == 1440)
-                return;
-
             var normalized = StructureRangeModes.Normalize(mode);
             if (!StructureRangeModes.IsValid(normalized))
                 return;
@@ -482,9 +489,6 @@ namespace B3WM.Services.Core
 
         private async Task LoadModeAsync()
         {
-            if (TimeFrame == 1440)
-                return;
-
             try
             {
                 using var scope = _serviceProvider.CreateScope();
@@ -495,9 +499,18 @@ namespace B3WM.Services.Core
                 if (config == null)
                     return;
 
-                RangeMode = StructureRangeModes.Normalize(config.Mode);
-                if (config.ManualRange > 0)
-                    _minDistanceUpdateBorder = config.ManualRange;
+                if (TimeFrame == 1440)
+                {
+                    RangeMode = StructureRangeModes.Normalize(config.DailyMode);
+                    if (config.DailyManualRange > 0)
+                        _minDistanceUpdateBorder = config.DailyManualRange;
+                }
+                else
+                {
+                    RangeMode = StructureRangeModes.Normalize(config.Mode);
+                    if (config.ManualRange > 0)
+                        _minDistanceUpdateBorder = config.ManualRange;
+                }
             }
             catch (Exception ex)
             {
@@ -507,11 +520,38 @@ namespace B3WM.Services.Core
             }
         }
 
+        private async Task<List<BarStorageItem>> ReadRecentDailyBarsAsync(
+            CandleService candleService, int needed)
+        {
+            var result = new List<BarStorageItem>();
+            if (needed <= 0)
+                return result;
+
+            for (var i = 1; result.Count < needed && i <= 60; i++)
+            {
+                var date = DateTime.Today.AddDays(-i);
+                var path =
+                    $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{date:yyyy-MM-dd}.json";
+                var day = await candleService.GetDataAsync(path);
+                if (day is not { Count: > 0 })
+                    continue;
+
+                var closed = day
+                    .Where(b => b.Date.Date < DateTime.Today)
+                    .OrderBy(b => b.Date)
+                    .ToList();
+                if (closed.Count == 0)
+                    continue;
+
+                result.InsertRange(0, closed);
+            }
+
+            return result.TakeLast(needed).ToList();
+        }
+
         private async Task WarmAtrAsync()
         {
-            if (TimeFrame == 1440 ||
-                RangeMode == StructureRangeModes.Manual ||
-                _atr.Samples > 0)
+            if (RangeMode == StructureRangeModes.Manual || _atr.Samples > 0)
                 return;
 
             try
@@ -521,15 +561,26 @@ namespace B3WM.Services.Core
                 if (candleService == null)
                     return;
 
-                var bars = candleService.DataKeep?
-                    .OrderBy(b => b.Date)
-                    .ToList();
-
-                if (bars is not { Count: > 0 })
+                List<BarStorageItem>? bars;
+                if (TimeFrame == 1440)
                 {
-                    var path =
-                        $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{DateTime.Today:yyyy-MM-dd}.json";
-                    bars = await candleService.GetDataAsync(path);
+                    // O DataKeep do 1440 só tem o dia corrente (aberto); o ATR
+                    // precisa dos últimos dias fechados, lidos dos arquivos.
+                    bars = await ReadRecentDailyBarsAsync(
+                        candleService, _rangeOptions.AtrPeriod + 1);
+                }
+                else
+                {
+                    bars = candleService.DataKeep?
+                        .OrderBy(b => b.Date)
+                        .ToList();
+
+                    if (bars is not { Count: > 0 })
+                    {
+                        var path =
+                            $"{Symbol}_{nameof(CandleService)}_{TimeFrame}MIN_{DateTime.Today:yyyy-MM-dd}.json";
+                        bars = await candleService.GetDataAsync(path);
+                    }
                 }
 
                 if (bars is not { Count: > 0 })
@@ -554,21 +605,27 @@ namespace B3WM.Services.Core
 
         private async Task PersistModeConfigAsync()
         {
-            if (TimeFrame == 1440)
-                return;
-
             try
             {
                 using var scope = _serviceProvider.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
-                await keeper.WriteDataAsync(
-                    $"{Symbol}_StructureMode.json",
-                    new StructureModeConfig
-                    {
-                        Mode = RangeMode,
-                        ManualRange = _minDistanceUpdateBorder,
-                        UpdatedAt = DateTime.Now,
-                    });
+                var path = $"{Symbol}_StructureMode.json";
+                var config = await keeper.ReadDataAsync<StructureModeConfig>(path)
+                    ?? new StructureModeConfig();
+
+                if (TimeFrame == 1440)
+                {
+                    config.DailyMode = RangeMode;
+                    config.DailyManualRange = _minDistanceUpdateBorder;
+                }
+                else
+                {
+                    config.Mode = RangeMode;
+                    config.ManualRange = _minDistanceUpdateBorder;
+                }
+
+                config.UpdatedAt = DateTime.Now;
+                await keeper.WriteDataAsync(path, config);
             }
             catch (Exception ex)
             {

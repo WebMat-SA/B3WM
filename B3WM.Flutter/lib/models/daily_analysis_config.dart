@@ -7,6 +7,9 @@ class DailyAnalysisConfig {
   /// `SymbolConfig.structureRangeUpd` (intraday): um nunca toca no outro,
   /// nem na persistência (`daily:{}`) nem nas rotas do backend.
   double structureRangeUpd;
+
+  /// Modo do range do 1440: `manual`, `atr_leg` ou `atr_bar`.
+  String structureRangeMode;
   bool structureVisible;
   bool structureAuxVisible;
   double structureOpacity;
@@ -72,6 +75,7 @@ class DailyAnalysisConfig {
 
   DailyAnalysisConfig({
     required this.structureRangeUpd,
+    required this.structureRangeMode,
     required this.structureVisible,
     required this.structureAuxVisible,
     required this.structureOpacity,
@@ -102,6 +106,7 @@ class DailyAnalysisConfig {
 
   DailyAnalysisConfig.withDefaults(String symbol)
       : structureRangeUpd = Defaults.minDistanceUpdateBorderDaily(symbol),
+        structureRangeMode = Defaults.structureRangeModeManual,
         structureVisible = true,
         structureAuxVisible = true,
         structureOpacity = 0.8,
@@ -141,6 +146,8 @@ class DailyAnalysisConfig {
       structureRangeUpd: (src['structureRangeUpd'] as num?)?.toDouble() ??
           (json['structureRangeUpdDaily'] as num?)?.toDouble() ??
           Defaults.minDistanceUpdateBorderDaily(symbol),
+      structureRangeMode: Defaults.normalizeStructureRangeMode(
+          src['structureRangeMode'] as String?),
       structureVisible: src['structureVisible'] as bool? ??
           json['dailyStructureVisible'] as bool? ??
           true,
@@ -191,6 +198,7 @@ class DailyAnalysisConfig {
 
   Map<String, dynamic> toJson() => {
         'structureRangeUpd': structureRangeUpd,
+        'structureRangeMode': structureRangeMode,
         'structureVisible': structureVisible,
         'structureAuxVisible': structureAuxVisible,
         'structureOpacity': structureOpacity,

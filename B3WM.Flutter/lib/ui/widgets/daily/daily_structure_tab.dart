@@ -52,7 +52,9 @@ class _DailyStructureTabState extends State<DailyStructureTab>
                   (v) => state.setDailyStructureRangeUpd(v),
                   decimals: 0,
                   step: Defaults.structureRangeUpdDailyStep(state.symbol),
-                  locked: state.configLocked,
+                  locked: state.configLocked ||
+                      state.dailyStructureRangeMode !=
+                          Defaults.structureRangeModeManual,
                   onChangeEnd: (_) =>
                       state.scheduleDailyStructureConfirm(immediate: true),
                   trailing: state.isDailyStructureConfirmRunning || _isConfirmLoading
@@ -82,6 +84,38 @@ class _DailyStructureTabState extends State<DailyStructureTab>
                             )
                           : null,
                 ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Método do range 1D',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _modeChip(state, Defaults.structureRangeModeManual,
+                        'Manual'),
+                    _modeChip(state, Defaults.structureRangeModeAtrPerLeg,
+                        'ATR perna'),
+                    _modeChip(state, Defaults.structureRangeModeAtrBar,
+                        'ATR barra'),
+                  ],
+                ),
+                if (state.dailyStructureRangeMode !=
+                    Defaults.structureRangeModeManual)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'O range manual vira fallback até o ATR ter amostras.',
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade500),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -114,6 +148,30 @@ class _DailyStructureTabState extends State<DailyStructureTab>
         ],
       );
     });
+  }
+
+  Widget _modeChip(StateService state, String mode, String label) {
+    final selected = state.dailyStructureRangeMode == mode;
+    final locked = state.configLocked ||
+        _isConfirmLoading ||
+        state.isDailyStructureConfirmRunning;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: locked
+          ? null
+          : (value) async {
+              if (!value || selected) return;
+              setState(() => _isConfirmLoading = true);
+              await state.setDailyStructureRangeMode(mode);
+              if (mounted) {
+                setState(() => _isConfirmLoading = false);
+              }
+            },
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
   }
 }
 

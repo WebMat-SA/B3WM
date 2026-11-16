@@ -445,6 +445,9 @@ class StateService extends ChangeNotifier {
   // --- Análise diária (issue #12): configs escopadas ao widget diário ---
   /// Range DIÁRIO (só 1440). Independente de [structureRangeUpd] (intraday).
   double get dailyStructureRangeUpd => _currentConfig.daily.structureRangeUpd;
+
+  /// Modo do range do 1440: manual | atr_leg | atr_bar.
+  String get dailyStructureRangeMode => _currentConfig.daily.structureRangeMode;
   bool get dailyStructureVisible => _currentConfig.daily.structureVisible;
   bool get dailyStructureAuxVisible => _currentConfig.daily.structureAuxVisible;
   double get dailyStructureOpacity => _currentConfig.daily.structureOpacity;
@@ -773,6 +776,43 @@ class StateService extends ChangeNotifier {
         _isDailyStructureUpdating = false;
         notifyListeners();
       }
+    }
+  }
+
+  /// Troca o método do range 1D (manual | atr_leg | atr_bar), regenera o 1440
+  /// no backend e refaz histórico/perfil/extremos/pivot diários.
+  Future<void> setDailyStructureRangeMode(String mode) async {
+    if (_guardLocked('setDailyStructureRangeMode')) return;
+    final normalized = Defaults.normalizeStructureRangeMode(mode);
+    final previous = _currentConfig.daily.structureRangeMode;
+    if (previous == normalized || _isDailyStructureConfirmRunning) return;
+
+    _currentConfig.daily.structureRangeMode = normalized;
+    _isDailyStructureConfirmRunning = true;
+    _isDailyStructureUpdating = true;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+
+    try {
+      await _apiService.setStructureModeForTimeFrame(_symbol, 1440, normalized);
+      await refreshDailyStructureHistory();
+      _dailyExtremes = null;
+      _dailyProfileLevels = [];
+      _dailyPivot = null;
+      if (_currentConfig.daily.profileAutoByPriceStructure) {
+        await _applyDailyStructureAutoFilter();
+      } else {
+        await _loadDailyManualRange();
+      }
+      await loadDailyPivot();
+    } catch (e) {
+      _currentConfig.daily.structureRangeMode = previous;
+      _saveConfigForSymbol(_symbol);
+      logD('[dailyStructureMode] error: $e');
+    } finally {
+      _isDailyStructureConfirmRunning = false;
+      _isDailyStructureUpdating = false;
+      notifyListeners();
     }
   }
 

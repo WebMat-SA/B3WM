@@ -281,6 +281,8 @@ class SymbolConfig {
       panY: legacy.panY,
       daily: DailyAnalysisConfig(
         structureRangeUpd: dailyRange,
+        structureRangeMode: Defaults.normalizeStructureRangeMode(
+            legacy.daily.structureRangeMode),
         structureVisible: legacy.daily.structureVisible,
         structureAuxVisible: legacy.daily.structureAuxVisible,
         structureOpacity: legacy.daily.structureOpacity,

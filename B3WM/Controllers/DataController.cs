@@ -214,7 +214,11 @@ namespace B3WM.Controllers
                     data.AddRange(timeframeData);
             }
 
-            return Ok(data);
+            return Ok(data
+                .GroupBy(s => (s.Symbol, s.TimeFrame, s.Date))
+                .Select(g => g.First())
+                .OrderBy(s => s.Date)
+                .ToList());
         }
 
         [HttpGet("{symbol}/{date}")]
@@ -320,19 +324,16 @@ namespace B3WM.Controllers
         }
 
         [HttpGet("{symbol}")]
-        public IActionResult GetStructureMode(string symbol)
+        public async Task<IActionResult> GetStructureMode(string symbol)
         {
             var service = structureServices
                 .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame != 1440);
             if (service == null)
                 return NotFound();
 
-            return Ok(new StructureModeConfig
-            {
-                Mode = service.RangeMode,
-                ManualRange = service._minDistanceUpdateBorder,
-                UpdatedAt = DateTime.Now,
-            });
+            var config = await dataKeeper.ReadDataAsync<StructureModeConfig>(
+                $"{symbol}_StructureMode.json");
+            return Ok(config);
         }
 
         [HttpGet("{symbol}/{startDate}/{endDate}/{minDistance:double}")]
@@ -369,7 +370,11 @@ namespace B3WM.Controllers
                     }
                 }
             }
-            return Ok(all.OrderBy(s => s.Date).ToList());
+            return Ok(all
+                .GroupBy(s => (s.Symbol, s.TimeFrame, s.Date))
+                .Select(g => g.First())
+                .OrderBy(s => s.Date)
+                .ToList());
         }
 
         [HttpGet("{symbol}/{timeFrame:int}/{minDistance:double}")]
@@ -379,6 +384,34 @@ namespace B3WM.Controllers
             if (service == null) return NotFound();
 
             await service.SetMinDistance(minDistance);
+
+            string path = service.GetPathForDate(DateTime.Today);
+            var data = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
+            return Ok(data);
+        }
+
+        /// <summary>
+        /// Troca o modo de um timeframe específico (o diário usa 1440). O app
+        /// diário recarrega o histórico em seguida via GetStructureHistory.
+        /// </summary>
+        [HttpGet("{symbol}/{timeFrame:int}/{mode}")]
+        public async Task<IActionResult> SetStructureModeForTimeFrameAsync(
+            string symbol, int timeFrame, string mode)
+        {
+            var normalized = StructureRangeModes.Normalize(mode);
+            if (!StructureRangeModes.IsValid(normalized))
+                return BadRequest(new
+                {
+                    error = "mode inválido",
+                    valid = StructureRangeModes.All,
+                });
+
+            var service = structureServices
+                .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+            if (service == null)
+                return NotFound();
+
+            await service.SetRangeModeAsync(normalized);
 
             string path = service.GetPathForDate(DateTime.Today);
             var data = await dataKeeper.ReadDataAsync<List<StructureStorageItem>>(path);
@@ -434,7 +467,11 @@ namespace B3WM.Controllers
                     all = await ReadRangeAsync(service.StorageKey);
             }
 
-            return Ok(all.OrderBy(s => s.Date).ToList());
+            return Ok(all
+                .GroupBy(s => (s.Symbol, s.TimeFrame, s.Date))
+                .Select(g => g.First())
+                .OrderBy(s => s.Date)
+                .ToList());
         }
 
         [HttpGet("{symbol}")]
