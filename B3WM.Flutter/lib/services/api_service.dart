@@ -135,7 +135,9 @@ class ApiService {
     final response = await _client.get(
       Uri.parse('$_baseUrl/api/Data/SetStructureMode/$symbol/$mode'),
     );
-    if (response.statusCode != 200) return [];
+    if (response.statusCode != 200) {
+      throw Exception('SetStructureMode HTTP ${response.statusCode}');
+    }
     final list = jsonDecode(response.body) as List? ?? [];
     return list
         .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
@@ -149,7 +151,10 @@ class ApiService {
       Uri.parse(
           '$_baseUrl/api/Data/SetStructureModeForTimeFrame/$symbol/$timeFrame/$mode'),
     );
-    if (response.statusCode != 200) return [];
+    if (response.statusCode != 200) {
+      throw Exception(
+          'SetStructureModeForTimeFrame HTTP ${response.statusCode}');
+    }
     final list = jsonDecode(response.body) as List? ?? [];
     return list
         .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))

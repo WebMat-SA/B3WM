@@ -1027,10 +1027,19 @@ class StateService extends ChangeNotifier {
     _saveConfigForSymbol(_symbol);
 
     try {
-      final structures =
-          await _apiService.setStructureMode(_symbol, normalized);
-      _structures = structures.where((s) => s.timeFrame != 1440).toList();
-      _recomputeStructureChanges(_structures);
+      // O endpoint troca o modo e regenera; a série canônica é relida pela
+      // mesma rota do load normal (cobre multi-day e a data exibida).
+      await _apiService.setStructureMode(_symbol, normalized);
+      final structures = await _fetchStructures(
+          _displayDate ?? DateTime.now(), allowRetry: true);
+      if (structures.isEmpty) {
+        logD('[structureMode] $normalized sem estruturas; mantendo série anterior');
+      } else {
+        _structures = structures.where((s) => s.timeFrame != 1440).toList();
+        _recomputeStructureChanges(_structures);
+        logD('[structureMode] $normalized: ${_structures.length} estruturas, '
+            'TFs=${_structures.map((s) => s.timeFrame).toSet()}');
+      }
       await refreshMarketWindow();
       _applyStructureAutoFilter();
     } catch (e) {
