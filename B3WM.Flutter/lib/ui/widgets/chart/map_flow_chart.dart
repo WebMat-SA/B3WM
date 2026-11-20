@@ -2111,7 +2111,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       ..color = color.withValues(alpha: 0.95)
       ..strokeWidth = 1.5;
 
-    final lineEnd = max(0.0, size.width - ChartFixedPainter.rightReserved);
+    final lineEnd = size.width;
     canvas.drawLine(Offset(0, y), Offset(lineEnd, y), linePaint);
 
     final priceLabel = formatRulerPrice(price, symbol);
