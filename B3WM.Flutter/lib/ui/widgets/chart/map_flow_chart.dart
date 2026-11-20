@@ -114,9 +114,9 @@ class _MapFlowChartState extends State<MapFlowChart>
   Offset? _measureDownLocal;
   Matrix4? _measureBlockMatrix;
   Offset? _pendingTapDownLocal;
-  // Ordem limite (issue #48): botão único liga/desliga a funcionalidade.
-  // Com ela ativa, Shift+clique = compra e Alt+clique = venda no preço.
-  bool _limitOrdersEnabled = false;
+  // Ordem limite (issue #48): Shift+clique = compra, Alt+clique = venda.
+  // O botão B/S e a funcionalidade são regidos pelo mesmo flag do painel de
+  // trading (`Mostrar Ordens em Aberto`), persistido por símbolo.
   String? _pendingOrderModifier;
   bool _placingLimitOrder = false;
   // Botão direito: clique sem arrasto sobre uma bubble abre o trigger manual
@@ -1077,6 +1077,12 @@ class _MapFlowChartState extends State<MapFlowChart>
   bool get _isShiftPressed => HardwareKeyboard.instance.isShiftPressed;
   bool get _isAltPressed => HardwareKeyboard.instance.isAltPressed;
 
+  /// Mesmo flag de `Mostrar Ordens em Aberto` no `TradingDrawer`: o B/S só
+  /// fica ativo quando as ordens em aberto estão visíveis, e desligar o botão
+  /// também desliga esse item (intradiário apenas).
+  bool get _limitOrdersEnabled =>
+      !widget.isDaily && context.read<StateService>().openOrdersVisible;
+
   void _toggleRulerMode() {
     setState(() {
       _rulerMode = !_rulerMode;
@@ -1090,14 +1096,11 @@ class _MapFlowChartState extends State<MapFlowChart>
     });
   }
 
-  /// Liga/desliga a funcionalidade de ordens limite no gráfico. Ativa, ela
-  /// responde a Shift+clique (compra) e Alt+clique (venda); o botão único é
-  /// só o interruptor mestre, sem escolher lado.
+  /// Liga/desliga a funcionalidade junto com `Mostrar Ordens em Aberto`.
   void _toggleLimitOrders() {
-    setState(() {
-      _limitOrdersEnabled = !_limitOrdersEnabled;
-      _pendingOrderModifier = null;
-    });
+    _pendingOrderModifier = null;
+    final state = context.read<StateService>();
+    state.setOpenOrdersVisible(!state.openOrdersVisible);
   }
 
   Widget _buildLimitOrderButton() {
@@ -1512,10 +1515,10 @@ class _MapFlowChartState extends State<MapFlowChart>
                         return KeyEventResult.handled;
                       }
                       if (_limitOrdersEnabled) {
-                        setState(() {
-                          _limitOrdersEnabled = false;
-                          _pendingOrderModifier = null;
-                        });
+                        _pendingOrderModifier = null;
+                        context
+                            .read<StateService>()
+                            .setOpenOrdersVisible(false);
                         return KeyEventResult.handled;
                       }
                     }
