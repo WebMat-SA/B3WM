@@ -2088,7 +2088,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     final priceRect = Rect.fromLTWH(
-      size.width - priceTp.width - 4,
+      size.width - priceTp.width - 8,
       y - priceTp.height / 2 - 2,
       priceTp.width + 8,
       priceTp.height + 4,
