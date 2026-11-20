@@ -11,6 +11,7 @@ import 'chart_price_scale.dart';
 import 'measure_ruler.dart';
 import 'strategy_timeline_lane.dart';
 import '../../../models/defaults.dart';
+import '../../../models/trade_models.dart';
 import '../../../services/trading_service.dart';
 import '../../../services/state_service.dart';
 import '../../../services/strategy_service.dart';
