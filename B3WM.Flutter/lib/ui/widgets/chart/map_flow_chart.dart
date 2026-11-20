@@ -1493,6 +1493,14 @@ class _MapFlowChartState extends State<MapFlowChart>
                   focusNode: _focusNode,
                   autofocus: true,
                   onKeyEvent: (node, event) {
+                    // Alt é o atalho de venda. No Windows ele também pode
+                    // ativar o menu do sistema e tirar o foco do gráfico;
+                    // marcá-lo como consumido evita esse desvio.
+                    if (_limitOrdersEnabled &&
+                        (event.logicalKey == LogicalKeyboardKey.altLeft ||
+                            event.logicalKey == LogicalKeyboardKey.altRight)) {
+                      return KeyEventResult.handled;
+                    }
                     if (event is KeyDownEvent &&
                         event.logicalKey == LogicalKeyboardKey.space) {
                       _resetChart();
