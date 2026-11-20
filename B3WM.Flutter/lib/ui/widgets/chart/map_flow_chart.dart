@@ -135,6 +135,7 @@ class _MapFlowChartState extends State<MapFlowChart>
       yZoom: _yZoom,
     );
     _controller.addListener(_onTransformChanged);
+    HardwareKeyboard.instance.addHandler(_handleLimitOrderPreviewKey);
     _loadingCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -418,11 +419,29 @@ class _MapFlowChartState extends State<MapFlowChart>
       } catch (_) {}
     }
     _dismissTooltip();
+    HardwareKeyboard.instance.removeHandler(_handleLimitOrderPreviewKey);
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     _focusNode.dispose();
     _loadingCtrl.dispose();
     super.dispose();
+  }
+
+  /// Shift/Alt podem ser pressionados com o mouse parado sobre o gráfico.
+  /// O hover só é recalculado em `onHover`; este handler força o rebuild da
+  /// linha de entrada assim que o modificador muda.
+  bool _handleLimitOrderPreviewKey(KeyEvent event) {
+    if (!_limitOrdersEnabled || _hoverY == null) return false;
+    if (event is! KeyDownEvent && event is! KeyUpEvent) return false;
+    final key = event.logicalKey;
+    if (key != LogicalKeyboardKey.shiftLeft &&
+        key != LogicalKeyboardKey.shiftRight &&
+        key != LogicalKeyboardKey.altLeft &&
+        key != LogicalKeyboardKey.altRight) {
+      return false;
+    }
+    if (mounted) setState(() {});
+    return false;
   }
 
   void _dismissTooltip() {
@@ -893,6 +912,44 @@ class _MapFlowChartState extends State<MapFlowChart>
       content: Text(message),
       backgroundColor: status == null ? Colors.red : Colors.green,
     ));
+  }
+
+  /// Linha de entrada que acompanha o mouse enquanto Shift (compra) ou Alt
+  /// (venda) está pressionado, no mesmo espírito do Profit: mostra o preço
+  /// já arredondado no tick e sinaliza se o lado é inválido.
+  _LimitOrderPreview? _limitOrderPreview(double candleAreaHeight) {
+    if (!_limitOrdersEnabled || _isMeasuring) return null;
+    final hoverY = _hoverY;
+    if (hoverY == null) return null;
+    bool? isBuy;
+    if (_isShiftPressed) {
+      isBuy = true;
+    } else if (_isAltPressed) {
+      isBuy = false;
+    }
+    if (isBuy == null) return null;
+
+    final symbol = widget.data.symbol;
+    final tick = Defaults.tickSize(symbol);
+    if (tick <= 0) return null;
+    final raw = _localToPrice(hoverY, candleAreaHeight);
+    if (!raw.isFinite) return null;
+    final price = (raw / tick).roundToDouble() * tick;
+    if (price <= 0) return null;
+
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final y =
+        _toChildY(price, candleAreaHeight) * scaleY + m.getTranslation().y;
+    final lastPrice = widget.data.lastPrice;
+    final isValid =
+        lastPrice > 0 && (isBuy ? price < lastPrice : price > lastPrice);
+    return _LimitOrderPreview(
+      price: price,
+      y: y,
+      isBuy: isBuy,
+      isValid: isValid,
+    );
   }
 
   void _showLimitOrderSnack(String message, {bool error = false}) {
@@ -1406,6 +1463,7 @@ class _MapFlowChartState extends State<MapFlowChart>
         }
 
         final measure = _currentMeasure();
+        final preview = _limitOrderPreview(candleAreaHeight);
         Offset? rulerStart;
         Offset? rulerEnd;
         if (measure != null && _hasMeasure()) {
@@ -1427,7 +1485,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                   yZoom: _yZoom,
                   priceScale: _yScale,
                   controller: _controller,
-                  hoverY: _hoverY,
+                  hoverY: preview == null ? _hoverY : null,
                   hoverCandleIndex: _effectiveHoverIndex(),
                   closingTickets: _closingTickets,
                   cancellingTickets: _cancellingTickets,
@@ -1682,6 +1740,25 @@ class _MapFlowChartState extends State<MapFlowChart>
                       start: rulerStart,
                       end: rulerEnd,
                       color: measure.isUp ? Colors.green : Colors.red,
+                    ),
+                  ),
+                ),
+              ),
+            if (preview != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft,
+                top: ChartFixedPainter.marginTop,
+                width:
+                    max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+                height: candleAreaHeight,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _LimitOrderPreviewPainter(
+                      y: preview.y,
+                      price: preview.price,
+                      symbol: data.symbol,
+                      isBuy: preview.isBuy,
+                      isValid: preview.isValid,
                     ),
                   ),
                 ),
@@ -1972,6 +2049,129 @@ class _TooltipRow {
   final String label;
   final String value;
   const _TooltipRow(this.label, this.value);
+}
+
+class _LimitOrderPreview {
+  final double price;
+  final double y;
+  final bool isBuy;
+  final bool isValid;
+
+  const _LimitOrderPreview({
+    required this.price,
+    required this.y,
+    required this.isBuy,
+    required this.isValid,
+  });
+}
+
+class _LimitOrderPreviewPainter extends CustomPainter {
+  final double y;
+  final double price;
+  final String symbol;
+  final bool isBuy;
+  final bool isValid;
+
+  const _LimitOrderPreviewPainter({
+    required this.y,
+    required this.price,
+    required this.symbol,
+    required this.isBuy,
+    required this.isValid,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final color = isValid ? (isBuy ? Colors.green : Colors.red) : Colors.orange;
+    final linePaint = Paint()
+      ..color = color.withValues(alpha: 0.95)
+      ..strokeWidth = 1.5;
+
+    if (isValid) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
+    } else {
+      const dash = 6.0;
+      const gap = 4.0;
+      for (double x = 0; x < size.width; x += dash + gap) {
+        canvas.drawLine(
+          Offset(x, y),
+          Offset(min(x + dash, size.width), y),
+          linePaint,
+        );
+      }
+    }
+
+    final priceLabel = formatRulerPrice(price, symbol);
+    final priceTp = TextPainter(
+      text: TextSpan(
+        text: priceLabel,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final priceRect = Rect.fromLTWH(
+      size.width - priceTp.width - 10,
+      y - priceTp.height / 2 - 2,
+      priceTp.width + 8,
+      priceTp.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(priceRect, const Radius.circular(3)),
+      Paint()..color = color,
+    );
+    priceTp.paint(
+      canvas,
+      Offset(priceRect.left + 4, y - priceTp.height / 2),
+    );
+
+    final title =
+        '${isBuy ? 'Compra' : 'Venda'} limite${isValid ? '' : ' · inválido'}';
+    final titleTp = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final titleRect = Rect.fromLTWH(
+      8,
+      y - titleTp.height / 2 - 3,
+      titleTp.width + 12,
+      titleTp.height + 6,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(titleRect, const Radius.circular(3)),
+      Paint()..color = color.withValues(alpha: 0.16),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(titleRect, const Radius.circular(3)),
+      Paint()
+        ..color = color.withValues(alpha: 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    titleTp.paint(
+      canvas,
+      Offset(titleRect.left + 6, y - titleTp.height / 2),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LimitOrderPreviewPainter oldDelegate) {
+    return oldDelegate.y != y ||
+        oldDelegate.price != price ||
+        oldDelegate.symbol != symbol ||
+        oldDelegate.isBuy != isBuy ||
+        oldDelegate.isValid != isValid;
+  }
 }
 
 class _RulerPainter extends CustomPainter {
