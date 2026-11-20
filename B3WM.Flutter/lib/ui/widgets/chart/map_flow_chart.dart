@@ -1751,13 +1751,14 @@ class _MapFlowChartState extends State<MapFlowChart>
             Positioned(
               right: 4.0,
               top: 4.0,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              width: ChartFixedPainter.rightLabelMargin,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
                 children: [
-                  if (!widget.isDaily) ...[
-                    _buildLimitOrderButton(),
-                    const SizedBox(width: 4),
-                  ],
+                  if (!widget.isDaily) _buildLimitOrderButton(),
                   Tooltip(
                     message: _rulerMode
                         ? 'Régua ativa — arraste para medir (Esc sai)'
@@ -1787,7 +1788,6 @@ class _MapFlowChartState extends State<MapFlowChart>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
                   Tooltip(
                     message: 'Reset chart (Espaço)',
                     preferBelow: false,
