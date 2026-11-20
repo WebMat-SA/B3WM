@@ -116,8 +116,7 @@ namespace B3WM
                 {
                     // O dashboard evolui junto com o servidor; evita que o
                     // navegador fique preso em um dashboard.js/css antigo.
-                    if (ctx.Context.Request.Path.StartsWithSegments("/dashboard") ||
-                        ctx.Context.Request.Path.StartsWithSegments("/research"))
+                    if (ctx.Context.Request.Path.StartsWithSegments("/dashboard"))
                     {
                         ctx.Context.Response.Headers.CacheControl =
                             "no-cache, no-store, must-revalidate";

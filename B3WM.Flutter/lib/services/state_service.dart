@@ -136,8 +136,37 @@ class StateService extends ChangeNotifier {
   /// e trafega por rotas/histórico próprios).
   double get structureRangeUpd => _currentConfig.structureRangeUpd;
 
+  /// Valor exibido no slider intraday. No modo ATR barra reflete o range
+  /// efetivo do último candle do timeframe atual (somente leitura); no
+  /// manual é o valor configurado.
+  double get structureRangeUpdDisplay {
+    if (_currentConfig.structureRangeMode ==
+        Defaults.structureRangeModeAtrBar) {
+      return _latestRangeUsed(_structures,
+              timeFrame: _currentConfig.timeFrame) ??
+          _currentConfig.structureRangeUpd;
+    }
+    return _currentConfig.structureRangeUpd;
+  }
+
   /// Modo do range intraday: manual | atr_leg | atr_bar.
   String get structureRangeMode => _currentConfig.structureRangeMode;
+
+  double? _latestRangeUsed(List<StructureStorageItem> structures,
+      {required int timeFrame}) {
+    double? latest;
+    DateTime? latestDate;
+    for (final s in structures) {
+      if (s.symbol != _symbol || s.timeFrame != timeFrame) continue;
+      final range = s.rangeUsed;
+      if (range == null || range <= 0) continue;
+      if (latestDate == null || s.date.isAfter(latestDate)) {
+        latestDate = s.date;
+        latest = range;
+      }
+    }
+    return latest;
+  }
 
   String get colorBuyer => _currentConfig.colorBuyer;
   String get colorSeller => _currentConfig.colorSeller;
@@ -445,6 +474,18 @@ class StateService extends ChangeNotifier {
   // --- Análise diária (issue #12): configs escopadas ao widget diário ---
   /// Range DIÁRIO (só 1440). Independente de [structureRangeUpd] (intraday).
   double get dailyStructureRangeUpd => _currentConfig.daily.structureRangeUpd;
+
+  /// Valor exibido no slider diário. No modo ATR barra reflete o range
+  /// efetivo do último candle 1440 (somente leitura); no manual é o valor
+  /// configurado.
+  double get dailyStructureRangeUpdDisplay {
+    if (_currentConfig.daily.structureRangeMode ==
+        Defaults.structureRangeModeAtrBar) {
+      return _latestRangeUsed(_structures1440History, timeFrame: 1440) ??
+          _currentConfig.daily.structureRangeUpd;
+    }
+    return _currentConfig.daily.structureRangeUpd;
+  }
 
   /// Modo do range do 1440: manual | atr_leg | atr_bar.
   String get dailyStructureRangeMode => _currentConfig.daily.structureRangeMode;
@@ -1030,10 +1071,11 @@ class StateService extends ChangeNotifier {
       // O endpoint troca o modo e regenera; a série canônica é relida pela
       // mesma rota do load normal (cobre multi-day e a data exibida).
       await _apiService.setStructureMode(_symbol, normalized);
-      final structures = await _fetchStructures(
-          _displayDate ?? DateTime.now(), allowRetry: true);
+      final structures = await _fetchStructures(_displayDate ?? DateTime.now(),
+          allowRetry: true);
       if (structures.isEmpty) {
-        logD('[structureMode] $normalized sem estruturas; mantendo série anterior');
+        logD(
+            '[structureMode] $normalized sem estruturas; mantendo série anterior');
       } else {
         _structures = structures.where((s) => s.timeFrame != 1440).toList();
         _recomputeStructureChanges(_structures);

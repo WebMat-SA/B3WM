@@ -1,14 +1,10 @@
-namespace B3WM.Services.Research
+namespace B3WM.Services.Core
 {
     /// <summary>
-    /// Configuração do experimento de range adaptativo (issue #25).
-    /// Default desligado: o estudo roda em paralelo, sem tocar na estrutura
-    /// de produção, e grava apenas em Data/Research.
+    /// Parâmetros do range adaptativo por ATR usado pela estrutura (issue #25).
     /// </summary>
-    public sealed class StructureResearchOptions
+    public sealed class StructureAtrOptions
     {
-        public bool Enabled { get; set; }
-
         /// <summary>Período do ATR (média simples dos true ranges).</summary>
         public int AtrPeriod { get; set; } = 14;
 
@@ -34,17 +30,6 @@ namespace B3WM.Services.Research
 
         /// <summary>Teto do range diário (1440) em ticks.</summary>
         public double AtrDailyCapTicks { get; set; } = 2000;
-
-        /// <summary>Dias de candles reprocessados no startup para aquecer ATR/estrutura.</summary>
-        public int WarmupDays { get; set; } = 3;
-
-        public int FalseBreakBarsShort { get; set; } = 10;
-        public int FalseBreakBarsLong { get; set; } = 20;
-
-        public int[] TimeFrames { get; set; } = [1, 2, 5, 15, 30, 60];
-        public string[] Symbols { get; set; } = ["WINFUT", "WDOFUT"];
-
-        public bool Persist { get; set; } = true;
 
         public double MultiplierFor(string symbol) =>
             symbol.Equals("WINFUT", StringComparison.OrdinalIgnoreCase)

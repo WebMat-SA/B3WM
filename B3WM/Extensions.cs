@@ -3,7 +3,6 @@ using B3WM.Services.AI;
 using B3WM.Services.Core;
 using B3WM.Services.Dashboard;
 using B3WM.Services.Market;
-using B3WM.Services.Research;
 using B3WM.Services.Screen;
 using B3WM.Services.Strategies;
 using B3WM.Shared.Interfaces;
@@ -18,11 +17,11 @@ namespace B3WM
         {
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
-            // Experimento ATR da issue #25 (default desligado: só pesquisa).
-            var researchOptions = config
-                .GetSection("StructureResearch")
-                .Get<StructureResearchOptions>() ?? new StructureResearchOptions();
-            services.AddSingleton(researchOptions);
+            // Parâmetros do range adaptativo por ATR usados pela estrutura.
+            var atrOptions = config
+                .GetSection("StructureAtr")
+                .Get<StructureAtrOptions>() ?? new StructureAtrOptions();
+            services.AddSingleton(atrOptions);
             // Estado de saúde em memória consumido pelo dashboard (polling REST).
             services.AddSingleton<DashboardHealthService>();
             services.AddSingleton<ILoggerProvider, DashboardLogSink>();
@@ -63,32 +62,6 @@ namespace B3WM
             services.AddSingleton<StructurePreloadService>();
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StructurePreloadService>());
 
-            // A/B ATR roda depois do preload de produção e grava só em
-            // Data/Research; nenhuma série de produção é alterada.
-            if (researchOptions.Enabled)
-            {
-                foreach (var symbol in researchOptions.Symbols
-                             .Where(s => !string.IsNullOrWhiteSpace(s))
-                             .Distinct(StringComparer.OrdinalIgnoreCase))
-                {
-                    foreach (var timeFrame in researchOptions.TimeFrames.Distinct())
-                    {
-                        services.AddSingleton(sp => new StructureResearchService(
-                            symbol,
-                            timeFrame,
-                            sp.GetRequiredService<StructureResearchOptions>(),
-                            sp.GetServices<CandleService>(),
-                            sp.GetServices<StructureService>(),
-                            sp.GetRequiredService<IServiceScopeFactory>(),
-                            sp.GetRequiredService<ILogger<StructureResearchService>>()));
-                    }
-                }
-
-                services.AddSingleton<StructureResearchHost>();
-                services.AddSingleton<IHostedService>(
-                    sp => sp.GetRequiredService<StructureResearchHost>());
-            }
-
             return services;
         }
 
@@ -113,7 +86,7 @@ namespace B3WM
                     ? minDistanceUpdateBorderDaily
                     : minDistanceUpdateBorder;
                 services.AddSingleton(sp => new CandleService(symbol, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<CandleService>>()));
-                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<StructureResearchOptions>(), sp.GetRequiredService<ILogger<StructureService>>()));
+                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<StructureAtrOptions>(), sp.GetRequiredService<ILogger<StructureService>>()));
             }
             services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>(), sp.GetRequiredService<DashboardHealthService>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));

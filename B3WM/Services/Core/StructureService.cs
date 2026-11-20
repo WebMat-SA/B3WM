@@ -1,5 +1,4 @@
 ﻿using B3WM.Services;
-using B3WM.Services.Research;
 using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
@@ -16,7 +15,7 @@ namespace B3WM.Services.Core
 
         private readonly IHubContext<DataHub, IDataHubClient> hubContext;
         private readonly StructureRangeResolver _rangeResolver;
-        private readonly StructureResearchOptions _rangeOptions;
+        private readonly StructureAtrOptions _atrOptions;
         private readonly ILogger<StructureService> _logger;
 
         public event Func<StructureStorageItem, Task>? OnUpdate;
@@ -74,7 +73,7 @@ namespace B3WM.Services.Core
             IHubContext<DataHub, IDataHubClient> hubContext,
             IServiceProvider serviceProvider,
             StructureRangeResolver rangeResolver,
-            StructureResearchOptions rangeOptions,
+            StructureAtrOptions atrOptions,
             ILogger<StructureService> logger)
             : base(serviceProvider)
         {
@@ -83,9 +82,9 @@ namespace B3WM.Services.Core
             _minDistanceUpdateBorder = minDistance;
             this.hubContext = hubContext;
             _rangeResolver = rangeResolver;
-            _rangeOptions = rangeOptions;
+            _atrOptions = atrOptions;
             _logger = logger;
-            _atr = new AtrState(rangeOptions.AtrPeriod);
+            _atr = new AtrState(atrOptions.AtrPeriod);
         }
 
         public async Task PreLoad()
@@ -397,15 +396,15 @@ namespace B3WM.Services.Core
                 return _minDistanceUpdateBorder;
 
             var floorTicks = TimeFrame == 1440
-                ? _rangeOptions.AtrDailyFloorTicks
-                : _rangeOptions.AtrFloorTicks;
+                ? _atrOptions.AtrDailyFloorTicks
+                : _atrOptions.AtrFloorTicks;
             var capTicks = TimeFrame == 1440
-                ? _rangeOptions.AtrDailyCapTicks
-                : _rangeOptions.AtrCapTicks;
+                ? _atrOptions.AtrDailyCapTicks
+                : _atrOptions.AtrCapTicks;
 
             var multiplier = TimeFrame == 1440
-                ? _rangeOptions.DailyMultiplierFor(Symbol)
-                : _rangeOptions.MultiplierFor(Symbol);
+                ? _atrOptions.DailyMultiplierFor(Symbol)
+                : _atrOptions.MultiplierFor(Symbol);
 
             var range = AtrCalculator.ClampRangePoints(
                 _atr.Value,
@@ -567,7 +566,7 @@ namespace B3WM.Services.Core
                     // O DataKeep do 1440 só tem o dia corrente (aberto); o ATR
                     // precisa dos últimos dias fechados, lidos dos arquivos.
                     bars = await ReadRecentDailyBarsAsync(
-                        candleService, _rangeOptions.AtrPeriod + 1);
+                        candleService, _atrOptions.AtrPeriod + 1);
                 }
                 else
                 {
@@ -586,7 +585,7 @@ namespace B3WM.Services.Core
                 if (bars is not { Count: > 0 })
                     return;
 
-                var take = Math.Min(bars.Count, _rangeOptions.AtrPeriod + 1);
+                var take = Math.Min(bars.Count, _atrOptions.AtrPeriod + 1);
                 _atr.Reset();
                 _atr.Warmup(bars.TakeLast(take));
                 _lastAtrDate = bars[^1].Date;
