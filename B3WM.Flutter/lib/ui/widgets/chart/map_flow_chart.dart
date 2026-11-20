@@ -2117,8 +2117,16 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    var titleTop = y - titleTp.height - 8;
-    if (titleTop < 0) titleTop = y + 6;
+    // Venda: rótulo acima da linha. Compra: abaixo (como no Profit), com
+    // fallback para não sair da área quando a linha está no extremo.
+    var titleTop = isBuy ? y + 6 : y - titleTp.height - 8;
+    if (isBuy) {
+      if (titleTop + titleTp.height + 6 > size.height) {
+        titleTop = y - titleTp.height - 8;
+      }
+    } else if (titleTop < 0) {
+      titleTop = y + 6;
+    }
     final titleRect = Rect.fromLTWH(
       8,
       titleTop,
