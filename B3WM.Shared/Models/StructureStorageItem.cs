@@ -19,6 +19,15 @@ namespace B3WM.Shared.Models
 
         public double DownAuxBorder { get; set; }
 
+        /// <summary>Modo do range usado neste print (manual | atr_leg | atr_bar).</summary>
+        public string? RangeMode { get; set; }
+
+        /// <summary>Range efetivo usado neste print (pontos). Null em arquivos antigos.</summary>
+        public double? RangeUsed { get; set; }
+
+        /// <summary>ATR no momento do print (pontos). Null em arquivos antigos.</summary>
+        public double? Atr { get; set; }
+
         public object Clone()
         {
             var json = System.Text.Json.JsonSerializer.Serialize(this);

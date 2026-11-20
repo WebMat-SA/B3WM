@@ -36,8 +36,8 @@ class _StructureDrawerState extends State<StructureDrawer>
                   padding: const EdgeInsets.all(12),
                   decoration: const BoxDecoration(
                     color: Color(0xFF2d2d2d),
-                    border: Border(
-                        bottom: BorderSide(color: Color(0xFF3d3d3d))),
+                    border:
+                        Border(bottom: BorderSide(color: Color(0xFF3d3d3d))),
                   ),
                   child: const Row(
                     children: [
@@ -62,8 +62,7 @@ class _StructureDrawerState extends State<StructureDrawer>
                 else
                   ...changes.expand((c) => [
                         _changeTile(state, c),
-                        const Divider(
-                            height: 1, color: Color(0xFF3d3d3d)),
+                        const Divider(height: 1, color: Color(0xFF3d3d3d)),
                       ]),
               ],
             ),
@@ -76,6 +75,10 @@ class _StructureDrawerState extends State<StructureDrawer>
   }
 
   Widget _configSection(StateService state) {
+    final isAtrBar =
+        state.structureRangeMode == Defaults.structureRangeModeAtrBar;
+    final rangeMax = Defaults.structureRangeUpdMax(state.symbol);
+    final rangeValue = state.structureRangeUpdDisplay;
     return ExpandableSection(
       icon: Icons.stacked_line_chart,
       title: 'Configurações',
@@ -87,11 +90,42 @@ class _StructureDrawerState extends State<StructureDrawer>
               (v) => state.setStructureAuxVisible(v)),
           SliderRow('Opacity', state.structureOpacity, 0, 1,
               (v) => state.setStructureOpacity(v)),
-          SliderRow('Range intraday (estruturas)', state.structureRangeUpd, 0,
-              Defaults.structureRangeUpdMax(state.symbol),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Método do range (intraday)',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _modeChip(state, Defaults.structureRangeModeManual, 'Manual'),
+              _modeChip(state, Defaults.structureRangeModeAtrBar, 'ATR barra'),
+            ],
+          ),
+          if (isAtrBar)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'O range efetivo do ATR barra é exibido no slider abaixo.',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+            ),
+          const SizedBox(height: 10),
+          SliderRow(
+              'Range intraday (estruturas)',
+              rangeValue,
+              0,
+              rangeValue > rangeMax ? rangeValue : rangeMax,
               (v) => state.setStructureRangeUpd(v),
-              decimals: 1, step: Defaults.structureRangeUpdStep(state.symbol),
-              locked: state.configLocked,
+              decimals: 1,
+              step: Defaults.structureRangeUpdStep(state.symbol),
+              locked: state.configLocked ||
+                  state.structureRangeMode != Defaults.structureRangeModeManual,
               trailing: state.isStructureUpdating
                   ? _isStructureRangeLoading
                       ? const Padding(
@@ -101,15 +135,12 @@ class _StructureDrawerState extends State<StructureDrawer>
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2)))
                       : IconButton(
-                          icon: const Icon(Icons.upload,
-                              color: Colors.orange),
+                          icon: const Icon(Icons.upload, color: Colors.orange),
                           onPressed: () async {
-                            setState(
-                                () => _isStructureRangeLoading = true);
+                            setState(() => _isStructureRangeLoading = true);
                             await state.confirmStructureRangeUpd();
                             if (mounted) {
-                              setState(() =>
-                                  _isStructureRangeLoading = false);
+                              setState(() => _isStructureRangeLoading = false);
                             }
                           },
                           constraints: const BoxConstraints(),
@@ -122,12 +153,33 @@ class _StructureDrawerState extends State<StructureDrawer>
     );
   }
 
+  Widget _modeChip(StateService state, String mode, String label) {
+    final selected = state.structureRangeMode == mode;
+    final locked = state.configLocked || _isStructureRangeLoading;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: locked
+          ? null
+          : (value) async {
+              if (!value || selected) return;
+              setState(() => _isStructureRangeLoading = true);
+              await state.setStructureRangeMode(mode);
+              if (mounted) {
+                setState(() => _isStructureRangeLoading = false);
+              }
+            },
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
   Widget _changeTile(StateService state, StructureChangeItem c) {
     final color = c.isUp ? state.colorBuyer : state.colorSeller;
     return ListTile(
       dense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
       leading: Chip(
         label: Text(
           '${c.date.hour.toString().padLeft(2, '0')}:${c.date.minute.toString().padLeft(2, '0')}:${c.date.second.toString().padLeft(2, '0')}',
@@ -160,8 +212,7 @@ class _StructureDrawerState extends State<StructureDrawer>
         overflow: TextOverflow.ellipsis,
       ),
       trailing: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           color: parseHexColor(color),
           borderRadius: BorderRadius.circular(12),
@@ -169,9 +220,7 @@ class _StructureDrawerState extends State<StructureDrawer>
         child: Text(
           c.isUp ? 'UP' : 'BT',
           style: const TextStyle(
-              fontSize: 12,
-              color: Colors.white,
-              fontWeight: FontWeight.bold),
+              fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
     );

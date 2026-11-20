@@ -17,6 +17,11 @@ namespace B3WM
         {
             //serviços uteis
             services.AddScoped<DataKeeperBase>(); //serviço que grava e le arquivos json no server
+            // Parâmetros do range adaptativo por ATR usados pela estrutura.
+            var atrOptions = config
+                .GetSection("StructureAtr")
+                .Get<StructureAtrOptions>() ?? new StructureAtrOptions();
+            services.AddSingleton(atrOptions);
             // Estado de saúde em memória consumido pelo dashboard (polling REST).
             services.AddSingleton<DashboardHealthService>();
             services.AddSingleton<ILoggerProvider, DashboardLogSink>();
@@ -81,7 +86,7 @@ namespace B3WM
                     ? minDistanceUpdateBorderDaily
                     : minDistanceUpdateBorder;
                 services.AddSingleton(sp => new CandleService(symbol, timeframe, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<CandleService>>()));
-                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<ILogger<StructureService>>()));
+                services.AddSingleton(sp => new StructureService(symbol, timeframe, minDistance, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<StructureRangeResolver>(), sp.GetRequiredService<StructureAtrOptions>(), sp.GetRequiredService<ILogger<StructureService>>()));
             }
             services.AddSingleton(sp => new BubbleService(symbol, thresholdBubbleSize, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<BubbleService>>(), sp.GetRequiredService<DashboardHealthService>()));
             services.AddSingleton(sp => new VolumeService(symbol, sp.GetRequiredService<IHubContext<DataHub, IDataHubClient>>(), sp, sp.GetRequiredService<ILogger<VolumeService>>()));

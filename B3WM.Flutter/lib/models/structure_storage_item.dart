@@ -6,6 +6,7 @@ class StructureStorageItem {
   final double downBorder;
   final double upAuxBorder;
   final double downAuxBorder;
+  final double? rangeUsed;
 
   StructureStorageItem({
     required this.date,
@@ -15,6 +16,7 @@ class StructureStorageItem {
     required this.downBorder,
     required this.upAuxBorder,
     required this.downAuxBorder,
+    this.rangeUsed,
   });
 
   factory StructureStorageItem.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class StructureStorageItem {
       downBorder: (json['downBorder'] as num).toDouble(),
       upAuxBorder: (json['upAuxBorder'] as num).toDouble(),
       downAuxBorder: (json['downAuxBorder'] as num).toDouble(),
+      rangeUsed: (json['rangeUsed'] as num?)?.toDouble(),
     );
   }
 
@@ -37,5 +40,6 @@ class StructureStorageItem {
         'downBorder': downBorder,
         'upAuxBorder': upAuxBorder,
         'downAuxBorder': downAuxBorder,
+        'rangeUsed': rangeUsed,
       };
 }

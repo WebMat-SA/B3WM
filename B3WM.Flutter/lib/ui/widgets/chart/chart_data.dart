@@ -430,9 +430,9 @@ ChartData buildChartData(StateService state) {
   double max4(double a, double b, double c, double d) => a > b
       ? (a > c ? (a > d ? a : d) : (c > d ? c : d))
       : (b > c ? (b > d ? b : d) : (c > d ? c : d));
-  final minPrice = visible.fold<double>(
+  var minPrice = visible.fold<double>(
       double.infinity, (p, b) => min4(p, b.low, b.close, b.open));
-  final maxPrice = visible.fold<double>(
+  var maxPrice = visible.fold<double>(
       double.negativeInfinity, (p, b) => max4(p, b.high, b.close, b.open));
 
   final candleDateLookup = _buildDateLookup(dates);
@@ -541,6 +541,14 @@ ChartData buildChartData(StateService state) {
           down[idx] = s.downBorder;
           upAux[idx] = s.upAuxBorder;
           downAux[idx] = s.downAuxBorder;
+          // Estruturas entram no range Y: em ATR o range maior pode jogar as
+          // bordas para fora do min/max dos candles visíveis.
+          minPrice = math.min(minPrice, s.downBorder);
+          maxPrice = math.max(maxPrice, s.upBorder);
+          if (state.structureAuxVisible) {
+            minPrice = math.min(minPrice, s.downAuxBorder);
+            maxPrice = math.max(maxPrice, s.upAuxBorder);
+          }
         }
       }
 

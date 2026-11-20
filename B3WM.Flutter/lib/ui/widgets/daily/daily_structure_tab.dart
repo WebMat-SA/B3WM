@@ -28,6 +28,10 @@ class _DailyStructureTabState extends State<DailyStructureTab>
     super.build(context);
     return Consumer<StateService>(builder: (context, state, _) {
       final changes = state.dailyStructureChanges;
+      final isAtrBar =
+          state.dailyStructureRangeMode == Defaults.structureRangeModeAtrBar;
+      final rangeMax = Defaults.structureRangeUpdDailyMax(state.symbol);
+      final rangeValue = state.dailyStructureRangeUpdDisplay;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -39,36 +43,65 @@ class _DailyStructureTabState extends State<DailyStructureTab>
               children: [
                 ToggleRow('Structure (Solid)', state.dailyStructureVisible,
                     (v) => state.setDailyStructureVisible(v)),
-                ToggleRow('Aux Lines (Dashed)',
-                    state.dailyStructureAuxVisible,
+                ToggleRow('Aux Lines (Dashed)', state.dailyStructureAuxVisible,
                     (v) => state.setDailyStructureAuxVisible(v)),
                 SliderRow('Opacity', state.dailyStructureOpacity, 0, 1,
                     (v) => state.setDailyStructureOpacity(v)),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Método do range 1D',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _modeChip(
+                        state, Defaults.structureRangeModeManual, 'Manual'),
+                    _modeChip(
+                        state, Defaults.structureRangeModeAtrBar, 'ATR barra'),
+                  ],
+                ),
+                if (isAtrBar)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'O range efetivo do ATR barra é exibido no slider abaixo.',
+                      style:
+                          TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                    ),
+                  ),
+                const SizedBox(height: 10),
                 SliderRow(
                   'Range 1D (estruturas)',
-                  state.dailyStructureRangeUpd,
+                  rangeValue,
                   0,
-                  Defaults.structureRangeUpdDailyMax(state.symbol),
+                  rangeValue > rangeMax ? rangeValue : rangeMax,
                   (v) => state.setDailyStructureRangeUpd(v),
                   decimals: 0,
                   step: Defaults.structureRangeUpdDailyStep(state.symbol),
-                  locked: state.configLocked,
+                  locked: state.configLocked ||
+                      state.dailyStructureRangeMode !=
+                          Defaults.structureRangeModeManual,
                   onChangeEnd: (_) =>
                       state.scheduleDailyStructureConfirm(immediate: true),
-                  trailing: state.isDailyStructureConfirmRunning || _isConfirmLoading
+                  trailing: state.isDailyStructureConfirmRunning ||
+                          _isConfirmLoading
                       ? const Padding(
                           padding: EdgeInsets.only(left: 4),
                           child: SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2)))
+                              child: CircularProgressIndicator(strokeWidth: 2)))
                       : state.isDailyStructureUpdating
                           ? IconButton(
                               icon: const Icon(Icons.upload,
                                   color: Colors.orange),
-                              tooltip:
-                                  'Aplicar Range 1D (só 1440)',
+                              tooltip: 'Aplicar Range 1D (só 1440)',
                               onPressed: () async {
                                 setState(() => _isConfirmLoading = true);
                                 await state.confirmStructureRangeUpdDaily();
@@ -93,8 +126,7 @@ class _DailyStructureTabState extends State<DailyStructureTab>
                 const Icon(Icons.swap_vert, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                      'Viradas 1440 (${changes.length})',
+                  child: Text('Viradas 1440 (${changes.length})',
                       style: const TextStyle(
                           fontSize: 14, fontWeight: FontWeight.bold)),
                 ),
@@ -115,6 +147,30 @@ class _DailyStructureTabState extends State<DailyStructureTab>
       );
     });
   }
+
+  Widget _modeChip(StateService state, String mode, String label) {
+    final selected = state.dailyStructureRangeMode == mode;
+    final locked = state.configLocked ||
+        _isConfirmLoading ||
+        state.isDailyStructureConfirmRunning;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: locked
+          ? null
+          : (value) async {
+              if (!value || selected) return;
+              setState(() => _isConfirmLoading = true);
+              await state.setDailyStructureRangeMode(mode);
+              if (mounted) {
+                setState(() => _isConfirmLoading = false);
+              }
+            },
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
 }
 
 class _DailyChangeTile extends StatelessWidget {
@@ -124,8 +180,7 @@ class _DailyChangeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.read<StateService>();
-    final color =
-        change.isUp ? state.colorBuyer : state.colorSeller;
+    final color = change.isUp ? state.colorBuyer : state.colorSeller;
     return Column(
       children: [
         ListTile(
@@ -164,8 +219,7 @@ class _DailyChangeTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           trailing: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
               color: parseHexColor(color),
               borderRadius: BorderRadius.circular(12),

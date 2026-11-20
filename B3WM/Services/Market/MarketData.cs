@@ -210,15 +210,14 @@ namespace B3WM.Services.Market
 
         {
 
+            var service = _structures
+                .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame);
+
             if (IsToday(date))
 
             {
 
-                var live = _structures
-
-                    .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame)
-
-                    ?.DataKeep?.ToList();
+                var live = service?.DataKeep?.ToList();
 
                 if (live is { Count: > 0 })
 
@@ -228,11 +227,7 @@ namespace B3WM.Services.Market
 
             return ReadStructuresFileAsync(symbol, timeFrame, minDistance,
 
-                (date ?? DateTime.Today).Date,
-
-                _structures.FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == timeFrame)
-
-                    ?._minDistanceUpdateBorder ?? minDistance);
+                (date ?? DateTime.Today).Date, service);
 
         }
 
@@ -240,19 +235,26 @@ namespace B3WM.Services.Market
 
         private async Task<List<StructureStorageItem>> ReadStructuresFileAsync(
 
-            string symbol, int tf, double minDistance, DateTime date, double serviceDist)
+            string symbol, int tf, double minDistance, DateTime date, StructureService? service)
 
         {
 
-            foreach (var d in new[] { minDistance, serviceDist }.Distinct().ToList())
+            var candidates = new List<string>();
+
+            if (service != null)
+                candidates.Add(service.GetPathForDate(date));
+
+            var serviceDist = service?._minDistanceUpdateBorder ?? minDistance;
+            foreach (var d in new[] { minDistance, serviceDist }.Distinct())
+                candidates.Add($"{symbol}_{nameof(StructureService)}_{tf}MIN_{d}_{date:yyyy-MM-dd}.json");
+
+            foreach (var path in candidates.Distinct())
 
             {
 
                 try
 
                 {
-
-                    var path = $"{symbol}_{nameof(StructureService)}_{tf}MIN_{d}_{date:yyyy-MM-dd}.json";
 
                     var day = await _keeper.ReadDataAsync<List<StructureStorageItem>>(path);
 
@@ -281,6 +283,8 @@ namespace B3WM.Services.Market
             days = Math.Clamp(days, 2, 365);
 
             var all = new List<StructureStorageItem>();
+            var dailyService = _structures
+                .FirstOrDefault(s => s.Symbol == symbol && s.TimeFrame == 1440);
 
             for (var d = 0; d < days; d++)
 
@@ -288,7 +292,9 @@ namespace B3WM.Services.Market
 
                 var day = date.AddDays(-d);
 
-                var path = $"{symbol}_{nameof(StructureService)}_1440MIN_{dailyDistance}_{day:yyyy-MM-dd}.json";
+                var path = dailyService != null
+                    ? dailyService.GetPathForDate(day)
+                    : $"{symbol}_{nameof(StructureService)}_1440MIN_{dailyDistance}_{day:yyyy-MM-dd}.json";
 
                 try
 
@@ -304,7 +310,11 @@ namespace B3WM.Services.Market
 
             }
 
-            return all.OrderBy(s => s.Date).ToList();
+            return all
+                .GroupBy(s => (s.Symbol, s.TimeFrame, s.Date))
+                .Select(g => g.First())
+                .OrderBy(s => s.Date)
+                .ToList();
 
         }
 

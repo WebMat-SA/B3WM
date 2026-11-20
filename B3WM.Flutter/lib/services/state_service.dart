@@ -136,6 +136,38 @@ class StateService extends ChangeNotifier {
   /// e trafega por rotas/histórico próprios).
   double get structureRangeUpd => _currentConfig.structureRangeUpd;
 
+  /// Valor exibido no slider intraday. No modo ATR barra reflete o range
+  /// efetivo do último candle do timeframe atual (somente leitura); no
+  /// manual é o valor configurado.
+  double get structureRangeUpdDisplay {
+    if (_currentConfig.structureRangeMode ==
+        Defaults.structureRangeModeAtrBar) {
+      return _latestRangeUsed(_structures,
+              timeFrame: _currentConfig.timeFrame) ??
+          _currentConfig.structureRangeUpd;
+    }
+    return _currentConfig.structureRangeUpd;
+  }
+
+  /// Modo do range intraday: manual | atr_leg | atr_bar.
+  String get structureRangeMode => _currentConfig.structureRangeMode;
+
+  double? _latestRangeUsed(List<StructureStorageItem> structures,
+      {required int timeFrame}) {
+    double? latest;
+    DateTime? latestDate;
+    for (final s in structures) {
+      if (s.symbol != _symbol || s.timeFrame != timeFrame) continue;
+      final range = s.rangeUsed;
+      if (range == null || range <= 0) continue;
+      if (latestDate == null || s.date.isAfter(latestDate)) {
+        latestDate = s.date;
+        latest = range;
+      }
+    }
+    return latest;
+  }
+
   String get colorBuyer => _currentConfig.colorBuyer;
   String get colorSeller => _currentConfig.colorSeller;
 
@@ -442,6 +474,21 @@ class StateService extends ChangeNotifier {
   // --- Análise diária (issue #12): configs escopadas ao widget diário ---
   /// Range DIÁRIO (só 1440). Independente de [structureRangeUpd] (intraday).
   double get dailyStructureRangeUpd => _currentConfig.daily.structureRangeUpd;
+
+  /// Valor exibido no slider diário. No modo ATR barra reflete o range
+  /// efetivo do último candle 1440 (somente leitura); no manual é o valor
+  /// configurado.
+  double get dailyStructureRangeUpdDisplay {
+    if (_currentConfig.daily.structureRangeMode ==
+        Defaults.structureRangeModeAtrBar) {
+      return _latestRangeUsed(_structures1440History, timeFrame: 1440) ??
+          _currentConfig.daily.structureRangeUpd;
+    }
+    return _currentConfig.daily.structureRangeUpd;
+  }
+
+  /// Modo do range do 1440: manual | atr_leg | atr_bar.
+  String get dailyStructureRangeMode => _currentConfig.daily.structureRangeMode;
   bool get dailyStructureVisible => _currentConfig.daily.structureVisible;
   bool get dailyStructureAuxVisible => _currentConfig.daily.structureAuxVisible;
   double get dailyStructureOpacity => _currentConfig.daily.structureOpacity;
@@ -773,6 +820,43 @@ class StateService extends ChangeNotifier {
     }
   }
 
+  /// Troca o método do range 1D (manual | atr_leg | atr_bar), regenera o 1440
+  /// no backend e refaz histórico/perfil/extremos/pivot diários.
+  Future<void> setDailyStructureRangeMode(String mode) async {
+    if (_guardLocked('setDailyStructureRangeMode')) return;
+    final normalized = Defaults.normalizeStructureRangeMode(mode);
+    final previous = _currentConfig.daily.structureRangeMode;
+    if (previous == normalized || _isDailyStructureConfirmRunning) return;
+
+    _currentConfig.daily.structureRangeMode = normalized;
+    _isDailyStructureConfirmRunning = true;
+    _isDailyStructureUpdating = true;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+
+    try {
+      await _apiService.setStructureModeForTimeFrame(_symbol, 1440, normalized);
+      await refreshDailyStructureHistory();
+      _dailyExtremes = null;
+      _dailyProfileLevels = [];
+      _dailyPivot = null;
+      if (_currentConfig.daily.profileAutoByPriceStructure) {
+        await _applyDailyStructureAutoFilter();
+      } else {
+        await _loadDailyManualRange();
+      }
+      await loadDailyPivot();
+    } catch (e) {
+      _currentConfig.daily.structureRangeMode = previous;
+      _saveConfigForSymbol(_symbol);
+      logD('[dailyStructureMode] error: $e');
+    } finally {
+      _isDailyStructureConfirmRunning = false;
+      _isDailyStructureUpdating = false;
+      notifyListeners();
+    }
+  }
+
   void setExtremeVisible(bool v) {
     _currentConfig.extremeVisible = v;
     notifyListeners();
@@ -967,6 +1051,47 @@ class StateService extends ChangeNotifier {
     await setMinDistanceStructure(_currentConfig.structureRangeUpd);
     _isStructureUpdating = false;
     notifyListeners();
+  }
+
+  /// Troca o método do range intraday no backend e recarrega as estruturas.
+  /// Componentes que dependem da estrutura (volume automode, chart, JEV)
+  /// passam a consumir a série nova.
+  Future<void> setStructureRangeMode(String mode) async {
+    if (_guardLocked('setStructureRangeMode')) return;
+    final normalized = Defaults.normalizeStructureRangeMode(mode);
+    final previous = _currentConfig.structureRangeMode;
+    if (previous == normalized) return;
+
+    _currentConfig.structureRangeMode = normalized;
+    _isStructureUpdating = true;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+
+    try {
+      // O endpoint troca o modo e regenera; a série canônica é relida pela
+      // mesma rota do load normal (cobre multi-day e a data exibida).
+      await _apiService.setStructureMode(_symbol, normalized);
+      final structures = await _fetchStructures(_displayDate ?? DateTime.now(),
+          allowRetry: true);
+      if (structures.isEmpty) {
+        logD(
+            '[structureMode] $normalized sem estruturas; mantendo série anterior');
+      } else {
+        _structures = structures.where((s) => s.timeFrame != 1440).toList();
+        _recomputeStructureChanges(_structures);
+        logD('[structureMode] $normalized: ${_structures.length} estruturas, '
+            'TFs=${_structures.map((s) => s.timeFrame).toSet()}');
+      }
+      await refreshMarketWindow();
+      _applyStructureAutoFilter();
+    } catch (e) {
+      _currentConfig.structureRangeMode = previous;
+      _saveConfigForSymbol(_symbol);
+      logD('[structureMode] error: $e');
+    } finally {
+      _isStructureUpdating = false;
+      notifyListeners();
+    }
   }
 
   void setBubbleAmountFilter(bool v) {
@@ -2002,6 +2127,7 @@ class StateService extends ChangeNotifier {
       lookbackDays: 5,
       thresholdBubble: p.getInt('ThresholdBubble') ?? 250,
       structureRangeUpd: p.getDouble('StructureRangeUpd') ?? 250,
+      structureRangeMode: Defaults.structureRangeModeManual,
       yZoom: 1.0,
       daily: DailyAnalysisConfig.withDefaults(''),
       structureVisible: p.getBool('StructureVisible') ?? true,

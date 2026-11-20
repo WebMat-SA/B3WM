@@ -128,6 +128,39 @@ class ApiService {
         .toList();
   }
 
+  /// Troca o modo intraday do range de estrutura (manual | atr_leg | atr_bar)
+  /// e devolve a série recalculada. O range manual continua como base/fallback.
+  Future<List<StructureStorageItem>> setStructureMode(
+      String symbol, String mode) async {
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/SetStructureMode/$symbol/$mode'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('SetStructureMode HTTP ${response.statusCode}');
+    }
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Troca o modo de um timeframe específico (o diário usa 1440).
+  Future<List<StructureStorageItem>> setStructureModeForTimeFrame(
+      String symbol, int timeFrame, String mode) async {
+    final response = await _client.get(
+      Uri.parse(
+          '$_baseUrl/api/Data/SetStructureModeForTimeFrame/$symbol/$timeFrame/$mode'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+          'SetStructureModeForTimeFrame HTTP ${response.statusCode}');
+    }
+    final list = jsonDecode(response.body) as List? ?? [];
+    return list
+        .map((e) => StructureStorageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Distância de estrutura de um timeframe específico (seção diária usa 1440,
   /// issue #10). Não toca nos demais timeframes.
   Future<List<StructureStorageItem>> setStructureDistanceForTimeFrame(

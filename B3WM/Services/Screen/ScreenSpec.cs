@@ -77,6 +77,9 @@ namespace B3WM.Services.Screen
             "bubbleAmountFilter", "bubbleAgentsFilter",
             "profileVisible",
             "structureVisible", "structureAuxVisible", "structureRangeUpd",
+            // Modo aplicado via SetStructureMode; não vai no snapshot JEV, mas
+            // muda a série consumida por chart/volume/JEV.
+            "structureRangeMode",
             "extremeVisible", "extremeNoiseSensitivity", "extremeMinimumProminence",
             "pivotVisible", "pivotLineCount",
             "vwapVisible",
