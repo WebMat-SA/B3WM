@@ -113,9 +113,9 @@ class _MapFlowChartState extends State<MapFlowChart>
   Offset? _measureDownLocal;
   Matrix4? _measureBlockMatrix;
   Offset? _pendingTapDownLocal;
-  // Ordem limite (issue #48): Shift+clique = compra, Alt+clique = venda.
-  // O modo armado pelos botões B↓/S↑ vale para o próximo clique/toque.
-  String? _limitOrderMode; // 'buy' | 'sell'
+  // Ordem limite (issue #48): botão único liga/desliga a funcionalidade.
+  // Com ela ativa, Shift+clique = compra e Alt+clique = venda no preço.
+  bool _limitOrdersEnabled = false;
   String? _pendingOrderModifier;
   bool _placingLimitOrder = false;
   // Botão direito: clique sem arrasto sobre uma bubble abre o trigger manual
@@ -336,7 +336,6 @@ class _MapFlowChartState extends State<MapFlowChart>
         widget.data.timeFrame != oldWidget.data.timeFrame) {
       _isMeasuring = false;
       _panEnabled = true;
-      _limitOrderMode = null;
       _pendingOrderModifier = null;
       _clearMeasure();
       _timelineHoverIndex = null;
@@ -979,7 +978,6 @@ class _MapFlowChartState extends State<MapFlowChart>
         final fresh = await api.getOpenOrders();
         if (mounted) state.updateOrders(fresh);
       } catch (_) {}
-      if (mounted) setState(() => _limitOrderMode = null);
       _showLimitOrderSnack(
         '${isBuy ? 'Compra' : 'Venda'} limite criada @ $priceLabel '
         '(ticket ${result.orderTicket}).',
@@ -1038,7 +1036,6 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _toggleRulerMode() {
     setState(() {
       _rulerMode = !_rulerMode;
-      if (_rulerMode) _limitOrderMode = null;
       // Ao sair do modo régua, limpa medição em andamento/finalizada para
       // não deixar régua órfã sem contexto de modo.
       if (!_rulerMode) {
@@ -1049,40 +1046,35 @@ class _MapFlowChartState extends State<MapFlowChart>
     });
   }
 
-  /// Arma/desarma o modo de ordem limite (clique/toque no gráfico). Compra e
-  /// venda são exclusivos; armar um desliga o outro e a régua.
-  void _toggleLimitOrderMode(String type) {
+  /// Liga/desliga a funcionalidade de ordens limite no gráfico. Ativa, ela
+  /// responde a Shift+clique (compra) e Alt+clique (venda); o botão único é
+  /// só o interruptor mestre, sem escolher lado.
+  void _toggleLimitOrders() {
     setState(() {
-      _limitOrderMode = _limitOrderMode == type ? null : type;
-      if (_limitOrderMode != null) {
-        _rulerMode = false;
-        _isMeasuring = false;
-        _panEnabled = true;
-        _clearMeasure();
-      }
+      _limitOrdersEnabled = !_limitOrdersEnabled;
+      _pendingOrderModifier = null;
     });
   }
 
-  Widget _buildLimitOrderButton(String type) {
-    final isBuy = type == 'buy';
-    final active = _limitOrderMode == type;
-    final color = isBuy ? Colors.green : Colors.red;
+  Widget _buildLimitOrderButton() {
+    final active = _limitOrdersEnabled;
     return Tooltip(
-      message: isBuy
-          ? 'Compra limite — Shift+clique abaixo do preço (Esc sai)'
-          : 'Venda limite — Alt+clique acima do preço (Esc sai)',
+      message: active
+          ? 'Ordens limite ativas — Shift compra / Alt venda (Esc desativa)'
+          : 'Ativar ordens limite no gráfico (Shift compra / Alt venda)',
       preferBelow: false,
       child: GestureDetector(
-        onTap: () => _toggleLimitOrderMode(type),
+        onTap: _toggleLimitOrders,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: active ? color.withValues(alpha: 0.85) : Colors.black54,
+            color:
+                active ? Colors.blue.withValues(alpha: 0.85) : Colors.black54,
             borderRadius: BorderRadius.circular(4),
             border: active ? Border.all(color: Colors.white70, width: 1) : null,
           ),
           child: Text(
-            isBuy ? 'B↓' : 'S↑',
+            'B/S',
             style: TextStyle(
               color: active ? Colors.white : Colors.white70,
               fontSize: 11,
@@ -1474,9 +1466,10 @@ class _MapFlowChartState extends State<MapFlowChart>
                         });
                         return KeyEventResult.handled;
                       }
-                      if (_limitOrderMode != null) {
+                      if (_limitOrdersEnabled) {
                         setState(() {
-                          _limitOrderMode = null;
+                          _limitOrdersEnabled = false;
+                          _pendingOrderModifier = null;
                         });
                         return KeyEventResult.handled;
                       }
@@ -1487,11 +1480,13 @@ class _MapFlowChartState extends State<MapFlowChart>
                     onPointerDown: (event) {
                       _focusNode.requestFocus();
                       if (_isLeftMouseDown(event)) {
-                        // Shift/Alt têm prioridade: clique cria ordem limite
-                        // (compra/venda). Ctrl ou modo régua medem; drag puro
-                        // mantém pan esquerdo original + tap para fechar/cancelar.
-                        if (!_isShiftPressed &&
-                            !_isAltPressed &&
+                        // Com a funcionalidade ativa, Shift/Alt têm prioridade
+                        // e o clique cria ordem limite (compra/venda). Ctrl ou
+                        // modo régua medem; drag puro mantém pan esquerdo
+                        // original + tap para fechar/cancelar.
+                        final hasOrderModifier = _limitOrdersEnabled &&
+                            (_isShiftPressed || _isAltPressed);
+                        if (!hasOrderModifier &&
                             (_rulerMode || _isCtrlPressed)) {
                           _pendingTapDownLocal = null;
                           _pendingOrderModifier = null;
@@ -1505,9 +1500,9 @@ class _MapFlowChartState extends State<MapFlowChart>
                             });
                           }
                           _pendingTapDownLocal = event.localPosition;
-                          _pendingOrderModifier = _isShiftPressed
-                              ? 'buy'
-                              : (_isAltPressed ? 'sell' : null);
+                          _pendingOrderModifier = hasOrderModifier
+                              ? (_isShiftPressed ? 'buy' : 'sell')
+                              : null;
                         }
                       } else if (_isRightMouseDown(event)) {
                         // Botão direito: arrasto continua pan via InteractiveViewer.
@@ -1520,8 +1515,8 @@ class _MapFlowChartState extends State<MapFlowChart>
                             event.localPosition, stepX, candleAreaHeight);
                       } else {
                         // Touch/stylus: em modo régua o arrasto mede (acesso
-                        // mobile ao recurso); em modo ordem o toque cria a ordem;
-                        // fora deles mantém pan + tap para fechar/cancelar.
+                        // mobile ao recurso); fora dele mantém pan + tap para
+                        // fechar/cancelar. Ordens limite usam Shift/Alt no mouse.
                         if (_rulerMode) {
                           _pendingTapDownLocal = null;
                           _pendingOrderModifier = null;
@@ -1553,10 +1548,9 @@ class _MapFlowChartState extends State<MapFlowChart>
                         _pendingTapDownLocal = null;
                         _pendingOrderModifier = null;
                         if (dist < 6.0) {
-                          final orderType = modifier ?? _limitOrderMode;
-                          if (orderType != null) {
+                          if (modifier != null) {
                             // ignore: discarded_futures
-                            _placeLimitOrderAt(orderType, event.localPosition,
+                            _placeLimitOrderAt(modifier, event.localPosition,
                                 candleAreaHeight);
                           } else {
                             _handleTap(
@@ -1698,9 +1692,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (!widget.isDaily) ...[
-                    _buildLimitOrderButton('buy'),
-                    const SizedBox(width: 4),
-                    _buildLimitOrderButton('sell'),
+                    _buildLimitOrderButton(),
                     const SizedBox(width: 4),
                   ],
                   Tooltip(
