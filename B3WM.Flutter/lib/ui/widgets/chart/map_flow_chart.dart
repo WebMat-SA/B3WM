@@ -49,7 +49,7 @@ class MapFlowChart extends StatefulWidget {
 }
 
 class _MapFlowChartState extends State<MapFlowChart>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   /// Altura da faixa timeline ⓘ (sobre a base da área de candles).
   static const double _strategyLaneHeight = 26.0;
   final TransformationController _controller = TransformationController();
@@ -119,6 +119,10 @@ class _MapFlowChartState extends State<MapFlowChart>
   // trading (`Mostrar Ordens em Aberto`), persistido por símbolo.
   String? _pendingOrderModifier;
   bool _placingLimitOrder = false;
+  // Modificadores rastreados localmente. O HardwareKeyboard pode ficar
+  // "preso" com Alt pressionado após Alt+Tab (o key-up vai para outra janela),
+  // então zeramos este conjunto ao perder o foco do app.
+  final Set<LogicalKeyboardKey> _modifierKeysDown = <LogicalKeyboardKey>{};
   // Botão direito: clique sem arrasto sobre uma bubble abre o trigger manual
   // (arrasto continua sendo pan). Guardado no down p/ decidir no up.
   Offset? _rightDownLocal;
@@ -136,6 +140,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     );
     _controller.addListener(_onTransformChanged);
     HardwareKeyboard.instance.addHandler(_handleLimitOrderPreviewKey);
+    WidgetsBinding.instance.addObserver(this);
     _loadingCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -420,6 +425,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     }
     _dismissTooltip();
     HardwareKeyboard.instance.removeHandler(_handleLimitOrderPreviewKey);
+    WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -427,21 +433,39 @@ class _MapFlowChartState extends State<MapFlowChart>
     super.dispose();
   }
 
-  /// Shift/Alt podem ser pressionados com o mouse parado sobre o gráfico.
-  /// O hover só é recalculado em `onHover`; este handler força o rebuild da
-  /// linha de entrada assim que o modificador muda.
+  /// Rastreia Shift/Alt localmente e força o rebuild da linha de entrada
+  /// quando o modificador muda (o hover só é recalculado em `onHover`).
   bool _handleLimitOrderPreviewKey(KeyEvent event) {
-    if (!_limitOrdersEnabled || _hoverY == null) return false;
-    if (event is! KeyDownEvent && event is! KeyUpEvent) return false;
     final key = event.logicalKey;
-    if (key != LogicalKeyboardKey.shiftLeft &&
-        key != LogicalKeyboardKey.shiftRight &&
-        key != LogicalKeyboardKey.altLeft &&
-        key != LogicalKeyboardKey.altRight) {
+    final isModifier = key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight ||
+        key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight;
+    if (!isModifier) return false;
+    if (event is KeyDownEvent) {
+      _modifierKeysDown.add(key);
+    } else if (event is KeyUpEvent) {
+      _modifierKeysDown.remove(key);
+    } else {
       return false;
     }
-    if (mounted) setState(() {});
+    if (_limitOrdersEnabled && _hoverY != null && mounted) {
+      setState(() {});
+    }
     return false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.resumed) {
+      if (_modifierKeysDown.isNotEmpty) {
+        _modifierKeysDown.clear();
+        if (mounted) setState(() {});
+      }
+    }
   }
 
   void _dismissTooltip() {
@@ -1074,8 +1098,12 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   bool get _isCtrlPressed => HardwareKeyboard.instance.isControlPressed;
-  bool get _isShiftPressed => HardwareKeyboard.instance.isShiftPressed;
-  bool get _isAltPressed => HardwareKeyboard.instance.isAltPressed;
+  bool get _isShiftPressed =>
+      _modifierKeysDown.contains(LogicalKeyboardKey.shiftLeft) ||
+      _modifierKeysDown.contains(LogicalKeyboardKey.shiftRight);
+  bool get _isAltPressed =>
+      _modifierKeysDown.contains(LogicalKeyboardKey.altLeft) ||
+      _modifierKeysDown.contains(LogicalKeyboardKey.altRight);
 
   /// Mesmo flag de `Mostrar Ordens em Aberto` no `TradingDrawer`: o B/S só
   /// fica ativo quando as ordens em aberto estão visíveis, e desligar o botão
