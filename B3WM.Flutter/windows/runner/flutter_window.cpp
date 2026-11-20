@@ -51,14 +51,25 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Alt sozinho dispara o menu de sistema do Windows (SC_KEYMENU), que pode
+  // tirar o foco do Flutter. Entrega o evento ao Flutter primeiro (o atalho de
+  // venda depende dele) e depois engole o comportamento nativo.
+  const bool is_alt_only =
+      (message == WM_SYSKEYDOWN || message == WM_SYSKEYUP) &&
+      wparam == VK_MENU;
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
-    if (result) {
+    if (result && !is_alt_only) {
       return *result;
     }
+  }
+
+  if (is_alt_only) {
+    return 0;
   }
 
   switch (message) {

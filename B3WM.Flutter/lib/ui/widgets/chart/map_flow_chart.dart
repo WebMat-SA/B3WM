@@ -10,6 +10,8 @@ import 'chart_fixed_painter.dart';
 import 'chart_price_scale.dart';
 import 'measure_ruler.dart';
 import 'strategy_timeline_lane.dart';
+import '../../../models/defaults.dart';
+import '../../../models/trade_models.dart';
 import '../../../services/trading_service.dart';
 import '../../../services/state_service.dart';
 import '../../../services/strategy_service.dart';
@@ -47,16 +49,18 @@ class MapFlowChart extends StatefulWidget {
 }
 
 class _MapFlowChartState extends State<MapFlowChart>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   /// Altura da faixa timeline ⓘ (sobre a base da área de candles).
   static const double _strategyLaneHeight = 26.0;
   final TransformationController _controller = TransformationController();
   final FocusNode _focusNode = FocusNode();
   double _yZoom = 1.0;
+
   /// Debounce do commit do viewport: o scroll do mouse não tem evento de fim,
   /// então a persistência acontece ~800ms após o último tick (paridade com
   /// `_schedulePivotIntradaySync` do `StateService`).
   Timer? _viewportCommitTimer;
+
   /// Há captura de viewport ainda não gravada no disco (flush no `dispose`
   /// para não perder o estado ao fechar o programa durante o debounce).
   bool _viewportDirty = false;
@@ -110,6 +114,15 @@ class _MapFlowChartState extends State<MapFlowChart>
   Offset? _measureDownLocal;
   Matrix4? _measureBlockMatrix;
   Offset? _pendingTapDownLocal;
+  // Ordem limite (issue #48): Shift+clique = compra, Alt+clique = venda.
+  // O botão B/S e a funcionalidade são regidos pelo mesmo flag do painel de
+  // trading (`Mostrar Ordens em Aberto`), persistido por símbolo.
+  String? _pendingOrderModifier;
+  bool _placingLimitOrder = false;
+  // Modificadores rastreados localmente. O HardwareKeyboard pode ficar
+  // "preso" com Alt pressionado após Alt+Tab (o key-up vai para outra janela),
+  // então zeramos este conjunto ao perder o foco do app.
+  final Set<LogicalKeyboardKey> _modifierKeysDown = <LogicalKeyboardKey>{};
   // Botão direito: clique sem arrasto sobre uma bubble abre o trigger manual
   // (arrasto continua sendo pan). Guardado no down p/ decidir no up.
   Offset? _rightDownLocal;
@@ -126,12 +139,14 @@ class _MapFlowChartState extends State<MapFlowChart>
       yZoom: _yZoom,
     );
     _controller.addListener(_onTransformChanged);
+    HardwareKeyboard.instance.addHandler(_handleLimitOrderPreviewKey);
+    WidgetsBinding.instance.addObserver(this);
     _loadingCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..addListener(() {
-      if (mounted) setState(() {});
-    });
+        if (mounted) setState(() {});
+      });
   }
 
   /// Primeiro/último índice de candle que intersecta o viewport X (em
@@ -320,13 +335,15 @@ class _MapFlowChartState extends State<MapFlowChart>
   @override
   void didUpdateWidget(MapFlowChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.data.yZoom != oldWidget.data.yZoom && _yZoom != widget.data.yZoom) {
+    if (widget.data.yZoom != oldWidget.data.yZoom &&
+        _yZoom != widget.data.yZoom) {
       _yZoom = widget.data.yZoom;
     }
     if (widget.data.symbol != oldWidget.data.symbol ||
         widget.data.timeFrame != oldWidget.data.timeFrame) {
       _isMeasuring = false;
       _panEnabled = true;
+      _pendingOrderModifier = null;
       _clearMeasure();
       _timelineHoverIndex = null;
     }
@@ -407,11 +424,48 @@ class _MapFlowChartState extends State<MapFlowChart>
       } catch (_) {}
     }
     _dismissTooltip();
+    HardwareKeyboard.instance.removeHandler(_handleLimitOrderPreviewKey);
+    WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onTransformChanged);
     _controller.dispose();
     _focusNode.dispose();
     _loadingCtrl.dispose();
     super.dispose();
+  }
+
+  /// Rastreia Shift/Alt localmente e força o rebuild da linha de entrada
+  /// quando o modificador muda (o hover só é recalculado em `onHover`).
+  bool _handleLimitOrderPreviewKey(KeyEvent event) {
+    final key = event.logicalKey;
+    final isModifier = key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight ||
+        key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight;
+    if (!isModifier) return false;
+    if (event is KeyDownEvent) {
+      _modifierKeysDown.add(key);
+    } else if (event is KeyUpEvent) {
+      _modifierKeysDown.remove(key);
+    } else {
+      return false;
+    }
+    if (_limitOrdersEnabled && _hoverY != null && mounted) {
+      setState(() {});
+    }
+    return false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.resumed) {
+      if (_modifierKeysDown.isNotEmpty) {
+        _modifierKeysDown.clear();
+        if (mounted) setState(() {});
+      }
+    }
   }
 
   void _dismissTooltip() {
@@ -518,7 +572,8 @@ class _MapFlowChartState extends State<MapFlowChart>
   /// validadas pelo `_clampPan` para a geometria vigente (degradação graciosa
   /// se janela/dados mudaram). Sem valor salvo (`null` = auto-fit) não faz
   /// nada; escala salva sem posição (saves antigos) ancora na borda direita.
-  void _restoreSavedViewport(double candleAreaWidth, double virtualCandleWidth) {
+  void _restoreSavedViewport(
+      double candleAreaWidth, double virtualCandleWidth) {
     double? scale, tx, ty;
     try {
       final st = context.read<StateService>();
@@ -579,8 +634,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     final childY = (localDy - ty) / scaleY;
     final price = _yToPrice(childY, areaH);
 
-    final newZoom = (_yZoom * factor)
-        .clamp(StateService.minYZoom, StateService.maxYZoom);
+    final newZoom =
+        (_yZoom * factor).clamp(StateService.minYZoom, StateService.maxYZoom);
     if (newZoom == _yZoom) return;
 
     final newChildY = _toChildY(price, areaH, newZoom);
@@ -609,8 +664,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     final tx = m.getTranslation().x.isFinite ? m.getTranslation().x : 0.0;
 
     final childX = (localDx - tx) / scaleX;
-    final newScale =
-        (scaleX * factor).clamp(_minAllowedScale, 5.0).toDouble();
+    final newScale = (scaleX * factor).clamp(_minAllowedScale, 5.0).toDouble();
     if (newScale == scaleX) return;
 
     final newTx = localDx - childX * newScale;
@@ -623,8 +677,8 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _handleScroll(PointerScrollEvent event) {
-    _applyXZoomAt(event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25,
-        event.localPosition.dx);
+    _applyXZoomAt(
+        event.scrollDelta.dy < 0 ? 1.25 : 1 / 1.25, event.localPosition.dx);
   }
 
   /// Arrasto vertical exclusivo na coluna dos labels Y (`rightLabelMargin` 64px):
@@ -678,7 +732,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     _controller.value = m;
   }
 
-  void _handleHover(PointerEvent event, double candleAreaWidth, double candleAreaHeight, double stepX) {
+  void _handleHover(PointerEvent event, double candleAreaWidth,
+      double candleAreaHeight, double stepX) {
     if (!_initialFitDone) return;
     // Esconde o hover (linha horizontal + bubble) enquanto a régua está
     // sendo arrastada para não poluir o tooltip de medição.
@@ -698,13 +753,15 @@ class _MapFlowChartState extends State<MapFlowChart>
 
     final data = widget.data;
 
-    final hit = _bubbleAtChildPoint(childX, childY, stepX, candleAreaHeight, scaleX, scaleY);
+    final hit = _bubbleAtChildPoint(
+        childX, childY, stepX, candleAreaHeight, scaleX, scaleY);
 
     HistoryDealPoint? hitHistory;
     if (hit == null && data.historyPoints.isNotEmpty) {
       const hitRadius = 11.0;
       for (final hp in data.historyPoints) {
-        final hx = hp.candleIndex.clamp(0, data.candles.length - 1) * stepX + stepX / 2;
+        final hx = hp.candleIndex.clamp(0, data.candles.length - 1) * stepX +
+            stepX / 2;
         final hy = _toChildY(hp.price, candleAreaHeight);
         final dx = childX - hx;
         final dy = childY - hy;
@@ -715,7 +772,8 @@ class _MapFlowChartState extends State<MapFlowChart>
       }
     }
 
-    final candleIndex = (childX / stepX).round().clamp(0, data.candles.length - 1);
+    final candleIndex =
+        (childX / stepX).round().clamp(0, data.candles.length - 1);
 
     setState(() {
       _hoverY = localY;
@@ -861,8 +919,8 @@ class _MapFlowChartState extends State<MapFlowChart>
 
     String? status;
     try {
-      status = await state.triggerStrategyManually(
-          session.sessionId, bubble.source);
+      status =
+          await state.triggerStrategyManually(session.sessionId, bubble.source);
     } finally {
       navigator.pop();
       if (mounted) setState(() => _manualTriggerBusy = false);
@@ -880,7 +938,127 @@ class _MapFlowChartState extends State<MapFlowChart>
     ));
   }
 
-  void _handleTap(PointerEvent event, double candleAreaWidth, double candleAreaHeight) {
+  /// Linha de entrada que acompanha o mouse enquanto Shift (compra) ou Alt
+  /// (venda) está pressionado, no mesmo espírito do Profit: abaixo do último
+  /// preço vira limite; do lado oposto vira stop. Mostra o preço já arredondado
+  /// no tick.
+  _LimitOrderPreview? _limitOrderPreview(double candleAreaHeight) {
+    if (!_limitOrdersEnabled || _isMeasuring) return null;
+    final hoverY = _hoverY;
+    if (hoverY == null) return null;
+    bool? isBuy;
+    if (_isShiftPressed) {
+      isBuy = true;
+    } else if (_isAltPressed) {
+      isBuy = false;
+    }
+    if (isBuy == null) return null;
+
+    final symbol = widget.data.symbol;
+    final tick = Defaults.tickSize(symbol);
+    if (tick <= 0) return null;
+    final raw = _localToPrice(hoverY, candleAreaHeight);
+    if (!raw.isFinite) return null;
+    final price = (raw / tick).roundToDouble() * tick;
+    if (price <= 0) return null;
+
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final y =
+        _toChildY(price, candleAreaHeight) * scaleY + m.getTranslation().y;
+    final lastPrice = widget.data.lastPrice;
+    final isLimit =
+        lastPrice > 0 && (isBuy ? price < lastPrice : price > lastPrice);
+    return _LimitOrderPreview(
+      price: price,
+      y: y,
+      isBuy: isBuy,
+      isStop: !isLimit,
+    );
+  }
+
+  void _showLimitOrderSnack(String message, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: error ? Colors.red : Colors.green,
+    ));
+  }
+
+  /// Shift+clique (compra) / Alt+clique (venda) quando a funcionalidade está
+  /// ativa. Nunca envia ordem a mercado: no lado correto envia limite; no lado
+  /// oposto envia stop, igual ao Profit. O preço é arredondado para o tick.
+  Future<void> _placeLimitOrderAt(
+      String type, Offset local, double candleAreaHeight) async {
+    if (_placingLimitOrder) return;
+    final isBuy = type == 'buy';
+    final symbol = widget.data.symbol;
+    final tick = Defaults.tickSize(symbol);
+    var price = _localToPrice(local.dy, candleAreaHeight);
+    if (!price.isFinite || tick <= 0) {
+      _showLimitOrderSnack('Preço inválido para a ordem.', error: true);
+      return;
+    }
+    price = (price / tick).roundToDouble() * tick;
+    if (price <= 0) {
+      _showLimitOrderSnack('Preço inválido para a ordem.', error: true);
+      return;
+    }
+
+    final lastPrice = widget.data.lastPrice;
+    if (lastPrice <= 0) {
+      _showLimitOrderSnack('Último preço indisponível para definir a ordem.',
+          error: true);
+      return;
+    }
+    final isLimit = isBuy ? price < lastPrice : price > lastPrice;
+    final kind = isLimit ? 'limit' : 'stop';
+    final kindLabel = isLimit ? 'limite' : 'stop';
+    final priceLabel = formatRulerPrice(price, symbol);
+
+    setState(() => _placingLimitOrder = true);
+    try {
+      final api = context.read<TradingApiService>();
+      final state = context.read<StateService>();
+      final result = await api.placeLimitOrder(LimitOrderRequest(
+        symbol: state.symbol,
+        volume: state.tradingVolume.toDouble(),
+        type: type,
+        price: price,
+        kind: kind,
+      ));
+      if (!mounted) return;
+      if (result == null) {
+        _showLimitOrderSnack('Falha ao enviar a ordem.', error: true);
+        return;
+      }
+      if (!result.success) {
+        final reason = result.message.isNotEmpty
+            ? result.message
+            : (result.retcodeName.isNotEmpty
+                ? result.retcodeName
+                : 'erro desconhecido');
+        _showLimitOrderSnack('Ordem rejeitada: $reason', error: true);
+        return;
+      }
+
+      try {
+        final fresh = await api.getOpenOrders();
+        if (mounted) state.updateOrders(fresh);
+      } catch (_) {}
+      _showLimitOrderSnack(
+        '${isBuy ? 'Compra' : 'Venda'} $kindLabel criada @ $priceLabel '
+        '(ticket ${result.orderTicket}).',
+      );
+    } catch (e) {
+      _showLimitOrderSnack('Erro ao enviar ordem: $e', error: true);
+    } finally {
+      if (mounted) setState(() => _placingLimitOrder = false);
+    }
+  }
+
+  void _handleTap(
+      PointerEvent event, double candleAreaWidth, double candleAreaHeight) {
     final m = _controller.value;
     final scaleY = m[5];
     final ty = m.getTranslation().y;
@@ -890,7 +1068,8 @@ class _MapFlowChartState extends State<MapFlowChart>
       if (_closingTickets.contains(pos.ticket)) continue;
       final y = _toChildY(pos.priceOpen, candleAreaHeight);
       final screenPosY = y * scaleY + ty;
-      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize).contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
+      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize)
+          .contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
         _closePosition(pos.ticket);
         return;
       }
@@ -900,7 +1079,8 @@ class _MapFlowChartState extends State<MapFlowChart>
       if (_cancellingTickets.contains(order.ticket)) continue;
       final y = _toChildY(order.priceOpen, candleAreaHeight);
       final screenPosY = y * scaleY + ty;
-      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize).contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
+      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize)
+          .contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
         _cancelOrder(order.ticket);
         return;
       }
@@ -918,6 +1098,18 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   bool get _isCtrlPressed => HardwareKeyboard.instance.isControlPressed;
+  bool get _isShiftPressed =>
+      _modifierKeysDown.contains(LogicalKeyboardKey.shiftLeft) ||
+      _modifierKeysDown.contains(LogicalKeyboardKey.shiftRight);
+  bool get _isAltPressed =>
+      _modifierKeysDown.contains(LogicalKeyboardKey.altLeft) ||
+      _modifierKeysDown.contains(LogicalKeyboardKey.altRight);
+
+  /// Mesmo flag de `Mostrar Ordens em Aberto` no `TradingDrawer`: o B/S só
+  /// fica ativo quando as ordens em aberto estão visíveis, e desligar o botão
+  /// também desliga esse item (intradiário apenas).
+  bool get _limitOrdersEnabled =>
+      !widget.isDaily && context.read<StateService>().openOrdersVisible;
 
   void _toggleRulerMode() {
     setState(() {
@@ -930,6 +1122,43 @@ class _MapFlowChartState extends State<MapFlowChart>
         _clearMeasure();
       }
     });
+  }
+
+  /// Liga/desliga a funcionalidade junto com `Mostrar Ordens em Aberto`.
+  void _toggleLimitOrders() {
+    _pendingOrderModifier = null;
+    final state = context.read<StateService>();
+    state.setOpenOrdersVisible(!state.openOrdersVisible);
+  }
+
+  Widget _buildLimitOrderButton() {
+    final active = _limitOrdersEnabled;
+    return Tooltip(
+      message: active
+          ? 'Ordens ativas — Shift compra / Alt venda (limite ou stop; Esc desativa)'
+          : 'Ativar ordens no gráfico — Shift compra / Alt venda (limite ou stop)',
+      preferBelow: false,
+      child: GestureDetector(
+        onTap: _toggleLimitOrders,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color:
+                active ? Colors.blue.withValues(alpha: 0.85) : Colors.black54,
+            borderRadius: BorderRadius.circular(4),
+            border: active ? Border.all(color: Colors.white70, width: 1) : null,
+          ),
+          child: Text(
+            'B/S',
+            style: TextStyle(
+              color: active ? Colors.white : Colors.white70,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Razão `scaleY/scaleX` atual (1.0 = uniforme ou inválida). Vai para o
@@ -949,10 +1178,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     final n = widget.data.candles.length;
     if (n <= 0) return null;
     final t = _timelineHoverIndex;
-    if (widget.showStrategyTimeline &&
-        t != null &&
-        t >= 0 &&
-        t < n) {
+    if (widget.showStrategyTimeline && t != null && t >= 0 && t < n) {
       return t;
     }
     final h = _hoverCandleIndex;
@@ -976,7 +1202,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     return _yToPrice(childY, candleAreaHeight);
   }
 
-  Offset _dataToLocal(int index, double price, double stepX, double candleAreaHeight) {
+  Offset _dataToLocal(
+      int index, double price, double stepX, double candleAreaHeight) {
     final m = _controller.value;
     final scaleX = m[0];
     final scaleY = m[5];
@@ -1016,7 +1243,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     );
   }
 
-  void _onMeasureDown(PointerDownEvent event, double stepX, double candleAreaHeight) {
+  void _onMeasureDown(
+      PointerDownEvent event, double stepX, double candleAreaHeight) {
     final idx = _localToCandleIndex(event.localPosition.dx, stepX);
     final price = _localToPrice(event.localPosition.dy, candleAreaHeight);
     setState(() {
@@ -1038,7 +1266,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     });
   }
 
-  void _onMeasureMove(PointerEvent event, double stepX, double candleAreaHeight) {
+  void _onMeasureMove(
+      PointerEvent event, double stepX, double candleAreaHeight) {
     if (!_isMeasuring) return;
     final idx = _localToCandleIndex(event.localPosition.dx, stepX);
     final price = _localToPrice(event.localPosition.dy, candleAreaHeight);
@@ -1052,9 +1281,8 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _onMeasureUp(PointerUpEvent event, double candleAreaHeight) {
     if (!_isMeasuring) return;
     final down = _measureDownLocal;
-    final dist = down == null
-        ? double.infinity
-        : (event.localPosition - down).distance;
+    final dist =
+        down == null ? double.infinity : (event.localPosition - down).distance;
     const clickThreshold = 4.0;
     if (dist < clickThreshold) {
       // Clique simples: limpa a régua e repassa como tap (fechar
@@ -1204,17 +1432,18 @@ class _MapFlowChartState extends State<MapFlowChart>
     const candleWidth = 6.0;
     const candleSpacing = 2.0;
     const stepX = candleWidth + candleSpacing;
-    final virtualCandleWidth =
-        max(200.0, data.candles.length * stepX);
+    final virtualCandleWidth = max(200.0, data.candles.length * stepX);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final fullWidth = constraints.maxWidth;
         final fullHeight = constraints.maxHeight;
-        final candleAreaWidth =
-            fullWidth - ChartFixedPainter.marginLeft - ChartFixedPainter.marginRight;
-        final candleAreaHeight =
-            fullHeight - ChartFixedPainter.marginTop - ChartFixedPainter.marginBottom;
+        final candleAreaWidth = fullWidth -
+            ChartFixedPainter.marginLeft -
+            ChartFixedPainter.marginRight;
+        final candleAreaHeight = fullHeight -
+            ChartFixedPainter.marginTop -
+            ChartFixedPainter.marginBottom;
 
         if (candleAreaWidth <= 0 || candleAreaHeight <= 0) {
           return const SizedBox();
@@ -1242,8 +1471,7 @@ class _MapFlowChartState extends State<MapFlowChart>
             _fitChart(candleAreaWidth, virtualCandleWidth);
             _restoreSavedViewport(candleAreaWidth, virtualCandleWidth);
           });
-        } else if (_initialFitDone &&
-            candleAreaHeight != _lastFitAreaHeight) {
+        } else if (_initialFitDone && candleAreaHeight != _lastFitAreaHeight) {
           _lastFitAreaHeight = candleAreaHeight;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -1252,13 +1480,14 @@ class _MapFlowChartState extends State<MapFlowChart>
         }
 
         final measure = _currentMeasure();
+        final preview = _limitOrderPreview(candleAreaHeight);
         Offset? rulerStart;
         Offset? rulerEnd;
         if (measure != null && _hasMeasure()) {
-          rulerStart =
-              _dataToLocal(_measureIdx1!, _measurePrice1!, stepX, candleAreaHeight);
-          rulerEnd =
-              _dataToLocal(_measureIdx2!, _measurePrice2!, stepX, candleAreaHeight);
+          rulerStart = _dataToLocal(
+              _measureIdx1!, _measurePrice1!, stepX, candleAreaHeight);
+          rulerEnd = _dataToLocal(
+              _measureIdx2!, _measurePrice2!, stepX, candleAreaHeight);
         }
 
         return Stack(
@@ -1266,36 +1495,47 @@ class _MapFlowChartState extends State<MapFlowChart>
           children: [
             Positioned.fill(
               child: CustomPaint(
-                  painter: ChartFixedPainter(
-                    data: data,
-                    candleAreaWidth: candleAreaWidth,
-                    candleAreaHeight: candleAreaHeight,
-                    yZoom: _yZoom,
-                    priceScale: _yScale,
-                    controller: _controller,
-                    hoverY: _hoverY,
-                    hoverCandleIndex: _effectiveHoverIndex(),
-                    closingTickets: _closingTickets,
-                    cancellingTickets: _cancellingTickets,
-                    loadingAnimation: _loadingCtrl.value,
-                  ),
+                painter: ChartFixedPainter(
+                  data: data,
+                  candleAreaWidth: candleAreaWidth,
+                  candleAreaHeight: candleAreaHeight,
+                  yZoom: _yZoom,
+                  priceScale: _yScale,
+                  controller: _controller,
+                  hoverY: preview == null ? _hoverY : null,
+                  hoverCandleIndex: _effectiveHoverIndex(),
+                  closingTickets: _closingTickets,
+                  cancellingTickets: _cancellingTickets,
+                  loadingAnimation: _loadingCtrl.value,
+                ),
               ),
             ),
             Positioned(
               left: ChartFixedPainter.marginLeft,
               top: ChartFixedPainter.marginTop,
-              width: max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+              width:
+                  max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
               height: candleAreaHeight,
               child: ClipRect(
                 child: Focus(
                   focusNode: _focusNode,
                   autofocus: true,
                   onKeyEvent: (node, event) {
-                    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.space) {
+                    // Alt é o atalho de venda. No Windows ele também pode
+                    // ativar o menu do sistema e tirar o foco do gráfico;
+                    // marcá-lo como consumido evita esse desvio.
+                    if (_limitOrdersEnabled &&
+                        (event.logicalKey == LogicalKeyboardKey.altLeft ||
+                            event.logicalKey == LogicalKeyboardKey.altRight)) {
+                      return KeyEventResult.handled;
+                    }
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.space) {
                       _resetChart();
                       return KeyEventResult.handled;
                     }
-                    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.escape) {
                       if (_hasMeasure() || _isMeasuring) {
                         setState(() {
                           _isMeasuring = false;
@@ -1310,106 +1550,149 @@ class _MapFlowChartState extends State<MapFlowChart>
                         });
                         return KeyEventResult.handled;
                       }
+                      if (_limitOrdersEnabled) {
+                        _pendingOrderModifier = null;
+                        context
+                            .read<StateService>()
+                            .setOpenOrdersVisible(false);
+                        return KeyEventResult.handled;
+                      }
                     }
                     return KeyEventResult.ignored;
                   },
                   child: Listener(
-                  onPointerDown: (event) {
-                    _focusNode.requestFocus();
-                    if (_isLeftMouseDown(event)) {
-                      // Modo régua (toggle 📏) ou Ctrl+drag medem; drag puro
-                      // mantém pan esquerdo original + tap para fechar/cancelar.
-                      if (_rulerMode || _isCtrlPressed) {
+                    onPointerDown: (event) {
+                      _focusNode.requestFocus();
+                      if (_isLeftMouseDown(event)) {
+                        // Com a funcionalidade ativa, Shift/Alt têm prioridade
+                        // e o clique cria ordem limite (compra/venda). Ctrl ou
+                        // modo régua medem; drag puro mantém pan esquerdo
+                        // original + tap para fechar/cancelar.
+                        final hasOrderModifier = _limitOrdersEnabled &&
+                            (_isShiftPressed || _isAltPressed);
+                        if (!hasOrderModifier &&
+                            (_rulerMode || _isCtrlPressed)) {
+                          _pendingTapDownLocal = null;
+                          _pendingOrderModifier = null;
+                          _onMeasureDown(event, stepX, candleAreaHeight);
+                        } else {
+                          // Próximo clique limpa régua anterior (paridade com
+                          // "manter visível até o próximo clique/Esc").
+                          if (_hasMeasure()) {
+                            setState(() {
+                              _clearMeasure();
+                            });
+                          }
+                          _pendingTapDownLocal = event.localPosition;
+                          _pendingOrderModifier = hasOrderModifier
+                              ? (_isShiftPressed ? 'buy' : 'sell')
+                              : null;
+                        }
+                      } else if (_isRightMouseDown(event)) {
+                        // Botão direito: arrasto continua pan via InteractiveViewer.
+                        // Guarda a posição/bubble p/ o clique (sem arrasto) virar
+                        // trigger manual no up.
                         _pendingTapDownLocal = null;
-                        _onMeasureDown(event, stepX, candleAreaHeight);
+                        _pendingOrderModifier = null;
+                        _rightDownLocal = event.localPosition;
+                        _rightDownBubble = _bubbleAtLocal(
+                            event.localPosition, stepX, candleAreaHeight);
                       } else {
-                        // Próximo clique limpa régua anterior (paridade com
-                        // "manter visível até o próximo clique/Esc").
-                        if (_hasMeasure()) {
+                        // Touch/stylus: em modo régua o arrasto mede (acesso
+                        // mobile ao recurso); fora dele mantém pan + tap para
+                        // fechar/cancelar. Ordens limite usam Shift/Alt no mouse.
+                        if (_rulerMode) {
+                          _pendingTapDownLocal = null;
+                          _pendingOrderModifier = null;
+                          _onMeasureDown(event, stepX, candleAreaHeight);
+                        } else {
+                          if (_hasMeasure()) {
+                            setState(() {
+                              _clearMeasure();
+                            });
+                          }
+                          _pendingTapDownLocal = event.localPosition;
+                          _pendingOrderModifier = null;
+                        }
+                      }
+                    },
+                    onPointerMove: (event) {
+                      if (_isMeasuring) {
+                        _onMeasureMove(event, stepX, candleAreaHeight);
+                      }
+                    },
+                    onPointerUp: (event) {
+                      if (_isMeasuring) {
+                        _onMeasureUp(event, candleAreaHeight);
+                      } else if (_pendingTapDownLocal != null) {
+                        final dist =
+                            (event.localPosition - _pendingTapDownLocal!)
+                                .distance;
+                        final modifier = _pendingOrderModifier;
+                        _pendingTapDownLocal = null;
+                        _pendingOrderModifier = null;
+                        if (dist < 6.0) {
+                          if (modifier != null) {
+                            // ignore: discarded_futures
+                            _placeLimitOrderAt(modifier, event.localPosition,
+                                candleAreaHeight);
+                          } else {
+                            _handleTap(
+                                event, candleAreaWidth, candleAreaHeight);
+                          }
+                        }
+                        if (mounted) setState(() {});
+                      } else if (_rightDownLocal != null &&
+                          event.kind == PointerDeviceKind.mouse) {
+                        // Clique (sem arrasto) com botão direito sobre bubble:
+                        // oferece trigger manual da estratégia em execução.
+                        final local = _rightDownLocal!;
+                        final bubble = _rightDownBubble;
+                        _rightDownLocal = null;
+                        _rightDownBubble = null;
+                        if ((event.localPosition - local).distance < 6.0 &&
+                            bubble != null) {
+                          _maybeManualTrigger(bubble);
+                        }
+                      } else if (event.kind == PointerDeviceKind.mouse &&
+                          (event.buttons & kSecondaryButton) == 0) {
+                        // Soltou o botão esquerdo sem ter medido (ex: clique que
+                        // começou fora e terminou dentro): garante pan religado.
+                        if (!_panEnabled && mounted) {
                           setState(() {
-                            _clearMeasure();
+                            _panEnabled = true;
+                            _measureBlockMatrix = null;
                           });
                         }
-                        _pendingTapDownLocal = event.localPosition;
                       }
-                    } else if (_isRightMouseDown(event)) {
-                      // Botão direito: arrasto continua pan via InteractiveViewer.
-                      // Guarda a posição/bubble p/ o clique (sem arrasto) virar
-                      // trigger manual no up.
-                      _pendingTapDownLocal = null;
-                      _rightDownLocal = event.localPosition;
-                      _rightDownBubble = _bubbleAtLocal(
-                          event.localPosition, stepX, candleAreaHeight);
-                    } else {
-                      // Touch/stylus: em modo régua o arrasto mede (acesso
-                      // mobile ao recurso); fora dele mantém pan + tap para
-                      // fechar/cancelar.
-                      if (_rulerMode) {
-                        _pendingTapDownLocal = null;
-                        _onMeasureDown(event, stepX, candleAreaHeight);
-                      } else {
-                        if (_hasMeasure()) {
-                          setState(() {
-                            _clearMeasure();
-                          });
-                        }
-                        _pendingTapDownLocal = event.localPosition;
-                      }
-                    }
-                  },
-                  onPointerMove: (event) {
-                    if (_isMeasuring) {
-                      _onMeasureMove(event, stepX, candleAreaHeight);
-                    }
-                  },
-                  onPointerUp: (event) {
-                    if (_isMeasuring) {
-                      _onMeasureUp(event, candleAreaHeight);
-                    } else if (_pendingTapDownLocal != null) {
-                      final dist = (event.localPosition - _pendingTapDownLocal!).distance;
-                      _pendingTapDownLocal = null;
-                      if (dist < 6.0) {
-                        _handleTap(event, candleAreaWidth, candleAreaHeight);
-                      }
-                      if (mounted) setState(() {});
-                    } else if (_rightDownLocal != null &&
-                        event.kind == PointerDeviceKind.mouse) {
-                      // Clique (sem arrasto) com botão direito sobre bubble:
-                      // oferece trigger manual da estratégia em execução.
-                      final local = _rightDownLocal!;
-                      final bubble = _rightDownBubble;
+                    },
+                    onPointerCancel: (_) {
                       _rightDownLocal = null;
                       _rightDownBubble = null;
-                      if ((event.localPosition - local).distance < 6.0 &&
-                          bubble != null) {
-                        _maybeManualTrigger(bubble);
+                      _pendingOrderModifier = null;
+                      _onMeasureCancel();
+                    },
+                    onPointerSignal: (event) {
+                      if (event is PointerScrollEvent) {
+                        _handleScroll(event);
                       }
-                    } else if (event.kind == PointerDeviceKind.mouse &&
-                        (event.buttons & kSecondaryButton) == 0) {
-                      // Soltou o botão esquerdo sem ter medido (ex: clique que
-                      // começou fora e terminou dentro): garante pan religado.
-                      if (!_panEnabled && mounted) {
-                        setState(() {
-                          _panEnabled = true;
-                          _measureBlockMatrix = null;
-                        });
-                      }
-                    }
-                  },
-                  onPointerCancel: (_) {
-                    _rightDownLocal = null;
-                    _rightDownBubble = null;
-                    _onMeasureCancel();
-                  },
-                  onPointerSignal: (event) {
-                    if (event is PointerScrollEvent) {
-                      _handleScroll(event);
-                    }
-                  },
-                  child: MouseRegion(
-                    onHover: (e) => _handleHover(e, candleAreaWidth, candleAreaHeight, stepX),
-                    onExit: (e) { if (_hoverY != null || _hoveredBubble != null || _hoveredHistory != null) setState(() { _hoverY = null; _hoverCandleIndex = null; _hoveredBubble = null; _hoveredHistory = null; _hoverPos = null; }); },
-                    child: InteractiveViewer(
+                    },
+                    child: MouseRegion(
+                      onHover: (e) => _handleHover(
+                          e, candleAreaWidth, candleAreaHeight, stepX),
+                      onExit: (e) {
+                        if (_hoverY != null ||
+                            _hoveredBubble != null ||
+                            _hoveredHistory != null)
+                          setState(() {
+                            _hoverY = null;
+                            _hoverCandleIndex = null;
+                            _hoveredBubble = null;
+                            _hoveredHistory = null;
+                            _hoverPos = null;
+                          });
+                      },
+                      child: InteractiveViewer(
                         transformationController: _controller,
                         constrained: false,
                         boundaryMargin: const EdgeInsets.all(double.infinity),
@@ -1473,7 +1756,8 @@ class _MapFlowChartState extends State<MapFlowChart>
               Positioned(
                 left: ChartFixedPainter.marginLeft,
                 top: ChartFixedPainter.marginTop,
-                width: max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+                width:
+                    max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
                 height: candleAreaHeight,
                 child: IgnorePointer(
                   child: CustomPaint(
@@ -1485,12 +1769,35 @@ class _MapFlowChartState extends State<MapFlowChart>
                   ),
                 ),
               ),
+            if (preview != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft,
+                top: ChartFixedPainter.marginTop,
+                width: candleAreaWidth,
+                height: candleAreaHeight,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _LimitOrderPreviewPainter(
+                      y: preview.y,
+                      price: preview.price,
+                      symbol: data.symbol,
+                      isBuy: preview.isBuy,
+                      isStop: preview.isStop,
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               right: 4.0,
               top: 4.0,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              width: ChartFixedPainter.rightLabelMargin,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
                 children: [
+                  if (!widget.isDaily) _buildLimitOrderButton(),
                   Tooltip(
                     message: _rulerMode
                         ? 'Régua ativa — arraste para medir (Esc sai)'
@@ -1513,16 +1820,13 @@ class _MapFlowChartState extends State<MapFlowChart>
                         child: Text(
                           '📏',
                           style: TextStyle(
-                            color: _rulerMode
-                                ? Colors.white
-                                : Colors.white70,
+                            color: _rulerMode ? Colors.white : Colors.white70,
                             fontSize: 12,
                           ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
                   Tooltip(
                     message: 'Reset chart (Espaço)',
                     preferBelow: false,
@@ -1537,8 +1841,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                         ),
                         child: const Text(
                           '⟲',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 12),
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ),
                     ),
@@ -1580,8 +1883,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white70),
+                                  strokeWidth: 2, color: Colors.white70),
                             )
                           : Icon(
                               Icons.chevron_left,
@@ -1602,14 +1904,14 @@ class _MapFlowChartState extends State<MapFlowChart>
                 top: ChartFixedPainter.marginTop +
                     candleAreaHeight -
                     _strategyLaneHeight,
-                width: max(
-                    0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+                width:
+                    max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
                 height: _strategyLaneHeight,
                 child: StrategyTimelineLane(
                   points: data.strategyPoints,
                   controller: _controller,
-                  width: max(0.0,
-                      candleAreaWidth - ChartFixedPainter.rightReserved),
+                  width: max(
+                      0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
                   stepX: stepX,
                   onHoverCandle: (idx) {
                     if (_timelineHoverIndex != idx && mounted) {
@@ -1620,38 +1922,40 @@ class _MapFlowChartState extends State<MapFlowChart>
                   },
                 ),
               ),
-          if (_hoveredBubble != null && _hoverPos != null)
-            Positioned(
-              left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
-              top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
-              child: _buildBubbleTooltip(_hoveredBubble!),
-            ),
-          if (_hoveredHistory != null && _hoverPos != null)
-            Positioned(
-              left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
-              top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
-              child: _buildHistoryTooltip(_hoveredHistory!),
-            ),
-          if (measure != null && _measureCursorLocal != null)
-            Positioned(
-              left: _measureTooltipLeft(
-                  candleAreaWidth, _measureCursorLocal!.dx),
-              top: _measureTooltipTop(
-                  candleAreaHeight, _measureCursorLocal!.dy),
-              child: IgnorePointer(
-                child: _buildMeasureTooltip(measure),
+            if (_hoveredBubble != null && _hoverPos != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
+                top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
+                child: _buildBubbleTooltip(_hoveredBubble!),
               ),
-            ),
-        ],
-      );
-    },
-  );
- }
+            if (_hoveredHistory != null && _hoverPos != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft + _hoverPos!.dx + 12,
+                top: ChartFixedPainter.marginTop + _hoverPos!.dy - 20,
+                child: _buildHistoryTooltip(_hoveredHistory!),
+              ),
+            if (measure != null && _measureCursorLocal != null)
+              Positioned(
+                left: _measureTooltipLeft(
+                    candleAreaWidth, _measureCursorLocal!.dx),
+                top: _measureTooltipTop(
+                    candleAreaHeight, _measureCursorLocal!.dy),
+                child: IgnorePointer(
+                  child: _buildMeasureTooltip(measure),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 
   Widget _buildBubbleTooltip(BubblePoint bubble) {
-    final color = bubble.isBuy ? widget.data.colorBuyer : widget.data.colorSeller;
+    final color =
+        bubble.isBuy ? widget.data.colorBuyer : widget.data.colorSeller;
     final dt = bubble.date;
-    final timeStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
+    final timeStr =
+        '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
     return _buildTooltip(
       bubble.agentName,
@@ -1667,10 +1971,8 @@ class _MapFlowChartState extends State<MapFlowChart>
   double _measureTooltipLeft(double candleAreaWidth, double cursorDx) {
     // Tooltip à direita do cursor, com clamp para não vazar da área.
     const tooltipWidth = 210.0;
-    final viewerW =
-        max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved);
-    var left =
-        ChartFixedPainter.marginLeft + cursorDx + 12;
+    final viewerW = max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved);
+    var left = ChartFixedPainter.marginLeft + cursorDx + 12;
     if (left + tooltipWidth > ChartFixedPainter.marginLeft + viewerW) {
       left = ChartFixedPainter.marginLeft + cursorDx - tooltipWidth - 12;
     }
@@ -1680,12 +1982,8 @@ class _MapFlowChartState extends State<MapFlowChart>
   double _measureTooltipTop(double candleAreaHeight, double cursorDy) {
     const tooltipHeight = 130.0;
     var top = ChartFixedPainter.marginTop + cursorDy - 20;
-    if (top + tooltipHeight >
-        ChartFixedPainter.marginTop + candleAreaHeight) {
-      top = ChartFixedPainter.marginTop +
-          candleAreaHeight -
-          tooltipHeight -
-          4;
+    if (top + tooltipHeight > ChartFixedPainter.marginTop + candleAreaHeight) {
+      top = ChartFixedPainter.marginTop + candleAreaHeight - tooltipHeight - 4;
     }
     return max(ChartFixedPainter.marginTop, top);
   }
@@ -1715,14 +2013,15 @@ class _MapFlowChartState extends State<MapFlowChart>
         _TooltipRow('Preço', deal.price.toStringAsFixed(2)),
         _TooltipRow('Hora', deal.time),
         _TooltipRow('Volume', deal.volume.toStringAsFixed(2)),
-        _TooltipRow(
-            'P/L', '${deal.profit >= 0 ? '+' : ''}${deal.profit.toStringAsFixed(2)}'),
+        _TooltipRow('P/L',
+            '${deal.profit >= 0 ? '+' : ''}${deal.profit.toStringAsFixed(2)}'),
       ],
       titleColor: color,
     );
   }
 
-  Widget _buildTooltip(String title, List<_TooltipRow> rows, {Color? titleColor}) {
+  Widget _buildTooltip(String title, List<_TooltipRow> rows,
+      {Color? titleColor}) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 210),
       padding: const EdgeInsets.all(8),
@@ -1739,7 +2038,10 @@ class _MapFlowChartState extends State<MapFlowChart>
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
               title,
-              style: TextStyle(color: titleColor ?? Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                  color: titleColor ?? Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold),
             ),
           ),
           for (final row in rows)
@@ -1748,11 +2050,13 @@ class _MapFlowChartState extends State<MapFlowChart>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('${row.label}: ', style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                  Text('${row.label}: ',
+                      style: const TextStyle(color: Colors.grey, fontSize: 10)),
                   Flexible(
                     child: Text(
                       row.value,
-                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 10),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -1769,6 +2073,127 @@ class _TooltipRow {
   final String label;
   final String value;
   const _TooltipRow(this.label, this.value);
+}
+
+class _LimitOrderPreview {
+  final double price;
+  final double y;
+  final bool isBuy;
+  final bool isStop;
+
+  const _LimitOrderPreview({
+    required this.price,
+    required this.y,
+    required this.isBuy,
+    required this.isStop,
+  });
+}
+
+class _LimitOrderPreviewPainter extends CustomPainter {
+  final double y;
+  final double price;
+  final String symbol;
+  final bool isBuy;
+  final bool isStop;
+
+  const _LimitOrderPreviewPainter({
+    required this.y,
+    required this.price,
+    required this.symbol,
+    required this.isBuy,
+    required this.isStop,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final color = isBuy ? Colors.green : Colors.red;
+    final linePaint = Paint()
+      ..color = color.withValues(alpha: 0.95)
+      ..strokeWidth = 1.5;
+
+    final lineEnd = size.width;
+    canvas.drawLine(Offset(0, y), Offset(lineEnd, y), linePaint);
+
+    final priceLabel = formatRulerPrice(price, symbol);
+    final priceTp = TextPainter(
+      text: TextSpan(
+        text: priceLabel,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final priceRect = Rect.fromLTWH(
+      size.width - priceTp.width - 8,
+      y - priceTp.height / 2 - 2,
+      priceTp.width + 8,
+      priceTp.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(priceRect, const Radius.circular(3)),
+      Paint()..color = color,
+    );
+    priceTp.paint(
+      canvas,
+      Offset(priceRect.left + 4, y - priceTp.height / 2),
+    );
+
+    final title = '${isBuy ? 'Compra' : 'Venda'}${isStop ? ' stop' : ''}';
+    final titleTp = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    // Venda: rótulo acima da linha. Compra: abaixo (como no Profit), com
+    // fallback para não sair da área quando a linha está no extremo.
+    var titleTop = isBuy ? y + 6 : y - titleTp.height - 8;
+    if (isBuy) {
+      if (titleTop + titleTp.height + 6 > size.height) {
+        titleTop = y - titleTp.height - 8;
+      }
+    } else if (titleTop < 0) {
+      titleTop = y + 6;
+    }
+    final titleRect = Rect.fromLTWH(
+      8,
+      titleTop,
+      titleTp.width + 12,
+      titleTp.height + 6,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(titleRect, const Radius.circular(3)),
+      Paint()..color = color.withValues(alpha: 0.16),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(titleRect, const Radius.circular(3)),
+      Paint()
+        ..color = color.withValues(alpha: 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    titleTp.paint(
+      canvas,
+      Offset(titleRect.left + 6, titleRect.top + 3),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LimitOrderPreviewPainter oldDelegate) {
+    return oldDelegate.y != y ||
+        oldDelegate.price != price ||
+        oldDelegate.symbol != symbol ||
+        oldDelegate.isBuy != isBuy ||
+        oldDelegate.isStop != isStop;
+  }
 }
 
 class _RulerPainter extends CustomPainter {

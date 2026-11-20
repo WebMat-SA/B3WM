@@ -17,6 +17,18 @@ class MarketOrderRequest(BaseModel):
     deviation: int = 10
 
 
+class LimitOrderRequest(BaseModel):
+    symbol: str
+    volume: float
+    type: str  # "buy" or "sell"
+    price: float
+    kind: str = "limit"  # "limit" or "stop"
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    comment: str = ""
+    magic: int = 0
+
+
 class OrderResult(BaseModel):
     success: bool = False
     retcode: int = -1

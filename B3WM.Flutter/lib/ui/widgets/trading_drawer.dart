@@ -35,6 +35,9 @@ class _TradingDrawerState extends State<TradingDrawer> {
   @override
   void initState() {
     super.initState();
+    final savedVolume = context.read<StateService>().tradingVolume;
+    _volume = savedVolume;
+    _volumeController.text = savedVolume.toString();
     _volumeFocusNode.addListener(() {
       if (!_volumeFocusNode.hasFocus) _commitVolume();
     });
@@ -68,6 +71,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
         _volumeController.text = v.toString();
       }
     });
+    context.read<StateService>().setTradingVolume(_volume);
   }
 
   Future<void> _refreshAll() async {
@@ -369,9 +373,8 @@ class _TradingDrawerState extends State<TradingDrawer> {
                       _configToggle(
                         'Mostrar Posições',
                         state.positionVisible,
-                        (v) => context
-                            .read<StateService>()
-                            .setPositionVisible(v),
+                        (v) =>
+                            context.read<StateService>().setPositionVisible(v),
                       ),
                       _configToggle(
                         'Mostrar Ordens em Aberto',
@@ -455,9 +458,10 @@ class _TradingDrawerState extends State<TradingDrawer> {
                     title: Row(children: [
                       const Icon(Icons.pending, size: 16),
                       const SizedBox(width: 4),
-                      Text(_orders.isEmpty
-                          ? 'Open Orders'
-                          : 'Open Orders (${_orders.length})',
+                      Text(
+                          _orders.isEmpty
+                              ? 'Open Orders'
+                              : 'Open Orders (${_orders.length})',
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
@@ -497,8 +501,7 @@ class _TradingDrawerState extends State<TradingDrawer> {
                                   leading: Chip(
                                     label: Text(isBuy ? 'B' : 'S',
                                         style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.white)),
+                                            fontSize: 10, color: Colors.white)),
                                     backgroundColor:
                                         isBuy ? Colors.green : Colors.red,
                                     materialTapTargetSize:
@@ -560,9 +563,10 @@ class _TradingDrawerState extends State<TradingDrawer> {
                     title: Row(children: [
                       const Icon(Icons.assignment, size: 16),
                       const SizedBox(width: 4),
-                      Text(_positions.isEmpty
-                          ? 'Positions'
-                          : 'Positions (${_positions.length})',
+                      Text(
+                          _positions.isEmpty
+                              ? 'Positions'
+                              : 'Positions (${_positions.length})',
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
@@ -672,9 +676,11 @@ class _TradingDrawerState extends State<TradingDrawer> {
                           style: TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                       const Spacer(),
-Text(state.symbol,
-    style: const TextStyle(
-        fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      Text(state.symbol,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey)),
                     ]),
                     const SizedBox(height: 8),
                     Row(
@@ -699,6 +705,9 @@ Text(state.symbol,
                                           _volumeController.text =
                                               _volume.toString();
                                         });
+                                        context
+                                            .read<StateService>()
+                                            .setTradingVolume(_volume);
                                       }
                                     : null,
                             child: const Icon(Icons.remove, size: 18),
@@ -742,6 +751,9 @@ Text(state.symbol,
                                 _volume++;
                                 _volumeController.text = _volume.toString();
                               });
+                              context
+                                  .read<StateService>()
+                                  .setTradingVolume(_volume);
                             },
                             child: const Icon(Icons.add, size: 18),
                           ),
@@ -942,7 +954,8 @@ Text(state.symbol,
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                               ),
-                              title: Text(deal.symbol + ' (${deal.volume.toInt()})',
+                              title: Text(
+                                  deal.symbol + ' (${deal.volume.toInt()})',
                                   style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold)),
@@ -982,8 +995,7 @@ Text(state.symbol,
     );
   }
 
-  Widget _configToggle(
-      String label, bool value, ValueChanged<bool> onChanged) {
+  Widget _configToggle(String label, bool value, ValueChanged<bool> onChanged) {
     return Row(
       children: [
         Expanded(
