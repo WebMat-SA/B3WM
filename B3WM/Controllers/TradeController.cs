@@ -24,6 +24,12 @@ public class TradeController : ControllerBase
         return await ForwardPost("/api/order/market", body);
     }
 
+    [HttpPost("order-limit")]
+    public async Task<IActionResult> PlaceLimitOrder([FromBody] JsonElement body)
+    {
+        return await ForwardPost("/api/order/limit", body);
+    }
+
     [HttpPost("order-close")]
     public async Task<IActionResult> ClosePosition([FromBody] JsonElement body)
     {

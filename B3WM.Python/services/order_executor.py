@@ -7,6 +7,7 @@ import MetaTrader5 as mt5
 from models.order import (
     AccountInfo,
     HistoryDeal,
+    LimitOrderRequest,
     MarketOrderRequest,
     OrderInfo,
     OrderResult,
@@ -88,6 +89,120 @@ class MT5OrderExecutor:
             "type": mt5_type,
             "price": price,
             "deviation": request.deviation,
+            "magic": request.magic,
+            "comment": request.comment,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_RETURN,
+        }
+
+        if request.sl is not None:
+            mt5_request["sl"] = request.sl
+        if request.tp is not None:
+            mt5_request["tp"] = request.tp
+
+        result = mt5.order_send(mt5_request)
+        if result is None:
+            return OrderResult(message="order_send returned None")
+
+        retcode_name = self._retcode_name(result.retcode)
+        return OrderResult(
+            success=result.retcode == mt5.TRADE_RETCODE_DONE,
+            retcode=result.retcode,
+            retcode_name=retcode_name,
+            order_ticket=result.order,
+            price=result.price,
+            volume=result.volume,
+            message=result.comment or retcode_name,
+        )
+
+    def limit_order(self, request: LimitOrderRequest) -> OrderResult:
+        if not self.ensure_connected():
+            return OrderResult(message="MT5 not connected")
+
+        symbol = self._resolve_sym(request.symbol)
+        order_type = request.type.lower()
+        if order_type not in ("buy", "sell"):
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_INVALID,
+                retcode_name="invalid",
+                message="Tipo de ordem inválido (use buy ou sell).",
+            )
+        is_buy = order_type == "buy"
+
+        tick = mt5.symbol_info_tick(symbol)
+        info = mt5.symbol_info(symbol)
+        if tick is None or info is None:
+            return OrderResult(message=f"Symbol {request.symbol} not found")
+
+        volume_min = getattr(info, "volume_min", 0.0) or 0.0
+        if request.volume <= 0 or request.volume < volume_min:
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_INVALID_VOLUME,
+                retcode_name="invalid_volume",
+                message=(
+                    f"Volume inválido para a ordem limite (mínimo "
+                    f"{volume_min:g})."
+                ),
+            )
+
+        if tick.ask <= 0 or tick.bid <= 0:
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_MARKET_CLOSED,
+                retcode_name="market_closed",
+                message="Sem cotação disponível (mercado fechado).",
+            )
+
+        digits = info.digits
+        price = round(request.price, digits)
+        if price <= 0:
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                retcode_name="invalid_price",
+                message="Preço inválido para a ordem limite.",
+            )
+
+        stops_level = (getattr(info, "trade_stops_level", 0) or 0) * (
+            getattr(info, "point", 0.0) or 0.0
+        )
+        if is_buy:
+            limit_price = tick.ask - stops_level
+            if price >= limit_price:
+                return OrderResult(
+                    success=False,
+                    retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                    retcode_name="invalid_price",
+                    message=(
+                        "Ordem de compra limitada rejeitada: o preço "
+                        f"{price:.{digits}f} deve ficar abaixo do preço atual "
+                        f"{tick.ask:.{digits}f}."
+                    ),
+                )
+            mt5_type = mt5.ORDER_TYPE_BUY_LIMIT
+        else:
+            limit_price = tick.bid + stops_level
+            if price <= limit_price:
+                return OrderResult(
+                    success=False,
+                    retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                    retcode_name="invalid_price",
+                    message=(
+                        "Ordem de venda limitada rejeitada: o preço "
+                        f"{price:.{digits}f} deve ficar acima do preço atual "
+                        f"{tick.bid:.{digits}f}."
+                    ),
+                )
+            mt5_type = mt5.ORDER_TYPE_SELL_LIMIT
+
+        mt5_request = {
+            "action": mt5.TRADE_ACTION_PENDING,
+            "symbol": symbol,
+            "volume": request.volume,
+            "type": mt5_type,
+            "price": price,
             "magic": request.magic,
             "comment": request.comment,
             "type_time": mt5.ORDER_TIME_GTC,

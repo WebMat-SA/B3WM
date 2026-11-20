@@ -98,6 +98,14 @@ class StateService extends ChangeNotifier {
   List<OrderInfo> _orders = [];
   List<OrderInfo> get orders => _orders;
 
+  /// Volume usado pelas ordens disparadas pelo gráfico. Espelha o campo de
+  /// quantidade do painel de trading (não persistido, default 1 contrato).
+  int _tradingVolume = 1;
+  int get tradingVolume => _tradingVolume;
+  void setTradingVolume(int value) {
+    _tradingVolume = value < 1 ? 1 : value;
+  }
+
   List<HistoryDeal> _history = [];
   List<HistoryDeal> get history => _history;
 

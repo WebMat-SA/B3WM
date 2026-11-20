@@ -31,6 +31,39 @@ class MarketOrderRequest {
       };
 }
 
+class LimitOrderRequest {
+  final String symbol;
+  final double volume;
+  final String type;
+  final double price;
+  final double? sl;
+  final double? tp;
+  final String comment;
+  final int magic;
+
+  LimitOrderRequest({
+    required this.symbol,
+    required this.volume,
+    required this.type,
+    required this.price,
+    this.sl,
+    this.tp,
+    this.comment = '',
+    this.magic = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'symbol': symbol,
+        'volume': volume,
+        'type': type,
+        'price': price,
+        'sl': sl,
+        'tp': tp,
+        'comment': comment,
+        'magic': magic,
+      };
+}
+
 class OrderResult {
   final bool success;
   final int retcode;

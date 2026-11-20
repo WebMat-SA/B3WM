@@ -10,6 +10,7 @@ from models.order import (
     AccountInfo,
     CloseOrderRequest,
     HistoryDeal,
+    LimitOrderRequest,
     MarketOrderRequest,
     ModifyOrderRequest,
     OrderInfo,
@@ -54,6 +55,12 @@ async def health():
 @app.post("/api/order/market", response_model=OrderResult)
 async def place_market_order(request: MarketOrderRequest):
     result = executor.market_order(request)
+    return result
+
+
+@app.post("/api/order/limit", response_model=OrderResult)
+async def place_limit_order(request: LimitOrderRequest):
+    result = executor.limit_order(request)
     return result
 
 

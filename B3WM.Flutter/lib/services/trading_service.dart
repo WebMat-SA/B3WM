@@ -22,6 +22,17 @@ class TradingApiService {
         jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  Future<OrderResult?> placeLimitOrder(LimitOrderRequest request) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/trade/order-limit'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(request.toJson()),
+    );
+    if (response.statusCode != 200) return null;
+    return OrderResult.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
   Future<OrderResult?> closePosition(int positionTicket) async {
     final response = await _client.post(
       Uri.parse('$_baseUrl/api/trade/order-close'),
@@ -79,8 +90,7 @@ class TradingApiService {
   }
 
   Future<List<OrderInfo>> getOpenOrders() async {
-    final response =
-        await _client.get(Uri.parse('$_baseUrl/api/trade/orders'));
+    final response = await _client.get(Uri.parse('$_baseUrl/api/trade/orders'));
     if (response.statusCode != 200) return [];
     final list = jsonDecode(response.body) as List? ?? [];
     return list

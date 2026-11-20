@@ -173,7 +173,7 @@ public class DtoContractTest
     {
         // Bridge MT5 é snake_case ponta a ponta (Dart -> forward cru -> pydantic).
         var py = new HashSet<string>();
-        foreach (var cls in new[] { "MarketOrderRequest", "OrderResult", "CloseOrderRequest",
+        foreach (var cls in new[] { "MarketOrderRequest", "LimitOrderRequest", "OrderResult", "CloseOrderRequest",
                      "ModifyOrderRequest", "AccountInfo", "PositionInfo", "OrderInfo", "HistoryDeal", "SymbolInfo" })
             py.UnionWith(PythonFields("B3WM.Python/models/order.py", cls));
         var dart = DartSnakeKeys(
