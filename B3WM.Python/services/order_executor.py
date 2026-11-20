@@ -129,6 +129,14 @@ class MT5OrderExecutor:
                 message="Tipo de ordem inválido (use buy ou sell).",
             )
         is_buy = order_type == "buy"
+        order_kind = (request.kind or "limit").lower()
+        if order_kind not in ("limit", "stop"):
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_INVALID,
+                retcode_name="invalid",
+                message="Tipo de pendente inválido (use limit ou stop).",
+            )
 
         tick = mt5.symbol_info_tick(symbol)
         info = mt5.symbol_info(symbol)
@@ -169,33 +177,63 @@ class MT5OrderExecutor:
             getattr(info, "point", 0.0) or 0.0
         )
         if is_buy:
-            limit_price = tick.ask - stops_level
-            if price >= limit_price:
-                return OrderResult(
-                    success=False,
-                    retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
-                    retcode_name="invalid_price",
-                    message=(
-                        "Ordem de compra limitada rejeitada: o preço "
-                        f"{price:.{digits}f} deve ficar abaixo do preço atual "
-                        f"{tick.ask:.{digits}f}."
-                    ),
-                )
-            mt5_type = mt5.ORDER_TYPE_BUY_LIMIT
+            if order_kind == "limit":
+                mt5_type = mt5.ORDER_TYPE_BUY_LIMIT
+                limit_price = tick.ask - stops_level
+                if price >= limit_price:
+                    return OrderResult(
+                        success=False,
+                        retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                        retcode_name="invalid_price",
+                        message=(
+                            "Ordem de compra limite rejeitada: o preço "
+                            f"{price:.{digits}f} deve ficar abaixo do preço atual "
+                            f"{tick.ask:.{digits}f}."
+                        ),
+                    )
+            else:
+                mt5_type = mt5.ORDER_TYPE_BUY_STOP
+                stop_price = tick.ask + stops_level
+                if price <= stop_price:
+                    return OrderResult(
+                        success=False,
+                        retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                        retcode_name="invalid_price",
+                        message=(
+                            "Ordem de compra stop rejeitada: o preço "
+                            f"{price:.{digits}f} deve ficar acima do preço atual "
+                            f"{tick.ask:.{digits}f}."
+                        ),
+                    )
         else:
-            limit_price = tick.bid + stops_level
-            if price <= limit_price:
-                return OrderResult(
-                    success=False,
-                    retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
-                    retcode_name="invalid_price",
-                    message=(
-                        "Ordem de venda limitada rejeitada: o preço "
-                        f"{price:.{digits}f} deve ficar acima do preço atual "
-                        f"{tick.bid:.{digits}f}."
-                    ),
-                )
-            mt5_type = mt5.ORDER_TYPE_SELL_LIMIT
+            if order_kind == "limit":
+                mt5_type = mt5.ORDER_TYPE_SELL_LIMIT
+                limit_price = tick.bid + stops_level
+                if price <= limit_price:
+                    return OrderResult(
+                        success=False,
+                        retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                        retcode_name="invalid_price",
+                        message=(
+                            "Ordem de venda limite rejeitada: o preço "
+                            f"{price:.{digits}f} deve ficar acima do preço atual "
+                            f"{tick.bid:.{digits}f}."
+                        ),
+                    )
+            else:
+                mt5_type = mt5.ORDER_TYPE_SELL_STOP
+                stop_price = tick.bid - stops_level
+                if price >= stop_price:
+                    return OrderResult(
+                        success=False,
+                        retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                        retcode_name="invalid_price",
+                        message=(
+                            "Ordem de venda stop rejeitada: o preço "
+                            f"{price:.{digits}f} deve ficar abaixo do preço atual "
+                            f"{tick.bid:.{digits}f}."
+                        ),
+                    )
 
         mt5_request = {
             "action": mt5.TRADE_ACTION_PENDING,

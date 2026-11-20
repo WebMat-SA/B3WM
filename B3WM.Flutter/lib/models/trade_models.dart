@@ -36,6 +36,10 @@ class LimitOrderRequest {
   final double volume;
   final String type;
   final double price;
+
+  /// `limit` ou `stop`: compra/venda abaixo do preço vira limite; do lado
+  /// oposto vira stop (paridade com o Profit).
+  final String kind;
   final double? sl;
   final double? tp;
   final String comment;
@@ -46,6 +50,7 @@ class LimitOrderRequest {
     required this.volume,
     required this.type,
     required this.price,
+    this.kind = 'limit',
     this.sl,
     this.tp,
     this.comment = '',
@@ -57,6 +62,7 @@ class LimitOrderRequest {
         'volume': volume,
         'type': type,
         'price': price,
+        'kind': kind,
         'sl': sl,
         'tp': tp,
         'comment': comment,

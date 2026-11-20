@@ -22,6 +22,7 @@ class LimitOrderRequest(BaseModel):
     volume: float
     type: str  # "buy" or "sell"
     price: float
+    kind: str = "limit"  # "limit" or "stop"
     sl: Optional[float] = None
     tp: Optional[float] = None
     comment: str = ""

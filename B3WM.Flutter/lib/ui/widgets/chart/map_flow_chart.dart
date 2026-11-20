@@ -915,8 +915,9 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   /// Linha de entrada que acompanha o mouse enquanto Shift (compra) ou Alt
-  /// (venda) está pressionado, no mesmo espírito do Profit: mostra o preço
-  /// já arredondado no tick e sinaliza se o lado é inválido.
+  /// (venda) está pressionado, no mesmo espírito do Profit: abaixo do último
+  /// preço vira limite; do lado oposto vira stop. Mostra o preço já arredondado
+  /// no tick.
   _LimitOrderPreview? _limitOrderPreview(double candleAreaHeight) {
     if (!_limitOrdersEnabled || _isMeasuring) return null;
     final hoverY = _hoverY;
@@ -942,13 +943,13 @@ class _MapFlowChartState extends State<MapFlowChart>
     final y =
         _toChildY(price, candleAreaHeight) * scaleY + m.getTranslation().y;
     final lastPrice = widget.data.lastPrice;
-    final isValid =
+    final isLimit =
         lastPrice > 0 && (isBuy ? price < lastPrice : price > lastPrice);
     return _LimitOrderPreview(
       price: price,
       y: y,
       isBuy: isBuy,
-      isValid: isValid,
+      isStop: !isLimit,
     );
   }
 
@@ -960,11 +961,9 @@ class _MapFlowChartState extends State<MapFlowChart>
     ));
   }
 
-  /// Shift+clique (compra) / Alt+clique (venda) ou modo armado pelos botões.
-  /// Nunca envia ordem a mercado: sempre `BUY_LIMIT`/`SELL_LIMIT` no preço
-  /// clicado, arredondado para o tick do símbolo. A validação de lado
-  /// (compra abaixo / venda acima) é repetida no backend MT5, que também
-  /// devolve erro de preço inválido.
+  /// Shift+clique (compra) / Alt+clique (venda) quando a funcionalidade está
+  /// ativa. Nunca envia ordem a mercado: no lado correto envia limite; no lado
+  /// oposto envia stop, igual ao Profit. O preço é arredondado para o tick.
   Future<void> _placeLimitOrderAt(
       String type, Offset local, double candleAreaHeight) async {
     if (_placingLimitOrder) return;
@@ -973,39 +972,25 @@ class _MapFlowChartState extends State<MapFlowChart>
     final tick = Defaults.tickSize(symbol);
     var price = _localToPrice(local.dy, candleAreaHeight);
     if (!price.isFinite || tick <= 0) {
-      _showLimitOrderSnack('Preço inválido para a ordem limite.', error: true);
+      _showLimitOrderSnack('Preço inválido para a ordem.', error: true);
       return;
     }
     price = (price / tick).roundToDouble() * tick;
     if (price <= 0) {
-      _showLimitOrderSnack('Preço inválido para a ordem limite.', error: true);
+      _showLimitOrderSnack('Preço inválido para a ordem.', error: true);
       return;
     }
 
     final lastPrice = widget.data.lastPrice;
     if (lastPrice <= 0) {
-      _showLimitOrderSnack('Último preço indisponível para validar a ordem.',
+      _showLimitOrderSnack('Último preço indisponível para definir a ordem.',
           error: true);
       return;
     }
+    final isLimit = isBuy ? price < lastPrice : price > lastPrice;
+    final kind = isLimit ? 'limit' : 'stop';
+    final kindLabel = isLimit ? 'limite' : 'stop';
     final priceLabel = formatRulerPrice(price, symbol);
-    final lastLabel = formatRulerPrice(lastPrice, symbol);
-    if (isBuy && price >= lastPrice) {
-      _showLimitOrderSnack(
-        'Ordem de compra limitada deve ficar abaixo do último preço '
-        '($lastLabel).',
-        error: true,
-      );
-      return;
-    }
-    if (!isBuy && price <= lastPrice) {
-      _showLimitOrderSnack(
-        'Ordem de venda limitada deve ficar acima do último preço '
-        '($lastLabel).',
-        error: true,
-      );
-      return;
-    }
 
     setState(() => _placingLimitOrder = true);
     try {
@@ -1016,10 +1001,11 @@ class _MapFlowChartState extends State<MapFlowChart>
         volume: state.tradingVolume.toDouble(),
         type: type,
         price: price,
+        kind: kind,
       ));
       if (!mounted) return;
       if (result == null) {
-        _showLimitOrderSnack('Falha ao enviar a ordem limite.', error: true);
+        _showLimitOrderSnack('Falha ao enviar a ordem.', error: true);
         return;
       }
       if (!result.success) {
@@ -1037,11 +1023,11 @@ class _MapFlowChartState extends State<MapFlowChart>
         if (mounted) state.updateOrders(fresh);
       } catch (_) {}
       _showLimitOrderSnack(
-        '${isBuy ? 'Compra' : 'Venda'} limite criada @ $priceLabel '
+        '${isBuy ? 'Compra' : 'Venda'} $kindLabel criada @ $priceLabel '
         '(ticket ${result.orderTicket}).',
       );
     } catch (e) {
-      _showLimitOrderSnack('Erro ao enviar ordem limite: $e', error: true);
+      _showLimitOrderSnack('Erro ao enviar ordem: $e', error: true);
     } finally {
       if (mounted) setState(() => _placingLimitOrder = false);
     }
@@ -1118,8 +1104,8 @@ class _MapFlowChartState extends State<MapFlowChart>
     final active = _limitOrdersEnabled;
     return Tooltip(
       message: active
-          ? 'Ordens limite ativas — Shift compra / Alt venda (Esc desativa)'
-          : 'Ativar ordens limite no gráfico (Shift compra / Alt venda)',
+          ? 'Ordens ativas — Shift compra / Alt venda (limite ou stop; Esc desativa)'
+          : 'Ativar ordens no gráfico — Shift compra / Alt venda (limite ou stop)',
       preferBelow: false,
       child: GestureDetector(
         onTap: _toggleLimitOrders,
@@ -1748,8 +1734,7 @@ class _MapFlowChartState extends State<MapFlowChart>
               Positioned(
                 left: ChartFixedPainter.marginLeft,
                 top: ChartFixedPainter.marginTop,
-                width:
-                    max(0.0, candleAreaWidth - ChartFixedPainter.rightReserved),
+                width: candleAreaWidth,
                 height: candleAreaHeight,
                 child: IgnorePointer(
                   child: CustomPaint(
@@ -1758,7 +1743,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                       price: preview.price,
                       symbol: data.symbol,
                       isBuy: preview.isBuy,
-                      isValid: preview.isValid,
+                      isStop: preview.isStop,
                     ),
                   ),
                 ),
@@ -2055,13 +2040,13 @@ class _LimitOrderPreview {
   final double price;
   final double y;
   final bool isBuy;
-  final bool isValid;
+  final bool isStop;
 
   const _LimitOrderPreview({
     required this.price,
     required this.y,
     required this.isBuy,
-    required this.isValid,
+    required this.isStop,
   });
 }
 
@@ -2070,36 +2055,25 @@ class _LimitOrderPreviewPainter extends CustomPainter {
   final double price;
   final String symbol;
   final bool isBuy;
-  final bool isValid;
+  final bool isStop;
 
   const _LimitOrderPreviewPainter({
     required this.y,
     required this.price,
     required this.symbol,
     required this.isBuy,
-    required this.isValid,
+    required this.isStop,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final color = isValid ? (isBuy ? Colors.green : Colors.red) : Colors.orange;
+    final color = isBuy ? Colors.green : Colors.red;
     final linePaint = Paint()
       ..color = color.withValues(alpha: 0.95)
       ..strokeWidth = 1.5;
 
-    if (isValid) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
-    } else {
-      const dash = 6.0;
-      const gap = 4.0;
-      for (double x = 0; x < size.width; x += dash + gap) {
-        canvas.drawLine(
-          Offset(x, y),
-          Offset(min(x + dash, size.width), y),
-          linePaint,
-        );
-      }
-    }
+    final lineEnd = max(0.0, size.width - ChartFixedPainter.rightReserved);
+    canvas.drawLine(Offset(0, y), Offset(lineEnd, y), linePaint);
 
     final priceLabel = formatRulerPrice(price, symbol);
     final priceTp = TextPainter(
@@ -2114,7 +2088,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     final priceRect = Rect.fromLTWH(
-      size.width - priceTp.width - 10,
+      size.width - priceTp.width - 4,
       y - priceTp.height / 2 - 2,
       priceTp.width + 8,
       priceTp.height + 4,
@@ -2128,8 +2102,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       Offset(priceRect.left + 4, y - priceTp.height / 2),
     );
 
-    final title =
-        '${isBuy ? 'Compra' : 'Venda'} limite${isValid ? '' : ' · inválido'}';
+    final title = '${isBuy ? 'Compra' : 'Venda'}${isStop ? ' stop' : ''}';
     final titleTp = TextPainter(
       text: TextSpan(
         text: title,
@@ -2141,9 +2114,11 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
+    var titleTop = y - titleTp.height - 8;
+    if (titleTop < 0) titleTop = y + 6;
     final titleRect = Rect.fromLTWH(
       8,
-      y - titleTp.height / 2 - 3,
+      titleTop,
       titleTp.width + 12,
       titleTp.height + 6,
     );
@@ -2160,7 +2135,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
     );
     titleTp.paint(
       canvas,
-      Offset(titleRect.left + 6, y - titleTp.height / 2),
+      Offset(titleRect.left + 6, titleRect.top + 3),
     );
   }
 
@@ -2170,7 +2145,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
         oldDelegate.price != price ||
         oldDelegate.symbol != symbol ||
         oldDelegate.isBuy != isBuy ||
-        oldDelegate.isValid != isValid;
+        oldDelegate.isStop != isStop;
   }
 }
 
