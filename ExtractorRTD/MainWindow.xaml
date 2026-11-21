@@ -106,8 +106,8 @@
                         Width="120"
                         Height="35"
                         Margin="10,0,0,0"
-                        Content="Swap T0 &lt;-> T1"
-                        ToolTip="Troca WINFUT &lt;-> WDOFUT entre T&amp;T0 e T&amp;T1 (só com RTD parado)"
+                        Content="Swap T&amp;T"
+                        ToolTip="Troca o papel das duas primeiras linhas T&amp;T mapeadas (só com RTD parado)"
                         Click="Swap_Click"/>
 
                     <TextBlock
@@ -127,48 +127,28 @@
         </Border>
 
         <!-- LISTAS -->
-        <Grid Grid.Row="2">
+        <TabControl
+            Grid.Row="2"
+            Margin="5"
+            ItemsSource="{Binding SymbolLogs}">
 
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+            <TabControl.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock
+                        Text="{Binding Symbol}"
+                        Margin="8,2"/>
+                </DataTemplate>
+            </TabControl.ItemTemplate>
 
-            <!-- WIN -->
-            <GroupBox
-                Grid.Column="0"
-                Header="WINFUT"
-                Margin="5">
+            <TabControl.ContentTemplate>
+                <DataTemplate>
+                    <ListBox
+                        ItemsSource="{Binding Messages}"
+                        Margin="5"/>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
 
-                <ListBox
-                    ItemsSource="{Binding WinMessages}"/>
-
-            </GroupBox>
-
-            <!-- WDO -->
-            <GroupBox
-                Grid.Column="1"
-                Header="WDOFUT"
-                Margin="5">
-
-                <ListBox
-                    ItemsSource="{Binding WdoMessages}"/>
-
-            </GroupBox>
-
-            <!-- OUTROS -->
-            <GroupBox
-                Grid.Column="2"
-                Header="OUTROS"
-                Margin="5">
-
-                <ListBox
-                    ItemsSource="{Binding OtherMessages}"/>
-
-            </GroupBox>
-
-        </Grid>
+        </TabControl>
 
     </Grid>
 

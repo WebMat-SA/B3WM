@@ -761,7 +761,7 @@ namespace B3WM.Controllers
             [FromQuery] bool force = false)
         {
             var symbols = string.IsNullOrWhiteSpace(symbol)
-                ? new[] { B3WM.Shared.Models.Defaults.Symbols.WINFUT, B3WM.Shared.Models.Defaults.Symbols.WDOFUT }
+                ? SymbolRegistry.Names
                 : new[] { symbol.ToUpperInvariant() };
             var end = (to?.Date ?? DateTime.Today.AddDays(-1)).Date;
             var start = (from?.Date ?? end.AddDays(-30)).Date;

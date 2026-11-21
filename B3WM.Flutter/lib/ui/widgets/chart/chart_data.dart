@@ -638,19 +638,19 @@ ChartData buildChartData(StateService state) {
 
   final positions = state.positionVisible
       ? state.positions
-          .where((p) => _normalizeTradeSymbol(p.symbol) == state.symbol)
+          .where((p) => normalizeTradeSymbol(p.symbol) == state.symbol)
           .toList()
       : <PositionInfo>[];
   final orders = state.openOrdersVisible
       ? state.orders
-          .where((o) => _normalizeTradeSymbol(o.symbol) == state.symbol)
+          .where((o) => normalizeTradeSymbol(o.symbol) == state.symbol)
           .toList()
       : <OrderInfo>[];
 
   final historyPoints = <HistoryDealPoint>[];
   if (state.tradingHistoryVisible && state.timeFrame > 0) {
     for (final deal in state.history) {
-      if (_normalizeTradeSymbol(deal.symbol) != state.symbol) continue;
+      if (normalizeTradeSymbol(deal.symbol) != state.symbol) continue;
       if (deal.price <= 0) continue;
       final dealDate = DateTime.tryParse(deal.time);
       if (dealDate == null) continue;
@@ -809,10 +809,12 @@ ChartData buildChartData(StateService state) {
   );
 }
 
-String _normalizeTradeSymbol(String mt5Symbol) {
+String normalizeTradeSymbol(String mt5Symbol) {
   final s = mt5Symbol.toUpperCase();
   if (s.startsWith('WIN')) return 'WINFUT';
+  if (s.startsWith('IND')) return 'INDFUT';
   if (s.startsWith('WDO')) return 'WDOFUT';
+  if (s.startsWith('DOL')) return 'DOLFUT';
   return s;
 }
 

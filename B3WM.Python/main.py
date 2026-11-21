@@ -18,7 +18,6 @@ from models.order import (
     PositionInfo,
     SymbolInfo,
 )
-from services.contract_utils import resolve_symbol
 from services.order_executor import MT5OrderExecutor
 
 app = FastAPI(title="B3WM Python MT5 Bridge")
@@ -113,12 +112,11 @@ async def get_history(symbol: str = "", from_date: str = "", to_date: str = ""):
 @app.get("/api/symbol/{symbol}", response_model=SymbolInfo)
 async def get_symbol_info(symbol: str):
     try:
-        resolved = resolve_symbol(symbol)
-        info = executor.get_symbol_info(resolved)
+        # O executor resolve o contrato ativo + prefixo/sufixo do broker.
+        info = executor.get_symbol_info(symbol)
         if info is None:
             raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-        if resolved != symbol:
-            info.symbol = symbol
+        info.symbol = symbol
         return info
     except HTTPException:
         raise

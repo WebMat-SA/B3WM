@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/state_service.dart';
+import '../../models/defaults.dart';
 import 'locked_badge.dart';
+import 'symbol_flag.dart';
 import 'timeframe_selector.dart';
 
 class MapFlowAppBar extends StatefulWidget implements PreferredSizeWidget {
@@ -232,12 +234,19 @@ class _MapFlowAppBarState extends State<MapFlowAppBar> {
                   dropdownColor: const Color(0xFF2d2d2d),
                   hint: const Text('Symbol',
                       style: TextStyle(color: Colors.grey)),
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'WINFUT', child: Text('WINFUT')),
-                    DropdownMenuItem(
-                        value: 'WDOFUT', child: Text('WDOFUT')),
-                  ],
+                  items: Defaults.symbols
+                      .map((s) => DropdownMenuItem(
+                            value: s,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SymbolFlag(symbol: s),
+                                const SizedBox(width: 6),
+                                Text(s),
+                              ],
+                            ),
+                          ))
+                      .toList(),
                   onChanged: isLoading
                       ? null
                       : (value) {

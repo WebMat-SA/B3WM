@@ -46,7 +46,7 @@ namespace B3WM.Controllers
         public async Task<IActionResult> Analyze([FromBody] JevAnalyzeRequest req, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(req.Symbol))
-                return BadRequest("Symbol é obrigatório (WINFUT/WDOFUT).");
+                return BadRequest("Symbol é obrigatório (WINFUT/INDFUT/WDOFUT/DOLFUT).");
             req.TimeFrame = req.TimeFrame <= 0 ? 5 : req.TimeFrame;
             // Orçamento do state: o endpoint avulso usa o mesmo teto da strategy.
             req.LookbackCandles = Math.Clamp(req.LookbackCandles, 5, 30);
@@ -194,7 +194,7 @@ namespace B3WM.Controllers
         public IActionResult Audit(string symbol, DateTime date)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest("Symbol é obrigatório (WINFUT/WDOFUT).");
+                return BadRequest("Symbol é obrigatório (WINFUT/INDFUT/WDOFUT/DOLFUT).");
             var sym = symbol.ToUpperInvariant();
             var dir = new DirectoryInfo(Path.Combine("Data", JevAuditFiles.Dir));
             if (!dir.Exists) return Ok(new List<object>());

@@ -32,14 +32,34 @@ Saúde: `GET http://localhost:8000/health` → `{"status": "ok", "mt5_connected"
 | GET | `/api/orders` | ordens abertas |
 | GET | `/api/positions[/{symbol}]` | posições (filtro opcional) |
 | GET | `/api/history?symbol=&from_date=&to_date=` | deals históricos |
-| GET | `/api/symbol/{symbol}` | info do símbolo (com rolagem WIN/WDO) |
+| GET | `/api/symbol/{symbol}` | info do símbolo (com rolagem WIN/IND/WDO/DOL) |
 
 ## Rolagem de contratos (`services/contract_utils.py`)
 
-O frontend/backend usam os contínuos `WINFUT`/`WDOFUT`; o bridge resolve para o contrato vigente:
+O frontend/backend usam os contínuos `WINFUT`/`INDFUT`/`WDOFUT`/`DOLFUT`; o bridge resolve para o contrato vigente a partir do registro `SYMBOL_ROOTS`:
 
-- `WDOFUT` → `WDO<X><AA>` (vence no 1º dia útil do mês)
-- `WINFUT` → `WIN<X><AA>` (série par, vence na 4ª-feira próxima ao dia 15)
+| Canônico | Root MT5 | Vencimento |
+|---|---|---|
+| `WINFUT` | `WIN` | série par, quarta-feira próxima ao dia 15 |
+| `INDFUT` | `IND` | série par, quarta-feira próxima ao dia 15 |
+| `WDOFUT` | `WDO` | 1º dia útil do mês |
+| `DOLFUT` | `DOL` | 1º dia útil do mês |
+
+O nome negociável pode ter prefixo/sufixo do broker (ex.: `IND$`, `IND@N`).
+Defina `MT5_SYMBOL_PREFIX` / `MT5_SYMBOL_SUFFIX` no ambiente do bridge ou
+use `resolve_broker_symbol(..., prefix=, suffix=)`. Para descobrir o nome
+exato na conta, rode no Windows:
+
+```bash
+python scripts/discover_symbols.py
+```
+
+## Testes
+
+```bash
+cd B3WM.Python
+python -m unittest discover -s tests -v
+```
 
 ## Estrutura
 
@@ -49,7 +69,9 @@ models/order.py         # AccountInfo, PositionInfo, OrderInfo, HistoryDeal, ...
 models/ticks.py
 services/order_executor.py   # MT5OrderExecutor (connect/market/close/modify/queries)
 services/mt5.py
-services/contract_utils.py   # get_active_contract / resolve_symbol
+services/contract_utils.py   # registry + rolagem + resolve_broker_symbol
+scripts/discover_symbols.py  # descoberta de IND/DOL no MT5 da corretora
+tests/test_contract_utils.py # testes da rolagem (sem MT5)
 requirements.txt        # fastapi, uvicorn, MetaTrader5, pydantic
 ```
 
