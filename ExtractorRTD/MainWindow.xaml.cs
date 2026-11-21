@@ -2,6 +2,7 @@ using ExtractorRTD.Services;
 using Microsoft.AspNetCore.SignalR.Client;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -15,23 +16,23 @@ namespace ExtractorRTD
 {
     public partial class MainWindow : Window
     {
+        private const string OtherKey = "OUTROS";
+
         public string[] DataTypes { get; set; } =
         {
             "WINFUT",
-            "WDOFUT"
+            "INDFUT",
+            "WDOFUT",
+            "DOLFUT"
         };
 
         public string Url { get; set; } =
             "https://localhost:5002/api/datahub";
 
-        private readonly ConcurrentQueue<string> _winBuffer =
-            new ConcurrentQueue<string>();
-
-        private readonly ConcurrentQueue<string> _wdoBuffer =
-            new ConcurrentQueue<string>();
-
-        private readonly ConcurrentQueue<string> _otherBuffer =
-            new ConcurrentQueue<string>();
+        // Uma fila/coleção de log por símbolo (issue #47): o mapeamento T&T
+        // é editável e nada mais é fixo em WIN/WDO.
+        private readonly Dictionary<string, ConcurrentQueue<string>> _buffers =
+            new(StringComparer.OrdinalIgnoreCase);
 
         // CONFIGURACAO DOS T&Ts
         public ObservableCollection<TntItem> Tnts { get; set; } =
@@ -43,22 +44,30 @@ namespace ExtractorRTD
                     Symbol = "WINFUT"
                 },
 
+                // T0/T1 mantêm o mapeamento legado; os cheios entram em T2/T3
+                // para não quebrar quem já usa só WIN/WDO.
                 new TntItem
                 {
                     TNTSymbol = "T&T1",
                     Symbol = "WDOFUT"
+                },
+
+                new TntItem
+                {
+                    TNTSymbol = "T&T2",
+                    Symbol = "INDFUT"
+                },
+
+                new TntItem
+                {
+                    TNTSymbol = "T&T3",
+                    Symbol = "DOLFUT"
                 }
             };
 
-        // LOGS SEPARADOS
-        public ObservableCollection<string> WinMessages { get; set; } =
-            new ObservableCollection<string>();
-
-        public ObservableCollection<string> WdoMessages { get; set; } =
-            new ObservableCollection<string>();
-
-        public ObservableCollection<string> OtherMessages { get; set; } =
-            new ObservableCollection<string>();
+        // LOGS SEPARADOS (um tab por símbolo + OUTROS)
+        public ObservableCollection<SymbolLog> SymbolLogs { get; set; } =
+            new ObservableCollection<SymbolLog>();
 
         BackgroundWorker workerTnT =
             new BackgroundWorker();
@@ -70,6 +79,13 @@ namespace ExtractorRTD
         public MainWindow()
         {
             InitializeComponent();
+
+            foreach (var symbol in DataTypes)
+            {
+                EnsureSymbolLog(symbol);
+            }
+
+            EnsureSymbolLog(OtherKey);
 
             DataContext = this;
 
@@ -84,21 +100,46 @@ namespace ExtractorRTD
             timer.Start();
         }
 
+        private void EnsureSymbolLog(string symbol)
+        {
+            if (_buffers.ContainsKey(symbol))
+                return;
+
+            _buffers[symbol] = new ConcurrentQueue<string>();
+
+            SymbolLogs.Add(
+                new SymbolLog(
+                    symbol,
+                    new ObservableCollection<string>()));
+        }
+
+        private ConcurrentQueue<string> QueueFor(string symbol)
+        {
+            if (!string.IsNullOrWhiteSpace(symbol) &&
+                _buffers.TryGetValue(symbol, out var queue))
+            {
+                return queue;
+            }
+
+            return _buffers[OtherKey];
+        }
+
+        private void LogOther(string message)
+        {
+            QueueFor(OtherKey).Enqueue(message);
+        }
+
         private void FlushUi(
             object sender,
             EventArgs e)
         {
-            FlushQueue(
-                _winBuffer,
-                WinMessages);
-
-            FlushQueue(
-                _wdoBuffer,
-                WdoMessages);
-
-            FlushQueue(
-                _otherBuffer,
-                OtherMessages);
+            foreach (var log in SymbolLogs)
+            {
+                if (_buffers.TryGetValue(log.Symbol, out var queue))
+                {
+                    FlushQueue(queue, log.Messages);
+                }
+            }
 
             SwapButton.IsEnabled = !IsRtdRunning();
         }
@@ -184,7 +225,7 @@ namespace ExtractorRTD
             {
                 Dispatcher.Invoke(() =>
                 {
-                    OtherMessages.Insert(0, ex.ToString());
+                    LogOther(ex.ToString());
                 });
             }
         }
@@ -195,29 +236,7 @@ namespace ExtractorRTD
         {
             if (ev.UserState is TickLogItem item)
             {
-                switch (item.Symbol)
-                {
-                    case "WINFUT":
-
-                        _winBuffer.Enqueue(
-                            item.Message);
-
-                        break;
-
-                    case "WDOFUT":
-
-                        _wdoBuffer.Enqueue(
-                            item.Message);
-
-                        break;
-
-                    default:
-
-                        _otherBuffer.Enqueue(
-                            item.Message);
-
-                        break;
-                }
+                QueueFor(item.Symbol).Enqueue(item.Message);
             }
 
             Dispatcher.BeginInvoke(new Action(() =>
@@ -237,7 +256,7 @@ namespace ExtractorRTD
             if (IsRtdRunning())
             {
                 MessageBox.Show(
-                    "Pare o RTD antes de fazer o swap T0 <-> T1.",
+                    "Pare o RTD antes de fazer o swap das linhas T&T.",
                     "Extractor RTD",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -245,22 +264,17 @@ namespace ExtractorRTD
                 return;
             }
 
-            var t0 = Tnts.FirstOrDefault(x =>
-                string.Equals(
-                    x.TNTSymbol?.Trim(),
-                    "T&T0",
-                    StringComparison.OrdinalIgnoreCase));
+            // Generalizado (issue #47): troca as duas primeiras linhas T&T
+            // mapeadas, qualquer que seja o número (T0/T1 ou T2/T3).
+            var rows = Tnts
+                .Where(x => !string.IsNullOrWhiteSpace(x.TNTSymbol))
+                .Take(2)
+                .ToList();
 
-            var t1 = Tnts.FirstOrDefault(x =>
-                string.Equals(
-                    x.TNTSymbol?.Trim(),
-                    "T&T1",
-                    StringComparison.OrdinalIgnoreCase));
-
-            if (t0 == null || t1 == null)
+            if (rows.Count < 2)
             {
                 MessageBox.Show(
-                    "Não encontrei as linhas T&T0 e T&T1 no mapeamento.",
+                    "Preciso de pelo menos duas linhas T&T mapeadas.",
                     "Extractor RTD",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -268,13 +282,13 @@ namespace ExtractorRTD
                 return;
             }
 
-            string tmp = t0.Symbol;
-            t0.Symbol = t1.Symbol;
-            t1.Symbol = tmp;
+            string tmp = rows[0].Symbol;
+            rows[0].Symbol = rows[1].Symbol;
+            rows[1].Symbol = tmp;
 
-            OtherMessages.Insert(
-                0,
-                $"Swap: T&T0={t0.Symbol}, T&T1={t1.Symbol}");
+            LogOther(
+                $"Swap: {rows[0].TNTSymbol}={rows[0].Symbol}, " +
+                $"{rows[1].TNTSymbol}={rows[1].Symbol}");
         }
 
         private bool IsRtdRunning()
@@ -289,9 +303,10 @@ namespace ExtractorRTD
             object sender,
             RoutedEventArgs e)
         {
-            WinMessages.Clear();
-            WdoMessages.Clear();
-            OtherMessages.Clear();
+            foreach (var log in SymbolLogs)
+            {
+                log.Messages.Clear();
+            }
 
             TimesAndTradesRtd.Counter = 0;
 
@@ -305,6 +320,19 @@ namespace ExtractorRTD
             await TimesAndTradesRtd.hubConnection.SendAsync(
                 "SendDataTnT",
                 Encoding.ASCII.GetBytes("CLEAR"));
+        }
+    }
+
+    public class SymbolLog
+    {
+        public string Symbol { get; }
+
+        public ObservableCollection<string> Messages { get; }
+
+        public SymbolLog(string symbol, ObservableCollection<string> messages)
+        {
+            Symbol = symbol;
+            Messages = messages;
         }
     }
 

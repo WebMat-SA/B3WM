@@ -45,17 +45,14 @@ namespace B3WM
             services.AddSingleton<StrategyRunner>();
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StrategyRunner>());
 
-            services.AddSymbolServices(
-                Defaults.Symbols.WINFUT,
-                Defaults.WINFUT.ThresholdBubbleSize,
-                Defaults.WINFUT.MinDistanceUpdateBorder,
-                Defaults.WINFUT.MinDistanceUpdateBorderDaily);
-
-            services.AddSymbolServices(
-                Defaults.Symbols.WDOFUT,
-                Defaults.WDOFUT.ThresholdBubbleSize,
-                Defaults.WDOFUT.MinDistanceUpdateBorder,
-                Defaults.WDOFUT.MinDistanceUpdateBorderDaily);
+            foreach (var spec in SymbolRegistry.All)
+            {
+                services.AddSymbolServices(
+                    spec.Name,
+                    spec.ThresholdBubbleSize,
+                    spec.MinDistanceUpdateBorder,
+                    spec.MinDistanceUpdateBorderDaily);
+            }
 
             //pre-carrega a estrutura de todos os symbol/timeframe no startup, fazendo o backfill
             //do dia antes de o servidor aceitar conexoes

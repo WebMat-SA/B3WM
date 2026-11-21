@@ -8,10 +8,25 @@
         public static class Symbols
         {
             public const string WINFUT = "WINFUT";
+            public const string INDFUT = "INDFUT";
             public const string WDOFUT = "WDOFUT";
+            public const string DOLFUT = "DOLFUT";
         }
 
         public static class WINFUT
+        {
+            public const int ThresholdBubbleSize = 250;
+            public const double MinDistanceUpdateBorder = 250;
+            public const double MinDistanceUpdateBorderDaily = 1000;
+            public const double TickSize = 5.0;
+            public const double PointValue = 1.0;
+        }
+
+        // Contrato cheio do índice: mesmo ativo-objeto do WIN (preço/pontos
+        // idênticos). ThresholdBubble é por quantidade e o lote padrão é 5
+        // contratos, então o valor abaixo é provisório e deve ser calibrado
+        // com dados reais da corretora (issue #47).
+        public static class INDFUT
         {
             public const int ThresholdBubbleSize = 250;
             public const double MinDistanceUpdateBorder = 250;
@@ -27,6 +42,17 @@
             public const double MinDistanceUpdateBorderDaily = 100;
             public const double TickSize = 0.5;
             public const double PointValue = 10.0;
+        }
+
+        // Contrato cheio do dólar: mesmo preço/pontos do WDO, com valor do
+        // tick 5x. ThresholdBubble provisório, calibrar com dados reais.
+        public static class DOLFUT
+        {
+            public const int ThresholdBubbleSize = 500;
+            public const double MinDistanceUpdateBorder = 2.5;
+            public const double MinDistanceUpdateBorderDaily = 100;
+            public const double TickSize = 0.5;
+            public const double PointValue = 50.0;
         }
 
         public static class Backtest
@@ -52,39 +78,19 @@
             public const double MinimumProminenceStep = 0.05;
         }
 
-        public static double GetPointValue(string symbol) => symbol switch
-        {
-            Symbols.WINFUT => WINFUT.PointValue,
-            Symbols.WDOFUT => WDOFUT.PointValue,
-            _ => 1.0
-        };
+        public static double GetPointValue(string symbol) =>
+            SymbolRegistry.Get(symbol).PointValue;
 
-        public static double GetTickSize(string symbol) => symbol switch
-        {
-            Symbols.WINFUT => WINFUT.TickSize,
-            Symbols.WDOFUT => WDOFUT.TickSize,
-            _ => 1.0
-        };
+        public static double GetTickSize(string symbol) =>
+            SymbolRegistry.Get(symbol).TickSize;
 
-        public static int GetThresholdBubble(string symbol) => symbol switch
-        {
-            Symbols.WINFUT => WINFUT.ThresholdBubbleSize,
-            Symbols.WDOFUT => WDOFUT.ThresholdBubbleSize,
-            _ => 250
-        };
+        public static int GetThresholdBubble(string symbol) =>
+            SymbolRegistry.Get(symbol).ThresholdBubbleSize;
 
-        public static double GetMinDistance(string symbol) => symbol switch
-        {
-            Symbols.WINFUT => WINFUT.MinDistanceUpdateBorder,
-            Symbols.WDOFUT => WDOFUT.MinDistanceUpdateBorder,
-            _ => 250
-        };
+        public static double GetMinDistance(string symbol) =>
+            SymbolRegistry.Get(symbol).MinDistanceUpdateBorder;
 
-        public static double GetMinDistanceDaily(string symbol) => symbol switch
-        {
-            Symbols.WINFUT => WINFUT.MinDistanceUpdateBorderDaily,
-            Symbols.WDOFUT => WDOFUT.MinDistanceUpdateBorderDaily,
-            _ => 1000
-        };
+        public static double GetMinDistanceDaily(string symbol) =>
+            SymbolRegistry.Get(symbol).MinDistanceUpdateBorderDaily;
     }
 }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../services/state_service.dart';
 import '../chart/daily_chart_data.dart';
 import '../chart/map_flow_chart.dart';
+import '../symbol_flag.dart';
 import 'daily_drawer.dart';
 
 /// Painel inferior do widget de análise diária (issue #12): divide a tela
@@ -92,9 +93,16 @@ class _DailyPanelState extends State<DailyPanel> {
                     ),
                     const Spacer(),
                     Chip(
-                      label: Text(state.symbol,
-                          style: const TextStyle(
-                              fontSize: 11, color: Colors.white)),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SymbolFlag(symbol: state.symbol, height: 12),
+                          const SizedBox(width: 5),
+                          Text(state.symbol,
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.white)),
+                        ],
+                      ),
                       backgroundColor: Colors.grey.shade800,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,

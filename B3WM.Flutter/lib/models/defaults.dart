@@ -1,3 +1,39 @@
+/// Especificação canônica de um símbolo no cliente (issue #47).
+///
+/// Espelha o `SymbolRegistry` do backend: adicionar/ajustar um símbolo é uma
+/// entrada em [Defaults._specs], sem espalhar `switch` pelos widgets.
+class SymbolSpec {
+  final String name;
+  final String mt5Root;
+
+  /// Caminho do asset da bandeira (PNG oficial), vazio quando não há.
+  final String flag;
+  final int thresholdBubbleSize;
+  final double minDistanceUpdateBorder;
+  final double minDistanceUpdateBorderDaily;
+  final double tickSize;
+  final double pointValue;
+  final double structureRangeUpdStep;
+  final double structureRangeUpdMax;
+  final double structureRangeUpdDailyMax;
+  final double structureRangeUpdDailyStep;
+
+  const SymbolSpec({
+    required this.name,
+    required this.mt5Root,
+    required this.flag,
+    required this.thresholdBubbleSize,
+    required this.minDistanceUpdateBorder,
+    required this.minDistanceUpdateBorderDaily,
+    required this.tickSize,
+    required this.pointValue,
+    required this.structureRangeUpdStep,
+    required this.structureRangeUpdMax,
+    required this.structureRangeUpdDailyMax,
+    required this.structureRangeUpdDailyStep,
+  });
+}
+
 class Defaults {
   static const String url = 'https://localhost:5002/api/datahub';
 
@@ -7,29 +43,108 @@ class Defaults {
   static String timeFrameLabel(int tf) => tf == 1440 ? '1D' : '$tf';
 
   static const String symbolWinfut = 'WINFUT';
+  static const String symbolIndfut = 'INDFUT';
   static const String symbolWdofut = 'WDOFUT';
+  static const String symbolDolfut = 'DOLFUT';
 
-  static int thresholdBubbleSize(String symbol) {
-    switch (symbol) {
-      case 'WINFUT':
-        return 250;
-      case 'WDOFUT':
-        return 500;
-      default:
-        return 250;
-    }
-  }
+  /// Ordem do seletor: índice mini/cheio, dólar mini/cheio.
+  static const List<String> symbols = [
+    symbolWinfut,
+    symbolIndfut,
+    symbolWdofut,
+    symbolDolfut,
+  ];
 
-  static double minDistanceUpdateBorder(String symbol) {
-    switch (symbol) {
-      case 'WINFUT':
-        return 250;
-      case 'WDOFUT':
-        return 4.5;
-      default:
-        return 250;
-    }
-  }
+  static const Map<String, SymbolSpec> _specs = {
+    symbolWinfut: SymbolSpec(
+      name: symbolWinfut,
+      mt5Root: 'WIN',
+      flag: 'assets/images/bandeira-brasil.png',
+      thresholdBubbleSize: 250,
+      minDistanceUpdateBorder: 250,
+      minDistanceUpdateBorderDaily: 1000,
+      tickSize: 5.0,
+      pointValue: 1.0,
+      structureRangeUpdStep: 5.0,
+      structureRangeUpdMax: 2000,
+      structureRangeUpdDailyMax: 10000,
+      structureRangeUpdDailyStep: 50.0,
+    ),
+    // Contrato cheio do índice: mesmo preço/pontos do WIN. ThresholdBubble é
+    // por quantidade e o lote padrão é 5 — valor provisório, calibrar com
+    // dados reais (issue #47).
+    symbolIndfut: SymbolSpec(
+      name: symbolIndfut,
+      mt5Root: 'IND',
+      flag: 'assets/images/bandeira-brasil.png',
+      thresholdBubbleSize: 250,
+      minDistanceUpdateBorder: 250,
+      minDistanceUpdateBorderDaily: 1000,
+      tickSize: 5.0,
+      pointValue: 1.0,
+      structureRangeUpdStep: 5.0,
+      structureRangeUpdMax: 2000,
+      structureRangeUpdDailyMax: 10000,
+      structureRangeUpdDailyStep: 50.0,
+    ),
+    symbolWdofut: SymbolSpec(
+      name: symbolWdofut,
+      mt5Root: 'WDO',
+      flag: 'assets/images/bandeira-eua.png',
+      thresholdBubbleSize: 500,
+      minDistanceUpdateBorder: 4.5,
+      minDistanceUpdateBorderDaily: 100,
+      tickSize: 0.5,
+      pointValue: 10.0,
+      structureRangeUpdStep: 0.5,
+      structureRangeUpdMax: 100,
+      structureRangeUpdDailyMax: 1000,
+      structureRangeUpdDailyStep: 1.0,
+    ),
+    // Contrato cheio do dólar: mesmo preço/pontos do WDO, valor do tick 5x.
+    // Diferente do WDO legado, usa o range canônico 2,5 do backend.
+    symbolDolfut: SymbolSpec(
+      name: symbolDolfut,
+      mt5Root: 'DOL',
+      flag: 'assets/images/bandeira-eua.png',
+      thresholdBubbleSize: 500,
+      minDistanceUpdateBorder: 2.5,
+      minDistanceUpdateBorderDaily: 100,
+      tickSize: 0.5,
+      pointValue: 50.0,
+      structureRangeUpdStep: 0.5,
+      structureRangeUpdMax: 100,
+      structureRangeUpdDailyMax: 1000,
+      structureRangeUpdDailyStep: 1.0,
+    ),
+  };
+
+  /// Fallback histórico para símbolo desconhecido (mesmos valores que os
+  /// antigos `default` dos switches).
+  static const SymbolSpec _fallback = SymbolSpec(
+    name: '',
+    mt5Root: '',
+    flag: '',
+    thresholdBubbleSize: 250,
+    minDistanceUpdateBorder: 250,
+    minDistanceUpdateBorderDaily: 1000,
+    tickSize: 1.0,
+    pointValue: 1.0,
+    structureRangeUpdStep: 5.0,
+    structureRangeUpdMax: 2000,
+    structureRangeUpdDailyMax: 10000,
+    structureRangeUpdDailyStep: 50.0,
+  );
+
+  static SymbolSpec specFor(String symbol) => _specs[symbol] ?? _fallback;
+
+  static String flagFor(String symbol) => specFor(symbol).flag;
+
+  static int thresholdBubbleSize(String symbol) =>
+      specFor(symbol).thresholdBubbleSize;
+
+  static double minDistanceUpdateBorder(String symbol) =>
+      specFor(symbol).minDistanceUpdateBorder;
 
   /// Modos do range intraday da estrutura (issue #25). As strings são a
   /// chave estável usada na API e no arquivo de config do backend.
@@ -66,75 +181,25 @@ class Defaults {
   }
 
   /// Distanciamento de quebra de estrutura do 1440 (seção diária, issue #10).
-  static double minDistanceUpdateBorderDaily(String symbol) {
-    switch (symbol) {
-      case 'WINFUT':
-        return 1000;
-      case 'WDOFUT':
-        return 100;
-      default:
-        return 1000;
-    }
-  }
+  static double minDistanceUpdateBorderDaily(String symbol) =>
+      specFor(symbol).minDistanceUpdateBorderDaily;
 
-  static double tickSize(String symbol) {
-    switch (symbol) {
-      case 'WINFUT':
-        return 5.0;
-      case 'WDOFUT':
-        return 0.5;
-      default:
-        return 1.0;
-    }
-  }
+  static double tickSize(String symbol) => specFor(symbol).tickSize;
 
-  static double pointValue(String symbol) {
-    switch (symbol) {
-      case 'WINFUT':
-        return 1.0;
-      case 'WDOFUT':
-        return 10.0;
-      default:
-        return 1.0;
-    }
-  }
+  static double pointValue(String symbol) => specFor(symbol).pointValue;
 
-  static double structureRangeUpdStep(String symbol) {
-    switch (symbol) {
-      case 'WDOFUT':
-        return 0.5;
-      default:
-        return 5.0;
-    }
-  }
+  static double structureRangeUpdStep(String symbol) =>
+      specFor(symbol).structureRangeUpdStep;
 
-  static double structureRangeUpdMax(String symbol) {
-    switch (symbol) {
-      case 'WDOFUT':
-        return 100;
-      default:
-        return 2000;
-    }
-  }
+  static double structureRangeUpdMax(String symbol) =>
+      specFor(symbol).structureRangeUpdMax;
 
   /// Teto do slider diário (issue #10): WINFUT até 10000, WDO até 1000.
-  static double structureRangeUpdDailyMax(String symbol) {
-    switch (symbol) {
-      case 'WDOFUT':
-        return 1000;
-      default:
-        return 10000;
-    }
-  }
+  static double structureRangeUpdDailyMax(String symbol) =>
+      specFor(symbol).structureRangeUpdDailyMax;
 
-  static double structureRangeUpdDailyStep(String symbol) {
-    switch (symbol) {
-      case 'WDOFUT':
-        return 1.0;
-      default:
-        return 50.0;
-    }
-  }
+  static double structureRangeUpdDailyStep(String symbol) =>
+      specFor(symbol).structureRangeUpdDailyStep;
 
   static const double extremeNoiseSensitivity = 3.0;
   static const double extremeMinimumProminence = 0.15;

@@ -1,3 +1,4 @@
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -14,7 +15,10 @@ from models.order import (
     PositionInfo,
     SymbolInfo,
 )
-from services.contract_utils import get_symbol_prefix, resolve_symbol
+from services.contract_utils import (
+    get_symbol_prefix,
+    resolve_broker_symbol,
+)
 
 
 class MT5OrderExecutor:
@@ -67,7 +71,14 @@ class MT5OrderExecutor:
         return True
 
     def _resolve_sym(self, symbol: str) -> str:
-        return resolve_symbol(symbol)
+        # Mapeia o nome canônico (INDFUT) no contrato ativo e aplica o
+        # prefixo/sufixo opcional do broker (issue #47).
+        return resolve_broker_symbol(
+            symbol,
+            prefix=os.getenv("MT5_SYMBOL_PREFIX", ""),
+            suffix=os.getenv("MT5_SYMBOL_SUFFIX", ""),
+            exists=lambda s: mt5.symbol_info(s) is not None,
+        )
 
     def market_order(self, request: MarketOrderRequest) -> OrderResult:
         if not self.ensure_connected():

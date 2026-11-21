@@ -15,7 +15,7 @@
 
 ## Sobre
 
-Plataforma **open-source** de visualização em tempo real e estudo de microestrutura do mercado de futuros brasileiro (B3), focada nos contratos **WINFUT** (Mini Índice) e **WDOFUT** (Mini Dólar).
+Plataforma **open-source** de visualização em tempo real e estudo de microestrutura do mercado de futuros brasileiro (B3), focada nos contratos **WINFUT/INDFUT** (Mini Índice e Índice cheio) e **WDOFUT/DOLFUT** (Mini Dólar e Dólar cheio).
 
 **Objetivo:** Estudar a dinâmica do fluxo de ordens, perfil de volume, agressividade dos participantes e estrutura de preços — tudo em tempo real.
 
@@ -97,7 +97,7 @@ O histórico intraday é incremental pelo botão `←` inferior-esquerdo do grá
   <p><em>Aba de estratégias com documentação (Markdown), sessões ativas e log de decisões do JevAnalysis.</em></p>
 </div>
 
-A 8ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava a configuração **apenas do símbolo atual** até PAUSE/STOP. Assim, `WINFUT` e `WDOFUT` podem rodar estratégias em paralelo; no mesmo símbolo, cada sessão é identificada por strategy + timeframe e a UI impede duplicar exatamente a mesma combinação. A execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
+A 8ª aba lista as strategies (`JevAnalysis`: análise Jev/TypeSafe do contexto). O PLAY envia a foto dos filtros (snapshot) e trava a configuração **apenas do símbolo atual** até PAUSE/STOP. Assim, os quatro símbolos (`WINFUT`/`INDFUT`/`WDOFUT`/`DOLFUT`) podem rodar estratégias em paralelo; no mesmo símbolo, cada sessão é identificada por strategy + timeframe e a UI impede duplicar exatamente a mesma combinação. A execução continua no servidor mesmo com o app fechado. Tudo log-only: paper trades em `Data/{SYM}_Strategy_{Nome}_{data}.json`, envio real comentado no código.
 
 ### Análise diária (painel inferior 1D)
 
@@ -130,7 +130,7 @@ O rodapé **“Análise diária (1D)”** expande um painel com gráfico diário
 ### Estratégias (rodar no backend)
 - Contrato `IStrategy`: `Name`/`Description`/`DetailsMd` (MD obrigatório, renderizado na aba) + `ShouldTrigger` (quando, no código) + `EvaluateAsync` (o quê); runner multi-trigger (`candle_close`, `bubble`, futuros) — cada strategy filtra (ex.: `JevAnalysis` no fechamento do candle com ao menos uma bolha visível no filtro da tela, enviando todas as bolhas do candle)
 - `JevAnalysis`: envia o contexto destilado (zonas diárias, volume, bolhas filtradas, movimento) e a Jev confirma a leitura simples (`continuar/reverter/lateralizar`) + perda de força (foto dos filtros enviada no PLAY)
-- Lock de configuração por símbolo: `WINFUT` e `WDOFUT` podem rodar estratégias simultaneamente; PAUSE/STOP libera somente o símbolo correspondente
+- Lock de configuração por símbolo: os quatro símbolos podem rodar estratégias simultaneamente; PAUSE/STOP libera somente o símbolo correspondente
 - Sessões identificadas por strategy + símbolo + timeframe; dentro do mesmo símbolo, a UI bloqueia apenas a combinação exata já ativa
 - Paper trades com relatório diário em JSON; envio real ao MT5 implementado mas comentado (`LiveTradingEnabled=false`)
 - Receita de strategy nova em `B3WM/Services/Strategies/README.md`
@@ -187,6 +187,34 @@ graph TB
     PYTHON -.->|HTTP| API
     RTD -.->|SignalR| API
 ```
+
+### Símbolos suportados e mapeamento Profit ↔ MT5
+
+Os nomes canônicos são os do Profit; o backend registra os serviços de cada
+símbolo a partir de `SymbolRegistry` (`B3WM.Shared/Models/SymbolRegistry.cs`).
+
+| Nome (Profit) | Root MT5 | Contrato | Tick | Vencimento |
+|---|---|---|---|---|
+| `WINFUT` | `WIN` | mini índice | 5 pts | bimestral (meses pares) |
+| `INDFUT` | `IND` | índice cheio | 5 pts | bimestral (meses pares) |
+| `WDOFUT` | `WDO` | mini dólar | 0,5 pt | mensal (1º dia útil) |
+| `DOLFUT` | `DOL` | dólar cheio | 0,5 pt | mensal (1º dia útil) |
+
+- Preço/pontos do cheio são iguais aos do mini (mesmo ativo-objeto); muda o
+  multiplicador financeiro (5x) e o lote padrão (5 contratos).
+- O nome exato do símbolo no MT5 pode variar por corretora (`IND`, `IND$`,
+  `IND@N`, prefixo/sufixo). O bridge Python expõe `resolve_broker_symbol`
+  com prefixo/sufixo configurável e o script
+  `B3WM.Python/scripts/discover_symbols.py` para conferir na conta real.
+- Validado na conta usada no desenvolvimento (2026-11-20): `INDZ26` e
+  `DOLZ26` sem prefixo/sufixo, com `trade_tick_value` de R$ 5,00 e R$ 25,00
+  (confere com `PointValue` 1 e 50 por ponto).
+- `ThresholdBubbleSize` é baseado em quantidade, não em preço: os valores de
+  `INDFUT`/`DOLFUT` são **provisórios** e devem ser calibrados com dados reais
+  da corretora.
+- No ExtractorRTD o mapeamento `T&Tn` → papel é editável e agora aceita os
+  quatro símbolos (default `T&T0..3` = WIN/WDO/IND/DOL, mantendo T0/T1 legados). Se o Profit não
+  expuser quatro feeds simultâneos, use uma segunda instância do extrator.
 
 ### Fluxo de Dados em Execução
 

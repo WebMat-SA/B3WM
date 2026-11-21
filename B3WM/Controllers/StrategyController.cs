@@ -51,7 +51,7 @@ namespace B3WM.Controllers
             if (string.IsNullOrWhiteSpace(req.Strategy))
                 return BadRequest("Strategy é obrigatória (ver List).");
             if (string.IsNullOrWhiteSpace(req.Symbol))
-                return BadRequest("Symbol é obrigatório (WINFUT/WDOFUT).");
+                return BadRequest("Symbol é obrigatório (WINFUT/INDFUT/WDOFUT/DOLFUT).");
             IStrategy strategy;
             try { strategy = _registry.Get(req.Strategy); }
             catch (ArgumentException ex) { return BadRequest(ex.Message); }
