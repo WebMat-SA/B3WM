@@ -70,6 +70,76 @@ class LimitOrderRequest {
       };
 }
 
+class ModifyPendingOrderRequest {
+  final int orderTicket;
+  final double price;
+  final double? sl;
+  final double? tp;
+
+  ModifyPendingOrderRequest({
+    required this.orderTicket,
+    required this.price,
+    this.sl,
+    this.tp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'order_ticket': orderTicket,
+        'price': price,
+        'sl': sl,
+        'tp': tp,
+      };
+}
+
+class OrderBookLevel {
+  final double price;
+  final double volume;
+
+  OrderBookLevel({required this.price, required this.volume});
+
+  factory OrderBookLevel.fromJson(Map<String, dynamic> json) => OrderBookLevel(
+        price: (json['price'] as num?)?.toDouble() ?? 0,
+        volume: (json['volume'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class OrderBook {
+  final String symbol;
+  final String time;
+  final List<OrderBookLevel> bids;
+  final List<OrderBookLevel> asks;
+  final bool available;
+  final String source;
+  final String message;
+
+  OrderBook({
+    required this.symbol,
+    required this.time,
+    required this.bids,
+    required this.asks,
+    this.available = true,
+    this.source = 'book',
+    this.message = '',
+  });
+
+  double get bestBid => bids.isNotEmpty ? bids.first.price : 0;
+  double get bestAsk => asks.isNotEmpty ? asks.first.price : 0;
+
+  factory OrderBook.fromJson(Map<String, dynamic> json) => OrderBook(
+        symbol: json['symbol'] as String? ?? '',
+        time: json['time'] as String? ?? '',
+        source: json['source'] as String? ?? 'book',
+        available: json['available'] as bool? ?? true,
+        message: json['message'] as String? ?? '',
+        bids: ((json['bids'] as List<dynamic>?) ?? [])
+            .map((e) => OrderBookLevel.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        asks: ((json['asks'] as List<dynamic>?) ?? [])
+            .map((e) => OrderBookLevel.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
 class OrderResult {
   final bool success;
   final int retcode;

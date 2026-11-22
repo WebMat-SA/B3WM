@@ -13,6 +13,8 @@ from models.order import (
     LimitOrderRequest,
     MarketOrderRequest,
     ModifyOrderRequest,
+    ModifyPendingOrderRequest,
+    OrderBook,
     OrderInfo,
     OrderResult,
     PositionInfo,
@@ -83,6 +85,22 @@ async def modify_position(request: ModifyOrderRequest):
         tp=request.tp,
     )
     return result
+
+
+@app.post("/api/order/modify-pending", response_model=OrderResult)
+async def modify_pending_order(request: ModifyPendingOrderRequest):
+    result = executor.modify_pending_order(
+        order_ticket=request.order_ticket,
+        price=request.price,
+        sl=request.sl,
+        tp=request.tp,
+    )
+    return result
+
+
+@app.get("/api/orderbook/{symbol}", response_model=OrderBook)
+async def get_order_book(symbol: str, depth: int = 0):
+    return executor.get_order_book(symbol, depth=depth)
 
 
 @app.get("/api/account", response_model=AccountInfo)

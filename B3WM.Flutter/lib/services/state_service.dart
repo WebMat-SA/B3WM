@@ -203,6 +203,9 @@ class StateService extends ChangeNotifier {
   bool get tradingOrdersExpanded => _currentConfig.tradingOrdersExpanded;
   bool get tradingPositionsExpanded => _currentConfig.tradingPositionsExpanded;
   bool get tradingHistoryExpanded => _currentConfig.tradingHistoryExpanded;
+  int get tradingTabIndex => _currentConfig.tradingTabIndex;
+  bool get orderBookConfirmOrders => _currentConfig.orderBookConfirmOrders;
+  int get orderBookDepth => _currentConfig.orderBookDepth;
 
   bool _isStructureUpdating = false;
   bool get isStructureUpdating => _isStructureUpdating;
@@ -1184,6 +1187,26 @@ class StateService extends ChangeNotifier {
 
   void setTradingHistoryExpanded(bool v) {
     _currentConfig.tradingHistoryExpanded = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  void setTradingTabIndex(int v) {
+    final index = v.clamp(0, 1);
+    if (_currentConfig.tradingTabIndex == index) return;
+    _currentConfig.tradingTabIndex = index;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  void setOrderBookConfirmOrders(bool v) {
+    _currentConfig.orderBookConfirmOrders = v;
+    notifyListeners();
+    _saveConfigForSymbol(_symbol);
+  }
+
+  void setOrderBookDepth(int v) {
+    _currentConfig.orderBookDepth = v.clamp(1, 50);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
