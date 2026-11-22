@@ -78,6 +78,27 @@ class TradingApiService {
         .toList();
   }
 
+  Future<OrderResult?> modifyPendingOrder(
+      ModifyPendingOrderRequest request) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/trade/order-modify-pending'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(request.toJson()),
+    );
+    if (response.statusCode != 200) return null;
+    return OrderResult.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<OrderBook?> getOrderBook(String symbol, {int depth = 0}) async {
+    final qs = depth > 0 ? '?depth=$depth' : '';
+    final response = await _client
+        .get(Uri.parse('$_baseUrl/api/trade/orderbook/$symbol$qs'));
+    if (response.statusCode != 200) return null;
+    return OrderBook.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
   Future<OrderResult?> cancelOrder(int orderTicket) async {
     final response = await _client.post(
       Uri.parse('$_baseUrl/api/trade/order-cancel'),

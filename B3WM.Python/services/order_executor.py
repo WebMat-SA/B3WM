@@ -10,6 +10,8 @@ from models.order import (
     HistoryDeal,
     LimitOrderRequest,
     MarketOrderRequest,
+    OrderBook,
+    OrderBookLevel,
     OrderInfo,
     OrderResult,
     PositionInfo,
@@ -278,6 +280,78 @@ class MT5OrderExecutor:
             message=result.comment or retcode_name,
         )
 
+    def modify_pending_order(
+        self,
+        order_ticket: int,
+        price: float,
+        sl: Optional[float] = None,
+        tp: Optional[float] = None,
+    ) -> OrderResult:
+        if not self.ensure_connected():
+            return OrderResult(message="MT5 not connected")
+
+        orders = mt5.orders_get(ticket=order_ticket)
+        if orders is None or len(orders) == 0:
+            return OrderResult(message=f"Order {order_ticket} not found")
+
+        order = orders[0]
+        pending_types = (
+            mt5.ORDER_TYPE_BUY_LIMIT,
+            mt5.ORDER_TYPE_SELL_LIMIT,
+            mt5.ORDER_TYPE_BUY_STOP,
+            mt5.ORDER_TYPE_SELL_STOP,
+            mt5.ORDER_TYPE_BUY_STOP_LIMIT,
+            mt5.ORDER_TYPE_SELL_STOP_LIMIT,
+        )
+        if order.type not in pending_types:
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_INVALID,
+                retcode_name="invalid",
+                message="A ordem informada não é uma ordem pendente.",
+            )
+
+        info = mt5.symbol_info(order.symbol)
+        digits = info.digits if info is not None else 2
+        new_price = round(price, digits)
+        if new_price <= 0:
+            return OrderResult(
+                success=False,
+                retcode=mt5.TRADE_RETCODE_INVALID_PRICE,
+                retcode_name="invalid_price",
+                message="Preço inválido para modificar a ordem.",
+            )
+
+        modify_request = {
+            "action": mt5.TRADE_ACTION_MODIFY,
+            "order": order_ticket,
+            "symbol": order.symbol,
+            "volume": order.volume_current,
+            "type": order.type,
+            "price": new_price,
+            "sl": sl if sl is not None else order.sl,
+            "tp": tp if tp is not None else order.tp,
+            "magic": order.magic,
+            "comment": "modify pending by python",
+            "type_time": order.type_time,
+            "type_filling": order.type_filling,
+        }
+
+        result = mt5.order_send(modify_request)
+        if result is None:
+            return OrderResult(message="order_send returned None")
+
+        retcode_name = self._retcode_name(result.retcode)
+        return OrderResult(
+            success=result.retcode == mt5.TRADE_RETCODE_DONE,
+            retcode=result.retcode,
+            retcode_name=retcode_name,
+            order_ticket=result.order or order_ticket,
+            price=result.price or new_price,
+            volume=result.volume or order.volume_current,
+            message=result.comment or retcode_name,
+        )
+
     def close_position(self, position_ticket: int) -> OrderResult:
         if not self.ensure_connected():
             return OrderResult(message="MT5 not connected")
@@ -378,6 +452,86 @@ class MT5OrderExecutor:
             retcode_name=retcode_name,
             message=retcode_name,
         )
+
+    def get_order_book(self, symbol: str, depth: int = 0) -> OrderBook:
+        """Book de ofertas agregado por preço.
+
+        Usa `mt5.market_book_get` quando disponível. Se a corretora/B3 não
+        expuser o book, cai para um Nível 1 sintético a partir do tick,
+        sinalizando explicitamente `source="tick_fallback"`.
+        """
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if not self.ensure_connected():
+            return OrderBook(
+                symbol=symbol,
+                time=now,
+                available=False,
+                source="unavailable",
+                message="MT5 não conectado.",
+            )
+
+        resolved = self._resolve_sym(symbol)
+        try:
+            mt5.symbol_select(resolved, True)
+            book = mt5.market_book_get(resolved)
+        except Exception as e:
+            print(f"[MT5] market_book_get({resolved}) failed: {e}", file=sys.stderr)
+            book = None
+
+        if book:
+            bids: dict[float, float] = {}
+            asks: dict[float, float] = {}
+            for item in book:
+                volume = float(getattr(item, "volume", 0) or 0)
+                price = float(getattr(item, "price", 0) or 0)
+                if price <= 0 or volume <= 0:
+                    continue
+                if item.type == mt5.BOOK_TYPE_SELL:
+                    asks[price] = asks.get(price, 0.0) + volume
+                elif item.type == mt5.BOOK_TYPE_BUY:
+                    bids[price] = bids.get(price, 0.0) + volume
+
+            if bids or asks:
+                bid_levels = self._book_levels(bids, reverse=True, depth=depth)
+                ask_levels = self._book_levels(asks, reverse=False, depth=depth)
+                if bid_levels or ask_levels:
+                    return OrderBook(
+                        symbol=symbol,
+                        time=now,
+                        bids=bid_levels,
+                        asks=ask_levels,
+                        available=True,
+                        source="book",
+                    )
+
+        tick = mt5.symbol_info_tick(resolved)
+        if tick is not None and tick.bid > 0 and tick.ask > 0:
+            return OrderBook(
+                symbol=symbol,
+                time=now,
+                bids=[OrderBookLevel(price=tick.bid, volume=0.0)],
+                asks=[OrderBookLevel(price=tick.ask, volume=0.0)],
+                available=True,
+                source="tick_fallback",
+                message="Book indisponível; exibindo Nível 1 (bid/ask).",
+            )
+
+        return OrderBook(
+            symbol=symbol,
+            time=now,
+            available=False,
+            source="unavailable",
+            message="Book indisponível e sem cotação (mercado fechado).",
+        )
+
+    @staticmethod
+    def _book_levels(
+        levels: dict[float, float], *, reverse: bool, depth: int = 0
+    ) -> list[OrderBookLevel]:
+        ordered = sorted(levels.items(), key=lambda kv: kv[0], reverse=reverse)
+        if depth and depth > 0:
+            ordered = ordered[:depth]
+        return [OrderBookLevel(price=price, volume=volume) for price, volume in ordered]
 
     def get_account_info(self) -> Optional[AccountInfo]:
         if not self.ensure_connected():
