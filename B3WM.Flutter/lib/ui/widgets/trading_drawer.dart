@@ -425,7 +425,6 @@ class _TradingDrawerState extends State<TradingDrawer>
                                       .read<StateService>()
                                       .setOrderBookConfirmOrders(v),
                                 ),
-                                _configDepth(state.orderBookDepth),
                               ],
                             ),
                           ),
@@ -1123,32 +1122,6 @@ class _TradingDrawerState extends State<TradingDrawer>
           value: value,
           onChanged: onChanged,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-      ],
-    );
-  }
-
-  Widget _configDepth(int value) {
-    return Row(
-      children: [
-        const Expanded(
-          child: Text('Profundidade do book', style: TextStyle(fontSize: 12)),
-        ),
-        DropdownButton<int>(
-          value: [5, 10, 15, 20, 30].contains(value) ? value : 10,
-          dropdownColor: const Color(0xFF2a2a2a),
-          style: const TextStyle(fontSize: 12, color: Colors.white),
-          items: const [5, 10, 15, 20, 30]
-              .map((v) => DropdownMenuItem<int>(
-                    value: v,
-                    child: Text('$v níveis'),
-                  ))
-              .toList(),
-          onChanged: (v) {
-            if (v != null) {
-              context.read<StateService>().setOrderBookDepth(v);
-            }
-          },
         ),
       ],
     );

@@ -14,15 +14,17 @@ namespace B3WM.Services
         private readonly MarketWindowService _marketWindowService;
         private readonly MarketWindowBroadcaster _marketWindowBroadcaster;
         private readonly DashboardHealthService _health;
+        private readonly BookStore _bookStore;
         private readonly ILogger<DataHub> _logger;
 
-        public DataHub(IEnumerable<TickChannelService> tickChannel, MarketWindowRegistry marketWindowRegistry, MarketWindowService marketWindowService, MarketWindowBroadcaster marketWindowBroadcaster, DashboardHealthService health, ILogger<DataHub> logger)
+        public DataHub(IEnumerable<TickChannelService> tickChannel, MarketWindowRegistry marketWindowRegistry, MarketWindowService marketWindowService, MarketWindowBroadcaster marketWindowBroadcaster, DashboardHealthService health, BookStore bookStore, ILogger<DataHub> logger)
         {
             _tickChannel = tickChannel;
             _marketWindowRegistry = marketWindowRegistry;
             _marketWindowService = marketWindowService;
             _marketWindowBroadcaster = marketWindowBroadcaster;
             _health = health;
+            _bookStore = bookStore;
             _logger = logger;
         }
 
@@ -65,6 +67,16 @@ namespace B3WM.Services
         public Task ReportUnknownAgents(string symbol, string[] rawNames)
         {
             _health.RecordUnknownAgentNames(symbol, rawNames);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Livro LVL2 enviado pelo ExtractorRTD (Profit RTD). Guarda o último
+        /// snapshot; o Flutter lê via REST /api/trade/orderbook/{symbol}.
+        /// </summary>
+        public Task SendDataBookSnapshot(BookSnapshot snapshot)
+        {
+            _bookStore.Update(snapshot);
             return Task.CompletedTask;
         }
 
