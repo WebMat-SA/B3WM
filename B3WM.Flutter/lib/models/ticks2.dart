@@ -147,6 +147,10 @@ class Agents {
 
   static Agents? fromValue(int value) => _byValue[value];
 
+  /// Todos os agentes mapeados no enum (para listar no drawer mesmo antes de
+  /// o símbolo gerar bubbles).
+  static List<Agents> get all => List.unmodifiable(_all);
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) || (other is Agents && value == other.value);

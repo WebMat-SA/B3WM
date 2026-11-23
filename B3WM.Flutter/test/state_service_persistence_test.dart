@@ -340,6 +340,32 @@ void main() {
       dol.reset();
     });
 
+    test('seletor lista todos os agentes conhecidos mesmo sem bubbles',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('INDFUT');
+      expect(service.selectableAgents,
+          containsAll(Agents.all.map((a) => a.value)));
+      expect(service.selectedAgents, isEmpty);
+
+      // Selecionar e desmarcar um agente que nunca apareceu deve persistir.
+      service.toggleAgent(85);
+      expect(service.selectedAgents, contains(85));
+      service.toggleAgent(85);
+      expect(service.selectedAgents, isNot(contains(85)));
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('INDFUT');
+      expect(reloaded.selectableAgents, contains(85));
+      expect(reloaded.selectedAgents, isNot(contains(85)));
+      reloaded.reset();
+    });
+
     test('config setada persiste ao recriar StateService', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();

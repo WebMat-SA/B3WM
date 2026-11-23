@@ -205,9 +205,10 @@ class _BubbleDrawerState extends State<BubbleDrawer>
   }
 
   Widget _agentsSection(StateService state) {
-    final allAgents = state.allBubbleAgents.toList()
+    final allAgents = state.selectableAgents.toList()
       ..sort((a, b) => agentsDescription(a).compareTo(agentsDescription(b)));
     if (allAgents.isEmpty) return const SizedBox.shrink();
+    final selected = state.selectedAgents.toSet();
 
     return ExpansionTile(
       leading: const Icon(Icons.people, size: 20),
@@ -228,7 +229,8 @@ class _BubbleDrawerState extends State<BubbleDrawer>
           dense: true,
           title: const Text('Selecionar Todos',
               style: TextStyle(fontSize: 12)),
-          value: state.selectedAgents.length == allAgents.length,
+          value: selected.length == allAgents.length &&
+              allAgents.every(selected.contains),
           onChanged: (_) => state.selectAllAgents(),
           controlAffinity: ListTileControlAffinity.leading,
         ),
