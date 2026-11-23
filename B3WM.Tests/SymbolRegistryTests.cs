@@ -28,9 +28,9 @@ namespace B3WM.Tests
 
         [Theory]
         [InlineData("WINFUT", 5.0, 1.0, 250, 250.0, 1000.0)]
-        [InlineData("INDFUT", 5.0, 1.0, 250, 250.0, 1000.0)]
+        [InlineData("INDFUT", 5.0, 1.0, 50, 250.0, 1000.0)]
         [InlineData("WDOFUT", 0.5, 10.0, 500, 2.5, 100.0)]
-        [InlineData("DOLFUT", 0.5, 50.0, 500, 2.5, 100.0)]
+        [InlineData("DOLFUT", 0.5, 50.0, 50, 2.5, 100.0)]
         public void Defaults_DelegateToRegistry(
             string symbol,
             double tickSize,

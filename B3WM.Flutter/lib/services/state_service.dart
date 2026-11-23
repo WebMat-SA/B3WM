@@ -180,6 +180,7 @@ class StateService extends ChangeNotifier {
   String get colorSeller => _currentConfig.colorSeller;
 
   List<int> get selectedAgents => _currentConfig.selectedAgents;
+  List<int> get knownAgents => _currentConfig.knownAgents;
   Map<int, int> get agentThresholds =>
       Map.unmodifiable(_currentConfig.agentThresholds);
 
@@ -2075,7 +2076,8 @@ class StateService extends ChangeNotifier {
   void selectAllAgents() {
     if (_guardLocked('selectAllAgents')) return;
     final all = allBubbleAgents;
-    if (_currentConfig.selectedAgents.length == all.length) {
+    final selected = _currentConfig.selectedAgents.toSet();
+    if (selected.length == all.length && all.every(selected.contains)) {
       _currentConfig.selectedAgents = [];
     } else {
       _currentConfig.selectedAgents = all.toList();
@@ -2087,9 +2089,14 @@ class StateService extends ChangeNotifier {
   void toggleAgent(int agent) {
     if (_guardLocked('toggleAgent')) return;
     if (_currentConfig.selectedAgents.contains(agent)) {
-      _currentConfig.selectedAgents.remove(agent);
+      // removeWhere: listas antigas podiam ter a mesma corretora repetida e
+      // `remove` só apagava a 1ª ocorrência (agente continuava "selecionado").
+      _currentConfig.selectedAgents.removeWhere((a) => a == agent);
     } else {
       _currentConfig.selectedAgents.add(agent);
+      if (!_currentConfig.knownAgents.contains(agent)) {
+        _currentConfig.knownAgents.add(agent);
+      }
     }
     notifyListeners();
     _saveConfigForSymbol(_symbol);
@@ -2124,6 +2131,10 @@ class StateService extends ChangeNotifier {
     if (json != null) {
       try {
         final config = SymbolConfig.fromJson(jsonDecode(json), symbol: symbol);
+        if (_migrateFullContractConfig(symbol, config)) {
+          // Persiste após o putIfAbsent que está criando a entrada no mapa.
+          Future.microtask(() => _saveConfigForSymbol(symbol));
+        }
         logD('[config] load $symbol -> noise=${config.extremeNoiseSensitivity} '
             'prominence=${config.extremeMinimumProminence} '
             'visible=${config.extremeVisible} opacity=${config.extremeOpacity}');
@@ -2140,6 +2151,69 @@ class StateService extends ChangeNotifier {
     }
 
     return SymbolConfig.withDefaults(symbol);
+  }
+
+  /// Os contratos cheios (INDFUT/DOLFUT) foram criados depois do config
+  /// global legado e herdaram seus valores por quantidade/agente, que não
+  /// fazem sentido no lote de 5 e na liquidez menor. Se o valor salvo ainda
+  /// for exatamente o global antigo, troca pelo default calibrado do símbolo;
+  /// valores escolhidos pelo usuário são preservados. Idempotente: depois de
+  /// migrado, o valor deixa de bater com o global.
+  bool _migrateFullContractConfig(String symbol, SymbolConfig config) {
+    if (symbol != Defaults.symbolIndfut && symbol != Defaults.symbolDolfut) {
+      return false;
+    }
+
+    var changed = false;
+
+    final legacyThreshold = _preferencesService.getInt('ThresholdBubble');
+    final calibrated = Defaults.thresholdBubbleSize(symbol);
+    if (legacyThreshold != null &&
+        config.thresholdBubble != calibrated &&
+        config.thresholdBubble == legacyThreshold) {
+      config.thresholdBubble = calibrated;
+      logD('[config] $symbol threshold migrado de $legacyThreshold '
+          'para $calibrated');
+      changed = true;
+    }
+
+    final legacySelected = _preferencesService.getIntList('SelectedAgents');
+    if (legacySelected != null &&
+        legacySelected.isNotEmpty &&
+        _sameIntSet(config.selectedAgents, legacySelected)) {
+      final inherited = config.selectedAgents.toSet();
+      config.selectedAgents.clear();
+      config.knownAgents.removeWhere(inherited.contains);
+      logD('[config] $symbol agentes herdados do global removidos '
+          '(${inherited.length})');
+      changed = true;
+    }
+
+    final legacyAgentThresholds =
+        _preferencesService.getIntIntMap('AgentThresholds');
+    if (legacyAgentThresholds != null &&
+        legacyAgentThresholds.isNotEmpty &&
+        _sameIntMap(config.agentThresholds, legacyAgentThresholds)) {
+      config.agentThresholds.clear();
+      logD('[config] $symbol thresholds por agente herdados removidos');
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  static bool _sameIntSet(Iterable<int> a, Iterable<int> b) {
+    final setA = a.toSet();
+    final setB = b.toSet();
+    return setA.length == setB.length && setA.containsAll(setB);
+  }
+
+  static bool _sameIntMap(Map<int, int> a, Map<int, int> b) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
   }
 
   SymbolConfig? _tryMigrateFromOldKeys() {
@@ -2522,7 +2596,9 @@ class StateService extends ChangeNotifier {
         _allBubbleAgents.add(b.agent);
         if (!_currentConfig.knownAgents.contains(b.agent)) {
           _currentConfig.knownAgents.add(b.agent);
-          _currentConfig.selectedAgents.add(b.agent);
+          if (!_currentConfig.selectedAgents.contains(b.agent)) {
+            _currentConfig.selectedAgents.add(b.agent);
+          }
           knownChanged = true;
         }
       }
@@ -2643,7 +2719,9 @@ class StateService extends ChangeNotifier {
         _allBubbleAgents.add(b.agent);
         if (!_currentConfig.knownAgents.contains(b.agent)) {
           _currentConfig.knownAgents.add(b.agent);
-          _currentConfig.selectedAgents.add(b.agent);
+          if (!_currentConfig.selectedAgents.contains(b.agent)) {
+            _currentConfig.selectedAgents.add(b.agent);
+          }
           knownChanged = true;
         }
       }
@@ -2906,7 +2984,9 @@ class StateService extends ChangeNotifier {
       _allBubbleAgents.add(b.agent);
       if (!_currentConfig.knownAgents.contains(b.agent)) {
         _currentConfig.knownAgents.add(b.agent);
-        _currentConfig.selectedAgents.add(b.agent);
+        if (!_currentConfig.selectedAgents.contains(b.agent)) {
+          _currentConfig.selectedAgents.add(b.agent);
+        }
         knownChanged = true;
       }
     }
@@ -3208,7 +3288,9 @@ class StateService extends ChangeNotifier {
     // desmarcar depois, não será reselecionado ao reaparecer em outro dia.
     if (!_currentConfig.knownAgents.contains(data.agent)) {
       _currentConfig.knownAgents.add(data.agent);
-      _currentConfig.selectedAgents.add(data.agent);
+      if (!_currentConfig.selectedAgents.contains(data.agent)) {
+        _currentConfig.selectedAgents.add(data.agent);
+      }
       _saveConfigForSymbol(_symbol);
     }
     _allBubbleAgents.add(data.agent);

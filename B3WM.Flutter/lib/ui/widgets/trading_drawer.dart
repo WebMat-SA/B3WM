@@ -174,20 +174,12 @@ class _TradingDrawerState extends State<TradingDrawer>
     try {
       final api = context.read<TradingApiService>();
       final result = await api.cancelOrder(ticket);
-      if (result != null && mounted) {
-        if (result.success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Order $ticket cancelled'),
-                backgroundColor: Colors.green),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Failed to cancel: ${result.message}'),
-                backgroundColor: Colors.red),
-          );
-        }
+      if (result != null && mounted && !result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to cancel: ${result.message}'),
+              backgroundColor: Colors.red),
+        );
       }
       await _refreshAll();
     } catch (e) {
@@ -219,14 +211,7 @@ class _TradingDrawerState extends State<TradingDrawer>
       final result = await api.placeMarketOrder(request);
       if (result != null && mounted) {
         _lastResult = result;
-        if (result.success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    'Order executed: ticket ${result.orderTicket} @ ${result.price.toStringAsFixed(2)}'),
-                backgroundColor: Colors.green),
-          );
-        } else {
+        if (!result.success) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content: Text('Order failed: ${result.message}'),
@@ -255,21 +240,12 @@ class _TradingDrawerState extends State<TradingDrawer>
     try {
       final api = context.read<TradingApiService>();
       final result = await api.closePosition(ticket);
-      if (result != null && mounted) {
-        if (result.success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    'Position $ticket closed @ ${result.price.toStringAsFixed(2)}'),
-                backgroundColor: Colors.green),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Failed to close: ${result.message}'),
-                backgroundColor: Colors.red),
-          );
-        }
+      if (result != null && mounted && !result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to close: ${result.message}'),
+              backgroundColor: Colors.red),
+        );
       }
       await _refreshAll();
     } catch (e) {
@@ -301,13 +277,6 @@ class _TradingDrawerState extends State<TradingDrawer>
                 backgroundColor: Colors.red),
           );
         }
-      }
-      if (mounted && _positions.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('All positions closed'),
-              backgroundColor: Colors.green),
-        );
       }
       await _refreshAll();
     } catch (e) {

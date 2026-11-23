@@ -70,14 +70,14 @@ class Defaults {
       structureRangeUpdDailyMax: 10000,
       structureRangeUpdDailyStep: 50.0,
     ),
-    // Contrato cheio do índice: mesmo preço/pontos do WIN. ThresholdBubble é
-    // por quantidade e o lote padrão é 5 — valor provisório, calibrar com
-    // dados reais (issue #47).
+    // Contrato cheio do índice: mesmo preço/pontos do WIN. Lote mínimo de 5
+    // contratos e liquidez bem menor que o mini: 50 (10 lotes) é o threshold
+    // de detecção calibrado pelos volumes reais.
     symbolIndfut: SymbolSpec(
       name: symbolIndfut,
       mt5Root: 'IND',
       flag: 'assets/images/bandeira-brasil.png',
-      thresholdBubbleSize: 250,
+      thresholdBubbleSize: 50,
       minDistanceUpdateBorder: 250,
       minDistanceUpdateBorderDaily: 1000,
       tickSize: 5.0,
@@ -102,12 +102,12 @@ class Defaults {
       structureRangeUpdDailyStep: 1.0,
     ),
     // Contrato cheio do dólar: mesmo preço/pontos do WDO, valor do tick 5x.
-    // Diferente do WDO legado, usa o range canônico 2,5 do backend.
+    // Lote mínimo de 5; 50 (10 lotes) acompanha a liquidez real do DOL.
     symbolDolfut: SymbolSpec(
       name: symbolDolfut,
       mt5Root: 'DOL',
       flag: 'assets/images/bandeira-eua.png',
-      thresholdBubbleSize: 500,
+      thresholdBubbleSize: 50,
       minDistanceUpdateBorder: 2.5,
       minDistanceUpdateBorderDaily: 100,
       tickSize: 0.5,

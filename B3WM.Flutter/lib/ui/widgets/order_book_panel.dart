@@ -211,8 +211,6 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
         return;
       }
       _highlight(price);
-      _snack('${isBuy ? 'Compra' : 'Venda'} $kindLabel @ '
-          '${price.toStringAsFixed(2)} (ticket ${result.orderTicket}).');
       await _afterOrder();
     } catch (e) {
       _snack('Erro ao enviar ordem: $e', error: true);
@@ -252,8 +250,6 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
         return;
       }
       _highlight(price);
-      _snack('Ordem ${order.ticket} movida para '
-          '${price.toStringAsFixed(2)}.');
       await _afterOrder();
     } catch (e) {
       _snack('Erro ao modificar ordem: $e', error: true);
@@ -316,8 +312,6 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
             error: true);
         return;
       }
-      _snack('Ordem ${order.ticket} cancelada e executada a mercado '
-          '(ticket ${result.orderTicket}).');
       await _afterOrder();
     } catch (e) {
       _snack('Erro ao cancelar/executar ordem: $e', error: true);

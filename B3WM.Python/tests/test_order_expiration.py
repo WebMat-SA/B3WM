@@ -26,6 +26,9 @@ _fake_mt5.ORDER_TIME_GTC = 0
 _fake_mt5.ORDER_TIME_DAY = 1
 _fake_mt5.ORDER_TIME_SPECIFIED = 2
 _fake_mt5.ORDER_TIME_SPECIFIED_DAY = 3
+_fake_mt5.ORDER_FILLING_FOK = 0
+_fake_mt5.ORDER_FILLING_IOC = 1
+_fake_mt5.ORDER_FILLING_RETURN = 2
 sys.modules.setdefault("MetaTrader5", _fake_mt5)
 
 import MetaTrader5 as mt5  # noqa: E402
@@ -85,6 +88,13 @@ class PendingExpirationTests(unittest.TestCase):
         )
         self.assertEqual(type_time, mt5.ORDER_TIME_GTC)
         self.assertEqual(expiration, 0)
+
+    def test_pending_orders_use_return_filling(self):
+        # Na B3, FOK/IOC em pendentes são cancelados na hora; RETURN fica.
+        self.assertEqual(
+            MT5OrderExecutor._pending_filling_mode(),
+            mt5.ORDER_FILLING_RETURN,
+        )
 
 
 if __name__ == "__main__":

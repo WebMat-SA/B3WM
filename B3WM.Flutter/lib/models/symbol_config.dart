@@ -237,6 +237,21 @@ class SymbolConfig {
   static const double bubbleSizePxMin = 5;
   static const double bubbleSizePxMax = 200;
 
+  /// Remove duplicatas preservando a ordem de primeira aparição.
+  ///
+  /// `selectedAgents`/`knownAgents` são persistidos como listas; versões
+  /// antigas acumulavam o mesmo agente várias vezes (auto-seleção sobre o
+  /// legado + toggle removendo só a 1ª ocorrência). Listas duplicadas fazem
+  /// o agente parecer "sempre selecionado" mesmo após desmarcar.
+  static List<int> dedupeAgents(Iterable<int> values) {
+    final seen = <int>{};
+    final out = <int>[];
+    for (final value in values) {
+      if (seen.add(value)) out.add(value);
+    }
+    return out;
+  }
+
   /// Sanea o par Min/Max (px) do tamanho das bolhas: clampa para
   /// [5, 200] e garante `min <= max`. Nunca lança.
   static List<double> sanitizeBubbleSizes(double minSize, double maxSize) {
@@ -264,6 +279,11 @@ class SymbolConfig {
             legacy.daily.structureRangeUpd <= structureDailyMax
         ? legacy.daily.structureRangeUpd
         : defaults.daily.structureRangeUpd;
+    // Preferências de quantidade/agente são específicas do mercado. O config
+    // legado (global) só existia para WIN/WDO, então os contratos cheios não
+    // devem herdar threshold nem filtros de agente dele.
+    final isFullContract =
+        symbol == Defaults.symbolIndfut || symbol == Defaults.symbolDolfut;
     return SymbolConfig(
       // Migração #12: 1D saiu do seletor principal (só intraday).
       timeFrame: legacy.timeFrame == 1440 ? 2 : legacy.timeFrame,
@@ -273,7 +293,7 @@ class SymbolConfig {
       bubbleOpacity: legacy.bubbleOpacity,
       bubbleSizeMin: bubbleSizes[0],
       bubbleSizeMax: bubbleSizes[1],
-      thresholdBubble: legacy.thresholdBubble >= thresholdMin
+      thresholdBubble: !isFullContract && legacy.thresholdBubble >= thresholdMin
           ? legacy.thresholdBubble
           : defaults.thresholdBubble,
       profileVisible: legacy.profileVisible,
@@ -337,9 +357,17 @@ class SymbolConfig {
       vwapColor: defaults.vwapColor,
       colorBuyer: legacy.colorBuyer,
       colorSeller: legacy.colorSeller,
-      selectedAgents: List.from(legacy.selectedAgents),
-      agentThresholds: Map.from(legacy.agentThresholds),
-      knownAgents: List.from(legacy.knownAgents),
+      // Filtros de agente são específicos do mercado. WIN/WDO mantêm o que
+      // veio do config global legado (incluindo selected em known, para que
+      // desmarcar não seja desfeito pela auto-seleção); os cheios começam
+      // vazios e são populados pelas próprias bubbles.
+      selectedAgents:
+          isFullContract ? const [] : dedupeAgents(legacy.selectedAgents),
+      agentThresholds:
+          isFullContract ? const {} : Map.from(legacy.agentThresholds),
+      knownAgents: isFullContract
+          ? const []
+          : dedupeAgents([...legacy.knownAgents, ...legacy.selectedAgents]),
       bubbleAmountFilter: legacy.bubbleAmountFilter,
       bubbleAgentsFilter: legacy.bubbleAgentsFilter,
       bubbleSoundEnabled: legacy.bubbleSoundEnabled,
@@ -368,6 +396,15 @@ class SymbolConfig {
     final bubbleSizes = sanitizeBubbleSizes(
         (json['bubbleSizeMin'] as num?)?.toDouble() ?? 20,
         (json['bubbleSizeMax'] as num?)?.toDouble() ?? 100);
+    // Normaliza o estado de agentes vindo de versões antigas: sem duplicatas
+    // e com `knownAgents` contendo tudo que já foi selecionado. Sem isso, um
+    // agente desmarcado volta a ser auto-selecionado na próxima bubble.
+    final selectedAgents = dedupeAgents(
+        (json['selectedAgents'] as List<dynamic>?)?.cast<int>() ?? const []);
+    final knownAgents = dedupeAgents([
+      ...((json['knownAgents'] as List<dynamic>?)?.cast<int>() ?? const []),
+      ...selectedAgents,
+    ]);
     return SymbolConfig(
       timeFrame: timeFrame,
       dateRangeMode: DateRangeMode.values
@@ -419,12 +456,11 @@ class SymbolConfig {
       vwapColor: json['vwapColor'] as String? ?? '#FF8800',
       colorBuyer: json['colorBuyer'] as String? ?? '#4488ff',
       colorSeller: json['colorSeller'] as String? ?? '#ff4444',
-      selectedAgents:
-          (json['selectedAgents'] as List<dynamic>?)?.cast<int>() ?? [],
+      selectedAgents: selectedAgents,
       agentThresholds: (json['agentThresholds'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
           {},
-      knownAgents: (json['knownAgents'] as List<dynamic>?)?.cast<int>() ?? [],
+      knownAgents: knownAgents,
       bubbleAmountFilter: json['bubbleAmountFilter'] as bool? ?? true,
       bubbleAgentsFilter: json['bubbleAgentsFilter'] as bool? ?? true,
       bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
@@ -487,10 +523,10 @@ class SymbolConfig {
         'vwapColor': vwapColor,
         'colorBuyer': colorBuyer,
         'colorSeller': colorSeller,
-        'selectedAgents': selectedAgents,
+        'selectedAgents': dedupeAgents(selectedAgents),
         'agentThresholds':
             agentThresholds.map((k, v) => MapEntry(k.toString(), v)),
-        'knownAgents': knownAgents,
+        'knownAgents': dedupeAgents([...knownAgents, ...selectedAgents]),
         'bubbleAmountFilter': bubbleAmountFilter,
         'bubbleAgentsFilter': bubbleAgentsFilter,
         'bubbleSoundEnabled': bubbleSoundEnabled,

@@ -273,7 +273,7 @@ class MT5OrderExecutor:
             "magic": request.magic,
             "comment": request.comment,
             "type_time": type_time,
-            "type_filling": self._filling_mode(info),
+            "type_filling": self._pending_filling_mode(),
         }
         if expiration:
             mt5_request["expiration"] = expiration
@@ -283,7 +283,7 @@ class MT5OrderExecutor:
         if request.tp is not None:
             mt5_request["tp"] = request.tp
 
-        result = mt5.order_send(mt5_request)
+        result = self._send_pending_order(mt5_request, info)
         if result is None:
             return OrderResult(message="order_send returned None")
 
@@ -368,12 +368,12 @@ class MT5OrderExecutor:
             "magic": order.magic,
             "comment": "modify pending by python",
             "type_time": type_time,
-            "type_filling": order.type_filling,
+            "type_filling": self._pending_filling_mode(),
         }
         if expiration:
             modify_request["expiration"] = expiration
 
-        result = mt5.order_send(modify_request)
+        result = self._send_pending_order(modify_request, info)
         if result is None:
             return OrderResult(message="order_send returned None")
 
@@ -843,9 +843,28 @@ class MT5OrderExecutor:
         return order_gtc, 0
 
     @staticmethod
+    def _pending_filling_mode() -> int:
+        # Pendentes na B3/exchange: FOK/IOC são aceitos no envio, mas o
+        # servidor cancela a ordem logo em seguida. RETURN mantém a ordem
+        # ativa no book (validado no BTG). Se outra corretora recusar RETURN
+        # com TRADE_RETCODE_INVALID_FILL, _send_pending_order reenvia com o
+        # filling de mercado (FOK/IOC).
+        return getattr(mt5, "ORDER_FILLING_RETURN", 2)
+
+    def _send_pending_order(self, request: dict, info):
+        result = mt5.order_send(request)
+        invalid_fill = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
+        if result is not None and result.retcode == invalid_fill:
+            retry = dict(request)
+            retry["type_filling"] = self._filling_mode(info)
+            result = mt5.order_send(retry)
+        return result
+
+    @staticmethod
     def _filling_mode(info) -> int:
-        # B3/exchange: o símbolo só aceita FOK ou IOC; usar RETURN cai em
-        # TRADE_RETCODE_INVALID_FILL (10030). Lê as flags de filling_mode.
+        # Ordens a mercado na B3/exchange: o símbolo só aceita FOK ou IOC;
+        # usar RETURN cai em TRADE_RETCODE_INVALID_FILL (10030). Lê as flags
+        # de filling_mode. Para pendentes use _pending_filling_mode.
         flags = int(getattr(info, "filling_mode", 0) or 0) if info else 0
         if flags & 1:
             return mt5.ORDER_FILLING_FOK

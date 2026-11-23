@@ -1013,8 +1013,6 @@ class _MapFlowChartState extends State<MapFlowChart>
     }
     final isLimit = isBuy ? price < lastPrice : price > lastPrice;
     final kind = isLimit ? 'limit' : 'stop';
-    final kindLabel = isLimit ? 'limite' : 'stop';
-    final priceLabel = formatRulerPrice(price, symbol);
 
     setState(() => _placingLimitOrder = true);
     try {
@@ -1046,10 +1044,6 @@ class _MapFlowChartState extends State<MapFlowChart>
         final fresh = await api.getOpenOrders();
         if (mounted) state.updateOrders(fresh);
       } catch (_) {}
-      _showLimitOrderSnack(
-        '${isBuy ? 'Compra' : 'Venda'} $kindLabel criada @ $priceLabel '
-        '(ticket ${result.orderTicket}).',
-      );
     } catch (e) {
       _showLimitOrderSnack('Erro ao enviar ordem: $e', error: true);
     } finally {
@@ -1344,14 +1338,14 @@ class _MapFlowChartState extends State<MapFlowChart>
       final api = context.read<TradingApiService>();
       final result = await api.closePosition(ticket);
       if (result != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.success
-                ? 'Position $ticket closed @ ${result.price.toStringAsFixed(2)}'
-                : 'Failed to close: ${result.message}'),
-            backgroundColor: result.success ? Colors.green : Colors.red,
-          ),
-        );
+        if (!result.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to close: ${result.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
         success = result.success;
       }
     } catch (e) {
@@ -1377,14 +1371,14 @@ class _MapFlowChartState extends State<MapFlowChart>
       final api = context.read<TradingApiService>();
       final result = await api.cancelOrder(ticket);
       if (result != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.success
-                ? 'Order $ticket cancelled'
-                : 'Failed to cancel: ${result.message}'),
-            backgroundColor: result.success ? Colors.green : Colors.red,
-          ),
-        );
+        if (!result.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to cancel: ${result.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
         success = result.success;
       }
     } catch (e) {

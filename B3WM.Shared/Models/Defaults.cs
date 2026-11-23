@@ -23,12 +23,12 @@
         }
 
         // Contrato cheio do índice: mesmo ativo-objeto do WIN (preço/pontos
-        // idênticos). ThresholdBubble é por quantidade e o lote padrão é 5
-        // contratos, então o valor abaixo é provisório e deve ser calibrado
-        // com dados reais da corretora (issue #47).
+        // idênticos). O lote mínimo é 5 contratos e a liquidez é muito menor
+        // que a do mini, então o threshold de detecção fica em 10 lotes (50),
+        // calibrado pelos volumes reais (arquivos Data/INDFUT_VolumeService).
         public static class INDFUT
         {
-            public const int ThresholdBubbleSize = 250;
+            public const int ThresholdBubbleSize = 50;
             public const double MinDistanceUpdateBorder = 250;
             public const double MinDistanceUpdateBorderDaily = 1000;
             public const double TickSize = 5.0;
@@ -45,10 +45,11 @@
         }
 
         // Contrato cheio do dólar: mesmo preço/pontos do WDO, com valor do
-        // tick 5x. ThresholdBubble provisório, calibrar com dados reais.
+        // tick 5x. O lote mínimo é 5 contratos; 50 (10 lotes) acompanha a
+        // liquidez real do DOL (série ~10x menor que o WDO).
         public static class DOLFUT
         {
-            public const int ThresholdBubbleSize = 500;
+            public const int ThresholdBubbleSize = 50;
             public const double MinDistanceUpdateBorder = 2.5;
             public const double MinDistanceUpdateBorderDaily = 100;
             public const double TickSize = 0.5;

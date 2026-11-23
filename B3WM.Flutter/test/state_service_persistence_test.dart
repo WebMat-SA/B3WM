@@ -54,8 +54,8 @@ StateService _createService(PreferencesService prefs) {
   final api = _stubApi();
   return StateService(
     apiService: api,
-    signalRService: _NoopSignalRService(
-        hubUrl: 'http://test.local/hub', apiService: api),
+    signalRService:
+        _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api),
     preferencesService: prefs,
     audioService: AudioService(),
   );
@@ -102,6 +102,38 @@ void main() {
       expect(restored.selectedAgents, [1, 2]);
       expect(restored.agentThresholds, {1: 500});
       expect(restored.knownAgents, [1, 2, 3]);
+    });
+
+    test('fromJson deduplica agentes e mantém selected dentro de known', () {
+      final cfg = SymbolConfig.fromJson({
+        'timeFrame': 2,
+        'selectedAgents': [3, 3, 16, 3],
+        'knownAgents': [16, 85, 85],
+      }, symbol: 'INDFUT');
+      expect(cfg.selectedAgents, [3, 16]);
+      expect(cfg.knownAgents, [16, 85, 3]);
+    });
+
+    test('contratos cheios não herdam threshold/agentes do config legado', () {
+      final legacy = SymbolConfig.withDefaults('WINFUT')
+        ..thresholdBubble = 475
+        ..selectedAgents = [3, 16]
+        ..knownAgents = [3, 16]
+        ..agentThresholds = {3: 900};
+
+      // WIN/WDO continuam recebendo o que veio do config global legado,
+      // mas com selected dentro de known (evita re-seleção ao desmarcar).
+      final win = SymbolConfig.seedFromLegacy('WINFUT', legacy);
+      expect(win.thresholdBubble, 475);
+      expect(win.selectedAgents, [3, 16]);
+      expect(win.knownAgents, [3, 16]);
+      expect(win.agentThresholds, {3: 900});
+
+      final ind = SymbolConfig.seedFromLegacy('INDFUT', legacy);
+      expect(ind.thresholdBubble, Defaults.thresholdBubbleSize('INDFUT'));
+      expect(ind.selectedAgents, isEmpty);
+      expect(ind.knownAgents, isEmpty);
+      expect(ind.agentThresholds, isEmpty);
     });
 
     test('janela manual do Volume 1D persiste por data', () {
@@ -261,9 +293,51 @@ void main() {
       await wdofut.setSymbol('WDOFUT');
       expect(wdofut.timeFrame, 5);
       expect(wdofut.thresholdBubble, Defaults.thresholdBubbleSize('WDOFUT'));
-      expect(wdofut.structureRangeUpd, Defaults.minDistanceUpdateBorder('WDOFUT'));
+      expect(
+          wdofut.structureRangeUpd, Defaults.minDistanceUpdateBorder('WDOFUT'));
       expect(wdofut.bubbleVisible, isFalse);
       wdofut.reset();
+    });
+
+    test('contratos cheios migram valores herdados do config global', () async {
+      SharedPreferences.setMockInitialValues({
+        'b3wm_TimeFrame': 2,
+        'b3wm_ThresholdBubble': 475,
+        'b3wm_SelectedAgents': jsonEncode([13, 16]),
+        'b3wm_AgentThresholds': jsonEncode({'13': 900}),
+        'b3wm_Config_INDFUT': jsonEncode({
+          'timeFrame': 2,
+          'thresholdBubble': 475,
+          'selectedAgents': [13, 13, 16],
+          'knownAgents': <int>[],
+          'agentThresholds': {'13': 900},
+        }),
+        'b3wm_Config_DOLFUT': jsonEncode({
+          'timeFrame': 2,
+          'thresholdBubble': 5,
+          'selectedAgents': [127],
+          'knownAgents': [127],
+          'agentThresholds': {'127': 20},
+        }),
+      });
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final ind = _createService(prefs);
+      await ind.setSymbol('INDFUT');
+      expect(ind.thresholdBubble, Defaults.thresholdBubbleSize('INDFUT'));
+      expect(ind.selectedAgents, isEmpty);
+      expect(ind.knownAgents, isEmpty);
+      expect(ind.agentThresholds, isEmpty);
+      ind.reset();
+
+      final dol = _createService(prefs);
+      await dol.setSymbol('DOLFUT');
+      // Valores escolhidos pelo usuário (diferentes do global) são preservados.
+      expect(dol.thresholdBubble, 5);
+      expect(dol.selectedAgents, [127]);
+      expect(dol.agentThresholds, {127: 20});
+      dol.reset();
     });
 
     test('config setada persiste ao recriar StateService', () async {
@@ -466,8 +540,8 @@ void main() {
       await prefs.init();
 
       final api = _stubApi();
-      final signalR = _NoopSignalRService(
-          hubUrl: 'http://test.local/hub', apiService: api);
+      final signalR =
+          _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
       final service = StateService(
         apiService: api,
         signalRService: signalR,
@@ -493,7 +567,8 @@ void main() {
       reloaded.reset();
     });
 
-    test('loadData carrega bubbles com resposta real da API (actionType string)',
+    test(
+        'loadData carrega bubbles com resposta real da API (actionType string)',
         () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = PreferencesService();
@@ -506,30 +581,32 @@ void main() {
             return http.Response('null', 200);
           }
           if (request.url.path.contains('GetBubble')) {
-            return http.Response(jsonEncode([
-              {
-                'price': 170400,
-                'agent': 85,
-                'amount': 267,
-                'date': '2026-08-13T09:03:19.473',
-                'actionType': 'Sale',
-                'symbol': 'WINFUT',
-              },
-              {
-                'price': 170305,
-                'agent': 85,
-                'amount': 550,
-                'date': '2026-08-13T09:03:31.973',
-                'actionType': 'Buy',
-                'symbol': 'WINFUT',
-              },
-            ]), 200);
+            return http.Response(
+                jsonEncode([
+                  {
+                    'price': 170400,
+                    'agent': 85,
+                    'amount': 267,
+                    'date': '2026-08-13T09:03:19.473',
+                    'actionType': 'Sale',
+                    'symbol': 'WINFUT',
+                  },
+                  {
+                    'price': 170305,
+                    'agent': 85,
+                    'amount': 550,
+                    'date': '2026-08-13T09:03:31.973',
+                    'actionType': 'Buy',
+                    'symbol': 'WINFUT',
+                  },
+                ]),
+                200);
           }
           return http.Response('[]', 200);
         }),
       );
-      final signalR = _NoopSignalRService(
-          hubUrl: 'http://test.local/hub', apiService: api);
+      final signalR =
+          _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
       final service = StateService(
         apiService: api,
         signalRService: signalR,
@@ -560,8 +637,8 @@ void main() {
           );
 
       final api = _apiWithBubbles([bubble(42), bubble(43)]);
-      final signalR = _NoopSignalRService(
-          hubUrl: 'http://test.local/hub', apiService: api);
+      final signalR =
+          _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
       final service = StateService(
         apiService: api,
         signalRService: signalR,
@@ -597,8 +674,8 @@ void main() {
           );
 
       final api = _apiWithBubbles([bubble(43)]);
-      final signalR = _NoopSignalRService(
-          hubUrl: 'http://test.local/hub', apiService: api);
+      final signalR =
+          _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
       final service = StateService(
         apiService: api,
         signalRService: signalR,
@@ -634,8 +711,8 @@ void main() {
           );
 
       final api = _stubApi();
-      final signalR = _NoopSignalRService(
-          hubUrl: 'http://test.local/hub', apiService: api);
+      final signalR =
+          _NoopSignalRService(hubUrl: 'http://test.local/hub', apiService: api);
       final service = StateService(
         apiService: api,
         signalRService: signalR,
@@ -657,6 +734,34 @@ void main() {
       expect(service.selectedAgents, isNot(contains(42)));
       service.reset();
     });
+
+    test('toggleAgent remove duplicatas herdadas e não volta ao recarregar',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'b3wm_Config_INDFUT': jsonEncode({
+          'timeFrame': 2,
+          'selectedAgents': [13, 13, 16, 13],
+          'knownAgents': <int>[],
+        }),
+      });
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('INDFUT');
+      expect(service.selectedAgents, [13, 16]);
+      expect(service.knownAgents, containsAll([13, 16]));
+
+      service.toggleAgent(13);
+      expect(service.selectedAgents, isNot(contains(13)));
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('INDFUT');
+      expect(reloaded.selectedAgents, isNot(contains(13)));
+      expect(reloaded.selectedAgents, contains(16));
+      reloaded.reset();
+    });
   });
 
   group('BubbleStorageItem parsing', () {
@@ -672,7 +777,8 @@ void main() {
       expect(b.actionType, ActionType.sale);
     });
 
-    test('fromJson aceita actionType como string (API com JsonStringEnumConverter)',
+    test(
+        'fromJson aceita actionType como string (API com JsonStringEnumConverter)',
         () {
       final b = BubbleStorageItem.fromJson({
         'price': 170400,
