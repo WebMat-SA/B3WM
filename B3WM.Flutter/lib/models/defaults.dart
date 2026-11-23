@@ -143,6 +143,8 @@ class Defaults {
   static int thresholdBubbleSize(String symbol) =>
       specFor(symbol).thresholdBubbleSize;
 
+  static const int thresholdBubbleMin = 5;
+
   static double minDistanceUpdateBorder(String symbol) =>
       specFor(symbol).minDistanceUpdateBorder;
 

@@ -170,7 +170,7 @@ class _BubbleDrawerState extends State<BubbleDrawer>
               (v) => state.setBubbleVisible(v)),
           SliderRow('Amount Threshold',
               state.thresholdBubble.toDouble(),
-              Defaults.thresholdBubbleSize(state.symbol).toDouble(),
+              Defaults.thresholdBubbleMin.toDouble(),
               5000,
               (v) => state.setThresholdBubble(v.round()),
               decimals: 0,
@@ -293,7 +293,7 @@ class _BubbleDrawerState extends State<BubbleDrawer>
                     ),
                     onSubmitted: (v) {
                       final val = int.tryParse(v);
-                      if (val != null && val >= Defaults.thresholdBubbleSize(state.symbol)) {
+                      if (val != null && val >= Defaults.thresholdBubbleMin) {
                         state.setAgentThreshold(agentValue, val);
                       }
                     },
