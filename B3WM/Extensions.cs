@@ -24,9 +24,6 @@ namespace B3WM
             services.AddSingleton(atrOptions);
             // Estado de saúde em memória consumido pelo dashboard (polling REST).
             services.AddSingleton<DashboardHealthService>();
-            // Último livro LVL2 recebido do ExtractorRTD (Profit RTD), usado
-            // como fonte preferencial do book antes do MT5.
-            services.AddSingleton<BookStore>();
             services.AddSingleton<ILoggerProvider, DashboardLogSink>();
             // Deduz o último range de estrutura dos arquivos persistidos para o
             // preload do startup continuar nele em vez de voltar ao default.

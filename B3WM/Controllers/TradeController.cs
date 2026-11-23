@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using B3WM.Services;
 
 namespace B3WM.Controllers;
 
@@ -10,20 +9,13 @@ namespace B3WM.Controllers;
 [Route("api/[controller]")]
 public class TradeController : ControllerBase
 {
-    private static readonly TimeSpan RtdMaxAge = TimeSpan.FromSeconds(5);
-
     private readonly HttpClient _http;
     private readonly ILogger<TradeController> _logger;
-    private readonly BookStore _bookStore;
 
-    public TradeController(
-        IHttpClientFactory httpClientFactory,
-        ILogger<TradeController> logger,
-        BookStore bookStore)
+    public TradeController(IHttpClientFactory httpClientFactory, ILogger<TradeController> logger)
     {
         _http = httpClientFactory.CreateClient("PythonService");
         _logger = logger;
-        _bookStore = bookStore;
     }
 
     [HttpPost("order-market")]
@@ -63,19 +55,8 @@ public class TradeController : ControllerBase
     }
 
     [HttpGet("orderbook/{symbol}")]
-    public async Task<IActionResult> GetOrderBook(
-        string symbol,
-        [FromQuery] int depth = 0,
-        [FromQuery] string source = "auto")
+    public async Task<IActionResult> GetOrderBook(string symbol, [FromQuery] int depth = 0)
     {
-        // Profit LVL2 (ExtractorRTD) tem prioridade enquanto o snapshot está
-        // fresco. Sem ele, cai para o DOM do MT5 via bridge Python.
-        if (!string.Equals(source, "mt5", StringComparison.OrdinalIgnoreCase)
-            && _bookStore.TryGet(symbol, RtdMaxAge, out var rtdBook))
-        {
-            return Ok(rtdBook);
-        }
-
         var qs = depth > 0 ? $"?depth={depth}" : "";
         return await ForwardGet($"/api/orderbook/{symbol}{qs}");
     }

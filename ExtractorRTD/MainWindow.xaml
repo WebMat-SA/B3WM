@@ -95,14 +95,6 @@
                         Click="TimesAndTradesProfit_Click"/>
 
                     <Button
-                        Width="200"
-                        Height="35"
-                        Margin="10,0,0,0"
-                        Content="Start / Stop Book LVL2"
-                        ToolTip="Livro de ofertas via socket RTD do Profit (127.0.0.1:12002)"
-                        Click="BookLvl2_Click"/>
-
-                    <Button
                         Width="100"
                         Height="35"
                         Margin="10,0,0,0"
@@ -125,11 +117,6 @@
 
                     <TextBlock
                         x:Name="StatusTextBlockData"
-                        Margin="20,8,0,0"
-                        FontWeight="Bold"/>
-
-                    <TextBlock
-                        x:Name="StatusTextBlockBook"
                         Margin="20,8,0,0"
                         FontWeight="Bold"/>
 

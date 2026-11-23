@@ -414,11 +414,6 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
           const Text('Book de Ofertas',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const Spacer(),
-          if (book != null && book.source == 'rtd_lvl2')
-            const Tooltip(
-              message: 'Book via Profit LVL2 (ExtractorRTD).',
-              child: Icon(Icons.bolt, size: 14, color: Colors.greenAccent),
-            ),
           if (book != null && book.source == 'tick_fallback')
             const Tooltip(
               message: 'Book indisponível: exibindo Nível 1 (bid/ask).',

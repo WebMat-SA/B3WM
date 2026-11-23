@@ -76,12 +76,6 @@ namespace ExtractorRTD
 
         CancellationToken TokenTnT { get; set; }
 
-        BackgroundWorker workerBook = new BackgroundWorker();
-
-        CancellationTokenSource SourceBook { get; set; }
-
-        CancellationToken TokenBook { get; set; }
-
         public MainWindow()
         {
             InitializeComponent();
@@ -234,104 +228,6 @@ namespace ExtractorRTD
                     LogOther(ex.ToString());
                 });
             }
-        }
-
-        private void BookLvl2_Click(
-            object sender,
-            RoutedEventArgs e)
-        {
-            if (!workerBook.IsBusy ||
-                SourceBook == null ||
-                SourceBook.IsCancellationRequested)
-            {
-                workerBook = new BackgroundWorker();
-
-                workerBook.WorkerReportsProgress = true;
-
-                workerBook.WorkerSupportsCancellation = true;
-
-                workerBook.DoWork += WorkBook;
-
-                workerBook.ProgressChanged += PrintBook;
-
-                SourceBook = new CancellationTokenSource();
-
-                TokenBook = SourceBook.Token;
-
-                workerBook.RunWorkerAsync();
-            }
-            else
-            {
-                SourceBook.Cancel();
-
-                workerBook.CancelAsync();
-
-                BookLvl2.Stop();
-            }
-        }
-
-        private void WorkBook(
-            object obj,
-            DoWorkEventArgs e)
-        {
-            try
-            {
-                BookLvl2.Start(
-                    Tnts
-                    .Select(x => x.Symbol)
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .Distinct()
-                    .ToList(),
-                    Url,
-                    workerBook,
-                    TokenBook);
-            }
-            catch (Exception ex)
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    LogOther(ex.ToString());
-                });
-            }
-        }
-
-        private void PrintBook(
-            object s,
-            ProgressChangedEventArgs ev)
-        {
-            if (ev.UserState is TickLogItem item)
-            {
-                QueueFor(item.Symbol).Enqueue(item.Message);
-            }
-
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                StatusTextBlockBook.Text =
-                    BookLvl2.ConnectionState + " (LVL2)";
-            }));
-        }
-
-        protected override void OnClosing(CancelEventArgs e)
-        {
-            try
-            {
-                SourceBook?.Cancel();
-                BookLvl2.Stop();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                SourceTnT?.Cancel();
-                TimesAndTradesRtd.Stop();
-            }
-            catch
-            {
-            }
-
-            base.OnClosing(e);
         }
 
         private void Print(

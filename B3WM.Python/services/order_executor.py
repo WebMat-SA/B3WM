@@ -263,6 +263,7 @@ class MT5OrderExecutor:
                         ),
                     )
 
+        type_time, expiration = self._pending_expiration(info, tick.time)
         mt5_request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": symbol,
@@ -271,9 +272,11 @@ class MT5OrderExecutor:
             "price": price,
             "magic": request.magic,
             "comment": request.comment,
-            "type_time": mt5.ORDER_TIME_GTC,
+            "type_time": type_time,
             "type_filling": self._filling_mode(info),
         }
+        if expiration:
+            mt5_request["expiration"] = expiration
 
         if request.sl is not None:
             mt5_request["sl"] = request.sl
@@ -337,6 +340,22 @@ class MT5OrderExecutor:
                 message="Preço inválido para modificar a ordem.",
             )
 
+        specified_modes = (
+            getattr(mt5, "ORDER_TIME_SPECIFIED", 2),
+            getattr(mt5, "ORDER_TIME_SPECIFIED_DAY", 3),
+        )
+        type_time = order.type_time
+        expiration = int(getattr(order, "time_expiration", 0) or 0)
+        if type_time in specified_modes:
+            tick = mt5.symbol_info_tick(order.symbol)
+            server_now = tick.time if tick is not None else 0
+            if expiration <= 0:
+                type_time, expiration = self._pending_expiration(
+                    info, server_now
+                )
+        else:
+            expiration = 0
+
         modify_request = {
             "action": mt5.TRADE_ACTION_MODIFY,
             "order": order_ticket,
@@ -348,9 +367,11 @@ class MT5OrderExecutor:
             "tp": tp if tp is not None else order.tp,
             "magic": order.magic,
             "comment": "modify pending by python",
-            "type_time": order.type_time,
+            "type_time": type_time,
             "type_filling": order.type_filling,
         }
+        if expiration:
+            modify_request["expiration"] = expiration
 
         result = mt5.order_send(modify_request)
         if result is None:
@@ -770,6 +791,56 @@ class MT5OrderExecutor:
                 magic=d.magic,
             ))
         return result
+
+    @staticmethod
+    def _pending_expiration(info, server_now: int = 0) -> tuple[int, int]:
+        """Escolhe type_time/expiration aceitos pelo símbolo.
+
+        Cada instrumento expõe em SYMBOL_EXPIRATION_MODE quais modos aceita.
+        Futuros da B3 normalmente não permitem ORDER_TIME_GTC, e enviar GTC
+        resulta em TRADE_RETCODE_INVALID_EXPIRATION (10022). Lemos a máscara
+        do símbolo e usamos o modo permitido (GTC, dia ou data especificada),
+        com a data calculada a partir do relógio do servidor.
+        """
+        modes = int(getattr(info, "expiration_mode", 0) or 0)
+        bit_gtc = getattr(mt5, "SYMBOL_EXPIRATION_GTC", 1)
+        bit_day = getattr(mt5, "SYMBOL_EXPIRATION_DAY", 2)
+        bit_specified = getattr(mt5, "SYMBOL_EXPIRATION_SPECIFIED", 4)
+        bit_specified_day = getattr(
+            mt5, "SYMBOL_EXPIRATION_SPECIFIED_DAY", 8
+        )
+        order_gtc = getattr(mt5, "ORDER_TIME_GTC", 0)
+        order_day = getattr(mt5, "ORDER_TIME_DAY", 1)
+        order_specified = getattr(mt5, "ORDER_TIME_SPECIFIED", 2)
+        order_specified_day = getattr(
+            mt5, "ORDER_TIME_SPECIFIED_DAY", 3
+        )
+
+        # GTC é o padrão do MT5 e mantém o comportamento anterior; quando o
+        # símbolo não o aceita (caso típico dos futuros da B3), usa "dia" e só
+        # então expiração por data/hora.
+        if modes & bit_gtc:
+            return order_gtc, 0
+        if modes & bit_day:
+            return order_day, 0
+
+        now = int(server_now or 0)
+        if now <= 0:
+            now = int(datetime.now(timezone.utc).timestamp())
+
+        if modes & bit_specified_day:
+            end = datetime.fromtimestamp(now, tz=timezone.utc).replace(
+                hour=23, minute=59, second=59, microsecond=0
+            )
+            if end.timestamp() <= now + 60:
+                end += timedelta(days=1)
+            return order_specified_day, int(end.timestamp())
+
+        if modes & bit_specified:
+            return order_specified, now + 86400
+
+        # Sem máscara confiável, mantém o comportamento anterior (GTC).
+        return order_gtc, 0
 
     @staticmethod
     def _filling_mode(info) -> int:
