@@ -115,7 +115,7 @@ class _MapFlowChartState extends State<MapFlowChart>
   Matrix4? _measureBlockMatrix;
   Offset? _pendingTapDownLocal;
   // Ordem limite (issue #48): Shift+clique = compra, Alt+clique = venda.
-  // O botão B/S e a funcionalidade são regidos pelo mesmo flag do painel de
+  // O botão C/V e a funcionalidade são regidos pelo mesmo flag do painel de
   // trading (`Mostrar Ordens em Aberto`), persistido por símbolo.
   String? _pendingOrderModifier;
   bool _placingLimitOrder = false;
@@ -1105,7 +1105,7 @@ class _MapFlowChartState extends State<MapFlowChart>
       _modifierKeysDown.contains(LogicalKeyboardKey.altLeft) ||
       _modifierKeysDown.contains(LogicalKeyboardKey.altRight);
 
-  /// Mesmo flag de `Mostrar Ordens em Aberto` no `TradingDrawer`: o B/S só
+  /// Mesmo flag de `Mostrar Ordens em Aberto` no `TradingDrawer`: o C/V só
   /// fica ativo quando as ordens em aberto estão visíveis, e desligar o botão
   /// também desliga esse item (intradiário apenas).
   bool get _limitOrdersEnabled =>
@@ -1149,7 +1149,7 @@ class _MapFlowChartState extends State<MapFlowChart>
             border: active ? Border.all(color: Colors.white70, width: 1) : null,
           ),
           child: Text(
-            'B/S',
+            'C/V',
             style: TextStyle(
               color: active ? Colors.white : Colors.white70,
               fontSize: 11,

@@ -12,36 +12,43 @@ class TradingApiService {
         _baseUrl = baseUrl ?? AppConfig.apiBaseUrl;
 
   Future<OrderResult?> placeMarketOrder(MarketOrderRequest request) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/trade/order-market'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(request.toJson()),
-    );
-    if (response.statusCode != 200) return null;
-    return OrderResult.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+    return _postOrder('/api/trade/order-market', request.toJson());
   }
 
   Future<OrderResult?> placeLimitOrder(LimitOrderRequest request) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/trade/order-limit'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(request.toJson()),
-    );
-    if (response.statusCode != 200) return null;
-    return OrderResult.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+    return _postOrder('/api/trade/order-limit', request.toJson());
   }
 
   Future<OrderResult?> closePosition(int positionTicket) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/trade/order-close'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'position_ticket': positionTicket}),
+    return _postOrder('/api/trade/order-close', {
+      'position_ticket': positionTicket,
+    });
+  }
+
+  /// POST de ordens no backend. Em falha de transporte/HTTP devolve um
+  /// [OrderResult] com `success=false` e a mensagem real do servidor, para a
+  /// UI não mostrar apenas "falha ao enviar" sem motivo.
+  Future<OrderResult?> _postOrder(
+      String path, Map<String, dynamic> body) async {
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl$path'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200) {
+      return OrderResult.fromJson(
+          jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    final detail = response.body.trim();
+    return OrderResult(
+      success: false,
+      retcode: response.statusCode,
+      retcodeName: 'http_${response.statusCode}',
+      message: 'HTTP ${response.statusCode}'
+          '${detail.isEmpty ? '' : ': $detail'}',
     );
-    if (response.statusCode != 200) return null;
-    return OrderResult.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<AccountInfo?> getAccountInfo() async {
@@ -80,14 +87,7 @@ class TradingApiService {
 
   Future<OrderResult?> modifyPendingOrder(
       ModifyPendingOrderRequest request) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/trade/order-modify-pending'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(request.toJson()),
-    );
-    if (response.statusCode != 200) return null;
-    return OrderResult.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+    return _postOrder('/api/trade/order-modify-pending', request.toJson());
   }
 
   Future<OrderBook?> getOrderBook(String symbol, {int depth = 0}) async {
@@ -100,14 +100,9 @@ class TradingApiService {
   }
 
   Future<OrderResult?> cancelOrder(int orderTicket) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/trade/order-cancel'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'position_ticket': orderTicket}),
-    );
-    if (response.statusCode != 200) return null;
-    return OrderResult.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+    return _postOrder('/api/trade/order-cancel', {
+      'position_ticket': orderTicket,
+    });
   }
 
   Future<List<OrderInfo>> getOpenOrders() async {

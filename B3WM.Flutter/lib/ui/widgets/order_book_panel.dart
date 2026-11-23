@@ -39,6 +39,7 @@ class OrderBookPanel extends StatefulWidget {
 class _OrderBookPanelState extends State<OrderBookPanel> {
   static const Color _bg = Color(0xFF1e1e1e);
   static const Color _line = Color(0xFF3d3d3d);
+  static const double _priceColumnWidth = 86;
   static const Duration _pollInterval = Duration(milliseconds: 400);
 
   OrderBook? _book;
@@ -480,11 +481,17 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
     }.toList()
       ..sort((a, b) => b.compareTo(a));
 
+    final totalAskVolume =
+        askVolumes.values.fold<double>(0, (total, v) => total + v);
+    final totalBidVolume =
+        bidVolumes.values.fold<double>(0, (total, v) => total + v);
+
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _buildColumnHeader(),
           if (askPrices.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
@@ -498,16 +505,18 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
               price: price,
               isAsk: true,
               volume: askVolumes[price] ?? 0,
+              totalVolume: totalAskVolume,
               ownOrders: ownSells
                   .where((o) => (o.priceOpen - price).abs() <= tolerance)
                   .toList(),
             ),
-          _buildSpreadRow(state, book),
+          _buildSpreadRow(book),
           for (final price in bidPrices)
             _buildLevelRow(
               price: price,
               isAsk: false,
               volume: bidVolumes[price] ?? 0,
+              totalVolume: totalBidVolume,
               ownOrders: ownBuys
                   .where((o) => (o.priceOpen - price).abs() <= tolerance)
                   .toList(),
@@ -536,10 +545,43 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
     );
   }
 
+  Widget _buildColumnHeader() {
+    const style = TextStyle(
+      fontSize: 9,
+      fontWeight: FontWeight.w600,
+      color: Colors.grey,
+    );
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: const BoxDecoration(
+        color: Color(0xFF262626),
+        border: Border(bottom: BorderSide(color: _line)),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            child: Text('Qtd. Compra',
+                textAlign: TextAlign.left, style: style),
+          ),
+          SizedBox(
+            width: _priceColumnWidth,
+            child: Text('Preço', textAlign: TextAlign.center, style: style),
+          ),
+          Expanded(
+            child: Text('Qtd. Venda',
+                textAlign: TextAlign.right, style: style),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLevelRow({
     required double price,
     required bool isAsk,
     required double volume,
+    required double totalVolume,
     required List<OrderInfo> ownOrders,
   }) {
     final highlighted =
@@ -552,10 +594,16 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
         final hovering = candidate.isNotEmpty;
         final ownHighlight = ownOrders.isNotEmpty;
         final baseColor =
-            isAsk ? const Color(0xFF3a1f1f) : const Color(0xFF1f2a3a);
+            isAsk ? const Color(0xFF2a1616) : const Color(0xFF141c2a);
+        final depthColor =
+            isAsk ? const Color(0xFF8c2b2b) : const Color(0xFF2b5c9c);
         Color bg = baseColor;
         if (highlighted) bg = Colors.amber.shade800.withValues(alpha: 0.55);
         if (hovering) bg = Colors.cyan.shade800.withValues(alpha: 0.45);
+
+        final fraction =
+            totalVolume > 0 ? (volume / totalVolume).clamp(0.0, 1.0) : 0.0;
+        final qtyText = volume > 0 ? volume.toStringAsFixed(0) : '—';
 
         return Material(
           color: bg,
@@ -564,11 +612,10 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
                 ? null
                 : () => _placeLimitAt(isAsk: isAsk, price: price),
             child: Container(
-              height: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              height: 22,
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: _line.withValues(alpha: 0.6)),
+                  bottom: BorderSide(color: _line.withValues(alpha: 0.35)),
                   left: ownHighlight
                       ? BorderSide(color: Colors.amber.shade400, width: 3)
                       : BorderSide.none,
@@ -577,24 +624,41 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
               child: Row(
                 children: [
                   Expanded(
+                    child: isAsk
+                        ? const SizedBox.shrink()
+                        : _buildQtyCell(
+                            isAsk: false,
+                            qtyText: qtyText,
+                            fraction: fraction,
+                            depthColor: depthColor,
+                            ownOrders: ownOrders,
+                          ),
+                  ),
+                  Container(
+                    width: _priceColumnWidth,
+                    alignment: Alignment.center,
                     child: Text(
-                      volume > 0 ? volume.toStringAsFixed(0) : '—',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      price.toStringAsFixed(2),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight:
+                            ownHighlight ? FontWeight.bold : FontWeight.w600,
+                        color: isAsk
+                            ? Colors.redAccent
+                            : Colors.lightBlueAccent,
+                      ),
                     ),
                   ),
-                  for (final order in ownOrders)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: _buildOwnBadge(order),
-                    ),
-                  Text(
-                    price.toStringAsFixed(2),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight:
-                          ownHighlight ? FontWeight.bold : FontWeight.w500,
-                      color: isAsk ? Colors.redAccent : Colors.lightBlueAccent,
-                    ),
+                  Expanded(
+                    child: isAsk
+                        ? _buildQtyCell(
+                            isAsk: true,
+                            qtyText: qtyText,
+                            fraction: fraction,
+                            depthColor: depthColor,
+                            ownOrders: ownOrders,
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ],
               ),
@@ -602,6 +666,66 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
           ),
         );
       },
+    );
+  }
+
+  /// Célula de quantidade no estilo Profit: barra vermelha/azul cheia no
+  /// nível e uma sombra sobreposta cuja largura é a fatia daquele nível no
+  /// volume total exibido do lado (compra cresce da direita, venda da
+  /// esquerda).
+  Widget _buildQtyCell({
+    required bool isAsk,
+    required String qtyText,
+    required double fraction,
+    required Color depthColor,
+    required List<OrderInfo> ownOrders,
+  }) {
+    final qty = Text(
+      qtyText,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        color: Colors.white70,
+      ),
+    );
+    final hasLevel = fraction > 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Stack(
+        alignment:
+            isAsk ? Alignment.centerLeft : Alignment.centerRight,
+        children: [
+          if (hasLevel)
+            Positioned.fill(
+              child: ColoredBox(
+                color: depthColor.withValues(alpha: 0.85),
+              ),
+            ),
+          if (hasLevel)
+            Positioned.fill(
+              child: FractionallySizedBox(
+                alignment:
+                    isAsk ? Alignment.centerLeft : Alignment.centerRight,
+                widthFactor: fraction,
+                child: ColoredBox(
+                  color: Colors.black.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isAsk) qty,
+              for (final order in ownOrders)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: _buildOwnBadge(order),
+                ),
+              if (!isAsk) qty,
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -657,7 +781,7 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
     );
   }
 
-  Widget _buildSpreadRow(StateService state, OrderBook book) {
+  Widget _buildSpreadRow(OrderBook book) {
     final bid = book.bestBid;
     final ask = book.bestAsk;
     final spread = (ask > 0 && bid > 0) ? ask - bid : 0.0;
@@ -669,39 +793,56 @@ class _OrderBookPanelState extends State<OrderBookPanel> {
       builder: (context, candidate, rejected) {
         final hovering = candidate.isNotEmpty;
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             color: hovering
                 ? Colors.orange.shade800.withValues(alpha: 0.6)
-                : const Color(0xFF2a2a2a),
+                : const Color(0xFF33301f),
             border: Border.symmetric(
-              horizontal: BorderSide(color: Colors.grey.shade700, width: 1),
+              horizontal: BorderSide(
+                color: Colors.amber.shade700.withValues(alpha: 0.6),
+                width: 1,
+              ),
             ),
           ),
           child: Row(
             children: [
-              const Icon(Icons.swap_vert, size: 12, color: Colors.orange),
-              const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  hovering
-                      ? 'Soltar aqui: EXECUTAR A MERCADO'
-                      : 'Spread $spreadText  (${state.symbol})',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: hovering ? FontWeight.bold : FontWeight.normal,
-                    color: hovering ? Colors.white : Colors.grey,
+                  bid > 0 ? bid.toStringAsFixed(2) : '—',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.lightBlueAccent,
                   ),
                 ),
               ),
-              if (bid > 0)
-                Text('B ${bid.toStringAsFixed(2)}  ',
-                    style: const TextStyle(
-                        fontSize: 9, color: Colors.lightBlueAccent)),
-              if (ask > 0)
-                Text('A ${ask.toStringAsFixed(2)}',
-                    style:
-                        const TextStyle(fontSize: 9, color: Colors.redAccent)),
+              Container(
+                width: _priceColumnWidth,
+                alignment: Alignment.center,
+                child: Text(
+                  hovering ? 'EXECUTAR' : 'Spread $spreadText',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: hovering ? 10 : 9,
+                    fontWeight:
+                        hovering ? FontWeight.bold : FontWeight.w600,
+                    color: hovering ? Colors.white : Colors.amber,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  ask > 0 ? ask.toStringAsFixed(2) : '—',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ),
             ],
           ),
         );

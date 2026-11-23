@@ -26,6 +26,11 @@ from services.contract_utils import (
 class MT5OrderExecutor:
     def __init__(self):
         self._connected = False
+        # Símbolos com subscrição ativa de Depth of Market (market_book_add).
+        self._book_symbols: set[str] = set()
+        # Evita repetir o log de falha a cada poll quando a corretora não
+        # expõe book para o símbolo.
+        self._book_add_warned: set[str] = set()
 
     def connect(self, path: str = "", login: int = 0, password: str = "", server: str = "") -> bool:
         if self._connected:
@@ -47,6 +52,13 @@ class MT5OrderExecutor:
         return True
 
     def shutdown(self) -> None:
+        for symbol in list(self._book_symbols):
+            try:
+                mt5.market_book_release(symbol)
+            except Exception:
+                pass
+        self._book_symbols.clear()
+        self._book_add_warned.clear()
         if self._connected:
             mt5.shutdown()
             self._connected = False
@@ -66,6 +78,8 @@ class MT5OrderExecutor:
         error_code, error_desc = mt5.last_error()
         if error_code == -10004:
             print(f"[MT5] IPC lost ({error_code} {error_desc}). Reconnecting...", file=sys.stderr)
+            self._book_symbols.clear()
+            self._book_add_warned.clear()
             mt5.shutdown()
             self._connected = False
             return self.connect()
@@ -92,6 +106,7 @@ class MT5OrderExecutor:
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
             return OrderResult(message=f"Symbol {request.symbol} not found")
+        info = mt5.symbol_info(symbol)
 
         price = tick.ask if mt5_type == mt5.ORDER_TYPE_BUY else tick.bid
 
@@ -105,7 +120,7 @@ class MT5OrderExecutor:
             "magic": request.magic,
             "comment": request.comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
+            "type_filling": self._filling_mode(info),
         }
 
         if request.sl is not None:
@@ -119,13 +134,13 @@ class MT5OrderExecutor:
 
         retcode_name = self._retcode_name(result.retcode)
         return OrderResult(
-            success=result.retcode == mt5.TRADE_RETCODE_DONE,
-            retcode=result.retcode,
+            success=self._is_success(result.retcode),
+            retcode=int(result.retcode or 0),
             retcode_name=retcode_name,
-            order_ticket=result.order,
-            price=result.price,
-            volume=result.volume,
-            message=result.comment or retcode_name,
+            order_ticket=int(result.order or 0),
+            price=float(result.price or 0),
+            volume=float(result.volume or 0),
+            message=str(result.comment or retcode_name),
         )
 
     def limit_order(self, request: LimitOrderRequest) -> OrderResult:
@@ -257,7 +272,7 @@ class MT5OrderExecutor:
             "magic": request.magic,
             "comment": request.comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
+            "type_filling": self._filling_mode(info),
         }
 
         if request.sl is not None:
@@ -271,13 +286,13 @@ class MT5OrderExecutor:
 
         retcode_name = self._retcode_name(result.retcode)
         return OrderResult(
-            success=result.retcode == mt5.TRADE_RETCODE_DONE,
-            retcode=result.retcode,
+            success=self._is_success(result.retcode),
+            retcode=int(result.retcode or 0),
             retcode_name=retcode_name,
-            order_ticket=result.order,
-            price=result.price,
-            volume=result.volume,
-            message=result.comment or retcode_name,
+            order_ticket=int(result.order or 0),
+            price=float(result.price or 0),
+            volume=float(result.volume or 0),
+            message=str(result.comment or retcode_name),
         )
 
     def modify_pending_order(
@@ -343,13 +358,13 @@ class MT5OrderExecutor:
 
         retcode_name = self._retcode_name(result.retcode)
         return OrderResult(
-            success=result.retcode == mt5.TRADE_RETCODE_DONE,
-            retcode=result.retcode,
+            success=self._is_success(result.retcode),
+            retcode=int(result.retcode or 0),
             retcode_name=retcode_name,
-            order_ticket=result.order or order_ticket,
-            price=result.price or new_price,
-            volume=result.volume or order.volume_current,
-            message=result.comment or retcode_name,
+            order_ticket=int(result.order or order_ticket),
+            price=float(result.price or new_price),
+            volume=float(result.volume or order.volume_current),
+            message=str(result.comment or retcode_name),
         )
 
     def close_position(self, position_ticket: int) -> OrderResult:
@@ -366,6 +381,7 @@ class MT5OrderExecutor:
         tick = mt5.symbol_info_tick(position.symbol)
         if tick is None:
             return OrderResult(message=f"Symbol {position.symbol} not found")
+        info = mt5.symbol_info(position.symbol)
 
         price = tick.bid if mt5_type == mt5.ORDER_TYPE_SELL else tick.ask
 
@@ -380,7 +396,7 @@ class MT5OrderExecutor:
             "magic": position.magic,
             "comment": "close by python",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
+            "type_filling": self._filling_mode(info),
         }
 
         result = mt5.order_send(close_request)
@@ -389,13 +405,13 @@ class MT5OrderExecutor:
 
         retcode_name = self._retcode_name(result.retcode)
         return OrderResult(
-            success=result.retcode == mt5.TRADE_RETCODE_DONE,
-            retcode=result.retcode,
+            success=self._is_success(result.retcode),
+            retcode=int(result.retcode or 0),
             retcode_name=retcode_name,
-            order_ticket=result.order,
-            price=result.price,
-            volume=result.volume,
-            message=result.comment or retcode_name,
+            order_ticket=int(result.order or 0),
+            price=float(result.price or 0),
+            volume=float(result.volume or 0),
+            message=str(result.comment or retcode_name),
         )
 
     def cancel_order(self, order_ticket: int) -> OrderResult:
@@ -413,8 +429,8 @@ class MT5OrderExecutor:
 
         retcode_name = self._retcode_name(result.retcode)
         return OrderResult(
-            success=result.retcode == mt5.TRADE_RETCODE_DONE,
-            retcode=result.retcode,
+            success=self._is_success(result.retcode),
+            retcode=int(result.retcode or 0),
             retcode_name=retcode_name,
             message=retcode_name,
         )
@@ -447,8 +463,8 @@ class MT5OrderExecutor:
 
         retcode_name = self._retcode_name(result.retcode)
         return OrderResult(
-            success=result.retcode == mt5.TRADE_RETCODE_DONE,
-            retcode=result.retcode,
+            success=self._is_success(result.retcode),
+            retcode=int(result.retcode or 0),
             retcode_name=retcode_name,
             message=retcode_name,
         )
@@ -471,18 +487,28 @@ class MT5OrderExecutor:
             )
 
         resolved = self._resolve_sym(symbol)
-        try:
-            mt5.symbol_select(resolved, True)
-            book = mt5.market_book_get(resolved)
-        except Exception as e:
-            print(f"[MT5] market_book_get({resolved}) failed: {e}", file=sys.stderr)
-            book = None
+        mt5.symbol_select(resolved, True)
+
+        # market_book_get só retorna dados se houver subscrição prévia via
+        # market_book_add. Sem isso o MT5 devolve None e o book cai no
+        # fallback Nível 1 (uma única linha, sem volumes).
+        self._subscribe_book(resolved)
+        book = self._read_book(resolved)
+        if book is None:
+            # A subscrição pode ter caído (reconexão/troca de símbolo).
+            self._book_symbols.discard(resolved)
+            self._subscribe_book(resolved)
+            book = self._read_book(resolved)
 
         if book:
             bids: dict[float, float] = {}
             asks: dict[float, float] = {}
             for item in book:
-                volume = float(getattr(item, "volume", 0) or 0)
+                volume = float(
+                    getattr(item, "volume_dbl", 0)
+                    or getattr(item, "volume", 0)
+                    or 0
+                )
                 price = float(getattr(item, "price", 0) or 0)
                 if price <= 0 or volume <= 0:
                     continue
@@ -523,6 +549,39 @@ class MT5OrderExecutor:
             source="unavailable",
             message="Book indisponível e sem cotação (mercado fechado).",
         )
+
+    @staticmethod
+    def _read_book(symbol: str):
+        try:
+            return mt5.market_book_get(symbol)
+        except Exception as e:
+            print(f"[MT5] market_book_get({symbol}) failed: {e}", file=sys.stderr)
+            return None
+
+    def _subscribe_book(self, symbol: str) -> bool:
+        if symbol in self._book_symbols:
+            return True
+        try:
+            if mt5.market_book_add(symbol):
+                self._book_symbols.add(symbol)
+                self._book_add_warned.discard(symbol)
+                return True
+            error_code, error_desc = mt5.last_error()
+            if symbol not in self._book_add_warned:
+                self._book_add_warned.add(symbol)
+                print(
+                    f"[MT5] market_book_add({symbol}) failed: "
+                    f"({error_code}) {error_desc}",
+                    file=sys.stderr,
+                )
+        except Exception as e:
+            if symbol not in self._book_add_warned:
+                self._book_add_warned.add(symbol)
+                print(
+                    f"[MT5] market_book_add({symbol}) failed: {e}",
+                    file=sys.stderr,
+                )
+        return False
 
     @staticmethod
     def _book_levels(
@@ -712,44 +771,77 @@ class MT5OrderExecutor:
             ))
         return result
 
-    def _retcode_name(self, retcode: int) -> str:
+    @staticmethod
+    def _filling_mode(info) -> int:
+        # B3/exchange: o símbolo só aceita FOK ou IOC; usar RETURN cai em
+        # TRADE_RETCODE_INVALID_FILL (10030). Lê as flags de filling_mode.
+        flags = int(getattr(info, "filling_mode", 0) or 0) if info else 0
+        if flags & 1:
+            return mt5.ORDER_FILLING_FOK
+        if flags & 2:
+            return mt5.ORDER_FILLING_IOC
+        return mt5.ORDER_FILLING_RETURN
+
+    @staticmethod
+    def _is_success(retcode: int) -> bool:
+        # Pending orders (limit/stop) retornam TRADE_RETCODE_PLACED (10008),
+        # não DONE (10009). Sem incluir PLACED, a ordem é criada mas o app
+        # reporta rejeição.
+        names = (
+            "TRADE_RETCODE_DONE",
+            "TRADE_RETCODE_PLACED",
+            "TRADE_RETCODE_DONE_PARTIAL",
+        )
+        codes = {getattr(mt5, name) for name in names if hasattr(mt5, name)}
+        return retcode in codes
+
+    @staticmethod
+    def _retcode_name(retcode: int) -> str:
+        # Monta o mapa só com as constantes existentes na versão instalada do
+        # MetaTrader5. Sem isso, um retcode novo/ausente vira AttributeError e
+        # derruba a resposta da ordem com HTTP 500.
+        names = {
+            "TRADE_RETCODE_REQUOTE": "requote",
+            "TRADE_RETCODE_REJECT": "reject",
+            "TRADE_RETCODE_CANCEL": "cancel",
+            "TRADE_RETCODE_PLACED": "placed",
+            "TRADE_RETCODE_DONE": "done",
+            "TRADE_RETCODE_DONE_PARTIAL": "done_partial",
+            "TRADE_RETCODE_ERROR": "error",
+            "TRADE_RETCODE_TIMEOUT": "timeout",
+            "TRADE_RETCODE_INVALID": "invalid",
+            "TRADE_RETCODE_INVALID_VOLUME": "invalid_volume",
+            "TRADE_RETCODE_INVALID_PRICE": "invalid_price",
+            "TRADE_RETCODE_INVALID_STOPS": "invalid_stops",
+            "TRADE_RETCODE_TRADE_DISABLED": "trade_disabled",
+            "TRADE_RETCODE_MARKET_CLOSED": "market_closed",
+            "TRADE_RETCODE_NO_MONEY": "no_money",
+            "TRADE_RETCODE_PRICE_CHANGED": "price_changed",
+            "TRADE_RETCODE_PRICE_OFF": "price_off",
+            "TRADE_RETCODE_INVALID_EXPIRATION": "invalid_expiration",
+            "TRADE_RETCODE_ORDER_CHANGED": "order_changed",
+            "TRADE_RETCODE_TOO_MANY_REQUESTS": "too_many_requests",
+            "TRADE_RETCODE_NO_CHANGES": "no_changes",
+            "TRADE_RETCODE_SERVER_DISABLES_AT": "server_disables_at",
+            "TRADE_RETCODE_CLIENT_DISABLES_AT": "client_disables_at",
+            "TRADE_RETCODE_LOCKED": "locked",
+            "TRADE_RETCODE_FROZEN": "frozen",
+            "TRADE_RETCODE_INVALID_FILL": "invalid_fill",
+            "TRADE_RETCODE_CONNECTION": "connection",
+            "TRADE_RETCODE_ONLY_REAL": "only_real",
+            "TRADE_RETCODE_LIMIT_ORDERS": "limit_orders",
+            "TRADE_RETCODE_LIMIT_VOLUME": "limit_volume",
+            "TRADE_RETCODE_INVALID_ORDER": "invalid_order",
+            "TRADE_RETCODE_POSITION_CLOSED": "position_closed",
+            "TRADE_RETCODE_INVALID_CLOSE_VOLUME": "invalid_close_volume",
+            "TRADE_RETCODE_CLOSE_ORDER_EXIST": "close_order_exist",
+            "TRADE_RETCODE_LIMIT_POSITIONS": "limit_positions",
+            "TRADE_RETCODE_REINITIALIZE": "reinitialize",
+            "TRADE_RETCODE_HEDGE_PROHIBITED": "hedge_prohibited",
+        }
         mapping = {
-            mt5.TRADE_RETCODE_REQUOTE: "requote",
-            mt5.TRADE_RETCODE_REJECT: "reject",
-            mt5.TRADE_RETCODE_CANCEL: "cancel",
-            mt5.TRADE_RETCODE_PLACED: "placed",
-            mt5.TRADE_RETCODE_DONE: "done",
-            mt5.TRADE_RETCODE_DONE_PARTIAL: "done_partial",
-            mt5.TRADE_RETCODE_ERROR: "error",
-            mt5.TRADE_RETCODE_TIMEOUT: "timeout",
-            mt5.TRADE_RETCODE_INVALID: "invalid",
-            mt5.TRADE_RETCODE_INVALID_VOLUME: "invalid_volume",
-            mt5.TRADE_RETCODE_INVALID_PRICE: "invalid_price",
-            mt5.TRADE_RETCODE_INVALID_STOPS: "invalid_stops",
-            mt5.TRADE_RETCODE_TRADE_DISABLED: "trade_disabled",
-            mt5.TRADE_RETCODE_MARKET_CLOSED: "market_closed",
-            mt5.TRADE_RETCODE_NO_MONEY: "no_money",
-            mt5.TRADE_RETCODE_PRICE_CHANGED: "price_changed",
-            mt5.TRADE_RETCODE_PRICE_OFF: "price_off",
-            mt5.TRADE_RETCODE_INVALID_EXPIRATION: "invalid_expiration",
-            mt5.TRADE_RETCODE_ORDER_CHANGED: "order_changed",
-            mt5.TRADE_RETCODE_TOO_MANY_REQUESTS: "too_many_requests",
-            mt5.TRADE_RETCODE_NO_CHANGES: "no_changes",
-            mt5.TRADE_RETCODE_SERVER_DISABLES_AT: "server_disables_at",
-            mt5.TRADE_RETCODE_CLIENT_DISABLES_AT: "client_disables_at",
-            mt5.TRADE_RETCODE_LOCKED: "locked",
-            mt5.TRADE_RETCODE_FROZEN: "frozen",
-            mt5.TRADE_RETCODE_INVALID_FILL: "invalid_fill",
-            mt5.TRADE_RETCODE_CONNECTION: "connection",
-            mt5.TRADE_RETCODE_ONLY_REAL: "only_real",
-            mt5.TRADE_RETCODE_LIMIT_ORDERS: "limit_orders",
-            mt5.TRADE_RETCODE_LIMIT_VOLUME: "limit_volume",
-            mt5.TRADE_RETCODE_INVALID_ORDER: "invalid_order",
-            mt5.TRADE_RETCODE_POSITION_CLOSED: "position_closed",
-            mt5.TRADE_RETCODE_INVALID_CLOSE_VOLUME: "invalid_close_volume",
-            mt5.TRADE_RETCODE_CLOSE_ORDER_EXIST: "close_order_exist",
-            mt5.TRADE_RETCODE_LIMIT_POSITIONS: "limit_positions",
-            mt5.TRADE_RETCODE_REINITIALIZE: "reinitialize",
-            mt5.TRADE_RETCODE_HEDGE_PROHIBITED: "hedge_prohibited",
+            getattr(mt5, name): label
+            for name, label in names.items()
+            if hasattr(mt5, name)
         }
         return mapping.get(retcode, f"unknown_{retcode}")

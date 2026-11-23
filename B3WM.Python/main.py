@@ -53,49 +53,76 @@ async def health():
     return {"status": "ok", "mt5_connected": executor.is_connected}
 
 
+def _order_failure(exc: Exception) -> OrderResult:
+    """Converte uma exceção do bridge em OrderResult (HTTP 200).
+
+    O Flutter trata status != 200 como "falha ao enviar" sem motivo. Devolver
+    200 com `success=False` mantém a mensagem real visível na UI.
+    """
+    traceback.print_exc()
+    return OrderResult(
+        success=False,
+        retcode=-1,
+        retcode_name="bridge_exception",
+        message=f"Erro no bridge MT5: {exc}",
+    )
+
+
 @app.post("/api/order/market", response_model=OrderResult)
 async def place_market_order(request: MarketOrderRequest):
-    result = executor.market_order(request)
-    return result
+    try:
+        return executor.market_order(request)
+    except Exception as exc:
+        return _order_failure(exc)
 
 
 @app.post("/api/order/limit", response_model=OrderResult)
 async def place_limit_order(request: LimitOrderRequest):
-    result = executor.limit_order(request)
-    return result
+    try:
+        return executor.limit_order(request)
+    except Exception as exc:
+        return _order_failure(exc)
 
 
 @app.post("/api/order/close", response_model=OrderResult)
 async def close_position(request: CloseOrderRequest):
-    result = executor.close_position(request.position_ticket)
-    return result
+    try:
+        return executor.close_position(request.position_ticket)
+    except Exception as exc:
+        return _order_failure(exc)
 
 
 @app.post("/api/order/cancel", response_model=OrderResult)
 async def cancel_order(request: CloseOrderRequest):
-    result = executor.cancel_order(request.position_ticket)
-    return result
+    try:
+        return executor.cancel_order(request.position_ticket)
+    except Exception as exc:
+        return _order_failure(exc)
 
 
 @app.post("/api/order/modify", response_model=OrderResult)
 async def modify_position(request: ModifyOrderRequest):
-    result = executor.modify_position(
-        position_ticket=request.position_ticket,
-        sl=request.sl,
-        tp=request.tp,
-    )
-    return result
+    try:
+        return executor.modify_position(
+            position_ticket=request.position_ticket,
+            sl=request.sl,
+            tp=request.tp,
+        )
+    except Exception as exc:
+        return _order_failure(exc)
 
 
 @app.post("/api/order/modify-pending", response_model=OrderResult)
 async def modify_pending_order(request: ModifyPendingOrderRequest):
-    result = executor.modify_pending_order(
-        order_ticket=request.order_ticket,
-        price=request.price,
-        sl=request.sl,
-        tp=request.tp,
-    )
-    return result
+    try:
+        return executor.modify_pending_order(
+            order_ticket=request.order_ticket,
+            price=request.price,
+            sl=request.sl,
+            tp=request.tp,
+        )
+    except Exception as exc:
+        return _order_failure(exc)
 
 
 @app.get("/api/orderbook/{symbol}", response_model=OrderBook)
