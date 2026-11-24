@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:b3wm_flutter/models/trade_models.dart';
 import 'package:b3wm_flutter/ui/widgets/chart/chart_data.dart';
 import 'package:b3wm_flutter/ui/widgets/chart/measure_ruler.dart';
 
@@ -182,6 +183,45 @@ void main() {
 
     test('preço WDOFUT (1 casa) usa vírgula decimal', () {
       expect(formatRulerPrice(5445.5, 'WDOFUT'), '5.445,5');
+    });
+
+    test('pontos de trading com sinal e distância', () {
+      expect(formatTradePoints(50, 'WINFUT', showSign: true), '+50 pts');
+      expect(formatTradePoints(-20, 'WINFUT', showSign: true), '-20 pts');
+      expect(formatTradePoints(0, 'WINFUT', showSign: true), '0 pts');
+      expect(formatTradePoints(0.5, 'WDOFUT'), '0,5 pts');
+      expect(formatTradePoints(0.5, 'WDOFUT', showSign: true), '+0,5 pts');
+    });
+
+    test('pontos da posição e distância da ordem', () {
+      final buy = PositionInfo(
+        ticket: 1,
+        symbol: 'WINFUT',
+        type: 'buy',
+        volume: 1,
+        priceOpen: 100000,
+      );
+      final sell = PositionInfo(
+        ticket: 2,
+        symbol: 'WINFUT',
+        type: 'sell',
+        volume: 1,
+        priceOpen: 100000,
+      );
+      expect(buy.pointsAt(100050), 50);
+      expect(buy.pointsAt(99950), -50);
+      expect(sell.pointsAt(99950), 50);
+      expect(sell.pointsAt(100050), -50);
+      expect(buy.pointsAt(0), 0);
+
+      final order = OrderInfo(
+        ticket: 3,
+        symbol: 'WINFUT',
+        type: 'buy_limit',
+        volume: 1,
+        priceOpen: 99900,
+      );
+      expect(order.distancePointsAt(100000), 100);
     });
   });
 }

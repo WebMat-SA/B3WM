@@ -41,6 +41,7 @@ void main() async {
             signalRService: signalRService,
             preferencesService: preferencesService,
             audioService: audioService,
+            tradingApiService: tradingApiService,
           ),
         ),
       ],
@@ -142,8 +143,7 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                     : LayoutBuilder(
                         builder: (context, constraints) {
                           final totalH = constraints.maxHeight;
-                          final panelH = (totalH *
-                                  state.dailyPanelFraction)
+                          final panelH = (totalH * state.dailyPanelFraction)
                               .clamp(220.0, totalH - 200.0);
                           return Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -162,11 +162,10 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                         showHistoryButton: true,
                                         isHistoryLoading:
                                             state.isLoadingHistory,
-                                        hasMoreHistory:
-                                            state.hasMoreHistory,
+                                        hasMoreHistory: state.hasMoreHistory,
                                         onLoadHistory: () async {
-                                          final ok = await state
-                                              .loadPreviousHistory();
+                                          final ok =
+                                              await state.loadPreviousHistory();
                                           if (!context.mounted) return;
                                           if (!ok) {
                                             ScaffoldMessenger.of(context)
@@ -187,15 +186,15 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                       _DailyDivider(
                                         // A divisória é a borda superior do painel:
                                         // arrastar p/ baixo diminui, p/ cima aumenta.
-                                        onDelta: (dy) => state
-                                            .previewDailyPanelFraction(
+                                        onDelta: (dy) =>
+                                            state.previewDailyPanelFraction(
                                           state.dailyPanelFraction -
                                               dy / totalH,
                                         ),
                                         onDragEnd: () =>
                                             state.commitDailyPanelFraction(),
-                                        onCollapse: () => state
-                                            .setDailyPanelVisible(false),
+                                        onCollapse: () =>
+                                            state.setDailyPanelVisible(false),
                                       ),
                                       SizedBox(
                                         height: panelH,
@@ -203,8 +202,8 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                       ),
                                     ] else
                                       _ExpandDailyBar(
-                                        onExpand: () => state
-                                            .setDailyPanelVisible(true),
+                                        onExpand: () =>
+                                            state.setDailyPanelVisible(true),
                                       ),
                                   ],
                                 ),
@@ -235,8 +234,8 @@ class _NewMapFlowPageState extends State<NewMapFlowPage> {
                                 },
                                 child: state.tradingPanelVisible
                                     ? TradingDrawer(
-                                        key: ValueKey(
-                                            'trading_${state.symbol}'),
+                                        key:
+                                            ValueKey('trading_${state.symbol}'),
                                       )
                                     : const SizedBox.shrink(
                                         key: ValueKey('trading_hidden')),
@@ -282,8 +281,8 @@ class _DailyDivider extends StatelessWidget {
           child: Row(
             children: [
               const Expanded(
-                child: Divider(
-                    color: Color(0xFF3d3d3d), thickness: 1, height: 1),
+                child:
+                    Divider(color: Color(0xFF3d3d3d), thickness: 1, height: 1),
               ),
               IconButton(
                 icon: const Icon(Icons.keyboard_arrow_down,
@@ -298,8 +297,8 @@ class _DailyDivider extends StatelessWidget {
                   style: TextStyle(fontSize: 11, color: Colors.grey)),
               const SizedBox(width: 4),
               const Expanded(
-                child: Divider(
-                    color: Color(0xFF3d3d3d), thickness: 1, height: 1),
+                child:
+                    Divider(color: Color(0xFF3d3d3d), thickness: 1, height: 1),
               ),
             ],
           ),
@@ -326,8 +325,7 @@ class _ExpandDailyBar extends StatelessWidget {
         child: Row(
           children: [
             const Expanded(
-              child:
-                  Divider(color: Color(0xFF3d3d3d), thickness: 1, height: 1),
+              child: Divider(color: Color(0xFF3d3d3d), thickness: 1, height: 1),
             ),
             IconButton(
               icon: const Icon(Icons.keyboard_arrow_up,
@@ -342,8 +340,7 @@ class _ExpandDailyBar extends StatelessWidget {
                 style: TextStyle(fontSize: 11, color: Colors.grey)),
             const SizedBox(width: 4),
             const Expanded(
-              child:
-                  Divider(color: Color(0xFF3d3d3d), thickness: 1, height: 1),
+              child: Divider(color: Color(0xFF3d3d3d), thickness: 1, height: 1),
             ),
           ],
         ),

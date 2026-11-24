@@ -245,27 +245,6 @@ void main() {
       expect(missing.tradingPositionsExpanded, isFalse);
       expect(missing.tradingHistoryExpanded, isFalse);
     });
-
-    test('order book flags round-trip e defaults', () {
-      final defaults = SymbolConfig.withDefaults('WINFUT');
-      expect(defaults.tradingTabIndex, 0);
-      expect(defaults.orderBookConfirmOrders, isTrue);
-      expect(defaults.orderBookDepth, 10);
-
-      final cfg = SymbolConfig.withDefaults('WINFUT')
-        ..tradingTabIndex = 1
-        ..orderBookConfirmOrders = false
-        ..orderBookDepth = 20;
-      final restored = SymbolConfig.fromJson(cfg.toJson(), symbol: 'WINFUT');
-      expect(restored.tradingTabIndex, 1);
-      expect(restored.orderBookConfirmOrders, isFalse);
-      expect(restored.orderBookDepth, 20);
-
-      final missing = SymbolConfig.fromJson({'timeFrame': 2}, symbol: 'WINFUT');
-      expect(missing.tradingTabIndex, 0);
-      expect(missing.orderBookConfirmOrders, isTrue);
-      expect(missing.orderBookDepth, 10);
-    });
   });
 
   group('StateService persistence', () {

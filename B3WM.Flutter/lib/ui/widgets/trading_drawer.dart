@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/trade_models.dart';
 import '../../services/trading_service.dart';
 import '../../services/state_service.dart';
-import 'order_book_panel.dart';
+import 'chart/measure_ruler.dart';
 
 class TradingDrawer extends StatefulWidget {
   const TradingDrawer({super.key});
@@ -12,18 +12,12 @@ class TradingDrawer extends StatefulWidget {
   State<TradingDrawer> createState() => _TradingDrawerState();
 }
 
-class _TradingDrawerState extends State<TradingDrawer>
-    with SingleTickerProviderStateMixin {
+class _TradingDrawerState extends State<TradingDrawer> {
   AccountInfo? _account;
-  List<PositionInfo> _positions = [];
-  List<OrderInfo> _orders = [];
-  List<HistoryDeal> _history = [];
-  double _historyTotal = 0;
   bool _loadingAccount = false;
   bool _loadingPositions = false;
   bool _loadingOrders = false;
   bool _loadingHistory = false;
-  bool _historyTodayOnly = true;
   bool _sendingOrder = false;
   final Set<int> _closingTickets = {};
   final Set<int> _cancellingTickets = {};
@@ -32,10 +26,6 @@ class _TradingDrawerState extends State<TradingDrawer>
   final _volumeController = TextEditingController(text: '1');
   final _volumeFocusNode = FocusNode();
   OrderResult? _lastResult;
-  bool _autoRefreshRunning = true;
-
-  late final TabController _tabController;
-  int _tabIndex = 0;
 
   @override
   void initState() {
@@ -46,38 +36,14 @@ class _TradingDrawerState extends State<TradingDrawer>
     _volumeFocusNode.addListener(() {
       if (!_volumeFocusNode.hasFocus) _commitVolume();
     });
-    _tabIndex = context.read<StateService>().tradingTabIndex.clamp(0, 1);
-    _tabController = TabController(
-      length: 2,
-      vsync: this,
-      initialIndex: _tabIndex,
-    );
-    _tabController.addListener(_onTabChanged);
-    _startAutoRefresh();
-    _refreshHistory();
-  }
-
-  void _onTabChanged() {
-    if (_tabController.index == _tabIndex) return;
-    setState(() => _tabIndex = _tabController.index);
-    context.read<StateService>().setTradingTabIndex(_tabIndex);
+    _refreshAll();
   }
 
   @override
   void dispose() {
-    _autoRefreshRunning = false;
-    _tabController.removeListener(_onTabChanged);
-    _tabController.dispose();
     _volumeController.dispose();
     _volumeFocusNode.dispose();
     super.dispose();
-  }
-
-  Future<void> _startAutoRefresh() async {
-    while (mounted && _autoRefreshRunning) {
-      await Future.wait([_refreshPositions(), _refreshOrders()]);
-      if (mounted) await Future.delayed(const Duration(seconds: 2));
-    }
   }
 
   void _commitVolume() {
@@ -95,9 +61,11 @@ class _TradingDrawerState extends State<TradingDrawer>
   }
 
   Future<void> _refreshAll() async {
-    await _refreshPositions();
-    await _refreshOrders();
-    await _refreshHistory();
+    await Future.wait([
+      _refreshPositions(),
+      _refreshOrders(),
+      _refreshHistory(),
+    ]);
     if (mounted) setState(() {});
   }
 
@@ -117,21 +85,8 @@ class _TradingDrawerState extends State<TradingDrawer>
   Future<void> _refreshHistory() async {
     try {
       _loadingHistory = true;
-      setState(() {});
-      final api = context.read<TradingApiService>();
-      final state = context.read<StateService>();
-      final today = DateTime.now();
-      final fromDate = _historyTodayOnly
-          ? '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}'
-          : '';
-      _history = (await api.getHistory(state.symbol, fromDate: fromDate))
-          .reversed
-          .toList();
-      _historyTotal = _history.fold(0.0, (sum, d) => sum + d.profit);
-      if (mounted) context.read<StateService>().updateHistory(_history);
-    } catch (_) {
-      _history = [];
-      _historyTotal = 0;
+      if (mounted) setState(() {});
+      await context.read<StateService>().refreshTradingHistory();
     } finally {
       _loadingHistory = false;
       if (mounted) setState(() {});
@@ -141,12 +96,7 @@ class _TradingDrawerState extends State<TradingDrawer>
   Future<void> _refreshPositions() async {
     try {
       _loadingPositions = true;
-      final api = context.read<TradingApiService>();
-      final fresh = await api.getPositions();
-      _positions = fresh;
-      if (mounted) context.read<StateService>().updatePositions(_positions);
-    } catch (_) {
-      // keep old list on error
+      await context.read<StateService>().refreshTradingData();
     } finally {
       _loadingPositions = false;
     }
@@ -155,16 +105,11 @@ class _TradingDrawerState extends State<TradingDrawer>
   Future<void> _refreshOrders() async {
     try {
       _loadingOrders = true;
-      final api = context.read<TradingApiService>();
-      final fresh = await api.getOpenOrders();
-      _orders = fresh;
-      if (mounted) context.read<StateService>().updateOrders(_orders);
-    } catch (_) {
-      // keep old list on error
+      await context.read<StateService>().refreshTradingData();
     } finally {
       _loadingOrders = false;
+      if (mounted) setState(() {});
     }
-    if (mounted) setState(() {});
   }
 
   Future<void> _cancelOrder(int ticket) async {
@@ -267,7 +212,8 @@ class _TradingDrawerState extends State<TradingDrawer>
 
     try {
       final api = context.read<TradingApiService>();
-      for (final pos in _positions) {
+      final positions = context.read<StateService>().positions;
+      for (final pos in positions) {
         final result = await api.closePosition(pos.ticket);
         if (result != null && mounted && !result.success) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -294,6 +240,8 @@ class _TradingDrawerState extends State<TradingDrawer>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<StateService>();
+    final positions = state.positions;
+    final orders = state.orders;
     return Container(
       width: 320,
       constraints: BoxConstraints(
@@ -310,413 +258,394 @@ class _TradingDrawerState extends State<TradingDrawer>
           tileColor: const Color(0xFF1e1e1e),
           child: Column(
             children: [
-              _buildTabs(),
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
+                child: Column(
                   children: [
-                    OrderBookPanel(
-                      active: _tabIndex == 0,
-                      onOrderPlaced: _refreshAll,
+                    // // Header
+                    // _section(
+                    //   child: Row(
+                    //     children: [
+                    //       const Icon(Icons.travel_explore, size: 18),
+                    //       const SizedBox(width: 8),
+                    //       const Expanded(
+                    //         child: Text('Trading',
+                    //             style: TextStyle(
+                    //                 fontSize: 16, fontWeight: FontWeight.bold)),
+                    //       ),
+                    //       IconButton(
+                    //         icon: const Icon(Icons.refresh, size: 18),
+                    //         onPressed: _refreshAll,
+                    //       ),
+                    //     ],
+                    //   ),
+                    // ),
+
+                    // Configurações (visibilidade dos overlays de trading no gráfico)
+                    _section(
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                          unselectedWidgetColor: Colors.grey,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                          childrenPadding: const EdgeInsets.only(top: 4),
+                          title: const Row(children: [
+                            Icon(Icons.settings, size: 16),
+                            SizedBox(width: 4),
+                            Text('Configurações',
+                                style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600)),
+                          ]),
+                          initiallyExpanded: state.tradingConfigExpanded,
+                          onExpansionChanged: (expanded) {
+                            context
+                                .read<StateService>()
+                                .setTradingConfigExpanded(expanded);
+                          },
+                          children: [
+                            _configToggle(
+                              'Mostrar Histórico de Trades',
+                              state.tradingHistoryVisible,
+                              (v) => context
+                                  .read<StateService>()
+                                  .setTradingHistoryVisible(v),
+                            ),
+                            _configToggle(
+                              'Mostrar Posições',
+                              state.positionVisible,
+                              (v) => context
+                                  .read<StateService>()
+                                  .setPositionVisible(v),
+                            ),
+                            _configToggle(
+                              'Mostrar Ordens em Aberto',
+                              state.openOrdersVisible,
+                              (v) => context
+                                  .read<StateService>()
+                                  .setOpenOrdersVisible(v),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    Column(
-                      children: [
-                        // // Header
-                        // _section(
-                        //   child: Row(
-                        //     children: [
-                        //       const Icon(Icons.travel_explore, size: 18),
-                        //       const SizedBox(width: 8),
-                        //       const Expanded(
-                        //         child: Text('Trading',
-                        //             style: TextStyle(
-                        //                 fontSize: 16, fontWeight: FontWeight.bold)),
-                        //       ),
-                        //       IconButton(
-                        //         icon: const Icon(Icons.refresh, size: 18),
-                        //         onPressed: _refreshAll,
-                        //       ),
-                        //     ],
-                        //   ),
-                        // ),
 
-                        // Configurações (visibilidade dos overlays de trading no gráfico)
-                        _section(
-                          child: Theme(
-                            data: Theme.of(context).copyWith(
-                              dividerColor: Colors.transparent,
-                              unselectedWidgetColor: Colors.grey,
-                            ),
-                            child: ExpansionTile(
-                              tilePadding:
-                                  const EdgeInsets.symmetric(vertical: 0),
-                              childrenPadding: const EdgeInsets.only(top: 4),
-                              title: const Row(children: [
-                                Icon(Icons.settings, size: 16),
-                                SizedBox(width: 4),
-                                Text('Configurações',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600)),
-                              ]),
-                              initiallyExpanded: state.tradingConfigExpanded,
-                              onExpansionChanged: (expanded) {
-                                context
-                                    .read<StateService>()
-                                    .setTradingConfigExpanded(expanded);
-                              },
-                              children: [
-                                _configToggle(
-                                  'Mostrar Histórico de Trades',
-                                  state.tradingHistoryVisible,
-                                  (v) => context
-                                      .read<StateService>()
-                                      .setTradingHistoryVisible(v),
-                                ),
-                                _configToggle(
-                                  'Mostrar Posições',
-                                  state.positionVisible,
-                                  (v) => context
-                                      .read<StateService>()
-                                      .setPositionVisible(v),
-                                ),
-                                _configToggle(
-                                  'Mostrar Ordens em Aberto',
-                                  state.openOrdersVisible,
-                                  (v) => context
-                                      .read<StateService>()
-                                      .setOpenOrdersVisible(v),
-                                ),
-                                _configToggle(
-                                  'Confirmar ordens do book',
-                                  state.orderBookConfirmOrders,
-                                  (v) => context
-                                      .read<StateService>()
-                                      .setOrderBookConfirmOrders(v),
-                                ),
-                              ],
-                            ),
-                          ),
+                    // Account Info
+                    _section(
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                          unselectedWidgetColor: Colors.grey,
                         ),
-
-                        // Account Info
-                        _section(
-                          child: Theme(
-                            data: Theme.of(context).copyWith(
-                              dividerColor: Colors.transparent,
-                              unselectedWidgetColor: Colors.grey,
-                            ),
-                            child: ExpansionTile(
-                              tilePadding:
-                                  const EdgeInsets.symmetric(vertical: 0),
-                              childrenPadding: const EdgeInsets.only(top: 4),
-                              title: const Row(children: [
-                                Icon(Icons.account_balance_wallet, size: 16),
-                                SizedBox(width: 4),
-                                Text('Account',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600)),
-                              ]),
-                              initiallyExpanded: state.tradingAccountExpanded,
-                              onExpansionChanged: (expanded) {
-                                context
-                                    .read<StateService>()
-                                    .setTradingAccountExpanded(expanded);
-                                if (expanded) _refreshAccount();
-                              },
-                              children: [
-                                if (_account != null) ...[
-                                  _infoRow('Login', '${_account!.login}'),
-                                  _infoRow('Balance',
-                                      _account!.balance.toStringAsFixed(2)),
-                                  _infoRow(
-                                    'Equity',
-                                    _account!.equity.toStringAsFixed(2),
-                                    color: _account!.equity >= _account!.balance
-                                        ? Colors.green
-                                        : Colors.red,
-                                  ),
-                                  _infoRow('Margin',
-                                      _account!.margin.toStringAsFixed(2)),
-                                  _infoRow('Free',
-                                      _account!.marginFree.toStringAsFixed(2)),
-                                ] else
-                                  Padding(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 4),
-                                    child: _loadingAccount
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2))
-                                        : const Text('Tap to load',
-                                            style: TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 12)),
-                                  ),
-                              ],
-                            ),
-                          ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                          childrenPadding: const EdgeInsets.only(top: 4),
+                          title: const Row(children: [
+                            Icon(Icons.account_balance_wallet, size: 16),
+                            SizedBox(width: 4),
+                            Text('Account',
+                                style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600)),
+                          ]),
+                          initiallyExpanded: state.tradingAccountExpanded,
+                          onExpansionChanged: (expanded) {
+                            context
+                                .read<StateService>()
+                                .setTradingAccountExpanded(expanded);
+                            if (expanded) _refreshAccount();
+                          },
+                          children: [
+                            if (_account != null) ...[
+                              _infoRow('Login', '${_account!.login}'),
+                              _infoRow('Balance',
+                                  _account!.balance.toStringAsFixed(2)),
+                              _infoRow(
+                                'Equity',
+                                _account!.equity.toStringAsFixed(2),
+                                color: _account!.equity >= _account!.balance
+                                    ? Colors.green
+                                    : Colors.red,
+                              ),
+                              _infoRow('Margin',
+                                  _account!.margin.toStringAsFixed(2)),
+                              _infoRow('Free',
+                                  _account!.marginFree.toStringAsFixed(2)),
+                            ] else
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 4),
+                                child: _loadingAccount
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Text('Tap to load',
+                                        style: TextStyle(
+                                            color: Colors.grey, fontSize: 12)),
+                              ),
+                          ],
                         ),
+                      ),
+                    ),
 
-                        // Open Orders
-                        _section(
-                          child: Theme(
-                            data: Theme.of(context).copyWith(
-                              dividerColor: Colors.transparent,
-                              unselectedWidgetColor: Colors.grey,
-                            ),
-                            child: ExpansionTile(
-                              tilePadding:
-                                  const EdgeInsets.symmetric(vertical: 0),
-                              childrenPadding: const EdgeInsets.only(top: 4),
-                              title: Row(children: [
-                                const Icon(Icons.pending, size: 16),
-                                const SizedBox(width: 4),
-                                Text(
-                                    _orders.isEmpty
-                                        ? 'Open Orders'
-                                        : 'Open Orders (${_orders.length})',
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600)),
-                              ]),
-                              initiallyExpanded: state.tradingOrdersExpanded,
-                              onExpansionChanged: (expanded) {
-                                context
-                                    .read<StateService>()
-                                    .setTradingOrdersExpanded(expanded);
-                                if (expanded) _refreshOrders();
-                              },
-                              children: [
-                                _orders.isEmpty
-                                    ? Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 20),
-                                        child: Center(
-                                          child: Text(
-                                            _loadingOrders
-                                                ? 'Loading...'
-                                                : 'No open orders',
-                                            style: const TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 12),
-                                          ),
-                                        ),
-                                      )
-                                    : ListView.separated(
-                                        shrinkWrap: true,
-                                        itemCount: _orders.length,
-                                        separatorBuilder: (_, __) =>
-                                            const Divider(
-                                                height: 1,
-                                                color: Color(0xFF3d3d3d)),
-                                        itemBuilder: (context, index) {
-                                          final order = _orders[index];
-                                          final isBuy =
-                                              order.type.startsWith('buy');
-                                          return ListTile(
-                                            dense: true,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 8, vertical: 0),
-                                            leading: Chip(
-                                              label: Text(isBuy ? 'B' : 'S',
-                                                  style: const TextStyle(
-                                                      fontSize: 10,
-                                                      color: Colors.white)),
-                                              backgroundColor: isBuy
-                                                  ? Colors.green
-                                                  : Colors.red,
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              padding: EdgeInsets.zero,
-                                            ),
-                                            title: Text(order.symbol,
-                                                style: const TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                            subtitle: Text(
-                                              '${order.volume.toStringAsFixed(2)} @ ${order.priceOpen.toStringAsFixed(2)}',
-                                              style:
-                                                  const TextStyle(fontSize: 11),
-                                            ),
-                                            trailing: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  _formatOrderType(order.type),
-                                                  style: const TextStyle(
-                                                    fontSize: 10,
-                                                    color: Colors.grey,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                _cancellingTickets
-                                                        .contains(order.ticket)
-                                                    ? const SizedBox(
-                                                        width: 14,
-                                                        height: 14,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                                strokeWidth: 2))
-                                                    : IconButton(
-                                                        icon: const Icon(
-                                                            Icons.close,
-                                                            size: 14,
-                                                            color: Colors.red),
-                                                        onPressed: () =>
-                                                            _cancelOrder(
-                                                                order.ticket),
-                                                      ),
-                                              ],
-                                            ),
-                                          );
-                                        },
+                    // Open Orders
+                    _section(
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                          unselectedWidgetColor: Colors.grey,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                          childrenPadding: const EdgeInsets.only(top: 4),
+                          title: Row(children: [
+                            const Icon(Icons.pending, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                                orders.isEmpty
+                                    ? 'Open Orders'
+                                    : 'Open Orders (${orders.length})',
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600)),
+                          ]),
+                          initiallyExpanded: state.tradingOrdersExpanded,
+                          onExpansionChanged: (expanded) {
+                            context
+                                .read<StateService>()
+                                .setTradingOrdersExpanded(expanded);
+                            if (expanded) _refreshOrders();
+                          },
+                          children: [
+                            orders.isEmpty
+                                ? Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 20),
+                                    child: Center(
+                                      child: Text(
+                                        _loadingOrders
+                                            ? 'Loading...'
+                                            : 'No open orders',
+                                        style: const TextStyle(
+                                            color: Colors.grey, fontSize: 12),
                                       ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        // Positions
-                        _section(
-                          child: Theme(
-                            data: Theme.of(context).copyWith(
-                              dividerColor: Colors.transparent,
-                              unselectedWidgetColor: Colors.grey,
-                            ),
-                            child: ExpansionTile(
-                              tilePadding:
-                                  const EdgeInsets.symmetric(vertical: 0),
-                              childrenPadding: const EdgeInsets.only(top: 4),
-                              title: Row(children: [
-                                const Icon(Icons.assignment, size: 16),
-                                const SizedBox(width: 4),
-                                Text(
-                                    _positions.isEmpty
-                                        ? 'Positions'
-                                        : 'Positions (${_positions.length})',
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600)),
-                              ]),
-                              initiallyExpanded: state.tradingPositionsExpanded,
-                              onExpansionChanged: (expanded) {
-                                context
-                                    .read<StateService>()
-                                    .setTradingPositionsExpanded(expanded);
-                                if (expanded) _refreshPositions();
-                              },
-                              children: [
-                                _positions.isEmpty
-                                    ? Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 20),
-                                        child: Center(
-                                          child: Text(
-                                            _loadingPositions
-                                                ? 'Loading...'
-                                                : 'No open positions',
-                                            style: const TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 12),
-                                          ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    shrinkWrap: true,
+                                    itemCount: orders.length,
+                                    separatorBuilder: (_, __) => const Divider(
+                                        height: 1, color: Color(0xFF3d3d3d)),
+                                    itemBuilder: (context, index) {
+                                      final order = orders[index];
+                                      final isBuy =
+                                          order.type.startsWith('buy');
+                                      return ListTile(
+                                        dense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 0),
+                                        leading: Chip(
+                                          label: Text(isBuy ? 'B' : 'S',
+                                              style: const TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.white)),
+                                          backgroundColor:
+                                              isBuy ? Colors.green : Colors.red,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
                                         ),
-                                      )
-                                    : ListView.separated(
-                                        shrinkWrap: true,
-                                        itemCount: _positions.length,
-                                        separatorBuilder: (_, __) =>
-                                            const Divider(
-                                                height: 1,
-                                                color: Color(0xFF3d3d3d)),
-                                        itemBuilder: (context, index) {
-                                          final pos = _positions[index];
-                                          final isProfitable = pos.profit >= 0;
-                                          final isBuy = pos.type == 'buy';
-                                          return ListTile(
-                                            dense: true,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 8, vertical: 0),
-                                            leading: Chip(
-                                              label: Text(isBuy ? 'B' : 'S',
-                                                  style: const TextStyle(
-                                                      fontSize: 10,
-                                                      color: Colors.white)),
-                                              backgroundColor: isBuy
-                                                  ? Colors.green
-                                                  : Colors.red,
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              padding: EdgeInsets.zero,
+                                        title: Text(order.symbol,
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold)),
+                                        subtitle: Text(
+                                          '${order.volume.toStringAsFixed(2)} @ ${order.priceOpen.toStringAsFixed(2)}',
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              _formatOrderType(order.type),
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey,
+                                              ),
                                             ),
-                                            title: Text(pos.symbol,
-                                                style: const TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                            subtitle: Text(
-                                              '${pos.volume.toStringAsFixed(2)} @ ${pos.priceOpen.toStringAsFixed(2)}',
-                                              style:
-                                                  const TextStyle(fontSize: 11),
-                                            ),
-                                            trailing: Row(
+                                            const SizedBox(width: 4),
+                                            _cancellingTickets
+                                                    .contains(order.ticket)
+                                                ? const SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            strokeWidth: 2))
+                                                : IconButton(
+                                                    icon: const Icon(
+                                                        Icons.close,
+                                                        size: 14,
+                                                        color: Colors.red),
+                                                    onPressed: () =>
+                                                        _cancelOrder(
+                                                            order.ticket),
+                                                  ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Positions
+                    _section(
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                          unselectedWidgetColor: Colors.grey,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(vertical: 0),
+                          childrenPadding: const EdgeInsets.only(top: 4),
+                          title: Row(children: [
+                            const Icon(Icons.assignment, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                                positions.isEmpty
+                                    ? 'Positions'
+                                    : 'Positions (${positions.length})',
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600)),
+                          ]),
+                          initiallyExpanded: state.tradingPositionsExpanded,
+                          onExpansionChanged: (expanded) {
+                            context
+                                .read<StateService>()
+                                .setTradingPositionsExpanded(expanded);
+                            if (expanded) _refreshPositions();
+                          },
+                          children: [
+                            positions.isEmpty
+                                ? Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 20),
+                                    child: Center(
+                                      child: Text(
+                                        _loadingPositions
+                                            ? 'Loading...'
+                                            : 'No open positions',
+                                        style: const TextStyle(
+                                            color: Colors.grey, fontSize: 12),
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    shrinkWrap: true,
+                                    itemCount: positions.length,
+                                    separatorBuilder: (_, __) => const Divider(
+                                        height: 1, color: Color(0xFF3d3d3d)),
+                                    itemBuilder: (context, index) {
+                                      final pos = positions[index];
+                                      final isProfitable = pos.profit >= 0;
+                                      final isBuy = pos.type == 'buy';
+                                      final last = pos.priceCurrent;
+                                      final points =
+                                          last > 0 ? pos.pointsAt(last) : 0.0;
+                                      final pointsColor = points >= 0
+                                          ? Colors.green
+                                          : Colors.red;
+                                      return ListTile(
+                                        dense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 0),
+                                        leading: Chip(
+                                          label: Text(isBuy ? 'B' : 'S',
+                                              style: const TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.white)),
+                                          backgroundColor:
+                                              isBuy ? Colors.green : Colors.red,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                        title: Text(pos.symbol,
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold)),
+                                        subtitle: Text(
+                                          '${pos.volume.toStringAsFixed(2)} @ ${pos.priceOpen.toStringAsFixed(2)}',
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Column(
                                               mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
                                               children: [
+                                                if (last > 0)
+                                                  Text(
+                                                    formatTradePoints(
+                                                        points, pos.symbol,
+                                                        showSign: true),
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: pointsColor,
+                                                    ),
+                                                  ),
                                                 Text(
                                                   '${isProfitable ? "+" : ""}${pos.profit.toStringAsFixed(2)}',
                                                   style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 9,
                                                     color: isProfitable
-                                                        ? Colors.green
-                                                        : Colors.red,
+                                                        ? Colors.green.shade300
+                                                        : Colors.red.shade300,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 4),
-                                                _closingTickets
-                                                        .contains(pos.ticket)
-                                                    ? const SizedBox(
-                                                        width: 14,
-                                                        height: 14,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                                strokeWidth: 2))
-                                                    : IconButton(
-                                                        icon: const Icon(
-                                                            Icons.close,
-                                                            size: 14,
-                                                            color: Colors.red),
-                                                        onPressed: () =>
-                                                            _closePosition(
-                                                                pos.ticket),
-                                                      ),
                                               ],
                                             ),
-                                          );
-                                        },
-                                      ),
-                              ],
-                            ),
-                          ),
+                                            const SizedBox(width: 4),
+                                            _closingTickets.contains(pos.ticket)
+                                                ? const SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            strokeWidth: 2))
+                                                : IconButton(
+                                                    icon: const Icon(
+                                                        Icons.close,
+                                                        size: 14,
+                                                        color: Colors.red),
+                                                    onPressed: () =>
+                                                        _closePosition(
+                                                            pos.ticket),
+                                                  ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ],
                         ),
+                      ),
+                    ),
 
-                        // History
-                        Expanded(
-                          child: _buildHistorySection(),
-                        ),
-                      ],
+                    // History
+                    Expanded(
+                      child: _buildHistorySection(),
                     ),
                   ],
                 ),
@@ -926,28 +855,10 @@ class _TradingDrawerState extends State<TradingDrawer>
     );
   }
 
-  Widget _buildTabs() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-            bottom: BorderSide(color: Colors.grey.shade800.withOpacity(0.3))),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.grey,
-        indicatorColor: Colors.lightBlueAccent,
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        tabs: const [
-          Tab(height: 34, text: 'Book de Ofertas'),
-          Tab(height: 34, text: 'Painel'),
-        ],
-      ),
-    );
-  }
-
   Widget _buildHistorySection() {
     final state = context.watch<StateService>();
+    final history = state.history;
+    final historyTotal = history.fold(0.0, (sum, d) => sum + d.profit);
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxListH =
@@ -964,28 +875,27 @@ class _TradingDrawerState extends State<TradingDrawer>
               title: Row(children: [
                 const Icon(Icons.history, size: 16),
                 const SizedBox(width: 4),
-                Text('Histórico (${_history.length})',
+                Text('Histórico (${history.length})',
                     style: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
-                _history.isEmpty
+                history.isEmpty
                     ? const SizedBox.shrink()
                     : Text(
-                        '${_historyTotal >= 0 ? "+" : ""}${_historyTotal.toStringAsFixed(2)}',
+                        '${historyTotal >= 0 ? "+" : ""}${historyTotal.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: _historyTotal >= 0 ? Colors.green : Colors.red,
+                          color: historyTotal >= 0 ? Colors.green : Colors.red,
                         ),
                       ),
                 const Spacer(),
                 SizedBox(
                   height: 24,
                   child: Checkbox(
-                    value: _historyTodayOnly,
+                    value: state.historyTodayOnly,
                     onChanged: (v) {
-                      setState(() => _historyTodayOnly = v ?? false);
-                      _refreshHistory();
+                      state.setHistoryTodayOnly(v ?? false);
                     },
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
@@ -1002,7 +912,7 @@ class _TradingDrawerState extends State<TradingDrawer>
                 if (expanded) _refreshHistory();
               },
               children: [
-                _history.isEmpty
+                history.isEmpty
                     ? Padding(
                         padding: const EdgeInsets.symmetric(vertical: 20),
                         child: Center(
@@ -1018,11 +928,11 @@ class _TradingDrawerState extends State<TradingDrawer>
                         child: ListView.separated(
                           physics: const AlwaysScrollableScrollPhysics(),
                           shrinkWrap: true,
-                          itemCount: _history.length,
+                          itemCount: history.length,
                           separatorBuilder: (_, __) => const Divider(
                               height: 1, color: Color(0xFF3d3d3d)),
                           itemBuilder: (context, index) {
-                            final deal = _history[index];
+                            final deal = history[index];
                             final isProfitable = deal.profit >= 0;
                             final isBuy = deal.type == 'buy';
                             return ListTile(
@@ -1046,7 +956,7 @@ class _TradingDrawerState extends State<TradingDrawer>
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold)),
                               subtitle: Text(
-                                '${_formatDealTime(deal.time)}  |  ${deal.price.toStringAsFixed(2)}',
+                                '${_formatDealTime(deal.time, state.historyTodayOnly)}  |  ${deal.price.toStringAsFixed(2)}',
                                 style: const TextStyle(fontSize: 11),
                               ),
                               trailing: Text(
@@ -1129,8 +1039,8 @@ class _TradingDrawerState extends State<TradingDrawer>
     );
   }
 
-  String _formatDealTime(String time) {
-    if (!_historyTodayOnly) return time;
+  String _formatDealTime(String time, bool todayOnly) {
+    if (!todayOnly) return time;
     final parts = time.split(' ');
     return parts.length > 1 ? parts[1] : time;
   }

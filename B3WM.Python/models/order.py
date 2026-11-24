@@ -56,21 +56,6 @@ class ModifyPendingOrderRequest(BaseModel):
     tp: Optional[float] = None
 
 
-class OrderBookLevel(BaseModel):
-    price: float = 0.0
-    volume: float = 0.0
-
-
-class OrderBook(BaseModel):
-    symbol: str = ""
-    time: str = ""
-    bids: list[OrderBookLevel] = []
-    asks: list[OrderBookLevel] = []
-    available: bool = True
-    source: str = "book"  # "book" | "tick_fallback"
-    message: str = ""
-
-
 class AccountInfo(BaseModel):
     login: int = 0
     balance: float = 0.0

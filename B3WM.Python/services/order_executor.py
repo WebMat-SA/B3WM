@@ -10,8 +10,6 @@ from models.order import (
     HistoryDeal,
     LimitOrderRequest,
     MarketOrderRequest,
-    OrderBook,
-    OrderBookLevel,
     OrderInfo,
     OrderResult,
     PositionInfo,
@@ -26,11 +24,6 @@ from services.contract_utils import (
 class MT5OrderExecutor:
     def __init__(self):
         self._connected = False
-        # Símbolos com subscrição ativa de Depth of Market (market_book_add).
-        self._book_symbols: set[str] = set()
-        # Evita repetir o log de falha a cada poll quando a corretora não
-        # expõe book para o símbolo.
-        self._book_add_warned: set[str] = set()
 
     def connect(self, path: str = "", login: int = 0, password: str = "", server: str = "") -> bool:
         if self._connected:
@@ -52,13 +45,6 @@ class MT5OrderExecutor:
         return True
 
     def shutdown(self) -> None:
-        for symbol in list(self._book_symbols):
-            try:
-                mt5.market_book_release(symbol)
-            except Exception:
-                pass
-        self._book_symbols.clear()
-        self._book_add_warned.clear()
         if self._connected:
             mt5.shutdown()
             self._connected = False
@@ -78,8 +64,6 @@ class MT5OrderExecutor:
         error_code, error_desc = mt5.last_error()
         if error_code == -10004:
             print(f"[MT5] IPC lost ({error_code} {error_desc}). Reconnecting...", file=sys.stderr)
-            self._book_symbols.clear()
-            self._book_add_warned.clear()
             mt5.shutdown()
             self._connected = False
             return self.connect()
@@ -489,129 +473,6 @@ class MT5OrderExecutor:
             retcode_name=retcode_name,
             message=retcode_name,
         )
-
-    def get_order_book(self, symbol: str, depth: int = 0) -> OrderBook:
-        """Book de ofertas agregado por preço.
-
-        Usa `mt5.market_book_get` quando disponível. Se a corretora/B3 não
-        expuser o book, cai para um Nível 1 sintético a partir do tick,
-        sinalizando explicitamente `source="tick_fallback"`.
-        """
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        if not self.ensure_connected():
-            return OrderBook(
-                symbol=symbol,
-                time=now,
-                available=False,
-                source="unavailable",
-                message="MT5 não conectado.",
-            )
-
-        resolved = self._resolve_sym(symbol)
-        mt5.symbol_select(resolved, True)
-
-        # market_book_get só retorna dados se houver subscrição prévia via
-        # market_book_add. Sem isso o MT5 devolve None e o book cai no
-        # fallback Nível 1 (uma única linha, sem volumes).
-        self._subscribe_book(resolved)
-        book = self._read_book(resolved)
-        if book is None:
-            # A subscrição pode ter caído (reconexão/troca de símbolo).
-            self._book_symbols.discard(resolved)
-            self._subscribe_book(resolved)
-            book = self._read_book(resolved)
-
-        if book:
-            bids: dict[float, float] = {}
-            asks: dict[float, float] = {}
-            for item in book:
-                volume = float(
-                    getattr(item, "volume_dbl", 0)
-                    or getattr(item, "volume", 0)
-                    or 0
-                )
-                price = float(getattr(item, "price", 0) or 0)
-                if price <= 0 or volume <= 0:
-                    continue
-                if item.type == mt5.BOOK_TYPE_SELL:
-                    asks[price] = asks.get(price, 0.0) + volume
-                elif item.type == mt5.BOOK_TYPE_BUY:
-                    bids[price] = bids.get(price, 0.0) + volume
-
-            if bids or asks:
-                bid_levels = self._book_levels(bids, reverse=True, depth=depth)
-                ask_levels = self._book_levels(asks, reverse=False, depth=depth)
-                if bid_levels or ask_levels:
-                    return OrderBook(
-                        symbol=symbol,
-                        time=now,
-                        bids=bid_levels,
-                        asks=ask_levels,
-                        available=True,
-                        source="book",
-                    )
-
-        tick = mt5.symbol_info_tick(resolved)
-        if tick is not None and tick.bid > 0 and tick.ask > 0:
-            return OrderBook(
-                symbol=symbol,
-                time=now,
-                bids=[OrderBookLevel(price=tick.bid, volume=0.0)],
-                asks=[OrderBookLevel(price=tick.ask, volume=0.0)],
-                available=True,
-                source="tick_fallback",
-                message="Book indisponível; exibindo Nível 1 (bid/ask).",
-            )
-
-        return OrderBook(
-            symbol=symbol,
-            time=now,
-            available=False,
-            source="unavailable",
-            message="Book indisponível e sem cotação (mercado fechado).",
-        )
-
-    @staticmethod
-    def _read_book(symbol: str):
-        try:
-            return mt5.market_book_get(symbol)
-        except Exception as e:
-            print(f"[MT5] market_book_get({symbol}) failed: {e}", file=sys.stderr)
-            return None
-
-    def _subscribe_book(self, symbol: str) -> bool:
-        if symbol in self._book_symbols:
-            return True
-        try:
-            if mt5.market_book_add(symbol):
-                self._book_symbols.add(symbol)
-                self._book_add_warned.discard(symbol)
-                return True
-            error_code, error_desc = mt5.last_error()
-            if symbol not in self._book_add_warned:
-                self._book_add_warned.add(symbol)
-                print(
-                    f"[MT5] market_book_add({symbol}) failed: "
-                    f"({error_code}) {error_desc}",
-                    file=sys.stderr,
-                )
-        except Exception as e:
-            if symbol not in self._book_add_warned:
-                self._book_add_warned.add(symbol)
-                print(
-                    f"[MT5] market_book_add({symbol}) failed: {e}",
-                    file=sys.stderr,
-                )
-        return False
-
-    @staticmethod
-    def _book_levels(
-        levels: dict[float, float], *, reverse: bool, depth: int = 0
-    ) -> list[OrderBookLevel]:
-        ordered = sorted(levels.items(), key=lambda kv: kv[0], reverse=reverse)
-        if depth and depth > 0:
-            ordered = ordered[:depth]
-        return [OrderBookLevel(price=price, volume=volume) for price, volume in ordered]
 
     def get_account_info(self) -> Optional[AccountInfo]:
         if not self.ensure_connected():

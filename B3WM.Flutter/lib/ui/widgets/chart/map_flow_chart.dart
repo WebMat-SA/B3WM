@@ -119,6 +119,10 @@ class _MapFlowChartState extends State<MapFlowChart>
   // trading (`Mostrar Ordens em Aberto`), persistido por símbolo.
   String? _pendingOrderModifier;
   bool _placingLimitOrder = false;
+  OrderInfo? _draggingOrder;
+  double? _dragOrderPrice;
+  Offset? _dragOrderStartLocal;
+  bool _dragOrderMoved = false;
   // Modificadores rastreados localmente. O HardwareKeyboard pode ficar
   // "preso" com Alt pressionado após Alt+Tab (o key-up vai para outra janela),
   // então zeramos este conjunto ao perder o foco do app.
@@ -735,9 +739,9 @@ class _MapFlowChartState extends State<MapFlowChart>
   void _handleHover(PointerEvent event, double candleAreaWidth,
       double candleAreaHeight, double stepX) {
     if (!_initialFitDone) return;
-    // Esconde o hover (linha horizontal + bubble) enquanto a régua está
-    // sendo arrastada para não poluir o tooltip de medição.
-    if (_isMeasuring) return;
+    // Esconde o hover (linha horizontal + bubble) enquanto a régua ou uma
+    // ordem está sendo arrastada para não poluir o feedback visual.
+    if (_isMeasuring || _draggingOrder != null) return;
 
     final localX = event.localPosition.dx;
     final localY = event.localPosition.dy;
@@ -974,10 +978,12 @@ class _MapFlowChartState extends State<MapFlowChart>
       y: y,
       isBuy: isBuy,
       isStop: !isLimit,
+      volume: context.read<StateService>().tradingVolume.toDouble(),
+      distance: lastPrice > 0 ? (price - lastPrice).abs() : null,
     );
   }
 
-  void _showLimitOrderSnack(String message, {bool error = false}) {
+  void _showTradeSnack(String message, {bool error = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
@@ -996,18 +1002,18 @@ class _MapFlowChartState extends State<MapFlowChart>
     final tick = Defaults.tickSize(symbol);
     var price = _localToPrice(local.dy, candleAreaHeight);
     if (!price.isFinite || tick <= 0) {
-      _showLimitOrderSnack('Preço inválido para a ordem.', error: true);
+      _showTradeSnack('Preço inválido para a ordem.', error: true);
       return;
     }
     price = (price / tick).roundToDouble() * tick;
     if (price <= 0) {
-      _showLimitOrderSnack('Preço inválido para a ordem.', error: true);
+      _showTradeSnack('Preço inválido para a ordem.', error: true);
       return;
     }
 
     final lastPrice = widget.data.lastPrice;
     if (lastPrice <= 0) {
-      _showLimitOrderSnack('Último preço indisponível para definir a ordem.',
+      _showTradeSnack('Último preço indisponível para definir a ordem.',
           error: true);
       return;
     }
@@ -1027,7 +1033,7 @@ class _MapFlowChartState extends State<MapFlowChart>
       ));
       if (!mounted) return;
       if (result == null) {
-        _showLimitOrderSnack('Falha ao enviar a ordem.', error: true);
+        _showTradeSnack('Falha ao enviar a ordem.', error: true);
         return;
       }
       if (!result.success) {
@@ -1036,16 +1042,13 @@ class _MapFlowChartState extends State<MapFlowChart>
             : (result.retcodeName.isNotEmpty
                 ? result.retcodeName
                 : 'erro desconhecido');
-        _showLimitOrderSnack('Ordem rejeitada: $reason', error: true);
+        _showTradeSnack('Ordem rejeitada: $reason', error: true);
         return;
       }
 
-      try {
-        final fresh = await api.getOpenOrders();
-        if (mounted) state.updateOrders(fresh);
-      } catch (_) {}
+      await state.refreshTradingData();
     } catch (e) {
-      _showLimitOrderSnack('Erro ao enviar ordem: $e', error: true);
+      _showTradeSnack('Erro ao enviar ordem: $e', error: true);
     } finally {
       if (mounted) setState(() => _placingLimitOrder = false);
     }
@@ -1057,12 +1060,25 @@ class _MapFlowChartState extends State<MapFlowChart>
     final scaleY = m[5];
     final ty = m.getTranslation().y;
 
-    const btnSize = 14.0;
+    const btnSize = ChartFixedPainter.tradeChipCloseHitSize;
+    final closeX = ChartFixedPainter.tradeChipCloseCenterLocalX;
+    Offset closeCenter(double lineY) {
+      final top = (lineY - ChartFixedPainter.tradeChipHeight / 2)
+          .clamp(1.0, candleAreaHeight - ChartFixedPainter.tradeChipHeight - 1)
+          .toDouble();
+      return Offset(closeX, top + ChartFixedPainter.tradeChipHeight / 2);
+    }
+
     for (final pos in widget.data.positions) {
       if (_closingTickets.contains(pos.ticket)) continue;
       final y = _toChildY(pos.priceOpen, candleAreaHeight);
       final screenPosY = y * scaleY + ty;
-      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize)
+      final hit = Rect.fromCenter(
+        center: closeCenter(screenPosY),
+        width: btnSize,
+        height: btnSize,
+      );
+      if (hit
           .contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
         _closePosition(pos.ticket);
         return;
@@ -1073,11 +1089,227 @@ class _MapFlowChartState extends State<MapFlowChart>
       if (_cancellingTickets.contains(order.ticket)) continue;
       final y = _toChildY(order.priceOpen, candleAreaHeight);
       final screenPosY = y * scaleY + ty;
-      if (Rect.fromLTWH(2, screenPosY - btnSize / 2, btnSize, btnSize)
+      final hit = Rect.fromCenter(
+        center: closeCenter(screenPosY),
+        width: btnSize,
+        height: btnSize,
+      );
+      if (hit
           .contains(Offset(event.localPosition.dx, event.localPosition.dy))) {
         _cancelOrder(order.ticket);
         return;
       }
+    }
+  }
+
+  Offset _closeCenterLocal(double lineY, double candleAreaHeight) {
+    final top = (lineY - ChartFixedPainter.tradeChipHeight / 2)
+        .clamp(1.0, candleAreaHeight - ChartFixedPainter.tradeChipHeight - 1)
+        .toDouble();
+    return Offset(
+      ChartFixedPainter.tradeChipCloseCenterLocalX,
+      top + ChartFixedPainter.tradeChipHeight / 2,
+    );
+  }
+
+  bool _isOnOrderClose(Offset local, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final ty = m.getTranslation().y;
+    const size = ChartFixedPainter.tradeChipCloseHitSize;
+    for (final order in widget.data.orders) {
+      if (_cancellingTickets.contains(order.ticket)) continue;
+      final lineY = _toChildY(order.priceOpen, candleAreaHeight) * scaleY + ty;
+      final hit = Rect.fromCenter(
+        center: _closeCenterLocal(lineY, candleAreaHeight),
+        width: size,
+        height: size,
+      );
+      if (hit.contains(local)) return true;
+    }
+    return false;
+  }
+
+  bool _beginOrderDrag(Offset local, double candleAreaHeight) {
+    if (!_limitOrdersEnabled || _isOnOrderClose(local, candleAreaHeight)) {
+      return false;
+    }
+    final order = _orderAtLocal(local, candleAreaHeight);
+    if (order == null) return false;
+    _draggingOrder = order;
+    _dragOrderStartLocal = local;
+    _dragOrderPrice = order.priceOpen;
+    _dragOrderMoved = false;
+    _panEnabled = false;
+    _pendingTapDownLocal = null;
+    _pendingOrderModifier = null;
+    _dismissTooltip();
+    return true;
+  }
+
+  void _clearOrderDrag() {
+    _draggingOrder = null;
+    _dragOrderPrice = null;
+    _dragOrderStartLocal = null;
+    _dragOrderMoved = false;
+  }
+
+  OrderInfo? _orderAtLocal(Offset local, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final ty = m.getTranslation().y;
+    OrderInfo? best;
+    var bestDistance = 8.0;
+    for (final order in widget.data.orders) {
+      if (_cancellingTickets.contains(order.ticket)) continue;
+      final lineY = _toChildY(order.priceOpen, candleAreaHeight) * scaleY + ty;
+      final distance = (local.dy - lineY).abs();
+      if (distance <= bestDistance) {
+        best = order;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  _LimitOrderPreview? _draggedOrderPreview(double candleAreaHeight) {
+    final order = _draggingOrder;
+    final price = _dragOrderPrice;
+    if (!_dragOrderMoved || order == null || price == null) return null;
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final y =
+        _toChildY(price, candleAreaHeight) * scaleY + m.getTranslation().y;
+    final last = widget.data.lastPrice;
+    return _LimitOrderPreview(
+      price: price,
+      y: y,
+      isBuy: order.type.startsWith('buy'),
+      isStop: false,
+      volume: order.volume,
+      distance: last > 0 ? (price - last).abs() : null,
+    );
+  }
+
+  Future<void> _dropOrder(OrderInfo order, double price) async {
+    final last = widget.data.lastPrice;
+    if (last <= 0) {
+      _showTradeSnack('Último preço indisponível para mover a ordem.',
+          error: true);
+      return;
+    }
+    if ((price - order.priceOpen).abs() < 0.0000001) return;
+
+    final isBuy = order.type.startsWith('buy');
+    final isStop = order.type.contains('stop');
+    if (isStop) {
+      final crossedToWrongSide = isBuy ? price < last : price > last;
+      if (crossedToWrongSide) {
+        _showTradeSnack(
+          'Ordem stop não pode ser movida para além do preço atual.',
+          error: true,
+        );
+        return;
+      }
+      await _modifyPendingOrder(order, price);
+      return;
+    }
+
+    final executeMarket = isBuy ? price > last : price < last;
+    if (executeMarket) {
+      await _cancelAndExecuteMarket(order);
+    } else {
+      await _modifyPendingOrder(order, price);
+    }
+  }
+
+  Future<void> _modifyPendingOrder(OrderInfo order, double price) async {
+    if (!_cancellingTickets.add(order.ticket)) return;
+    _startLoadingAnimation();
+    if (mounted) setState(() {});
+    final api = context.read<TradingApiService>();
+    final state = context.read<StateService>();
+    try {
+      final result = await api.modifyPendingOrder(
+        ModifyPendingOrderRequest(orderTicket: order.ticket, price: price),
+      );
+      if (!mounted) return;
+      if (result == null || !result.success) {
+        final reason = result?.message.isNotEmpty == true
+            ? result!.message
+            : (result?.retcodeName.isNotEmpty == true
+                ? result!.retcodeName
+                : 'erro desconhecido');
+        _showTradeSnack(
+          'Falha ao mover ordem ${order.ticket}: $reason',
+          error: true,
+        );
+        return;
+      }
+      await state.refreshTradingData();
+    } catch (e) {
+      if (mounted) {
+        _showTradeSnack('Erro ao mover ordem: $e', error: true);
+      }
+    } finally {
+      _cancellingTickets.remove(order.ticket);
+      _stopLoadingAnimationIfNeeded();
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _cancelAndExecuteMarket(OrderInfo order) async {
+    if (!_cancellingTickets.add(order.ticket)) return;
+    _startLoadingAnimation();
+    if (mounted) setState(() {});
+    final api = context.read<TradingApiService>();
+    final state = context.read<StateService>();
+    final isBuy = order.type.startsWith('buy');
+    try {
+      final cancel = await api.cancelOrder(order.ticket);
+      if (!mounted) return;
+      if (cancel == null || !cancel.success) {
+        final reason = cancel?.message.isNotEmpty == true
+            ? cancel!.message
+            : (cancel?.retcodeName.isNotEmpty == true
+                ? cancel!.retcodeName
+                : 'erro desconhecido');
+        _showTradeSnack(
+          'Cancelamento da ordem ${order.ticket} falhou ($reason). '
+          'Nada foi enviado a mercado.',
+          error: true,
+        );
+        return;
+      }
+
+      final result = await api.placeMarketOrder(MarketOrderRequest(
+        symbol: state.symbol,
+        volume: order.volume,
+        type: isBuy ? 'buy' : 'sell',
+      ));
+      await state.refreshTradingData();
+      if (!mounted) return;
+      if (result == null || !result.success) {
+        final reason = result?.message.isNotEmpty == true
+            ? result!.message
+            : (result?.retcodeName.isNotEmpty == true
+                ? result!.retcodeName
+                : 'erro desconhecido');
+        _showTradeSnack(
+          'Ordem ${order.ticket} cancelada, mas a ordem a mercado '
+          'falhou ($reason).',
+          error: true,
+        );
+        return;
+      }
+    } catch (e) {
+      if (mounted) {
+        _showTradeSnack('Erro ao executar ordem a mercado: $e', error: true);
+      }
+    } finally {
+      _cancellingTickets.remove(order.ticket);
+      _stopLoadingAnimationIfNeeded();
+      if (mounted) setState(() {});
     }
   }
 
@@ -1359,6 +1591,8 @@ class _MapFlowChartState extends State<MapFlowChart>
       _closingTickets.remove(ticket);
       _stopLoadingAnimationIfNeeded();
       setState(() {});
+    } else if (success && mounted) {
+      await context.read<StateService>().refreshTradingData();
     }
   }
 
@@ -1392,6 +1626,8 @@ class _MapFlowChartState extends State<MapFlowChart>
       _cancellingTickets.remove(ticket);
       _stopLoadingAnimationIfNeeded();
       setState(() {});
+    } else if (success && mounted) {
+      await context.read<StateService>().refreshTradingData();
     }
   }
 
@@ -1475,6 +1711,7 @@ class _MapFlowChartState extends State<MapFlowChart>
 
         final measure = _currentMeasure();
         final preview = _limitOrderPreview(candleAreaHeight);
+        final dragPreview = _draggedOrderPreview(candleAreaHeight);
         Offset? rulerStart;
         Offset? rulerEnd;
         if (measure != null && _hasMeasure()) {
@@ -1500,6 +1737,9 @@ class _MapFlowChartState extends State<MapFlowChart>
                   hoverCandleIndex: _effectiveHoverIndex(),
                   closingTickets: _closingTickets,
                   cancellingTickets: _cancellingTickets,
+                  hiddenOrderTickets: _dragOrderMoved && _draggingOrder != null
+                      ? {_draggingOrder!.ticket}
+                      : const {},
                   loadingAnimation: _loadingCtrl.value,
                 ),
               ),
@@ -1569,6 +1809,10 @@ class _MapFlowChartState extends State<MapFlowChart>
                           _pendingTapDownLocal = null;
                           _pendingOrderModifier = null;
                           _onMeasureDown(event, stepX, candleAreaHeight);
+                        } else if (!hasOrderModifier &&
+                            _beginOrderDrag(
+                                event.localPosition, candleAreaHeight)) {
+                          setState(() {});
                         } else {
                           // Próximo clique limpa régua anterior (paridade com
                           // "manter visível até o próximo clique/Esc").
@@ -1613,11 +1857,45 @@ class _MapFlowChartState extends State<MapFlowChart>
                     onPointerMove: (event) {
                       if (_isMeasuring) {
                         _onMeasureMove(event, stepX, candleAreaHeight);
+                      } else if (_draggingOrder != null) {
+                        final start = _dragOrderStartLocal;
+                        if (!_dragOrderMoved &&
+                            start != null &&
+                            (event.localPosition - start).distance >= 3) {
+                          _dragOrderMoved = true;
+                        }
+                        if (_dragOrderMoved) {
+                          final tick = Defaults.tickSize(widget.data.symbol);
+                          final raw = _localToPrice(
+                              event.localPosition.dy, candleAreaHeight);
+                          if (tick > 0 && raw.isFinite) {
+                            final price = (raw / tick).roundToDouble() * tick;
+                            if (price > 0 && mounted) {
+                              setState(() => _dragOrderPrice = price);
+                            }
+                          }
+                        }
                       }
                     },
                     onPointerUp: (event) {
                       if (_isMeasuring) {
                         _onMeasureUp(event, candleAreaHeight);
+                      } else if (_draggingOrder != null) {
+                        final order = _draggingOrder!;
+                        final moved = _dragOrderMoved;
+                        final tick = Defaults.tickSize(widget.data.symbol);
+                        final raw = _localToPrice(
+                            event.localPosition.dy, candleAreaHeight);
+                        final price = tick > 0 && raw.isFinite
+                            ? (raw / tick).roundToDouble() * tick
+                            : _dragOrderPrice;
+                        _clearOrderDrag();
+                        _panEnabled = true;
+                        if (mounted) setState(() {});
+                        if (moved && price != null && price > 0) {
+                          // ignore: discarded_futures
+                          _dropOrder(order, price);
+                        }
                       } else if (_pendingTapDownLocal != null) {
                         final dist =
                             (event.localPosition - _pendingTapDownLocal!)
@@ -1664,6 +1942,11 @@ class _MapFlowChartState extends State<MapFlowChart>
                       _rightDownLocal = null;
                       _rightDownBubble = null;
                       _pendingOrderModifier = null;
+                      if (_draggingOrder != null) {
+                        _clearOrderDrag();
+                        _panEnabled = true;
+                        if (mounted) setState(() {});
+                      }
                       _onMeasureCancel();
                     },
                     onPointerSignal: (event) {
@@ -1777,6 +2060,28 @@ class _MapFlowChartState extends State<MapFlowChart>
                       symbol: data.symbol,
                       isBuy: preview.isBuy,
                       isStop: preview.isStop,
+                      volume: preview.volume,
+                      distance: preview.distance,
+                    ),
+                  ),
+                ),
+              ),
+            if (dragPreview != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft,
+                top: ChartFixedPainter.marginTop,
+                width: candleAreaWidth,
+                height: candleAreaHeight,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _LimitOrderPreviewPainter(
+                      y: dragPreview.y,
+                      price: dragPreview.price,
+                      symbol: data.symbol,
+                      isBuy: dragPreview.isBuy,
+                      isStop: dragPreview.isStop,
+                      volume: dragPreview.volume,
+                      distance: dragPreview.distance,
                     ),
                   ),
                 ),
@@ -2074,12 +2379,16 @@ class _LimitOrderPreview {
   final double y;
   final bool isBuy;
   final bool isStop;
+  final double volume;
+  final double? distance;
 
   const _LimitOrderPreview({
     required this.price,
     required this.y,
     required this.isBuy,
     required this.isStop,
+    required this.volume,
+    required this.distance,
   });
 }
 
@@ -2089,6 +2398,8 @@ class _LimitOrderPreviewPainter extends CustomPainter {
   final String symbol;
   final bool isBuy;
   final bool isStop;
+  final double volume;
+  final double? distance;
 
   const _LimitOrderPreviewPainter({
     required this.y,
@@ -2096,11 +2407,15 @@ class _LimitOrderPreviewPainter extends CustomPainter {
     required this.symbol,
     required this.isBuy,
     required this.isStop,
+    required this.volume,
+    required this.distance,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final color = isBuy ? Colors.green : Colors.red;
+    final color = isBuy
+        ? ChartFixedPainter.tradeBuyColor
+        : ChartFixedPainter.tradeSellColor;
     final linePaint = Paint()
       ..color = color.withValues(alpha: 0.95)
       ..strokeWidth = 1.5;
@@ -2116,6 +2431,7 @@ class _LimitOrderPreviewPainter extends CustomPainter {
           color: Colors.white,
           fontSize: 10,
           fontWeight: FontWeight.bold,
+          fontFamily: 'Roboto',
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -2135,48 +2451,87 @@ class _LimitOrderPreviewPainter extends CustomPainter {
       Offset(priceRect.left + 4, y - priceTp.height / 2),
     );
 
-    final title = '${isBuy ? 'Compra' : 'Venda'}${isStop ? ' stop' : ''}';
-    final titleTp = TextPainter(
-      text: TextSpan(
-        text: title,
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
+    final spans = <InlineSpan>[
+      TextSpan(
+        text: volume.toStringAsFixed(2),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'Roboto',
         ),
       ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    // Venda: rótulo acima da linha. Compra: abaixo (como no Profit), com
-    // fallback para não sair da área quando a linha está no extremo.
-    var titleTop = isBuy ? y + 6 : y - titleTp.height - 8;
-    if (isBuy) {
-      if (titleTop + titleTp.height + 6 > size.height) {
-        titleTop = y - titleTp.height - 8;
-      }
-    } else if (titleTop < 0) {
-      titleTop = y + 6;
+    ];
+    if (distance != null) {
+      spans.add(const TextSpan(
+        text: '  ',
+        style: TextStyle(fontSize: 9.5, fontFamily: 'Roboto'),
+      ));
+      spans.add(TextSpan(
+        text: formatTradePoints(distance!, symbol),
+        style: const TextStyle(
+          color: Color(0xFFD0D0D0),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'Roboto',
+        ),
+      ));
     }
-    final titleRect = Rect.fromLTWH(
-      8,
-      titleTop,
-      titleTp.width + 12,
-      titleTp.height + 6,
+    final tp = TextPainter(
+      text: TextSpan(children: spans),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+
+    const left = ChartFixedPainter.tradeChipLeft;
+    const textLeft = left +
+        ChartFixedPainter.tradeChipAccentWidth +
+        ChartFixedPainter.tradeChipPaddingLeft;
+    const widthPad = ChartFixedPainter.tradeChipRightPad;
+    final width = (textLeft - left) + tp.width + widthPad;
+    final top = (y - ChartFixedPainter.tradeChipHeight / 2)
+        .clamp(1.0, size.height - ChartFixedPainter.tradeChipHeight - 1)
+        .toDouble();
+    final rect =
+        Rect.fromLTWH(left, top, width, ChartFixedPainter.tradeChipHeight);
+    final rrect = RRect.fromRectAndRadius(
+        rect, const Radius.circular(ChartFixedPainter.tradeChipRadius));
+
+    canvas.drawRRect(
+      rrect.shift(const Offset(0, 1.5)),
+      Paint()..color = Colors.black.withValues(alpha: 0.35),
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(titleRect, const Radius.circular(3)),
-      Paint()..color = color.withValues(alpha: 0.16),
+      rrect,
+      Paint()..color = const Color(0xFF171717).withValues(alpha: 0.94),
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(titleRect, const Radius.circular(3)),
+      rrect,
+      Paint()..color = color.withValues(alpha: 0.10),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          left + 1,
+          top + 3,
+          ChartFixedPainter.tradeChipAccentWidth,
+          ChartFixedPainter.tradeChipHeight - 6,
+        ),
+        const Radius.circular(2),
+      ),
+      Paint()..color = color.withValues(alpha: 0.7),
+    );
+    canvas.drawRRect(
+      rrect,
       Paint()
-        ..color = color.withValues(alpha: 0.8)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
+        ..strokeWidth = 1
+        ..color = color.withValues(alpha: 0.55),
     );
-    titleTp.paint(
+    tp.paint(
       canvas,
-      Offset(titleRect.left + 6, titleRect.top + 3),
+      Offset(
+          textLeft, top + (ChartFixedPainter.tradeChipHeight - tp.height) / 2),
     );
   }
 
@@ -2186,7 +2541,9 @@ class _LimitOrderPreviewPainter extends CustomPainter {
         oldDelegate.price != price ||
         oldDelegate.symbol != symbol ||
         oldDelegate.isBuy != isBuy ||
-        oldDelegate.isStop != isStop;
+        oldDelegate.isStop != isStop ||
+        oldDelegate.volume != volume ||
+        oldDelegate.distance != distance;
   }
 }
 

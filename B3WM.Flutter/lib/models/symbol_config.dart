@@ -106,15 +106,6 @@ class SymbolConfig {
   bool tradingPositionsExpanded;
   bool tradingHistoryExpanded;
 
-  /// Aba selecionada no Trading Drawer: 0 = Book de Ofertas, 1 = Painel.
-  int tradingTabIndex;
-
-  /// Pede confirmação antes de enviar ordens pelo book (default ligado).
-  bool orderBookConfirmOrders;
-
-  /// Quantidade de níveis (por lado) exibida no book.
-  int orderBookDepth;
-
   SymbolConfig({
     required this.timeFrame,
     required this.dateRangeMode,
@@ -171,9 +162,6 @@ class SymbolConfig {
     required this.tradingOrdersExpanded,
     required this.tradingPositionsExpanded,
     required this.tradingHistoryExpanded,
-    this.tradingTabIndex = 0,
-    this.orderBookConfirmOrders = true,
-    this.orderBookDepth = 10,
   });
 
   SymbolConfig.withDefaults(String symbol)
@@ -228,10 +216,7 @@ class SymbolConfig {
         tradingAccountExpanded = false,
         tradingOrdersExpanded = false,
         tradingPositionsExpanded = false,
-        tradingHistoryExpanded = false,
-        tradingTabIndex = 0,
-        orderBookConfirmOrders = true,
-        orderBookDepth = 10;
+        tradingHistoryExpanded = false;
 
   /// Faixa válida (px) dos sliders Min/Max Size das bolhas.
   static const double bubbleSizePxMin = 5;
@@ -382,9 +367,6 @@ class SymbolConfig {
       tradingOrdersExpanded: legacy.tradingOrdersExpanded,
       tradingPositionsExpanded: legacy.tradingPositionsExpanded,
       tradingHistoryExpanded: legacy.tradingHistoryExpanded,
-      tradingTabIndex: legacy.tradingTabIndex,
-      orderBookConfirmOrders: legacy.orderBookConfirmOrders,
-      orderBookDepth: legacy.orderBookDepth,
     );
   }
 
@@ -476,11 +458,6 @@ class SymbolConfig {
       tradingPositionsExpanded:
           json['tradingPositionsExpanded'] as bool? ?? false,
       tradingHistoryExpanded: json['tradingHistoryExpanded'] as bool? ?? false,
-      tradingTabIndex:
-          ((json['tradingTabIndex'] as num?)?.toInt() ?? 0).clamp(0, 1),
-      orderBookConfirmOrders: json['orderBookConfirmOrders'] as bool? ?? true,
-      orderBookDepth:
-          ((json['orderBookDepth'] as num?)?.toInt() ?? 10).clamp(1, 50),
     );
   }
 
@@ -541,8 +518,5 @@ class SymbolConfig {
         'tradingOrdersExpanded': tradingOrdersExpanded,
         'tradingPositionsExpanded': tradingPositionsExpanded,
         'tradingHistoryExpanded': tradingHistoryExpanded,
-        'tradingTabIndex': tradingTabIndex,
-        'orderBookConfirmOrders': orderBookConfirmOrders,
-        'orderBookDepth': orderBookDepth,
       };
 }

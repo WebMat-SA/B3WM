@@ -135,3 +135,14 @@ String formatRulerPrice(double price, String symbol) {
   final pattern = dec == 0 ? '#,##0' : '#,##0.${'0' * dec}';
   return NumberFormat(pattern, 'pt_BR').format(price);
 }
+
+/// Pontos no formato compacto usado pelos labels de trading no gráfico.
+/// `showSign` liga o `+`/`-` (posições); sem ele, mostra a distância absoluta
+/// (ordens em aberto).
+String formatTradePoints(double value, String symbol, {bool showSign = false}) {
+  final dec = decimalPlacesForSymbol(symbol);
+  final pattern = dec == 0 ? '#,##0' : '#,##0.${'0' * dec}';
+  final text = NumberFormat(pattern, 'pt_BR').format(value.abs());
+  final sign = value > 0 ? '+' : (value < 0 ? '-' : '');
+  return '${showSign ? sign : ''}$text pts';
+}

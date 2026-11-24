@@ -54,13 +54,6 @@ public class TradeController : ControllerBase
         return await ForwardPost("/api/order/modify-pending", body);
     }
 
-    [HttpGet("orderbook/{symbol}")]
-    public async Task<IActionResult> GetOrderBook(string symbol, [FromQuery] int depth = 0)
-    {
-        var qs = depth > 0 ? $"?depth={depth}" : "";
-        return await ForwardGet($"/api/orderbook/{symbol}{qs}");
-    }
-
     [HttpGet("orders")]
     public async Task<IActionResult> GetOrders()
     {

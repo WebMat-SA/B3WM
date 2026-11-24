@@ -14,7 +14,6 @@ from models.order import (
     MarketOrderRequest,
     ModifyOrderRequest,
     ModifyPendingOrderRequest,
-    OrderBook,
     OrderInfo,
     OrderResult,
     PositionInfo,
@@ -123,11 +122,6 @@ async def modify_pending_order(request: ModifyPendingOrderRequest):
         )
     except Exception as exc:
         return _order_failure(exc)
-
-
-@app.get("/api/orderbook/{symbol}", response_model=OrderBook)
-async def get_order_book(symbol: str, depth: int = 0):
-    return executor.get_order_book(symbol, depth=depth)
 
 
 @app.get("/api/account", response_model=AccountInfo)

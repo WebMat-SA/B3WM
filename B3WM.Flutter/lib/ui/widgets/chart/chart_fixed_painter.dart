@@ -2,7 +2,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'chart_data.dart';
 import 'chart_price_scale.dart';
+import 'measure_ruler.dart';
 import '../../../models/defaults.dart';
+import '../../../models/trade_models.dart';
 
 class ChartFixedPainter extends CustomPainter {
   final ChartData data;
@@ -16,6 +18,7 @@ class ChartFixedPainter extends CustomPainter {
   final TransformationController controller;
   final Set<int> closingTickets;
   final Set<int> cancellingTickets;
+  final Set<int> hiddenOrderTickets;
   final double loadingAnimation;
 
   static const double marginLeft = 8;
@@ -29,6 +32,28 @@ class ChartFixedPainter extends CustomPainter {
   static const double candleStep = 8.0;
 
   static const Color textColor = Color(0xFFaaaaaa);
+  static const Color tradeBuyColor = Color(0xFF2ECC71);
+  static const Color tradeSellColor = Color(0xFFE74C3C);
+
+  static const double tradeChipLeft = 3;
+  static const double tradeChipHeight = 20;
+  static const double tradeChipRadius = 5;
+  static const double tradeChipAccentWidth = 3;
+  static const double tradeChipPaddingLeft = 6;
+  static const double tradeChipCloseSize = 12;
+  static const double tradeChipCloseGap = 6;
+  static const double tradeChipRightPad = 8;
+  static const double tradeChipCloseHitSize = 18;
+
+  /// Centro local (relativo ao Listener do gráfico) do X dentro do chip.
+  static double get tradeChipCloseCenterLocalX =>
+      tradeChipLeft +
+      tradeChipAccentWidth +
+      tradeChipPaddingLeft +
+      tradeChipCloseSize / 2;
+
+  static double get _tradeChipTextLeftLocal =>
+      tradeChipCloseCenterLocalX + tradeChipCloseSize / 2 + tradeChipCloseGap;
 
   final double? hoverY;
   final int? hoverCandleIndex;
@@ -44,6 +69,7 @@ class ChartFixedPainter extends CustomPainter {
     this.hoverCandleIndex,
     this.closingTickets = const {},
     this.cancellingTickets = const {},
+    this.hiddenOrderTickets = const {},
     this.loadingAnimation = 0,
   });
 
@@ -202,10 +228,8 @@ class ChartFixedPainter extends CustomPainter {
 
     for (final v in data.volumeProfile) {
       final y = _priceToY(v.price);
-      final barHeight = (v.step / priceRange) *
-          chartHeight *
-          data.profileSizeV *
-          _scaleY;
+      final barHeight =
+          (v.step / priceRange) * chartHeight * data.profileSizeV * _scaleY;
       final barWidth = (v.total / maxVol) * profileW;
 
       final color = v.isPoc
@@ -563,136 +587,205 @@ class ChartFixedPainter extends CustomPainter {
       if (y < marginTop || y > marginTop + chartHeight) continue;
 
       final isBuy = pos.type == 'buy';
-      final color = isBuy ? Colors.green : Colors.red;
+      final color = isBuy ? tradeBuyColor : tradeSellColor;
+
+      final glow = Paint()
+        ..color = color.withValues(alpha: 0.12)
+        ..strokeWidth = 5;
+      canvas.drawLine(Offset(marginLeft, y), Offset(chartRight, y), glow);
 
       final paint = Paint()
-        ..color = color.withOpacity(0.8)
-        ..strokeWidth = 2;
+        ..color = color.withValues(alpha: 0.9)
+        ..strokeWidth = 1.6;
       canvas.drawLine(Offset(marginLeft, y), Offset(chartRight, y), paint);
 
-      _drawCloseButton(
-          canvas, y, Colors.red, closingTickets.contains(pos.ticket));
-
-      const btnWithGap = 20.0;
-      final label = '${isBuy ? 'B' : 'S'} ${pos.volume.toStringAsFixed(2)}';
-      final tp = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      final bgRect = Rect.fromLTWH(
-        marginLeft + btnWithGap - 4,
-        y - tp.height / 2 - 2,
-        tp.width + 8,
-        tp.height + 4,
+      final last = data.lastPrice > 0 ? data.lastPrice : pos.priceCurrent;
+      final points = last > 0 ? pos.pointsAt(last) : 0.0;
+      _drawTradeChip(
+        canvas,
+        y: y,
+        color: color,
+        volume: pos.volume,
+        metric: last > 0
+            ? formatTradePoints(points, data.symbol, showSign: true)
+            : '',
+        metricColor: points >= 0 ? tradeBuyColor : tradeSellColor,
+        isLoading: closingTickets.contains(pos.ticket),
       );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
-        Paint()..color = color.withOpacity(0.8),
-      );
-      tp.paint(canvas, Offset(marginLeft + btnWithGap, y - tp.height / 2));
     }
   }
 
   void _drawOrderLines(Canvas canvas) {
     for (final order in data.orders) {
+      if (hiddenOrderTickets.contains(order.ticket)) continue;
       final y = _priceToY(order.priceOpen);
       if (y < marginTop || y > marginTop + chartHeight) continue;
 
       final isBuy = order.type.startsWith('buy');
-      final color = isBuy ? Colors.green : Colors.red;
+      final color = isBuy ? tradeBuyColor : tradeSellColor;
 
       final paint = Paint()
-        ..color = color.withOpacity(0.6)
-        ..strokeWidth = 1.5;
+        ..color = color.withValues(alpha: 0.58)
+        ..strokeWidth = 1.2;
       _drawDashedLine(
           canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
 
-      _drawCloseButton(
-          canvas, y, Colors.red, cancellingTickets.contains(order.ticket));
-
-      const btnWithGap = 20.0;
-      final typeLabel = _orderTypeShort(order.type);
-      final label = '$typeLabel ${order.volume.toStringAsFixed(2)}';
-      final tp = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: const TextStyle(color: Colors.white, fontSize: 10),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      final bgRect = Rect.fromLTWH(
-        marginLeft + btnWithGap - 4,
-        y - tp.height / 2 - 2,
-        tp.width + 8,
-        tp.height + 4,
+      final last = data.lastPrice;
+      _drawTradeChip(
+        canvas,
+        y: y,
+        color: color,
+        volume: order.volume,
+        metric: last > 0
+            ? formatTradePoints(order.distancePointsAt(last), data.symbol)
+            : '',
+        metricColor: const Color(0xFFD0D0D0),
+        isLoading: cancellingTickets.contains(order.ticket),
+        isOrder: true,
       );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
-        Paint()..color = color.withOpacity(0.6),
-      );
-      tp.paint(canvas, Offset(marginLeft + btnWithGap, y - tp.height / 2));
     }
   }
 
-  void _drawCloseButton(Canvas canvas, double cy, Color color, bool isLoading) {
+  void _drawTradeChip(
+    Canvas canvas, {
+    required double y,
+    required Color color,
+    required double volume,
+    required String metric,
+    required Color metricColor,
+    required bool isLoading,
+    bool isOrder = false,
+  }) {
+    final spans = <InlineSpan>[
+      TextSpan(
+        text: volume.toStringAsFixed(2),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'Roboto',
+        ),
+      ),
+    ];
+    if (metric.isNotEmpty) {
+      spans.add(const TextSpan(
+        text: '  ',
+        style: TextStyle(fontSize: 9.5, fontFamily: 'Roboto'),
+      ));
+      spans.add(TextSpan(
+        text: metric,
+        style: TextStyle(
+          color: metricColor,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'Roboto',
+        ),
+      ));
+    }
+    final tp = TextPainter(
+      text: TextSpan(children: spans),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+
+    final left = marginLeft + tradeChipLeft;
+    final width = (_tradeChipTextLeftLocal - tradeChipLeft) +
+        tp.width +
+        tradeChipRightPad;
+    final top = (y - tradeChipHeight / 2)
+        .clamp(marginTop + 1, marginTop + chartHeight - tradeChipHeight - 1)
+        .toDouble();
+    final rect = Rect.fromLTWH(left, top, width, tradeChipHeight);
+    final rrect =
+        RRect.fromRectAndRadius(rect, const Radius.circular(tradeChipRadius));
+
+    canvas.drawRRect(
+      rrect.shift(const Offset(0, 1.5)),
+      Paint()..color = Colors.black.withValues(alpha: 0.35),
+    );
+    canvas.drawRRect(
+      rrect,
+      Paint()..color = const Color(0xFF171717).withValues(alpha: 0.94),
+    );
+    canvas.drawRRect(
+      rrect,
+      Paint()..color = color.withValues(alpha: isOrder ? 0.10 : 0.16),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          left + 1,
+          top + 3,
+          tradeChipAccentWidth,
+          tradeChipHeight - 6,
+        ),
+        const Radius.circular(2),
+      ),
+      Paint()..color = color.withValues(alpha: isOrder ? 0.7 : 1),
+    );
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = color.withValues(alpha: isOrder ? 0.55 : 0.85),
+    );
+
+    _drawTradeChipClose(
+      canvas,
+      Offset(
+        left + (tradeChipCloseCenterLocalX - tradeChipLeft),
+        top + tradeChipHeight / 2,
+      ),
+      isLoading,
+    );
+    tp.paint(
+      canvas,
+      Offset(
+        left + (_tradeChipTextLeftLocal - tradeChipLeft),
+        top + (tradeChipHeight - tp.height) / 2,
+      ),
+    );
+  }
+
+  void _drawTradeChipClose(Canvas canvas, Offset center, bool isLoading) {
     if (isLoading) {
-      _drawLoadingSpinner(canvas, cy);
+      _drawTradeChipSpinner(canvas, center);
       return;
     }
-    const size = 14.0;
-    final r = Rect.fromLTWH(marginLeft + 2, cy - size / 2, size, size);
-    canvas.drawCircle(r.center, size / 2, Paint()..color = color);
-    final xPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1.5
+    const radius = tradeChipCloseSize / 2;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()..color = Colors.black.withValues(alpha: 0.35),
+    );
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.8)
+      ..strokeWidth = 1.3
       ..strokeCap = StrokeCap.round;
-    const m = 4.0;
-    canvas.drawLine(Offset(r.left + m, r.top + m),
-        Offset(r.right - m, r.bottom - m), xPaint);
-    canvas.drawLine(Offset(r.right - m, r.top + m),
-        Offset(r.left + m, r.bottom - m), xPaint);
+    const m = 3.4;
+    canvas.drawLine(
+        center + const Offset(-m, -m), center + const Offset(m, m), paint);
+    canvas.drawLine(
+        center + const Offset(m, -m), center + const Offset(-m, m), paint);
   }
 
-  void _drawLoadingSpinner(Canvas canvas, double cy) {
-    const size = 14.0;
-    final cx = marginLeft + 2.0 + size / 2;
-    final center = Offset(cx, cy);
-    final bgPaint = Paint()..color = Colors.grey.withOpacity(0.5);
-    canvas.drawCircle(center, size / 2, bgPaint);
+  void _drawTradeChipSpinner(Canvas canvas, Offset center) {
+    const radius = tradeChipCloseSize / 2;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()..color = Colors.grey.withValues(alpha: 0.5),
+    );
     final arcPaint = Paint()
       ..color = Colors.white
-      ..strokeWidth = 2
+      ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-    final rect = Rect.fromCircle(center: center, radius: size / 2 - 2);
+    final rect = Rect.fromCircle(center: center, radius: radius - 2);
     final startAngle = loadingAnimation * 2 * pi - pi / 2;
     const sweepAngle = 4 * pi / 3;
     canvas.drawArc(rect, startAngle, sweepAngle, false, arcPaint);
-  }
-
-  String _orderTypeShort(String type) {
-    switch (type) {
-      case 'buy_limit':
-        return 'Buy Limit';
-      case 'sell_limit':
-        return 'Sell Limit';
-      case 'buy_stop':
-        return 'Buy Stop';
-      case 'sell_stop':
-        return 'Sell Stop';
-      case 'buy_stop_limit':
-        return 'Buy S/L';
-      case 'sell_stop_limit':
-        return 'Sell S/L';
-      default:
-        return type;
-    }
   }
 
   void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint) {

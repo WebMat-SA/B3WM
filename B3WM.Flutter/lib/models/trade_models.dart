@@ -91,55 +91,6 @@ class ModifyPendingOrderRequest {
       };
 }
 
-class OrderBookLevel {
-  final double price;
-  final double volume;
-
-  OrderBookLevel({required this.price, required this.volume});
-
-  factory OrderBookLevel.fromJson(Map<String, dynamic> json) => OrderBookLevel(
-        price: (json['price'] as num?)?.toDouble() ?? 0,
-        volume: (json['volume'] as num?)?.toDouble() ?? 0,
-      );
-}
-
-class OrderBook {
-  final String symbol;
-  final String time;
-  final List<OrderBookLevel> bids;
-  final List<OrderBookLevel> asks;
-  final bool available;
-  final String source;
-  final String message;
-
-  OrderBook({
-    required this.symbol,
-    required this.time,
-    required this.bids,
-    required this.asks,
-    this.available = true,
-    this.source = 'book',
-    this.message = '',
-  });
-
-  double get bestBid => bids.isNotEmpty ? bids.first.price : 0;
-  double get bestAsk => asks.isNotEmpty ? asks.first.price : 0;
-
-  factory OrderBook.fromJson(Map<String, dynamic> json) => OrderBook(
-        symbol: json['symbol'] as String? ?? '',
-        time: json['time'] as String? ?? '',
-        source: json['source'] as String? ?? 'book',
-        available: json['available'] as bool? ?? true,
-        message: json['message'] as String? ?? '',
-        bids: ((json['bids'] as List<dynamic>?) ?? [])
-            .map((e) => OrderBookLevel.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        asks: ((json['asks'] as List<dynamic>?) ?? [])
-            .map((e) => OrderBookLevel.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
-}
-
 class OrderResult {
   final bool success;
   final int retcode;
@@ -381,4 +332,21 @@ class SymbolInfo {
         spread: json['spread'] as int? ?? 0,
         digits: json['digits'] as int? ?? 0,
       );
+}
+
+extension PositionPoints on PositionInfo {
+  /// Pontos da posição em relação ao último preço: positivo quando a posição
+  /// está no lucro, negativo no prejuízo. Compra e venda têm sinais opostos.
+  double pointsAt(double lastPrice) {
+    if (lastPrice <= 0 || priceOpen <= 0) return 0;
+    return type == 'buy' ? lastPrice - priceOpen : priceOpen - lastPrice;
+  }
+}
+
+extension OrderPoints on OrderInfo {
+  /// Distância absoluta, em pontos, entre a ordem e o último preço.
+  double distancePointsAt(double lastPrice) {
+    if (lastPrice <= 0 || priceOpen <= 0) return 0;
+    return (priceOpen - lastPrice).abs();
+  }
 }

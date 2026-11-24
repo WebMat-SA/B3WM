@@ -17,6 +17,7 @@ import 'strategy_service.dart';
 import 'signalr_service.dart';
 import 'preferences_service.dart';
 import 'audio_service.dart';
+import 'trading_service.dart';
 import '../models/trade_models.dart';
 import '../models/extreme_storage_item.dart';
 import '../models/pivot_storage_item.dart';
@@ -29,17 +30,20 @@ class StateService extends ChangeNotifier {
   final SignalRService _signalRService;
   final PreferencesService _preferencesService;
   final AudioService _audioService;
+  final TradingApiService? _tradingApiService;
 
   StateService({
     required ApiService apiService,
     required SignalRService signalRService,
     required PreferencesService preferencesService,
     required AudioService audioService,
+    TradingApiService? tradingApiService,
     StrategyService? strategyService,
   })  : _apiService = apiService,
         _signalRService = signalRService,
         _preferencesService = preferencesService,
         _audioService = audioService,
+        _tradingApiService = tradingApiService,
         _strategyService = strategyService ?? StrategyService(),
         _ownsStrategyService = strategyService == null {
     _init();
@@ -108,6 +112,16 @@ class StateService extends ChangeNotifier {
 
   List<HistoryDeal> _history = [];
   List<HistoryDeal> get history => _history;
+
+  /// Filtro "Hoje" do histórico de trades. Fica no StateService para o
+  /// polling de background respeitar a mesma janela exibida pelo drawer.
+  bool _historyTodayOnly = true;
+  bool get historyTodayOnly => _historyTodayOnly;
+
+  Timer? _tradingPollTimer;
+  Timer? _tradingHistoryPollTimer;
+  bool _tradingRefreshInFlight = false;
+  bool _tradingHistoryRefreshInFlight = false;
 
   /// VWAP fonte única do servidor (histórico por minuto). O gráfico desenha
   /// apenas estes pontos — sem cálculo local.
@@ -204,9 +218,6 @@ class StateService extends ChangeNotifier {
   bool get tradingOrdersExpanded => _currentConfig.tradingOrdersExpanded;
   bool get tradingPositionsExpanded => _currentConfig.tradingPositionsExpanded;
   bool get tradingHistoryExpanded => _currentConfig.tradingHistoryExpanded;
-  int get tradingTabIndex => _currentConfig.tradingTabIndex;
-  bool get orderBookConfirmOrders => _currentConfig.orderBookConfirmOrders;
-  int get orderBookDepth => _currentConfig.orderBookDepth;
 
   bool _isStructureUpdating = false;
   bool get isStructureUpdating => _isStructureUpdating;
@@ -1189,26 +1200,6 @@ class StateService extends ChangeNotifier {
 
   void setTradingHistoryExpanded(bool v) {
     _currentConfig.tradingHistoryExpanded = v;
-    notifyListeners();
-    _saveConfigForSymbol(_symbol);
-  }
-
-  void setTradingTabIndex(int v) {
-    final index = v.clamp(0, 1);
-    if (_currentConfig.tradingTabIndex == index) return;
-    _currentConfig.tradingTabIndex = index;
-    notifyListeners();
-    _saveConfigForSymbol(_symbol);
-  }
-
-  void setOrderBookConfirmOrders(bool v) {
-    _currentConfig.orderBookConfirmOrders = v;
-    notifyListeners();
-    _saveConfigForSymbol(_symbol);
-  }
-
-  void setOrderBookDepth(int v) {
-    _currentConfig.orderBookDepth = v.clamp(1, 50);
     notifyListeners();
     _saveConfigForSymbol(_symbol);
   }
@@ -2391,6 +2382,7 @@ class StateService extends ChangeNotifier {
     _signalRService.onVwapUpdate = _handleVwapUpdate;
     _signalRService.onVwapHistory = _handleVwapHistory;
     _signalRService.onMarketWindow = _handleMarketWindow;
+    if (_tradingApiService != null) _startTradingPolling();
   }
 
   void _handleVwapUpdate(VwapHistoryPoint point) {
@@ -2508,6 +2500,7 @@ class StateService extends ChangeNotifier {
     _dailyPivot = null;
     _structures1440History = [];
     _vwapHistory = [];
+    _history = [];
     _marketWindow = null;
     _displayDate = null;
     _lastExtremeFrom = null;
@@ -2557,6 +2550,7 @@ class StateService extends ChangeNotifier {
       // hoje viva com o intraday recém-carregado.
       _refreshTodayDailyBar();
       notifyListeners();
+      unawaited(refreshTradingHistory());
     }
   }
 
@@ -3606,6 +3600,148 @@ class StateService extends ChangeNotifier {
 
   // --- Positions & Orders ---
 
+  void _startTradingPolling() {
+    _tradingPollTimer?.cancel();
+    _tradingHistoryPollTimer?.cancel();
+    unawaited(refreshTradingData());
+    unawaited(refreshTradingHistory());
+    _tradingPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      unawaited(refreshTradingData());
+    });
+    _tradingHistoryPollTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      unawaited(refreshTradingHistory());
+    });
+  }
+
+  /// Atualiza posições e ordens em aberto independentemente de o drawer de
+  /// trading estar visível. Guarda contra sobreposição de requisições.
+  Future<void> refreshTradingData() async {
+    final api = _tradingApiService;
+    if (api == null || _tradingRefreshInFlight) return;
+    _tradingRefreshInFlight = true;
+    List<PositionInfo>? freshPositions;
+    List<OrderInfo>? freshOrders;
+    try {
+      await Future.wait([
+        () async {
+          try {
+            freshPositions = await api.getPositions();
+          } catch (_) {
+            // mantém a lista anterior
+          }
+        }(),
+        () async {
+          try {
+            freshOrders = await api.getOpenOrders();
+          } catch (_) {
+            // mantém a lista anterior
+          }
+        }(),
+      ]);
+
+      var changed = false;
+      if (freshPositions != null &&
+          !_samePositions(_positions, freshPositions!)) {
+        _positions = freshPositions!;
+        changed = true;
+      }
+      if (freshOrders != null && !_sameOrders(_orders, freshOrders!)) {
+        _orders = freshOrders!;
+        changed = true;
+      }
+      if (changed) notifyListeners();
+    } finally {
+      _tradingRefreshInFlight = false;
+    }
+  }
+
+  /// Atualiza o histórico de trades do símbolo atual. O intervalo de 1 min
+  /// evita consultas pesadas sem perder a atualização do overlay do gráfico.
+  Future<void> refreshTradingHistory() async {
+    final api = _tradingApiService;
+    if (api == null || _symbol.isEmpty || _tradingHistoryRefreshInFlight) {
+      return;
+    }
+    _tradingHistoryRefreshInFlight = true;
+    try {
+      final today = DateTime.now();
+      final fromDate = _historyTodayOnly
+          ? '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}'
+          : '';
+      final fresh =
+          (await api.getHistory(_symbol, fromDate: fromDate)).reversed.toList();
+      if (!_sameHistory(_history, fresh)) {
+        _history = fresh;
+        notifyListeners();
+      }
+    } catch (_) {
+      // mantém o histórico anterior
+    } finally {
+      _tradingHistoryRefreshInFlight = false;
+    }
+  }
+
+  Future<void> setHistoryTodayOnly(bool value) async {
+    if (_historyTodayOnly == value) return;
+    _historyTodayOnly = value;
+    notifyListeners();
+    await refreshTradingHistory();
+  }
+
+  bool _samePositions(List<PositionInfo> a, List<PositionInfo> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.ticket != y.ticket ||
+          x.type != y.type ||
+          x.volume != y.volume ||
+          x.priceOpen != y.priceOpen ||
+          x.priceCurrent != y.priceCurrent ||
+          x.profit != y.profit ||
+          x.sl != y.sl ||
+          x.tp != y.tp) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameOrders(List<OrderInfo> a, List<OrderInfo> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.ticket != y.ticket ||
+          x.type != y.type ||
+          x.volume != y.volume ||
+          x.priceOpen != y.priceOpen ||
+          x.sl != y.sl ||
+          x.tp != y.tp ||
+          x.state != y.state) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameHistory(List<HistoryDeal> a, List<HistoryDeal> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.ticket != y.ticket ||
+          x.type != y.type ||
+          x.volume != y.volume ||
+          x.price != y.price ||
+          x.profit != y.profit ||
+          x.time != y.time) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void updatePositions(List<PositionInfo> positions) {
     _positions = positions;
     notifyListeners();
@@ -3632,6 +3768,12 @@ class StateService extends ChangeNotifier {
   void reset() {
     _processTimer?.cancel();
     _watchdogTimer?.cancel();
+    _tradingPollTimer?.cancel();
+    _tradingHistoryPollTimer?.cancel();
+    _tradingPollTimer = null;
+    _tradingHistoryPollTimer = null;
+    _tradingRefreshInFlight = false;
+    _tradingHistoryRefreshInFlight = false;
     _dailyExtremeConfigTimer?.cancel();
     _dailyPivotSyncTimer?.cancel();
     _stopDailyLiveRefresh();
