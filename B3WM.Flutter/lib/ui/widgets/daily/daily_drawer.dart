@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../../services/state_service.dart';
 import 'daily_extreme_tab.dart';
 import 'daily_pivot_tab.dart';
 import 'daily_structure_tab.dart';
@@ -25,6 +27,14 @@ class _DailyDrawerState extends State<DailyDrawer>
     super.initState();
     _tabController =
         TabController(length: 4, vsync: this, initialIndex: widget.initialTab);
+    _tabController.addListener(_persistTab);
+  }
+
+  void _persistTab() {
+    if (_tabController.indexIsChanging) return;
+    context
+        .read<StateService>()
+        .setDailyDrawerTabIndex(_tabController.index);
   }
 
   @override
@@ -37,6 +47,7 @@ class _DailyDrawerState extends State<DailyDrawer>
 
   @override
   void dispose() {
+    _tabController.removeListener(_persistTab);
     _tabController.dispose();
     super.dispose();
   }

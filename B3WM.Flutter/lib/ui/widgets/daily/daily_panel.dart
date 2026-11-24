@@ -25,7 +25,6 @@ class DailyPanel extends StatefulWidget {
 
 class _DailyPanelState extends State<DailyPanel> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  int _drawerTab = 0;
 
   @override
   void initState() {
@@ -36,7 +35,7 @@ class _DailyPanelState extends State<DailyPanel> {
   }
 
   void _openTab(int tab) {
-    setState(() => _drawerTab = tab);
+    context.read<StateService>().setDailyDrawerTabIndex(tab);
     _scaffoldKey.currentState?.openDrawer();
   }
 
@@ -50,7 +49,8 @@ class _DailyPanelState extends State<DailyPanel> {
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: const Color(0xFF2d2d2d),
-        drawer: DailyDrawer(initialTab: _drawerTab),
+        drawer: DailyDrawer(
+            initialTab: context.watch<StateService>().dailyDrawerTabIndex),
         body: Consumer<StateService>(builder: (context, state, _) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

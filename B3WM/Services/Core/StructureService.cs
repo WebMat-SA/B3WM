@@ -3,6 +3,7 @@ using B3WM.Shared.Entity;
 using B3WM.Shared.Interfaces;
 using B3WM.Shared.Models;
 using Microsoft.AspNetCore.SignalR;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Threading.Channels;
 
@@ -47,6 +48,14 @@ namespace B3WM.Services.Core
 
         /// <summary>Modo vigente do range intraday (manual | atr_leg | atr_bar).</summary>
         public string RangeMode { get; private set; } = StructureRangeModes.Manual;
+
+        /// <summary>
+        /// Serializa o read-modify-write de `{Symbol}_StructureMode.json`.
+        /// Cada símbolo tem várias instâncias (uma por timeframe) escrevendo o
+        /// mesmo arquivo; sem o lock, uma escrita atrasada com valores lidos
+        /// antes pode desfazer o modo que outra instância acabou de gravar.
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _modeConfigLocks = new();
 
         public StructureStorageItem? GetLastStructure()
             => _lastStructure?.Clone() as StructureStorageItem;
@@ -450,7 +459,9 @@ namespace B3WM.Services.Core
                 if (OnUpdate != null) await OnUpdate.Invoke(finalItem);
             }
 
-            await PersistModeConfigAsync();
+            // SetMinDistance não altera o modo: grava só o range manual para
+            // não sobrescrever com um RangeMode defasado de outra instância.
+            await PersistModeConfigAsync(persistMode: false);
         }
 
         /// <summary>
@@ -602,24 +613,26 @@ namespace B3WM.Services.Core
             }
         }
 
-        private async Task PersistModeConfigAsync()
+        private async Task PersistModeConfigAsync(bool persistMode = true)
         {
+            var path = $"{Symbol}_StructureMode.json";
+            var gate = _modeConfigLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
             try
             {
                 using var scope = _serviceProvider.CreateScope();
                 var keeper = scope.ServiceProvider.GetRequiredService<DataKeeperBase>();
-                var path = $"{Symbol}_StructureMode.json";
                 var config = await keeper.ReadDataAsync<StructureModeConfig>(path)
                     ?? new StructureModeConfig();
 
                 if (TimeFrame == 1440)
                 {
-                    config.DailyMode = RangeMode;
+                    if (persistMode) config.DailyMode = RangeMode;
                     config.DailyManualRange = _minDistanceUpdateBorder;
                 }
                 else
                 {
-                    config.Mode = RangeMode;
+                    if (persistMode) config.Mode = RangeMode;
                     config.ManualRange = _minDistanceUpdateBorder;
                 }
 
@@ -631,6 +644,10 @@ namespace B3WM.Services.Core
                 _logger.LogWarning(ex,
                     "[structure-mode] falha ao persistir modo de {Symbol} {TimeFrame}MIN",
                     Symbol, TimeFrame);
+            }
+            finally
+            {
+                gate.Release();
             }
         }
     }

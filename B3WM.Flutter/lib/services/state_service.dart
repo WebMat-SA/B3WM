@@ -103,20 +103,34 @@ class StateService extends ChangeNotifier {
   List<OrderInfo> get orders => _orders;
 
   /// Volume usado pelas ordens disparadas pelo gráfico. Espelha o campo de
-  /// quantidade do painel de trading (não persistido, default 1 contrato).
+  /// quantidade do painel de trading e é persistido entre aberturas.
   int _tradingVolume = 1;
   int get tradingVolume => _tradingVolume;
   void setTradingVolume(int value) {
     _tradingVolume = value < 1 ? 1 : value;
+    _preferencesService.setInt('TradingVolume', _tradingVolume);
   }
 
   List<HistoryDeal> _history = [];
   List<HistoryDeal> get history => _history;
 
   /// Filtro "Hoje" do histórico de trades. Fica no StateService para o
-  /// polling de background respeitar a mesma janela exibida pelo drawer.
+  /// polling de background respeitar a mesma janela exibida pelo drawer e
+  /// é persistido entre aberturas.
   bool _historyTodayOnly = true;
   bool get historyTodayOnly => _historyTodayOnly;
+
+  /// Última aba aberta no drawer de configurações (0..7).
+  int _drawerTabIndex = 0;
+  int get drawerTabIndex => _drawerTabIndex;
+
+  /// Última aba aberta no drawer de configurações do painel diário (0..3).
+  int _dailyDrawerTabIndex = 0;
+  int get dailyDrawerTabIndex => _dailyDrawerTabIndex;
+
+  /// Strategy selecionada na aba de estratégias (nome estável do backend).
+  String _selectedStrategy = '';
+  String get selectedStrategy => _selectedStrategy;
 
   Timer? _tradingPollTimer;
   Timer? _tradingHistoryPollTimer;
@@ -1626,6 +1640,7 @@ class StateService extends ChangeNotifier {
   /// Recarrega o histórico 1440 com a distância diária atual.
   Future<void> refreshDailyStructureHistory() async {
     if (_symbol.isEmpty) return;
+    await _reconcileDailyStructureMode();
     try {
       final hist = await _apiService.getStructureHistory(
           _symbol, 1440, _currentConfig.daily.structureRangeUpd,
@@ -2138,7 +2153,10 @@ class StateService extends ChangeNotifier {
             'prominence=${config.extremeMinimumProminence} '
             'visible=${config.extremeVisible} opacity=${config.extremeOpacity}');
         return config;
-      } catch (_) {}
+      } catch (e) {
+        logD('[config] falha ao ler Config_$symbol: $e; '
+            'usando config legado/default');
+      }
     }
 
     final legacy = _legacyConfig;
@@ -2156,14 +2174,21 @@ class StateService extends ChangeNotifier {
   /// global legado e herdaram seus valores por quantidade/agente, que não
   /// fazem sentido no lote de 5 e na liquidez menor. Se o valor salvo ainda
   /// for exatamente o global antigo, troca pelo default calibrado do símbolo;
-  /// valores escolhidos pelo usuário são preservados. Idempotente: depois de
-  /// migrado, o valor deixa de bater com o global.
+  /// valores escolhidos pelo usuário são preservados.
+  ///
+  /// A migração é executada UMA vez por símbolo (flag persistida no próprio
+  /// `Config_$symbol`). Sem essa trava, a comparação com as chaves globais
+  /// legadas (que continuam no SharedPreferences para semear WIN/WDO) rodava a
+  /// cada abertura e apagava a seleção do usuário sempre que ela coincidisse
+  /// com a lista global antiga.
   bool _migrateFullContractConfig(String symbol, SymbolConfig config) {
     if (symbol != Defaults.symbolIndfut && symbol != Defaults.symbolDolfut) {
       return false;
     }
+    if (config.fullContractMigrated) return false;
+    config.fullContractMigrated = true;
 
-    var changed = false;
+    var changed = true;
 
     final legacyThreshold = _preferencesService.getInt('ThresholdBubble');
     final calibrated = Defaults.thresholdBubbleSize(symbol);
@@ -2288,8 +2313,22 @@ class StateService extends ChangeNotifier {
     logD('[config] save $symbol -> noise=${config.extremeNoiseSensitivity} '
         'prominence=${config.extremeMinimumProminence} '
         'visible=${config.extremeVisible} opacity=${config.extremeOpacity}');
-    await _preferencesService.setString(
-        'Config_$symbol', jsonEncode(config.toJson()));
+    try {
+      final ok = await _preferencesService.setString(
+          'Config_$symbol', jsonEncode(config.toJson()));
+      if (!ok) logD('[config] save $symbol falhou (prefs indisponível)');
+    } catch (e) {
+      logD('[config] save $symbol erro: $e');
+    }
+  }
+
+  /// Descarrega todas as configs em memória para o disco. Chamado no ciclo de
+  /// vida do app (fechar/minimizar) para não perder a última alteração feita
+  /// antes de uma escrita assíncrona terminar.
+  Future<void> flushConfigs() async {
+    for (final symbol in List<String>.from(_configs.keys)) {
+      await _saveConfigForSymbol(symbol);
+    }
   }
 
   // --- Backup: export/import de todas as configs (issue backup) ---
@@ -2370,6 +2409,17 @@ class StateService extends ChangeNotifier {
   static const int maxBubbles = 2000;
 
   void _init() {
+    _tradingVolume = max(1, _preferencesService.getInt('TradingVolume') ?? 1);
+    _historyTodayOnly =
+        _preferencesService.getBool('HistoryTodayOnly') ?? true;
+    _drawerTabIndex =
+        (_preferencesService.getInt('DrawerTabIndex') ?? 0).clamp(0, 7).toInt();
+    _dailyDrawerTabIndex =
+        (_preferencesService.getInt('DailyDrawerTabIndex') ?? 0)
+            .clamp(0, 3)
+            .toInt();
+    _selectedStrategy =
+        _preferencesService.getString('SelectedStrategy') ?? '';
     _signalRService.onCloseBar = _handleCloseBar;
     _signalRService.onNewBubble = _handleNewBubble;
     _signalRService.onVolumeUpdate = _handleVolumeUpdate;
@@ -2521,6 +2571,9 @@ class StateService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Alinha o modo de estrutura no backend antes de ler a série: se o
+      // servidor reiniciou em manual, o fetch inicial leria a série errada.
+      await _reconcileStructureMode();
       if (_currentConfig.dateRangeMode == DateRangeMode.intraday) {
         await _loadIntraday();
       } else {
@@ -3130,6 +3183,50 @@ class StateService extends ChangeNotifier {
     }
   }
 
+  /// Garante que o backend está no mesmo modo intraday salvo no app. Um
+  /// restart do servidor (ou uma escrita concorrente de outro timeframe) pode
+  /// deixar o arquivo `{Symbol}_StructureMode.json` em manual enquanto o app
+  /// segue com `atr_leg/atr_bar`; sem reconciliar, o load lê a série manual e
+  /// a estrutura parece ter "resetado" a cada sessão.
+  Future<void> _reconcileStructureMode() async {
+    if (_symbol.isEmpty) return;
+    final saved = Defaults.normalizeStructureRangeMode(
+        _currentConfig.structureRangeMode);
+    try {
+      final backend = await _apiService.getStructureMode(_symbol);
+      if (backend == null) return;
+      final current = Defaults.normalizeStructureRangeMode(
+          backend['Mode'] as String? ?? backend['mode'] as String?);
+      if (current == saved) return;
+      logD('[structureMode] backend=$current app=$saved em $_symbol; '
+          'reaplicando');
+      final structures = await _apiService.setStructureMode(_symbol, saved);
+      _structures = structures.where((s) => s.timeFrame != 1440).toList();
+      _recomputeStructureChanges(_structures);
+    } catch (e) {
+      logD('[structureMode] reconcile error: $e');
+    }
+  }
+
+  /// Mesma reconciliação do modo intraday, mas para o 1440 da análise diária.
+  Future<void> _reconcileDailyStructureMode() async {
+    if (_symbol.isEmpty) return;
+    final saved = Defaults.normalizeStructureRangeMode(
+        _currentConfig.daily.structureRangeMode);
+    try {
+      final backend = await _apiService.getStructureMode(_symbol);
+      if (backend == null) return;
+      final current = Defaults.normalizeStructureRangeMode(
+          backend['DailyMode'] as String? ?? backend['dailyMode'] as String?);
+      if (current == saved) return;
+      logD('[dailyStructureMode] backend=$current app=$saved em $_symbol; '
+          'reaplicando');
+      await _apiService.setStructureModeForTimeFrame(_symbol, 1440, saved);
+    } catch (e) {
+      logD('[dailyStructureMode] reconcile error: $e');
+    }
+  }
+
   String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -3684,8 +3781,33 @@ class StateService extends ChangeNotifier {
   Future<void> setHistoryTodayOnly(bool value) async {
     if (_historyTodayOnly == value) return;
     _historyTodayOnly = value;
+    await _preferencesService.setBool('HistoryTodayOnly', value);
     notifyListeners();
     await refreshTradingHistory();
+  }
+
+  /// Persiste a aba escolhida no drawer para reabrir na mesma seção.
+  void setDrawerTabIndex(int value) {
+    final clamped = value.clamp(0, 7).toInt();
+    if (_drawerTabIndex == clamped) return;
+    _drawerTabIndex = clamped;
+    _preferencesService.setInt('DrawerTabIndex', clamped);
+  }
+
+  /// Persiste a aba escolhida no drawer do painel diário.
+  void setDailyDrawerTabIndex(int value) {
+    final clamped = value.clamp(0, 3).toInt();
+    if (_dailyDrawerTabIndex == clamped) return;
+    _dailyDrawerTabIndex = clamped;
+    _preferencesService.setInt('DailyDrawerTabIndex', clamped);
+  }
+
+  /// Persiste a strategy escolhida na aba Estratégias.
+  void setSelectedStrategy(String? name) {
+    final value = name ?? '';
+    if (_selectedStrategy == value) return;
+    _selectedStrategy = value;
+    _preferencesService.setString('SelectedStrategy', value);
   }
 
   bool _samePositions(List<PositionInfo> a, List<PositionInfo> b) {

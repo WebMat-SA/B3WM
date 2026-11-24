@@ -278,8 +278,7 @@ void main() {
       wdofut.reset();
     });
 
-    test('contratos cheios migram valores herdados do config global', () async {
-      SharedPreferences.setMockInitialValues({
+    test('contratos cheios migram valores herdados do config global', () async {      SharedPreferences.setMockInitialValues({
         'b3wm_TimeFrame': 2,
         'b3wm_ThresholdBubble': 475,
         'b3wm_SelectedAgents': jsonEncode([13, 16]),
@@ -327,6 +326,85 @@ void main() {
       expect(dol.selectedAgents, [127]);
       expect(dol.agentThresholds, {127: 20});
       dol.reset();
+    });
+
+    test('migração dos contratos cheios roda uma única vez', () async {
+      SharedPreferences.setMockInitialValues({
+        'b3wm_TimeFrame': 2,
+        'b3wm_SelectedAgents': jsonEncode([13, 16]),
+        'b3wm_Config_INDFUT': jsonEncode({
+          'timeFrame': 2,
+          'structureRangeMode': 'atr_bar',
+          'selectedAgents': [13, 16],
+          'knownAgents': [13, 16],
+        }),
+      });
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('INDFUT');
+      // Primeira abertura: remove o que veio herdado do config global, mas
+      // preserva o modo de estrutura salvo pelo usuário.
+      expect(service.selectedAgents, isEmpty);
+      expect(service.structureRangeMode, Defaults.structureRangeModeAtrBar);
+
+      // Usuário volta a selecionar exatamente os agentes da lista global.
+      service.toggleAgent(13);
+      service.toggleAgent(16);
+      expect(service.selectedAgents, [13, 16]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      service.reset();
+
+      // Na próxima abertura a migração não pode rodar de novo e apagar a
+      // seleção (antes ela era reaplicada a cada load, pois as chaves legadas
+      // continuam no SharedPreferences para semear WIN/WDO).
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('INDFUT');
+      expect(reloaded.selectedAgents, [13, 16]);
+      expect(reloaded.structureRangeMode, Defaults.structureRangeModeAtrBar);
+      reloaded.reset();
+    });
+
+    test('modo ATR salvo é reaplicado se o backend estiver em manual',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'b3wm_Config_WINFUT': jsonEncode({
+          'timeFrame': 2,
+          'structureRangeMode': 'atr_bar',
+        }),
+      });
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      String? appliedMode;
+      final api = ApiService(
+        baseUrl: 'http://test.local',
+        client: MockClient((request) async {
+          final path = request.url.path;
+          if (path.contains('GetStructureMode')) {
+            return http.Response(
+                jsonEncode({'Mode': 'manual', 'DailyMode': 'manual'}), 200);
+          }
+          if (path.contains('SetStructureMode')) {
+            appliedMode = request.url.pathSegments.last;
+            return http.Response('[]', 200);
+          }
+          if (path.contains('GetVolume')) return http.Response('null', 200);
+          return http.Response('[]', 200);
+        }),
+      );
+      final service = StateService(
+        apiService: api,
+        signalRService: _NoopSignalRService(
+            hubUrl: 'http://test.local/hub', apiService: api),
+        preferencesService: prefs,
+        audioService: AudioService(),
+      );
+      await service.setSymbol('WINFUT');
+
+      expect(appliedMode, Defaults.structureRangeModeAtrBar);
+      service.reset();
     });
 
     test('lista de agentes guarda somente os já detectados por símbolo',
@@ -393,6 +471,36 @@ void main() {
       expect(reloaded.tradingOrdersExpanded, isTrue);
       expect(reloaded.tradingPositionsExpanded, isTrue);
       expect(reloaded.tradingHistoryExpanded, isTrue);
+      reloaded.reset();
+    });
+
+    test('preferências globais do drawer persistem', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = PreferencesService();
+      await prefs.init();
+
+      final service = _createService(prefs);
+      await service.setSymbol('WINFUT');
+      expect(service.tradingVolume, 1);
+      expect(service.historyTodayOnly, isTrue);
+      expect(service.drawerTabIndex, 0);
+      expect(service.dailyDrawerTabIndex, 0);
+      expect(service.selectedStrategy, isEmpty);
+
+      service.setTradingVolume(7);
+      await service.setHistoryTodayOnly(false);
+      service.setDrawerTabIndex(4);
+      service.setDailyDrawerTabIndex(2);
+      service.setSelectedStrategy('JevAnalysis');
+      service.reset();
+
+      final reloaded = _createService(prefs);
+      await reloaded.setSymbol('WINFUT');
+      expect(reloaded.tradingVolume, 7);
+      expect(reloaded.historyTodayOnly, isFalse);
+      expect(reloaded.drawerTabIndex, 4);
+      expect(reloaded.dailyDrawerTabIndex, 2);
+      expect(reloaded.selectedStrategy, 'JevAnalysis');
       reloaded.reset();
     });
 

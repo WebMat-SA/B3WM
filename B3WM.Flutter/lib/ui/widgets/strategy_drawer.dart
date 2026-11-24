@@ -47,9 +47,17 @@ class _StrategyDrawerState extends State<StrategyDrawer>
   Future<void> _refreshAll() async {
     final list = await _svc.list();
     if (!mounted) return;
+    final saved = context.read<StateService>().selectedStrategy;
     setState(() {
       _strategies = list;
-      _selected ??= list.isNotEmpty ? list.first.name : null;
+      if (_selected == null) {
+        _selected = list.any((s) => s.name == saved)
+            ? saved
+            : (list.isNotEmpty ? list.first.name : null);
+        if (_selected != null) {
+          context.read<StateService>().setSelectedStrategy(_selected);
+        }
+      }
     });
     if (mounted) context.read<StateService>().refreshStrategySessions();
   }
@@ -152,6 +160,7 @@ class _StrategyDrawerState extends State<StrategyDrawer>
                       .toList(),
                   onChanged: (v) {
                     setState(() => _selected = v);
+                    context.read<StateService>().setSelectedStrategy(v);
                   },
                 ),
                 if (info != null) ...[

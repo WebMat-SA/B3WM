@@ -85,54 +85,60 @@ class NewMapFlowPage extends StatefulWidget {
   State<NewMapFlowPage> createState() => _NewMapFlowPageState();
 }
 
-class _NewMapFlowPageState extends State<NewMapFlowPage> {
+class _NewMapFlowPageState extends State<NewMapFlowPage>
+    with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  int _drawerTabIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    // Fechar/minimizar: descarrega as configs pendentes em memória para o
+    // disco, evitando perder a última alteração feita antes do encerramento.
+    if (lifecycleState == AppLifecycleState.paused ||
+        lifecycleState == AppLifecycleState.inactive ||
+        lifecycleState == AppLifecycleState.detached ||
+        lifecycleState == AppLifecycleState.hidden) {
+      // ignore: discarded_futures
+      context.read<StateService>().flushConfigs();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<StateService>(
       builder: (context, state, _) {
+        void openTab(int index) {
+          state.setDrawerTabIndex(index);
+          _scaffoldKey.currentState?.openDrawer();
+        }
+
         return Scaffold(
           key: _scaffoldKey,
           appBar: MapFlowAppBar(
-            onBubblesTap: () {
-              setState(() => _drawerTabIndex = 0);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onStructureTap: () {
-              setState(() => _drawerTabIndex = 1);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onVolumeProfileTap: () {
-              setState(() => _drawerTabIndex = 2);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onExtremeTap: () {
-              setState(() => _drawerTabIndex = 3);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onPivotTap: () {
-              setState(() => _drawerTabIndex = 4);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onVwapTap: () {
-              setState(() => _drawerTabIndex = 5);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onBackupTap: () {
-              setState(() => _drawerTabIndex = 6);
-              _scaffoldKey.currentState?.openDrawer();
-            },
-            onStrategyTap: () {
-              setState(() => _drawerTabIndex = 7);
-              _scaffoldKey.currentState?.openDrawer();
-            },
+            onBubblesTap: () => openTab(0),
+            onStructureTap: () => openTab(1),
+            onVolumeProfileTap: () => openTab(2),
+            onExtremeTap: () => openTab(3),
+            onPivotTap: () => openTab(4),
+            onVwapTap: () => openTab(5),
+            onBackupTap: () => openTab(6),
+            onStrategyTap: () => openTab(7),
             onTradingTap: () =>
                 state.setTradingPanelVisible(!state.tradingPanelVisible),
             tradingActive: state.tradingPanelVisible,
           ),
-          drawer: AppDrawer(initialTab: _drawerTabIndex),
+          drawer: AppDrawer(initialTab: state.drawerTabIndex),
           body: SafeArea(
             child: state.isLoading
                 ? const Center(child: CircularProgressIndicator())

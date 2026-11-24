@@ -27,6 +27,12 @@ class _AppDrawerState extends State<AppDrawer>
   void initState() {
     super.initState();
     _tabController = TabController(length: 8, vsync: this, initialIndex: widget.initialTab.clamp(0, 7));
+    _tabController.addListener(_persistTab);
+  }
+
+  void _persistTab() {
+    if (_tabController.indexIsChanging) return;
+    context.read<StateService>().setDrawerTabIndex(_tabController.index);
   }
 
   @override
@@ -39,6 +45,7 @@ class _AppDrawerState extends State<AppDrawer>
 
   @override
   void dispose() {
+    _tabController.removeListener(_persistTab);
     _tabController.dispose();
     super.dispose();
   }

@@ -83,6 +83,11 @@ class SymbolConfig {
   /// auto-selecionar apenas na primeira aparição e manter a lista estável.
   List<int> knownAgents;
 
+  /// Marca que a migração única dos contratos cheios (INDFUT/DOLFUT) já foi
+  /// aplicada a esta config. Sem isso a migração roda a cada abertura e pode
+  /// apagar uma seleção de agentes que coincida com a lista global legada.
+  bool fullContractMigrated;
+
   bool bubbleAmountFilter;
   bool bubbleAgentsFilter;
   bool bubbleSoundEnabled;
@@ -148,6 +153,7 @@ class SymbolConfig {
     required this.selectedAgents,
     required this.agentThresholds,
     required this.knownAgents,
+    this.fullContractMigrated = false,
     required this.bubbleAmountFilter,
     required this.bubbleAgentsFilter,
     required this.bubbleSoundEnabled,
@@ -203,6 +209,7 @@ class SymbolConfig {
         selectedAgents = [],
         agentThresholds = {},
         knownAgents = [],
+        fullContractMigrated = false,
         bubbleAmountFilter = true,
         bubbleAgentsFilter = true,
         bubbleSoundEnabled = true,
@@ -353,6 +360,7 @@ class SymbolConfig {
       knownAgents: isFullContract
           ? const []
           : dedupeAgents([...legacy.knownAgents, ...legacy.selectedAgents]),
+      fullContractMigrated: isFullContract,
       bubbleAmountFilter: legacy.bubbleAmountFilter,
       bubbleAgentsFilter: legacy.bubbleAgentsFilter,
       bubbleSoundEnabled: legacy.bubbleSoundEnabled,
@@ -443,6 +451,7 @@ class SymbolConfig {
               ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
           {},
       knownAgents: knownAgents,
+      fullContractMigrated: json['fullContractMigrated'] as bool? ?? false,
       bubbleAmountFilter: json['bubbleAmountFilter'] as bool? ?? true,
       bubbleAgentsFilter: json['bubbleAgentsFilter'] as bool? ?? true,
       bubbleSoundEnabled: json['bubbleSoundEnabled'] as bool? ?? true,
@@ -504,6 +513,7 @@ class SymbolConfig {
         'agentThresholds':
             agentThresholds.map((k, v) => MapEntry(k.toString(), v)),
         'knownAgents': dedupeAgents([...knownAgents, ...selectedAgents]),
+        'fullContractMigrated': fullContractMigrated,
         'bubbleAmountFilter': bubbleAmountFilter,
         'bubbleAgentsFilter': bubbleAgentsFilter,
         'bubbleSoundEnabled': bubbleSoundEnabled,

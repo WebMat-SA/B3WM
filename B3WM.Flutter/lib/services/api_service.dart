@@ -144,6 +144,20 @@ class ApiService {
         .toList();
   }
 
+  /// Modo de range vigente no backend para o símbolo (`Mode` intraday e
+  /// `DailyMode` do 1440). Usado para reconciliar a config persistida no app
+  /// com um backend que reiniciou/perdeu o modo.
+  Future<Map<String, dynamic>?> getStructureMode(String symbol) async {
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/api/Data/GetStructureMode/$symbol'),
+    );
+    if (response.statusCode != 200) return null;
+    final body = response.body.trim();
+    if (body.isEmpty || body == 'null') return null;
+    final json = jsonDecode(body);
+    return json is Map<String, dynamic> ? json : null;
+  }
+
   /// Troca o modo de um timeframe específico (o diário usa 1440).
   Future<List<StructureStorageItem>> setStructureModeForTimeFrame(
       String symbol, int timeFrame, String mode) async {
