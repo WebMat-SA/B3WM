@@ -24,11 +24,11 @@
 
         // Contrato cheio do índice: mesmo ativo-objeto do WIN (preço/pontos
         // idênticos). O lote mínimo é 5 contratos e a liquidez é muito menor
-        // que a do mini, então o threshold de detecção fica em 10 lotes (50),
+        // que a do mini, então o threshold de detecção fica em 15 (3 lotes),
         // calibrado pelos volumes reais (arquivos Data/INDFUT_VolumeService).
         public static class INDFUT
         {
-            public const int ThresholdBubbleSize = 50;
+            public const int ThresholdBubbleSize = 15;
             public const double MinDistanceUpdateBorder = 250;
             public const double MinDistanceUpdateBorderDaily = 1000;
             public const double TickSize = 5.0;
@@ -45,11 +45,11 @@
         }
 
         // Contrato cheio do dólar: mesmo preço/pontos do WDO, com valor do
-        // tick 5x. O lote mínimo é 5 contratos; 50 (10 lotes) acompanha a
+        // tick 5x. O lote mínimo é 5 contratos; 15 (3 lotes) acompanha a
         // liquidez real do DOL (série ~10x menor que o WDO).
         public static class DOLFUT
         {
-            public const int ThresholdBubbleSize = 50;
+            public const int ThresholdBubbleSize = 15;
             public const double MinDistanceUpdateBorder = 2.5;
             public const double MinDistanceUpdateBorderDaily = 100;
             public const double TickSize = 0.5;

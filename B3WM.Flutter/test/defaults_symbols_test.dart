@@ -31,7 +31,7 @@ void main() {
     });
 
     test('ranges/valores por símbolo', () {
-      expect(Defaults.thresholdBubbleSize('INDFUT'), 50);
+      expect(Defaults.thresholdBubbleSize('INDFUT'), 15);
       expect(Defaults.minDistanceUpdateBorder('INDFUT'), 250);
       expect(Defaults.minDistanceUpdateBorderDaily('INDFUT'), 1000);
       expect(Defaults.structureRangeUpdStep('INDFUT'), 5.0);
@@ -39,7 +39,7 @@ void main() {
       expect(Defaults.structureRangeUpdDailyMax('INDFUT'), 10000);
       expect(Defaults.structureRangeUpdDailyStep('INDFUT'), 50.0);
 
-      expect(Defaults.thresholdBubbleSize('DOLFUT'), 50);
+      expect(Defaults.thresholdBubbleSize('DOLFUT'), 15);
       expect(Defaults.minDistanceUpdateBorder('DOLFUT'), 2.5);
       expect(Defaults.minDistanceUpdateBorderDaily('DOLFUT'), 100);
       expect(Defaults.structureRangeUpdStep('DOLFUT'), 0.5);
@@ -73,8 +73,8 @@ void main() {
       final ind = SymbolConfig.withDefaults('INDFUT');
       final dol = SymbolConfig.withDefaults('DOLFUT');
 
-      expect(ind.thresholdBubble, 50);
-      expect(dol.thresholdBubble, 50);
+      expect(ind.thresholdBubble, 15);
+      expect(dol.thresholdBubble, 15);
       expect(ind.daily.structureRangeUpd, 1000);
       expect(dol.daily.structureRangeUpd, 100);
 

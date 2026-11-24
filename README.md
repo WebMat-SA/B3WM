@@ -211,7 +211,7 @@ símbolo a partir de `SymbolRegistry` (`B3WM.Shared/Models/SymbolRegistry.cs`).
   (confere com `PointValue` 1 e 50 por ponto).
 - `ThresholdBubbleSize` é baseado em quantidade, não em preço. Como o lote
   mínimo dos cheios é 5 contratos e a liquidez é menor que a do mini, o
-  detector de `INDFUT`/`DOLFUT` usa 50 (10 lotes) — calibrado pelos arquivos
+  detector de `INDFUT`/`DOLFUT` usa 15 (3 lotes) — calibrado pelos arquivos
   `Data/INDFUT_VolumeService_*`/`Data/DOLFUT_VolumeService_*`.
 - No ExtractorRTD o mapeamento `T&Tn` → papel é editável e agora aceita os
   quatro símbolos (default `T&T0..3` = WIN/WDO/IND/DOL, mantendo T0/T1 legados). Se o Profit não

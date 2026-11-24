@@ -329,6 +329,16 @@ void main() {
       expect(ind.selectedAgents, isEmpty);
       expect(ind.knownAgents, isEmpty);
       expect(ind.agentThresholds, isEmpty);
+      // A migração precisa ser persistida: sem isso ela roda de novo a cada
+      // abertura e desfaz qualquer seleção nova de agentes.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final savedInd =
+          jsonDecode(prefs.getString('Config_INDFUT')!) as Map<String, dynamic>;
+      expect(
+          savedInd['thresholdBubble'], Defaults.thresholdBubbleSize('INDFUT'));
+      expect(savedInd['selectedAgents'], isEmpty);
+      expect(savedInd['knownAgents'], isEmpty);
+      expect(savedInd['agentThresholds'], isEmpty);
       ind.reset();
 
       final dol = _createService(prefs);
@@ -340,28 +350,33 @@ void main() {
       dol.reset();
     });
 
-    test('seletor lista todos os agentes conhecidos mesmo sem bubbles',
+    test('lista de agentes guarda somente os já detectados por símbolo',
         () async {
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({
+        'b3wm_Config_INDFUT': jsonEncode({
+          'timeFrame': 2,
+          'knownAgents': [85, 127],
+          'selectedAgents': [85],
+        }),
+      });
       final prefs = PreferencesService();
       await prefs.init();
 
       final service = _createService(prefs);
       await service.setSymbol('INDFUT');
-      expect(service.selectableAgents,
-          containsAll(Agents.all.map((a) => a.value)));
-      expect(service.selectedAgents, isEmpty);
+      // Só o histórico do próprio símbolo; não lista o enum inteiro.
+      expect(service.allBubbleAgents, {85, 127});
+      expect(service.allBubbleAgents, isNot(contains(6003)));
 
-      // Selecionar e desmarcar um agente que nunca apareceu deve persistir.
-      service.toggleAgent(85);
-      expect(service.selectedAgents, contains(85));
+      // Desmarcar mantém o agente no histórico longo prazo, só sai do filtro.
       service.toggleAgent(85);
       expect(service.selectedAgents, isNot(contains(85)));
       service.reset();
 
       final reloaded = _createService(prefs);
       await reloaded.setSymbol('INDFUT');
-      expect(reloaded.selectableAgents, contains(85));
+      expect(reloaded.allBubbleAgents, containsAll([85, 127]));
+      expect(reloaded.allBubbleAgents, isNot(contains(6003)));
       expect(reloaded.selectedAgents, isNot(contains(85)));
       reloaded.reset();
     });

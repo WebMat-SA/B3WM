@@ -22,7 +22,6 @@ import '../models/extreme_storage_item.dart';
 import '../models/pivot_storage_item.dart';
 import '../models/vwap_history_point.dart';
 import '../models/market_window.dart';
-import '../models/ticks2.dart' show Agents;
 import '../app_log.dart';
 
 class StateService extends ChangeNotifier {
@@ -217,6 +216,7 @@ class StateService extends ChangeNotifier {
 
   /// Agentes visíveis no drawer: os do dia carregado mais os já conhecidos
   /// e/ou selecionados (persistidos), para a lista não "sumir" ao trocar de dia.
+  /// `knownAgents` é o histórico de longo prazo por símbolo (já detectados).
   Set<int> get allBubbleAgents {
     if (_symbol.isEmpty) return _allBubbleAgents;
     return {
@@ -225,14 +225,6 @@ class StateService extends ChangeNotifier {
       ..._currentConfig.knownAgents,
     };
   }
-
-  /// Lista completa do seletor de agentes: todo o enum de corretoras conhecidas
-  /// + agentes fora do enum já vistos/selecionados. Assim o filtro pode ser
-  /// configurado mesmo em símbolo que ainda não gerou nenhuma bubble.
-  Set<int> get selectableAgents => {
-        for (final agent in Agents.all) agent.value,
-        ...allBubbleAgents,
-      };
 
   /// Limites únicos do zoom Y (preço) — Fase B-1.
   /// Unifica o clamp da roda (`MapFlowChart._handleScroll`), dos botões `−/+`
@@ -2084,7 +2076,7 @@ class StateService extends ChangeNotifier {
 
   void selectAllAgents() {
     if (_guardLocked('selectAllAgents')) return;
-    final all = selectableAgents;
+    final all = allBubbleAgents;
     final selected = _currentConfig.selectedAgents.toSet();
     if (selected.length == all.length && all.every(selected.contains)) {
       _currentConfig.selectedAgents = [];

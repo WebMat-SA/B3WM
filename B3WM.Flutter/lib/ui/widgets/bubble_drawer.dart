@@ -205,9 +205,8 @@ class _BubbleDrawerState extends State<BubbleDrawer>
   }
 
   Widget _agentsSection(StateService state) {
-    final allAgents = state.selectableAgents.toList()
+    final allAgents = state.allBubbleAgents.toList()
       ..sort((a, b) => agentsDescription(a).compareTo(agentsDescription(b)));
-    if (allAgents.isEmpty) return const SizedBox.shrink();
     final selected = state.selectedAgents.toSet();
 
     return ExpansionTile(
@@ -225,17 +224,27 @@ class _BubbleDrawerState extends State<BubbleDrawer>
       tilePadding: const EdgeInsets.symmetric(horizontal: 8),
       childrenPadding: const EdgeInsets.only(bottom: 8),
       children: [
-        CheckboxListTile(
-          dense: true,
-          title: const Text('Selecionar Todos',
-              style: TextStyle(fontSize: 12)),
-          value: selected.length == allAgents.length &&
-              allAgents.every(selected.contains),
-          onChanged: (_) => state.selectAllAgents(),
-          controlAffinity: ListTileControlAffinity.leading,
-        ),
-        const Divider(height: 1),
-        ...allAgents.map((agent) => _agentTile(state, agent)),
+        if (allAgents.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Text(
+              'Nenhum agente detectado ainda',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          )
+        else ...[
+          CheckboxListTile(
+            dense: true,
+            title: const Text('Selecionar Todos',
+                style: TextStyle(fontSize: 12)),
+            value: selected.length == allAgents.length &&
+                allAgents.every(selected.contains),
+            onChanged: (_) => state.selectAllAgents(),
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+          const Divider(height: 1),
+          ...allAgents.map((agent) => _agentTile(state, agent)),
+        ],
       ],
     );
   }
