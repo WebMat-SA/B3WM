@@ -90,6 +90,10 @@ class TradingApiService {
     return _postOrder('/api/trade/order-modify-pending', request.toJson());
   }
 
+  Future<OrderResult?> modifyPosition(ModifyPositionRequest request) async {
+    return _postOrder('/api/trade/order-modify', request.toJson());
+  }
+
   Future<OrderResult?> cancelOrder(int orderTicket) async {
     return _postOrder('/api/trade/order-cancel', {
       'position_ticket': orderTicket,

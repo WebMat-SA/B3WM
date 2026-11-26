@@ -91,6 +91,24 @@ class ModifyPendingOrderRequest {
       };
 }
 
+class ModifyPositionRequest {
+  final int positionTicket;
+  final double? sl;
+  final double? tp;
+
+  ModifyPositionRequest({
+    required this.positionTicket,
+    this.sl,
+    this.tp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'position_ticket': positionTicket,
+        'sl': sl,
+        'tp': tp,
+      };
+}
+
 class OrderResult {
   final bool success;
   final int retcode;

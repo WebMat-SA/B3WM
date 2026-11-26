@@ -19,6 +19,20 @@ class ChartFixedPainter extends CustomPainter {
   final Set<int> closingTickets;
   final Set<int> cancellingTickets;
   final Set<int> hiddenOrderTickets;
+
+  /// Posição/camada de saída que está sendo arrastada: a linha original é
+  /// escondida para não duplicar com o preview do arrasto.
+  final int? hiddenExitPositionTicket;
+  final String? hiddenExitKind;
+
+  /// Tickets cujo "X" está sob o mouse, para desenhar sombra de hover.
+  final int? hoveredClosePositionTicket;
+  final int? hoveredCloseOrderTicket;
+  final int? hoveredCloseExitTicket;
+  final String? hoveredCloseExitKind;
+
+  /// Saídas (`ticket:tp` / `ticket:sl`) em processo de cancelamento.
+  final Set<String> cancellingExitKeys;
   final double loadingAnimation;
 
   static const double marginLeft = 8;
@@ -70,6 +84,13 @@ class ChartFixedPainter extends CustomPainter {
     this.closingTickets = const {},
     this.cancellingTickets = const {},
     this.hiddenOrderTickets = const {},
+    this.hiddenExitPositionTicket,
+    this.hiddenExitKind,
+    this.hoveredClosePositionTicket,
+    this.hoveredCloseOrderTicket,
+    this.hoveredCloseExitTicket,
+    this.hoveredCloseExitKind,
+    this.cancellingExitKeys = const {},
     this.loadingAnimation = 0,
   });
 
@@ -118,6 +139,7 @@ class ChartFixedPainter extends CustomPainter {
     _drawVwapLines(canvas);
     _drawMarkLine(canvas);
     _drawPositionLines(canvas);
+    _drawPositionExitLines(canvas);
     _drawOrderLines(canvas);
     canvas.restore();
     _drawYAxis(canvas);
@@ -611,8 +633,71 @@ class ChartFixedPainter extends CustomPainter {
             : '',
         metricColor: points >= 0 ? tradeBuyColor : tradeSellColor,
         isLoading: closingTickets.contains(pos.ticket),
+        closeHovered: hoveredClosePositionTicket == pos.ticket,
       );
     }
+  }
+
+  void _drawPositionExitLines(Canvas canvas) {
+    // Gain/loss só no intraday e com as ordens em aberto visíveis (mesmo
+    // gate do botão C/V usado para o arrasto).
+    if (data.timeFrame >= 1440 || !data.openOrdersVisible) return;
+    for (final pos in data.positions) {
+      if (pos.tp > 0) {
+        _drawPositionExitLine(
+          canvas,
+          pos: pos,
+          price: pos.tp,
+          kind: 'tp',
+          color: tradeBuyColor,
+        );
+      }
+      if (pos.sl > 0) {
+        _drawPositionExitLine(
+          canvas,
+          pos: pos,
+          price: pos.sl,
+          kind: 'sl',
+          color: tradeSellColor,
+        );
+      }
+    }
+  }
+
+  void _drawPositionExitLine(
+    Canvas canvas, {
+    required PositionInfo pos,
+    required double price,
+    required String kind,
+    required Color color,
+  }) {
+    if (hiddenExitPositionTicket == pos.ticket && hiddenExitKind == kind) {
+      return;
+    }
+    final y = _priceToY(price);
+    if (y < marginTop || y > marginTop + chartHeight) return;
+
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.7)
+      ..strokeWidth = 1.3;
+    _drawDashedLine(
+        canvas, Offset(marginLeft, y), Offset(chartRight, y), paint);
+
+    final key = '${pos.ticket}:$kind';
+    final hovered =
+        hoveredCloseExitTicket == pos.ticket && hoveredCloseExitKind == kind;
+    final points = (price - pos.priceOpen).abs();
+    _drawTradeChip(
+      canvas,
+      y: y,
+      color: color,
+      volume: pos.volume,
+      metric: formatTradePoints(points, data.symbol),
+      metricColor: color,
+      isLoading: cancellingExitKeys.contains(key),
+      showClose: true,
+      closeHovered: hovered,
+    );
   }
 
   void _drawOrderLines(Canvas canvas) {
@@ -642,6 +727,7 @@ class ChartFixedPainter extends CustomPainter {
         metricColor: const Color(0xFFD0D0D0),
         isLoading: cancellingTickets.contains(order.ticket),
         isOrder: true,
+        closeHovered: hoveredCloseOrderTicket == order.ticket,
       );
     }
   }
@@ -655,6 +741,8 @@ class ChartFixedPainter extends CustomPainter {
     required Color metricColor,
     required bool isLoading,
     bool isOrder = false,
+    bool showClose = true,
+    bool closeHovered = false,
   }) {
     final spans = <InlineSpan>[
       TextSpan(
@@ -689,9 +777,11 @@ class ChartFixedPainter extends CustomPainter {
     )..layout();
 
     final left = marginLeft + tradeChipLeft;
-    final width = (_tradeChipTextLeftLocal - tradeChipLeft) +
-        tp.width +
-        tradeChipRightPad;
+    final textLeftLocal = showClose
+        ? _tradeChipTextLeftLocal
+        : tradeChipLeft + tradeChipAccentWidth + tradeChipPaddingLeft;
+    final width =
+        (textLeftLocal - tradeChipLeft) + tp.width + tradeChipRightPad;
     final top = (y - tradeChipHeight / 2)
         .clamp(marginTop + 1, marginTop + chartHeight - tradeChipHeight - 1)
         .toDouble();
@@ -731,36 +821,54 @@ class ChartFixedPainter extends CustomPainter {
         ..color = color.withValues(alpha: isOrder ? 0.55 : 0.85),
     );
 
-    _drawTradeChipClose(
-      canvas,
-      Offset(
-        left + (tradeChipCloseCenterLocalX - tradeChipLeft),
-        top + tradeChipHeight / 2,
-      ),
-      isLoading,
-    );
+    if (showClose) {
+      _drawTradeChipClose(
+        canvas,
+        Offset(
+          left + (tradeChipCloseCenterLocalX - tradeChipLeft),
+          top + tradeChipHeight / 2,
+        ),
+        isLoading,
+        hovered: closeHovered,
+      );
+    }
     tp.paint(
       canvas,
       Offset(
-        left + (_tradeChipTextLeftLocal - tradeChipLeft),
+        left + (textLeftLocal - tradeChipLeft),
         top + (tradeChipHeight - tp.height) / 2,
       ),
     );
   }
 
-  void _drawTradeChipClose(Canvas canvas, Offset center, bool isLoading) {
+  void _drawTradeChipClose(Canvas canvas, Offset center, bool isLoading,
+      {bool hovered = false}) {
     if (isLoading) {
       _drawTradeChipSpinner(canvas, center);
       return;
     }
     const radius = tradeChipCloseSize / 2;
+    if (hovered) {
+      canvas.drawCircle(
+        center + const Offset(0, 1.5),
+        radius + 2,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.55)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      );
+      canvas.drawCircle(
+        center,
+        radius + 1.5,
+        Paint()..color = Colors.white.withValues(alpha: 0.18),
+      );
+    }
     canvas.drawCircle(
       center,
       radius,
-      Paint()..color = Colors.black.withValues(alpha: 0.35),
+      Paint()..color = Colors.black.withValues(alpha: hovered ? 0.6 : 0.35),
     );
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.8)
+      ..color = Colors.white.withValues(alpha: hovered ? 1.0 : 0.8)
       ..strokeWidth = 1.3
       ..strokeCap = StrokeCap.round;
     const m = 3.4;

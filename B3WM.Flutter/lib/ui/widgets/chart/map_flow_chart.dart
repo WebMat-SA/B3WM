@@ -123,6 +123,20 @@ class _MapFlowChartState extends State<MapFlowChart>
   double? _dragOrderPrice;
   Offset? _dragOrderStartLocal;
   bool _dragOrderMoved = false;
+  // Arrasto de gain/loss da posição (RF1/RF2). A partir da linha de entrada
+  // o tipo (tp/sl) é deduzido pelo lado do preço; a partir de uma linha de
+  // saída existente o tipo já vem definido.
+  PositionInfo? _draggingExitPosition;
+  String? _draggingExitKind;
+  double? _draggingExitPrice;
+  Offset? _draggingExitStartLocal;
+  bool _draggingExitMoved = false;
+  bool _draggingExitFromEntry = false;
+  final Set<int> _modifyingTickets = {};
+  int? _hoveredClosePositionTicket;
+  int? _hoveredCloseOrderTicket;
+  ({int ticket, String kind})? _hoveredCloseExit;
+  final Set<String> _cancellingExitKeys = {};
   // Modificadores rastreados localmente. O HardwareKeyboard pode ficar
   // "preso" com Alt pressionado após Alt+Tab (o key-up vai para outra janela),
   // então zeramos este conjunto ao perder o foco do app.
@@ -741,7 +755,11 @@ class _MapFlowChartState extends State<MapFlowChart>
     if (!_initialFitDone) return;
     // Esconde o hover (linha horizontal + bubble) enquanto a régua ou uma
     // ordem está sendo arrastada para não poluir o feedback visual.
-    if (_isMeasuring || _draggingOrder != null) return;
+    if (_isMeasuring ||
+        _draggingOrder != null ||
+        _draggingExitPosition != null) {
+      return;
+    }
 
     final localX = event.localPosition.dx;
     final localY = event.localPosition.dy;
@@ -779,12 +797,24 @@ class _MapFlowChartState extends State<MapFlowChart>
     final candleIndex =
         (childX / stepX).round().clamp(0, data.candles.length - 1);
 
+    final closePos =
+        _positionCloseTicketAtLocal(event.localPosition, candleAreaHeight);
+    final closeOrder =
+        _orderCloseTicketAtLocal(event.localPosition, candleAreaHeight);
+    final closeExit =
+        closePos == null && closeOrder == null && _limitOrdersEnabled
+            ? _exitCloseAtLocal(event.localPosition, candleAreaHeight)
+            : null;
+
     setState(() {
       _hoverY = localY;
       _hoverCandleIndex = candleIndex;
       _hoveredBubble = hit;
       _hoveredHistory = hitHistory;
       _hoverPos = (hit ?? hitHistory) != null ? event.localPosition : null;
+      _hoveredClosePositionTicket = closePos;
+      _hoveredCloseOrderTicket = closeOrder;
+      _hoveredCloseExit = closeExit;
     });
   }
 
@@ -1070,7 +1100,10 @@ class _MapFlowChartState extends State<MapFlowChart>
     }
 
     for (final pos in widget.data.positions) {
-      if (_closingTickets.contains(pos.ticket)) continue;
+      if (_closingTickets.contains(pos.ticket) ||
+          _modifyingTickets.contains(pos.ticket)) {
+        continue;
+      }
       final y = _toChildY(pos.priceOpen, candleAreaHeight);
       final screenPosY = y * scaleY + ty;
       final hit = Rect.fromCenter(
@@ -1100,6 +1133,19 @@ class _MapFlowChartState extends State<MapFlowChart>
         return;
       }
     }
+
+    if (_limitOrdersEnabled) {
+      final exitHit = _exitCloseAtLocal(event.localPosition, candleAreaHeight);
+      if (exitHit != null) {
+        for (final pos in widget.data.positions) {
+          if (pos.ticket == exitHit.ticket) {
+            // ignore: discarded_futures
+            _cancelExit(pos, exitHit.kind);
+            return;
+          }
+        }
+      }
+    }
   }
 
   Offset _closeCenterLocal(double lineY, double candleAreaHeight) {
@@ -1112,7 +1158,7 @@ class _MapFlowChartState extends State<MapFlowChart>
     );
   }
 
-  bool _isOnOrderClose(Offset local, double candleAreaHeight) {
+  int? _orderCloseTicketAtLocal(Offset local, double candleAreaHeight) {
     final m = _controller.value;
     final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
     final ty = m.getTranslation().y;
@@ -1125,13 +1171,360 @@ class _MapFlowChartState extends State<MapFlowChart>
         width: size,
         height: size,
       );
-      if (hit.contains(local)) return true;
+      if (hit.contains(local)) return order.ticket;
     }
-    return false;
+    return null;
+  }
+
+  ({int ticket, String kind})? _exitCloseAtLocal(
+      Offset local, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final ty = m.getTranslation().y;
+    const size = ChartFixedPainter.tradeChipCloseHitSize;
+    for (final pos in widget.data.positions) {
+      if (_closingTickets.contains(pos.ticket) ||
+          _modifyingTickets.contains(pos.ticket)) {
+        continue;
+      }
+      ({int ticket, String kind})? check(String kind, double price) {
+        if (price <= 0) return null;
+        if (_cancellingExitKeys.contains('${pos.ticket}:$kind')) return null;
+        final lineY = _toChildY(price, candleAreaHeight) * scaleY + ty;
+        final hit = Rect.fromCenter(
+          center: _closeCenterLocal(lineY, candleAreaHeight),
+          width: size,
+          height: size,
+        );
+        return hit.contains(local) ? (ticket: pos.ticket, kind: kind) : null;
+      }
+
+      final tp = check('tp', pos.tp);
+      if (tp != null) return tp;
+      final sl = check('sl', pos.sl);
+      if (sl != null) return sl;
+    }
+    return null;
+  }
+
+  int? _positionCloseTicketAtLocal(Offset local, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final ty = m.getTranslation().y;
+    const size = ChartFixedPainter.tradeChipCloseHitSize;
+    for (final pos in widget.data.positions) {
+      if (_closingTickets.contains(pos.ticket) ||
+          _modifyingTickets.contains(pos.ticket)) {
+        continue;
+      }
+      final lineY = _toChildY(pos.priceOpen, candleAreaHeight) * scaleY + ty;
+      final hit = Rect.fromCenter(
+        center: _closeCenterLocal(lineY, candleAreaHeight),
+        width: size,
+        height: size,
+      );
+      if (hit.contains(local)) return pos.ticket;
+    }
+    return null;
+  }
+
+  PositionInfo? _positionEntryAtLocal(Offset local, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final ty = m.getTranslation().y;
+    PositionInfo? best;
+    var bestDistance = 8.0;
+    for (final pos in widget.data.positions) {
+      if (_closingTickets.contains(pos.ticket) ||
+          _modifyingTickets.contains(pos.ticket)) {
+        continue;
+      }
+      final lineY = _toChildY(pos.priceOpen, candleAreaHeight) * scaleY + ty;
+      final distance = (local.dy - lineY).abs();
+      if (distance <= bestDistance) {
+        best = pos;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  ({PositionInfo position, String kind, double price})? _positionExitAtLocal(
+      Offset local, double candleAreaHeight) {
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final ty = m.getTranslation().y;
+    ({PositionInfo position, String kind, double price})? best;
+    var bestDistance = 8.0;
+    for (final pos in widget.data.positions) {
+      if (_closingTickets.contains(pos.ticket) ||
+          _modifyingTickets.contains(pos.ticket)) {
+        continue;
+      }
+      void check(String kind, double price) {
+        if (price <= 0) return;
+        final lineY = _toChildY(price, candleAreaHeight) * scaleY + ty;
+        final distance = (local.dy - lineY).abs();
+        if (distance <= bestDistance) {
+          best = (position: pos, kind: kind, price: price);
+          bestDistance = distance;
+        }
+      }
+
+      check('tp', pos.tp);
+      check('sl', pos.sl);
+    }
+    return best;
+  }
+
+  /// Resolve a prioridade do arrasto no gráfico: "X" continua sendo tap,
+  /// depois linhas de SL/TP, depois ordens pendentes e por fim a linha de
+  /// entrada da posição (que inicia gain/loss).
+  bool _beginTradeLineDrag(Offset local, double candleAreaHeight) {
+    if (!_limitOrdersEnabled) return false;
+    if (_positionCloseTicketAtLocal(local, candleAreaHeight) != null ||
+        _orderCloseTicketAtLocal(local, candleAreaHeight) != null ||
+        _exitCloseAtLocal(local, candleAreaHeight) != null) {
+      return false;
+    }
+
+    final exitHit = _positionExitAtLocal(local, candleAreaHeight);
+    if (exitHit != null) {
+      return _beginExitDrag(
+        local,
+        exitHit.position,
+        exitHit.kind,
+        exitHit.price,
+        fromEntry: false,
+      );
+    }
+
+    if (_beginOrderDrag(local, candleAreaHeight)) return true;
+
+    final entry = _positionEntryAtLocal(local, candleAreaHeight);
+    if (entry == null) return false;
+    return _beginExitDrag(
+      local,
+      entry,
+      null,
+      entry.priceOpen,
+      fromEntry: true,
+    );
+  }
+
+  bool _beginExitDrag(
+    Offset local,
+    PositionInfo pos,
+    String? kind,
+    double? price, {
+    required bool fromEntry,
+  }) {
+    _draggingExitPosition = pos;
+    _draggingExitKind = kind;
+    _draggingExitPrice = price;
+    _draggingExitStartLocal = local;
+    _draggingExitMoved = false;
+    _draggingExitFromEntry = fromEntry;
+    _panEnabled = false;
+    _pendingTapDownLocal = null;
+    _pendingOrderModifier = null;
+    _dismissTooltip();
+    return true;
+  }
+
+  void _clearExitDrag() {
+    _draggingExitPosition = null;
+    _draggingExitKind = null;
+    _draggingExitPrice = null;
+    _draggingExitStartLocal = null;
+    _draggingExitMoved = false;
+    _draggingExitFromEntry = false;
+  }
+
+  void _updateExitDrag(Offset local, double candleAreaHeight) {
+    final start = _draggingExitStartLocal;
+    if (!_draggingExitMoved && start != null && (local - start).distance >= 3) {
+      _draggingExitMoved = true;
+    }
+    if (!_draggingExitMoved) return;
+
+    final pos = _draggingExitPosition;
+    if (pos == null) return;
+    final tick = Defaults.tickSize(widget.data.symbol);
+    final raw = _localToPrice(local.dy, candleAreaHeight);
+    if (tick <= 0 || !raw.isFinite) return;
+    final price = (raw / tick).roundToDouble() * tick;
+    if (price <= 0) return;
+
+    var kind = _draggingExitKind;
+    if (kind == null || _draggingExitFromEntry) {
+      if (price == pos.priceOpen) return;
+      final isBuy = pos.type == 'buy';
+      kind =
+          (isBuy ? price > pos.priceOpen : price < pos.priceOpen) ? 'tp' : 'sl';
+    }
+    if (mounted) {
+      setState(() {
+        _draggingExitKind = kind;
+        _draggingExitPrice = price;
+      });
+    }
+  }
+
+  _LimitOrderPreview? _draggedExitPreview(double candleAreaHeight) {
+    final pos = _draggingExitPosition;
+    final price = _draggingExitPrice;
+    final kind = _draggingExitKind;
+    if (!_draggingExitMoved || pos == null || price == null || kind == null) {
+      return null;
+    }
+    final m = _controller.value;
+    final scaleY = m[5].isFinite && m[5] > 0 ? m[5] : 1.0;
+    final y =
+        _toChildY(price, candleAreaHeight) * scaleY + m.getTranslation().y;
+    return _LimitOrderPreview(
+      price: price,
+      y: y,
+      isBuy: kind == 'tp',
+      isStop: false,
+      volume: pos.volume,
+      distance: (price - pos.priceOpen).abs(),
+    );
+  }
+
+  Future<void> _dropExit(PositionInfo pos, String kind, double price) async {
+    final last = widget.data.lastPrice;
+    final entry = pos.priceOpen;
+    if (entry <= 0) {
+      _showTradeSnack('Preço de entrada indisponível para ajustar a ordem.',
+          error: true);
+      return;
+    }
+
+    final isBuy = pos.type == 'buy';
+    final bool valid;
+    if (kind == 'tp') {
+      // Alvo sempre no lado do lucro e à frente do preço atual.
+      valid = isBuy
+          ? price > entry && (last <= 0 || price > last)
+          : price < entry && (last <= 0 || price < last);
+    } else {
+      // Stop pode ir até o breakeven/lucro (trailing), mas nunca do lado
+      // errado do preço atual.
+      valid = last <= 0
+          ? (isBuy ? price < entry : price > entry)
+          : (isBuy ? price < last : price > last);
+    }
+    if (!valid) {
+      _showTradeSnack(
+        kind == 'tp'
+            ? 'Alvo inválido: ajuste para o lado correto do preço.'
+            : 'Stop inválido: ajuste para o lado correto do preço.',
+        error: true,
+      );
+      return;
+    }
+    if (kind == 'tp' && price == pos.tp) return;
+    if (kind == 'sl' && price == pos.sl) return;
+
+    await _modifyPositionExit(
+      pos,
+      sl: kind == 'sl' ? price : null,
+      tp: kind == 'tp' ? price : null,
+    );
+  }
+
+  Future<void> _modifyPositionExit(
+    PositionInfo pos, {
+    double? sl,
+    double? tp,
+  }) async {
+    if (!_modifyingTickets.add(pos.ticket)) return;
+    _startLoadingAnimation();
+    if (mounted) setState(() {});
+    final api = context.read<TradingApiService>();
+    final state = context.read<StateService>();
+    try {
+      final result = await api.modifyPosition(ModifyPositionRequest(
+        positionTicket: pos.ticket,
+        sl: sl,
+        tp: tp,
+      ));
+      if (!mounted) return;
+      if (result == null || !result.success) {
+        final reason = result?.message.isNotEmpty == true
+            ? result!.message
+            : (result?.retcodeName.isNotEmpty == true
+                ? result!.retcodeName
+                : 'erro desconhecido');
+        _showTradeSnack(
+          'Falha ao ajustar ${sl != null ? 'stop' : 'alvo'} '
+          'da posição ${pos.ticket}: $reason',
+          error: true,
+        );
+        return;
+      }
+      await state.refreshTradingData();
+    } catch (e) {
+      if (mounted) {
+        _showTradeSnack('Erro ao ajustar a posição: $e', error: true);
+      }
+    } finally {
+      _modifyingTickets.remove(pos.ticket);
+      _stopLoadingAnimationIfNeeded();
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _cancelExit(PositionInfo pos, String kind) async {
+    final key = '${pos.ticket}:$kind';
+    if (!_modifyingTickets.add(pos.ticket)) return;
+    if (!_cancellingExitKeys.add(key)) {
+      _modifyingTickets.remove(pos.ticket);
+      return;
+    }
+    _startLoadingAnimation();
+    if (mounted) {
+      setState(() => _hoveredCloseExit = null);
+    }
+    final api = context.read<TradingApiService>();
+    final state = context.read<StateService>();
+    try {
+      final result = await api.modifyPosition(ModifyPositionRequest(
+        positionTicket: pos.ticket,
+        sl: kind == 'sl' ? 0.0 : null,
+        tp: kind == 'tp' ? 0.0 : null,
+      ));
+      if (!mounted) return;
+      if (result == null || !result.success) {
+        final reason = result?.message.isNotEmpty == true
+            ? result!.message
+            : (result?.retcodeName.isNotEmpty == true
+                ? result!.retcodeName
+                : 'erro desconhecido');
+        _showTradeSnack(
+          'Falha ao remover ${kind == 'tp' ? 'o alvo' : 'o stop'} '
+          'da posição ${pos.ticket}: $reason',
+          error: true,
+        );
+        return;
+      }
+      await state.refreshTradingData();
+    } catch (e) {
+      if (mounted) {
+        _showTradeSnack('Erro ao remover a saída da posição: $e', error: true);
+      }
+    } finally {
+      _modifyingTickets.remove(pos.ticket);
+      _cancellingExitKeys.remove(key);
+      _stopLoadingAnimationIfNeeded();
+      if (mounted) setState(() {});
+    }
   }
 
   bool _beginOrderDrag(Offset local, double candleAreaHeight) {
-    if (!_limitOrdersEnabled || _isOnOrderClose(local, candleAreaHeight)) {
+    if (!_limitOrdersEnabled ||
+        _orderCloseTicketAtLocal(local, candleAreaHeight) != null) {
       return false;
     }
     final order = _orderAtLocal(local, candleAreaHeight);
@@ -1361,8 +1754,11 @@ class _MapFlowChartState extends State<MapFlowChart>
     final active = _limitOrdersEnabled;
     return Tooltip(
       message: active
-          ? 'Ordens ativas — Shift compra / Alt venda (limite ou stop; Esc desativa)'
-          : 'Ativar ordens no gráfico — Shift compra / Alt venda (limite ou stop)',
+          ? 'Ordens ativas — Shift compra / Alt venda; arraste a posição '
+              'ou as linhas para ajustar gain/loss; X remove a saída '
+              '(Esc desativa)'
+          : 'Ativar ordens no gráfico — Shift compra / Alt venda; '
+              'arraste a posição/linhas para gain/loss',
       preferBelow: false,
       child: GestureDetector(
         onTap: _toggleLimitOrders,
@@ -1556,6 +1952,21 @@ class _MapFlowChartState extends State<MapFlowChart>
       }
       return false;
     });
+    _modifyingTickets.removeWhere((t) {
+      if (!posTickets.contains(t)) {
+        changed = true;
+        return true;
+      }
+      return false;
+    });
+    _cancellingExitKeys.removeWhere((key) {
+      final ticket = int.tryParse(key.split(':').first);
+      if (ticket == null || !posTickets.contains(ticket)) {
+        changed = true;
+        return true;
+      }
+      return false;
+    });
     if (changed) {
       _stopLoadingAnimationIfNeeded();
     }
@@ -1568,6 +1979,9 @@ class _MapFlowChartState extends State<MapFlowChart>
     bool success = false;
     try {
       final api = context.read<TradingApiService>();
+      // RF4: ao fechar pelo gráfico, remove as ordens em aberto do símbolo
+      // antes para evitar que uma pendente seja executada durante a operação.
+      await _cancelOpenOrdersForSymbol(api);
       final result = await api.closePosition(ticket);
       if (result != null && mounted) {
         if (!result.success) {
@@ -1594,6 +2008,52 @@ class _MapFlowChartState extends State<MapFlowChart>
     } else if (success && mounted) {
       await context.read<StateService>().refreshTradingData();
     }
+  }
+
+  /// Cancela as ordens pendentes do símbolo atual (RF4). Usa a lista já
+  /// visível no gráfico; se as ordens não estiverem visíveis, busca na API
+  /// para garantir a remoção. Falhas são avisadas mas não bloqueiam o
+  /// fechamento da posição.
+  Future<void> _cancelOpenOrdersForSymbol(TradingApiService api) async {
+    final symbol = widget.data.symbol;
+    var orders = widget.data.orders;
+    if (!widget.data.openOrdersVisible) {
+      try {
+        orders = await api.getOpenOrders();
+      } catch (_) {
+        return;
+      }
+    }
+    final pending = orders
+        .where((o) =>
+            normalizeTradeSymbol(o.symbol) == symbol &&
+            !_cancellingTickets.contains(o.ticket))
+        .toList();
+    if (pending.isEmpty) return;
+
+    final failures = <int>[];
+    for (final order in pending) {
+      if (!_cancellingTickets.add(order.ticket)) continue;
+      try {
+        final result = await api.cancelOrder(order.ticket);
+        if (result == null || !result.success) {
+          failures.add(order.ticket);
+        }
+      } catch (_) {
+        failures.add(order.ticket);
+      } finally {
+        _cancellingTickets.remove(order.ticket);
+      }
+    }
+    if (!mounted) return;
+    if (failures.isNotEmpty) {
+      _showTradeSnack(
+        'Falha ao cancelar ordens em aberto: ${failures.join(', ')}. '
+        'A posição será fechada mesmo assim.',
+        error: true,
+      );
+    }
+    setState(() {});
   }
 
   Future<void> _cancelOrder(int ticket) async {
@@ -1636,7 +2096,10 @@ class _MapFlowChartState extends State<MapFlowChart>
   }
 
   void _stopLoadingAnimationIfNeeded() {
-    if (_closingTickets.isEmpty && _cancellingTickets.isEmpty) {
+    if (_closingTickets.isEmpty &&
+        _cancellingTickets.isEmpty &&
+        _modifyingTickets.isEmpty &&
+        _cancellingExitKeys.isEmpty) {
       _loadingCtrl.stop();
     }
   }
@@ -1712,6 +2175,7 @@ class _MapFlowChartState extends State<MapFlowChart>
         final measure = _currentMeasure();
         final preview = _limitOrderPreview(candleAreaHeight);
         final dragPreview = _draggedOrderPreview(candleAreaHeight);
+        final exitDragPreview = _draggedExitPreview(candleAreaHeight);
         Offset? rulerStart;
         Offset? rulerEnd;
         if (measure != null && _hasMeasure()) {
@@ -1740,6 +2204,16 @@ class _MapFlowChartState extends State<MapFlowChart>
                   hiddenOrderTickets: _dragOrderMoved && _draggingOrder != null
                       ? {_draggingOrder!.ticket}
                       : const {},
+                  hiddenExitPositionTicket:
+                      _draggingExitMoved && _draggingExitPosition != null
+                          ? _draggingExitPosition!.ticket
+                          : null,
+                  hiddenExitKind: _draggingExitMoved ? _draggingExitKind : null,
+                  hoveredClosePositionTicket: _hoveredClosePositionTicket,
+                  hoveredCloseOrderTicket: _hoveredCloseOrderTicket,
+                  hoveredCloseExitTicket: _hoveredCloseExit?.ticket,
+                  hoveredCloseExitKind: _hoveredCloseExit?.kind,
+                  cancellingExitKeys: _cancellingExitKeys,
                   loadingAnimation: _loadingCtrl.value,
                 ),
               ),
@@ -1810,7 +2284,7 @@ class _MapFlowChartState extends State<MapFlowChart>
                           _pendingOrderModifier = null;
                           _onMeasureDown(event, stepX, candleAreaHeight);
                         } else if (!hasOrderModifier &&
-                            _beginOrderDrag(
+                            _beginTradeLineDrag(
                                 event.localPosition, candleAreaHeight)) {
                           setState(() {});
                         } else {
@@ -1857,6 +2331,8 @@ class _MapFlowChartState extends State<MapFlowChart>
                     onPointerMove: (event) {
                       if (_isMeasuring) {
                         _onMeasureMove(event, stepX, candleAreaHeight);
+                      } else if (_draggingExitPosition != null) {
+                        _updateExitDrag(event.localPosition, candleAreaHeight);
                       } else if (_draggingOrder != null) {
                         final start = _dragOrderStartLocal;
                         if (!_dragOrderMoved &&
@@ -1880,6 +2356,26 @@ class _MapFlowChartState extends State<MapFlowChart>
                     onPointerUp: (event) {
                       if (_isMeasuring) {
                         _onMeasureUp(event, candleAreaHeight);
+                      } else if (_draggingExitPosition != null) {
+                        final pos = _draggingExitPosition!;
+                        final kind = _draggingExitKind;
+                        final moved = _draggingExitMoved;
+                        final tick = Defaults.tickSize(widget.data.symbol);
+                        final raw = _localToPrice(
+                            event.localPosition.dy, candleAreaHeight);
+                        final price = tick > 0 && raw.isFinite
+                            ? (raw / tick).roundToDouble() * tick
+                            : _draggingExitPrice;
+                        _clearExitDrag();
+                        _panEnabled = true;
+                        if (mounted) setState(() {});
+                        if (moved &&
+                            kind != null &&
+                            price != null &&
+                            price > 0) {
+                          // ignore: discarded_futures
+                          _dropExit(pos, kind, price);
+                        }
                       } else if (_draggingOrder != null) {
                         final order = _draggingOrder!;
                         final moved = _dragOrderMoved;
@@ -1942,6 +2438,11 @@ class _MapFlowChartState extends State<MapFlowChart>
                       _rightDownLocal = null;
                       _rightDownBubble = null;
                       _pendingOrderModifier = null;
+                      if (_draggingExitPosition != null) {
+                        _clearExitDrag();
+                        _panEnabled = true;
+                        if (mounted) setState(() {});
+                      }
                       if (_draggingOrder != null) {
                         _clearOrderDrag();
                         _panEnabled = true;
@@ -1955,19 +2456,31 @@ class _MapFlowChartState extends State<MapFlowChart>
                       }
                     },
                     child: MouseRegion(
+                      cursor: (_hoveredClosePositionTicket != null ||
+                              _hoveredCloseOrderTicket != null ||
+                              _hoveredCloseExit != null)
+                          ? SystemMouseCursors.click
+                          : MouseCursor.defer,
                       onHover: (e) => _handleHover(
                           e, candleAreaWidth, candleAreaHeight, stepX),
                       onExit: (e) {
                         if (_hoverY != null ||
                             _hoveredBubble != null ||
-                            _hoveredHistory != null)
+                            _hoveredHistory != null ||
+                            _hoveredClosePositionTicket != null ||
+                            _hoveredCloseOrderTicket != null ||
+                            _hoveredCloseExit != null) {
                           setState(() {
                             _hoverY = null;
                             _hoverCandleIndex = null;
                             _hoveredBubble = null;
                             _hoveredHistory = null;
                             _hoverPos = null;
+                            _hoveredClosePositionTicket = null;
+                            _hoveredCloseOrderTicket = null;
+                            _hoveredCloseExit = null;
                           });
+                        }
                       },
                       child: InteractiveViewer(
                         transformationController: _controller,
@@ -2082,6 +2595,26 @@ class _MapFlowChartState extends State<MapFlowChart>
                       isStop: dragPreview.isStop,
                       volume: dragPreview.volume,
                       distance: dragPreview.distance,
+                    ),
+                  ),
+                ),
+              ),
+            if (exitDragPreview != null)
+              Positioned(
+                left: ChartFixedPainter.marginLeft,
+                top: ChartFixedPainter.marginTop,
+                width: candleAreaWidth,
+                height: candleAreaHeight,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _LimitOrderPreviewPainter(
+                      y: exitDragPreview.y,
+                      price: exitDragPreview.price,
+                      symbol: data.symbol,
+                      isBuy: exitDragPreview.isBuy,
+                      isStop: exitDragPreview.isStop,
+                      volume: exitDragPreview.volume,
+                      distance: exitDragPreview.distance,
                     ),
                   ),
                 ),
