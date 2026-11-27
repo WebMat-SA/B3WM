@@ -1385,8 +1385,10 @@ class _MapFlowChartState extends State<MapFlowChart>
     return _LimitOrderPreview(
       price: price,
       y: y,
-      isBuy: kind == 'tp',
-      isStop: false,
+      // A saída é sempre contrária à entrada: compra fecha com venda e
+      // venda fecha com compra. A cor segue o lado da ordem de saída.
+      isBuy: pos.type == 'sell',
+      isStop: kind == 'sl',
       volume: pos.volume,
       distance: (price - pos.priceOpen).abs(),
     );
@@ -1578,7 +1580,7 @@ class _MapFlowChartState extends State<MapFlowChart>
       price: price,
       y: y,
       isBuy: order.type.startsWith('buy'),
-      isStop: false,
+      isStop: order.type.contains('stop'),
       volume: order.volume,
       distance: last > 0 ? (price - last).abs() : null,
     );

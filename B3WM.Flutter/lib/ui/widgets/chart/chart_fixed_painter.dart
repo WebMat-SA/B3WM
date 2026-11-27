@@ -643,13 +643,16 @@ class ChartFixedPainter extends CustomPainter {
     // gate do botão C/V usado para o arrasto).
     if (data.timeFrame >= 1440 || !data.openOrdersVisible) return;
     for (final pos in data.positions) {
+      // A saída é sempre contrária à entrada: posição comprada fecha com
+      // venda (vermelho) e posição vendida fecha com compra (verde).
+      final exitColor = pos.type == 'buy' ? tradeSellColor : tradeBuyColor;
       if (pos.tp > 0) {
         _drawPositionExitLine(
           canvas,
           pos: pos,
           price: pos.tp,
           kind: 'tp',
-          color: tradeBuyColor,
+          color: exitColor,
         );
       }
       if (pos.sl > 0) {
@@ -658,7 +661,7 @@ class ChartFixedPainter extends CustomPainter {
           pos: pos,
           price: pos.sl,
           kind: 'sl',
-          color: tradeSellColor,
+          color: exitColor,
         );
       }
     }
